@@ -56,8 +56,7 @@ AHG Universal Converter provides a fast, polished, and portable experience for d
 <img width="1859" height="945" alt="image" src="https://github.com/user-attachments/assets/c193adc2-2bb5-4791-af4f-088881f4b52f" />
 - Paste track, album, or playlist links
 - Full metadata + album artwork support:
-  <img width="1920" height="2560" alt="image" src="https://github.com/user-attachments/assets/a34afd2a-6299-4dc9-97eb-af32195f0af8" />
-
+  <img width="1854" height="955" alt="image" src="https://github.com/user-attachments/assets/142d3ec8-4ceb-4ddf-99c6-874c68a64add" />
 - No API credentials required
 
 ### SoundCloud
