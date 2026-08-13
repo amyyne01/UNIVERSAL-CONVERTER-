@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dist-electron/
+dev-release/
+release/
+
+# Secrets — NEVER commit (only the template is tracked)
+config/secrets.json
+
+# Logs & OS cruft
+*.log
+.DS_Store
+Thumbs.db
+
+# Local agent/tool state — not part of the product
+graphify-out/
+.omc/
+.claude/
+coverage/
+.shot.mjs
+
+# Internal working documents. The published repo is code + README only:
+# every other markdown file is planning, audit or design material that stays local.
+*.md
+!README.md
+docs/
+design-concepts/
