@@ -1,0 +1,163 @@
+@import "tailwindcss";
+
+/* ── CATHODE — Ink & Phosphor design system ─────────────────────────────────
+   Deep blue-black ink canvas (hue 240) with one luminous phosphor-cyan trace
+   (hue 195) as the signature. No pure #000 / #fff.
+   Dark is the @theme default; light overrides under :root[data-theme="light"].
+   The effective theme is set on <html data-theme> before first paint (index.html)
+   and updated at runtime from the Settings capsule (Light / Dark / System).
+   Token names map to Tailwind utilities (bg-bg-primary, text-text-muted, …). */
+@theme {
+  --color-bg-primary: oklch(0.150 0.014 240);
+  --color-bg-secondary: oklch(0.122 0.012 240);
+  --color-bg-tertiary: oklch(0.190 0.016 240);
+  --color-bg-hover: oklch(0.235 0.018 240);
+  --color-bg-surface: oklch(0.205 0.017 240);
+  --color-bg-glass: oklch(0.215 0.018 240 / 0.58);
+  --color-scrim: oklch(0.09 0.010 240 / 0.80);
+
+  --color-text-primary: oklch(0.955 0.008 220);
+  --color-text-secondary: oklch(0.760 0.015 225);
+  --color-text-muted: oklch(0.650 0.018 230);
+
+  --color-accent: oklch(0.800 0.135 195);
+  --color-accent-hover: oklch(0.860 0.125 193);
+  --color-accent-soft: oklch(0.800 0.135 195 / 0.14);
+  --color-accent-deep: oklch(0.320 0.060 210);
+  --color-on-accent: oklch(0.170 0.020 240);
+
+  --color-youtube: oklch(0.635 0.235 27);
+  --color-spotify: oklch(0.730 0.180 150);
+  --color-soundcloud: oklch(0.725 0.190 55);
+  --color-reels: oklch(0.665 0.255 352);
+
+  --color-success: oklch(0.740 0.160 150);
+  --color-warning: oklch(0.830 0.145 85);
+  --color-error: oklch(0.660 0.205 24);
+
+  --color-border: oklch(0.55 0.020 230 / 0.28);
+  --color-border-soft: oklch(0.55 0.020 230 / 0.14);
+  --color-inner-light: oklch(0.98 0.005 220 / 0.06);
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+  --radius-2xl: 26px;
+
+  /* SF Pro-superfamily analogue: Geist Sans (≈ SF Pro Display/Text) + Geist Mono (≈ SF Mono) */
+  --font-display: "Geist Sans", system-ui, sans-serif;
+  --font-sans: "Geist Sans", system-ui, sans-serif;
+  --font-mono: "Geist Mono", monospace;
+
+  /* Hairline + inner-light elevation: every shadow carries a 1px inner top highlight. */
+  --shadow-sm: inset 0 1px 0 var(--color-inner-light), 0 1px 2px oklch(0 0 0 / 0.30);
+  --shadow-md: inset 0 1px 0 var(--color-inner-light), 0 2px 10px oklch(0 0 0 / 0.30);
+  --shadow-lg: inset 0 1px 0 var(--color-inner-light), 0 12px 40px oklch(0 0 0 / 0.45);
+  --shadow-glow: 0 0 32px oklch(0.80 0.135 195 / 0.16);
+
+  --ease-out-quart: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Layering scale — every z-index in the app references one of these */
+:root {
+  --z-modal: 50;
+  --z-palette: 60;
+}
+
+/* ── Light theme — "daylight studio": cool paper + inkjet-cyan accent ──────── */
+:root[data-theme="light"] {
+  --color-bg-primary: oklch(0.975 0.005 240);
+  --color-bg-secondary: oklch(0.948 0.006 240);
+  --color-bg-tertiary: oklch(0.930 0.007 240);
+  --color-bg-hover: oklch(0.915 0.008 240);
+  --color-bg-surface: oklch(0.997 0.002 240);
+  --color-bg-glass: oklch(0.99 0.002 240 / 0.65);
+  --color-scrim: oklch(0.25 0.015 240 / 0.45);
+
+  --color-text-primary: oklch(0.240 0.020 240);
+  --color-text-secondary: oklch(0.430 0.020 238);
+  --color-text-muted: oklch(0.500 0.018 235);
+
+  --color-accent: oklch(0.500 0.105 215);
+  --color-accent-hover: oklch(0.440 0.110 215);
+  --color-accent-soft: oklch(0.500 0.105 215 / 0.10);
+  --color-accent-deep: oklch(0.880 0.045 205);
+  --color-on-accent: oklch(0.985 0.003 220);
+
+  --color-youtube: oklch(0.550 0.210 27);
+  --color-spotify: oklch(0.520 0.150 150);
+  --color-soundcloud: oklch(0.530 0.140 55);
+  --color-reels: oklch(0.550 0.220 352);
+
+  --color-success: oklch(0.520 0.140 150);
+  --color-warning: oklch(0.550 0.125 80);
+  --color-error: oklch(0.550 0.190 24);
+
+  --color-border: oklch(0.35 0.015 240 / 0.16);
+  --color-border-soft: oklch(0.35 0.015 240 / 0.09);
+  --color-inner-light: oklch(1 0 0 / 0);
+
+  --shadow-sm: 0 1px 2px oklch(0.25 0.02 240 / 0.06);
+  --shadow-md: 0 2px 10px oklch(0.25 0.02 240 / 0.08);
+  --shadow-lg: 0 12px 40px oklch(0.25 0.02 240 / 0.13);
+  --shadow-glow: 0 0 32px oklch(0.500 0.105 215 / 0.12);
+}
+
+:root[data-theme="dark"] { color-scheme: dark; }
+:root[data-theme="light"] { color-scheme: light; }
+
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+/* Keyboard focus — visible ring, shown instantly (never animated) */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* A field shell (input wrapper) already renders focus on itself via focus-within,
+   so the nested control must NOT also draw the global ring — that's what painted
+   two highlighted boxes around one field. One field, one focus indicator. */
+.field-shell:focus-within {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-accent) 22%, transparent);
+}
+.field-shell :focus-visible {
+  outline: none;
+}
+
+/* Reduced motion — collapse all animation/transition to imperceptible */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Frameless-window drag regions */
+.drag-region { -webkit-app-region: drag; }
+.no-drag { -webkit-app-region: no-drag; }
+
+/* Tabular numerals everywhere mono is used */
+.font-mono { font-feature-settings: "tnum"; }
+
+/* Custom scrollbar */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb {
+  background: oklch(0.50 0.020 235 / 0.35);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background: oklch(0.55 0.022 235 / 0.5); background-clip: padding-box; }

@@ -22,6 +22,12 @@ graphify-out/
 coverage/
 .shot.mjs
 
+# Entitlement/activation layer — never published. The app builds locally with
+# these present; they are deliberately absent from the public tree.
+electron/license.ts
+electron/license.test.ts
+config/secrets.template.json
+
 # Internal working documents. The published repo is code + README only:
 # every other markdown file is planning, audit or design material that stays local.
 *.md

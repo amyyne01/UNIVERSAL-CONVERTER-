@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AHG Universal Converter</title>
+    <!-- Fonts are self-hosted via @fontsource imports in src/main.tsx (offline-safe). -->
+    <!-- Pre-paint theme bootstrap (external so the production CSP can keep script-src 'self'). -->
+    <script src="./theme-init.js"></script>
+    <!--
+      Boot splash — "Carrier Lock". Deliberately inline (CSP allows 'unsafe-inline'
+      for styles only): it paints on the FIRST frame, before the bundle, React,
+      fonts or index.css exist — which is what lets the window be shown immediately
+      instead of after the framework mounts. src/lib/splash.ts drives the progress
+      and fades it out; fonts fall back to system mono until Geist arrives, which
+      is why everything here is tracked mono rather than the display face.
+
+      The idea: the app's one luminous element — the 1px phosphor carrier line —
+      IS the composition. Raw signal (an irregular waveform) streams in from the
+      right; #splash-fill is an opaque scan layer whose width = real boot progress,
+      replacing the waveform left-to-right with the clean resolved trace. Jagged
+      input becoming a clean line is the product itself, compressed into one image.
+    -->
+    <style>
+      :root {
+        --sp-bg: oklch(0.150 0.014 240);
+        --sp-ink: oklch(0.955 0.008 220);
+        --sp-ink2: oklch(0.760 0.015 225);
+        --sp-accent: oklch(0.800 0.135 195);
+        --sp-glow: oklch(0.800 0.135 195 / 0.55);
+        --sp-raw: oklch(0.62 0.030 220 / 0.55);
+        --sp-tick: oklch(0.55 0.020 230 / 0.35);
+      }
+      :root[data-theme="light"] {
+        --sp-bg: oklch(0.975 0.005 240);
+        --sp-ink: oklch(0.240 0.020 240);
+        --sp-ink2: oklch(0.430 0.020 238);
+        --sp-accent: oklch(0.500 0.105 215);
+        --sp-glow: oklch(0.500 0.105 215 / 0.28); /* phosphor bloom reads as smudge on light — keep it faint */
+        --sp-raw: oklch(0.45 0.025 235 / 0.45);
+        --sp-tick: oklch(0.35 0.015 240 / 0.30);
+      }
+      html, body { margin: 0; height: 100%; background: var(--sp-bg); }
+
+      #splash {
+        position: fixed;
+        inset: 0;
+        z-index: 100;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--sp-bg);
+        font-family: ui-monospace, "Geist Mono", "Cascadia Mono", Consolas, monospace;
+        -webkit-app-region: drag; /* the frameless window is still draggable while loading */
+        user-select: none;
+        cursor: default;
+        opacity: 1;
+        /* Fade waits 120ms so the dismiss sweep-to-100% reads first: on a fast
+           machine the whole exit is "line resolves, then lights off" — a beat,
+           not a flicker. Total (380ms) stays under splash.ts's 400ms removal floor. */
+        transition: opacity 260ms cubic-bezier(0.16, 1, 0.3, 1) 120ms;
+      }
+      #splash[data-leaving="true"] { opacity: 0; }
+
+      .sp-stage { width: min(520px, 68vw); }
+
+      .sp-word {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        margin-bottom: 18px;
+        font-size: 12px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+      }
+      .sp-word b { color: var(--sp-ink); font-weight: 600; }
+      .sp-word span { color: var(--sp-ink2); font-weight: 400; }
+
+      /* The trace. Layers, bottom to top: streaming raw waveform (clipped),
+         the scan layer (#splash-fill), instrument end-ticks. */
+      .sp-trace { position: relative; height: 40px; }
+
+      .sp-trace::before, .sp-trace::after {
+        content: "";
+        position: absolute;
+        top: 50%;
+        width: 1px;
+        height: 9px;
+        transform: translateY(-50%);
+        background: var(--sp-tick);
+        z-index: 3;
+      }
+      .sp-trace::before { left: 0; }
+      .sp-trace::after { right: 0; }
+
+      .sp-raw { position: absolute; inset: 0; overflow: hidden; z-index: 1; }
+      /* The waveform pattern is drawn twice (period 520) and slides one period
+         leftward — signal flowing into the scan head. Transform-only, one tiny
+         layer: composited, no paint per frame. */
+      .sp-raw svg {
+        display: block;
+        width: 200%;
+        height: 100%;
+        stroke: var(--sp-raw);
+        fill: none;
+        stroke-width: 1;
+        stroke-linejoin: round;
+        animation: sp-drift 7s linear infinite;
+      }
+      @keyframes sp-drift { to { transform: translateX(-50%); } }
+
+      /* Scan layer: same paint as the page bg, so growing it "erases" the raw
+         signal; its bottom layer is the clean resolved trace. Width is the one
+         layout property that moves, and only on the three real boot steps —
+         discrete 340ms events on a 520px strip, not continuous animation. */
+      #splash-fill {
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: 5%;
+        background: var(--sp-bg);
+        z-index: 2;
+        transition: width 340ms cubic-bezier(0.22, 1, 0.36, 1);
+      }
+      #splash-fill::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 50%;
+        height: 1px;
+        margin-top: -0.5px;
+        background: var(--sp-accent);
+        box-shadow: 0 0 10px var(--sp-glow);
+      }
+      /* Scan head: the lock point where signal becomes trace. Breathes while
+         there is still something to resolve; holds steady once leaving. */
+      #splash-fill::before {
+        content: "";
+        position: absolute;
+        right: -1px;
+        top: 50%;
+        width: 2px;
+        height: 15px;
+        transform: translateY(-50%);
+        background: var(--sp-accent);
+        box-shadow: 0 0 12px var(--sp-glow);
+        animation: sp-lock 1.3s ease-in-out infinite;
+      }
+      #splash[data-leaving="true"] #splash-fill::before { animation: none; }
+      @keyframes sp-lock {
+        0%, 100% { opacity: 0.55; }
+        50%      { opacity: 1; }
+      }
+
+      .sp-status {
+        height: 13px;
+        margin-top: 14px;
+        font-size: 10.5px;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+        color: var(--sp-ink2);
+      }
+
+      /* Reduced motion: the composition stands still but stays whole — static
+         waveform, steady head, instant progress jumps, quick undelayed fade. */
+      @media (prefers-reduced-motion: reduce) {
+        .sp-raw svg, #splash-fill::before { animation: none; }
+        #splash-fill { transition: none; }
+        #splash { transition: opacity 150ms ease-out 0ms; }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="splash" role="status" aria-live="polite" aria-label="Starting AHG Universal Converter">
+      <div class="sp-stage">
+        <div class="sp-word"><b>AHG</b><span>Universal Converter</span></div>
+        <div class="sp-trace" aria-hidden="true">
+          <div class="sp-raw">
+            <!-- Hand-authored periodic waveform: bursts and rests, like a real
+                 signal — never a uniform zigzag. non-scaling-stroke keeps the
+                 line 1px under the non-uniform viewBox stretch. -->
+            <svg viewBox="0 0 1040 40" preserveAspectRatio="none" aria-hidden="true">
+              <path id="sp-wave" vector-effect="non-scaling-stroke"
+                    d="M0 20H28L30 9L33 29L36 14L39 26L42 20H58L61 16L64 24L66 20H88L91 7L94 31L97 11L100 27L103 17L106 23L109 20H132L135 15L138 25L140 20H168L171 10L174 30L177 13L180 24L183 20H205L208 17L210 23L213 20H240L243 6L246 32L249 12L252 28L255 16L258 22L261 20H290L293 15L296 25L299 20H320L323 9L326 29L329 14L332 24L335 20H360L363 17L365 23L368 20H395L398 8L401 30L404 12L407 26L410 18L413 22L416 20H445L448 15L451 25L454 20H480L483 11L486 27L489 16L492 22L495 20H520" />
+              <use href="#sp-wave" x="520" />
+            </svg>
+          </div>
+          <div id="splash-fill"></div>
+        </div>
+        <div class="sp-status" id="splash-status">Starting</div>
+      </div>
+    </div>
+
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
