@@ -1,8 +1,8 @@
 import { forwardRef, type InputHTMLAttributes } from 'react';
-import type { LucideIcon } from 'lucide-react';
+import type { AppIcon } from '@/components/ui/icons';
 
 export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
-  icon?: LucideIcon;
+  icon?: AppIcon;
   /** Wrapper className (the field shell). */
   wrapClassName?: string;
 }

@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
-  Clipboard,
+  Paste,
   Moon,
-  RefreshCw,
+  Refresh,
   Search,
   Sun,
-  Trash2,
-  XCircle,
-} from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
+  Remove,
+  Cancel,
+} from '@/components/ui/icons';
+import type { AppIcon } from '@/components/ui/icons';
 import { useAppStore } from '@/store';
 import { NAV, TAB_ORDER } from '@/constants';
 import { buildDownloadRequest } from '@/lib/download';
@@ -19,7 +19,7 @@ import { buildDownloadRequest } from '@/lib/download';
 interface Cmd {
   id: string;
   label: string;
-  icon: LucideIcon;
+  icon: AppIcon;
   group: string;
   hint?: string;
   action: () => void | Promise<void>;
@@ -79,7 +79,7 @@ export function CommandPalette() {
       {
         id: 'paste-download',
         label: 'Paste link & download',
-        icon: Clipboard,
+        icon: Paste,
         group: 'Actions',
         hint: 'Ctrl+V',
         action: async () => {
@@ -119,7 +119,7 @@ export function CommandPalette() {
       {
         id: 'check-updates',
         label: 'Check for updates',
-        icon: RefreshCw,
+        icon: Refresh,
         group: 'Actions',
         action: () => {
           setOpen(false);
@@ -130,7 +130,7 @@ export function CommandPalette() {
       {
         id: 'clear-completed',
         label: 'Clear completed downloads',
-        icon: Trash2,
+        icon: Remove,
         group: 'Actions',
         action: () => {
           clearCompletedAndPersist();
@@ -141,7 +141,7 @@ export function CommandPalette() {
       {
         id: 'cancel-all',
         label: 'Cancel all downloads',
-        icon: XCircle,
+        icon: Cancel,
         group: 'Actions',
         action: () => {
           setOpen(false);

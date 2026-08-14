@@ -39,6 +39,12 @@
   --color-border-soft: oklch(0.55 0.020 230 / 0.14);
   --color-inner-light: oklch(0.98 0.005 220 / 0.06);
 
+  /* Ink and scrim for content sitting ON artwork (thumbnails, cover art). These
+     do NOT flip with the theme: a cover is a photograph in both, so light-theme
+     ink over it would be unreadable. Any overlay on media uses this pair. */
+  --color-media-scrim: oklch(0.12 0.012 240 / 0.88);
+  --color-on-media: oklch(0.955 0.008 220);
+
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 14px;

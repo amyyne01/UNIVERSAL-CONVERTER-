@@ -13,6 +13,8 @@ import type {
   LicenseCheck,
   Plan,
   ReleaseResult,
+  RevealResult,
+  DownloadStats,
   MediaMetadata,
   YtdlpUpdateStatus,
 } from '@shared/types';
@@ -62,7 +64,10 @@ export interface ElectronAPI {
     selectDir: () => Promise<string | null>;
   };
   shell: {
-    showItemInFolder: (path: string) => Promise<void>;
+    showItemInFolder: (path: string) => Promise<RevealResult>;
+  };
+  stats: {
+    get: () => Promise<DownloadStats>;
   };
   license: {
     check: () => Promise<LicenseCheck>;

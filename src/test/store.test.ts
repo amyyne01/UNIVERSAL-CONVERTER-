@@ -300,7 +300,7 @@ describe('Store — ui slice', () => {
 
 describe('Store — tier slice', () => {
   beforeEach(() => {
-    useAppStore.setState({ isActivated: false, plan: 'basic', upgradeOpen: false, premiumNudge: null });
+    useAppStore.setState({ isActivated: false, plan: 'basic', upgradeOpen: false, notice: null });
   });
 
   it('defaults to the free tier — no key is a working install, not a locked one', () => {
@@ -320,17 +320,17 @@ describe('Store — tier slice', () => {
 
   it('opening the upgrade sheet clears a pending nudge', () => {
     useAppStore.getState().showPremiumNudge('4K needs Premium.');
-    expect(useAppStore.getState().premiumNudge).toBe('4K needs Premium.');
+    expect(useAppStore.getState().notice?.message).toBe('4K needs Premium.');
 
     useAppStore.getState().setUpgradeOpen(true);
     expect(useAppStore.getState().upgradeOpen).toBe(true);
-    expect(useAppStore.getState().premiumNudge).toBeNull();
+    expect(useAppStore.getState().notice).toBeNull();
   });
 
   it('dismissing a nudge leaves the sheet closed', () => {
     useAppStore.getState().showPremiumNudge('Lossless is Premium.');
-    useAppStore.getState().dismissPremiumNudge();
-    expect(useAppStore.getState().premiumNudge).toBeNull();
+    useAppStore.getState().dismissNotice();
+    expect(useAppStore.getState().notice).toBeNull();
     expect(useAppStore.getState().upgradeOpen).toBe(false);
   });
 });

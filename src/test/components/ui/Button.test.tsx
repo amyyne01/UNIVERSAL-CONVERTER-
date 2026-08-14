@@ -12,7 +12,7 @@ describe('Button', () => {
     render(<Button loading>Save</Button>);
     const btn = screen.getByRole('button');
     expect(btn).toBeDisabled();
-    // Spinner renders Loader2 with animate-spin class
+    // Spinner renders Loading (Phosphor SpinnerGap) with animate-spin class
     expect(btn.querySelector('.animate-spin')).toBeInTheDocument();
   });
 

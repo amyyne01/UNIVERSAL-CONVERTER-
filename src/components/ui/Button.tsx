@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { motion, type HTMLMotionProps } from 'framer-motion';
-import type { LucideIcon } from 'lucide-react';
+import type { AppIcon } from '@/components/ui/icons';
 import { Spinner } from './Spinner';
 
 const VARIANTS = {
@@ -18,7 +18,7 @@ export interface ButtonProps extends Omit<HTMLMotionProps<'button'>, 'children'>
   variant?: keyof typeof VARIANTS;
   size?: keyof typeof SIZES;
   loading?: boolean;
-  icon?: LucideIcon;
+  icon?: AppIcon;
   children?: ReactNode;
 }
 

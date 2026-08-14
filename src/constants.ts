@@ -1,11 +1,11 @@
 // UI-only constants for the renderer. Domain types live in shared/.
 // Format/quality lists here drive the selectors; the main process owns the
 // authoritative download logic — these are presentation choices only.
-import type { LucideIcon } from 'lucide-react';
+import type { AppIcon } from '@/components/ui/icons';
 import {
-  Home, Download, Youtube, Music2, AudioLines, Clapperboard, Settings,
-  MonitorPlay, Rows3, ListMusic, AudioWaveform, CalendarClock,
-} from 'lucide-react';
+  Home, Download, YouTube, Spotify, SoundCloud, ShortForm, Settings,
+  Resolution, Batch, Collection, Audio, Scheduled,
+} from '@/components/ui/icons';
 import type { AudioFormat, VideoQuality, UiSource } from '@shared/types';
 import { BASIC_LIMITS, LOSSLESS_FORMATS, VIDEO_QUALITIES as VIDEO_QUALITY_VALUES } from '@shared/types';
 
@@ -67,30 +67,30 @@ export interface PlatformDef {
   label: string;
   /** Color token name → CSS var(--color-<accent>). */
   accent: PlatformKey;
-  icon: LucideIcon;
+  icon: AppIcon;
 }
 
 export const PLATFORMS: readonly PlatformDef[] = [
-  { key: 'youtube', label: 'YouTube', accent: 'youtube', icon: Youtube },
-  { key: 'spotify', label: 'Spotify', accent: 'spotify', icon: Music2 },
-  { key: 'soundcloud', label: 'SoundCloud', accent: 'soundcloud', icon: AudioLines },
-  { key: 'reels', label: 'Reels & Shorts', accent: 'reels', icon: Clapperboard },
+  { key: 'youtube', label: 'YouTube', accent: 'youtube', icon: YouTube },
+  { key: 'spotify', label: 'Spotify', accent: 'spotify', icon: Spotify },
+  { key: 'soundcloud', label: 'SoundCloud', accent: 'soundcloud', icon: SoundCloud },
+  { key: 'reels', label: 'Reels & Shorts', accent: 'reels', icon: ShortForm },
 ];
 
 export interface NavItem {
   key: TabKey;
   label: string;
-  icon: LucideIcon;
+  icon: AppIcon;
   group: 'Library' | 'Sources' | 'System';
 }
 
 export const NAV: readonly NavItem[] = [
   { key: 'home', label: 'Home', icon: Home, group: 'Library' },
   { key: 'queue', label: 'Downloads', icon: Download, group: 'Library' },
-  { key: 'youtube', label: 'YouTube', icon: Youtube, group: 'Sources' },
-  { key: 'spotify', label: 'Spotify', icon: Music2, group: 'Sources' },
-  { key: 'soundcloud', label: 'SoundCloud', icon: AudioLines, group: 'Sources' },
-  { key: 'reels', label: 'Reels & Shorts', icon: Clapperboard, group: 'Sources' },
+  { key: 'youtube', label: 'YouTube', icon: YouTube, group: 'Sources' },
+  { key: 'spotify', label: 'Spotify', icon: Spotify, group: 'Sources' },
+  { key: 'soundcloud', label: 'SoundCloud', icon: SoundCloud, group: 'Sources' },
+  { key: 'reels', label: 'Reels & Shorts', icon: ShortForm, group: 'Sources' },
   { key: 'settings', label: 'Settings', icon: Settings, group: 'System' },
 ];
 
@@ -104,7 +104,7 @@ export const TAB_ORDER: readonly TabKey[] = NAV.map((n) => n.key);
 export interface PlanFeature {
   key: string;
   label: string;
-  icon: LucideIcon;
+  icon: AppIcon;
   basic: string;
   premium: string;
 }
@@ -113,35 +113,35 @@ export const PLAN_FEATURES: readonly PlanFeature[] = [
   {
     key: 'video',
     label: 'Video quality',
-    icon: MonitorPlay,
+    icon: Resolution,
     basic: `Up to ${BASIC_LIMITS.maxVideoQuality}`,
     premium: 'Up to 4K, or best available',
   },
   {
     key: 'batch',
     label: 'Batch paste',
-    icon: Rows3,
+    icon: Batch,
     basic: `${BASIC_LIMITS.maxBatchLinks} links at a time`,
     premium: 'As many links as you paste',
   },
   {
     key: 'collections',
     label: 'Playlists & albums',
-    icon: ListMusic,
+    icon: Collection,
     basic: `First ${BASIC_LIMITS.maxCollectionTracks} tracks`,
     premium: 'Every track',
   },
   {
     key: 'lossless',
     label: 'Lossless audio',
-    icon: AudioWaveform,
+    icon: Audio,
     basic: 'Lossy formats only',
     premium: 'FLAC, WAV and ALAC',
   },
   {
     key: 'scheduler',
     label: 'Scheduled downloads',
-    icon: CalendarClock,
+    icon: Scheduled,
     basic: 'Not included',
     premium: 'Run unattended, on your days',
   },

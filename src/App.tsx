@@ -4,10 +4,11 @@ import { useAppStore } from '@/store';
 import { initTheme } from '@/lib/theme';
 import { dismissSplash, splashStep } from '@/lib/splash';
 import { NAV, PLATFORMS, TAB_ORDER, type NavItem, type TabKey } from '@/constants';
+import { IconContext } from '@/components/ui/icons';
 import WindowTitleBar from '@/components/WindowTitleBar';
 import { CommandPalette } from '@/components/CommandPalette';
 import { UpgradeSheet } from '@/components/UpgradeSheet';
-import { PremiumNudge } from '@/components/PremiumNudge';
+import { Notice } from '@/components/Notice';
 import { PlaylistPreview } from '@/components/PlaylistPreview';
 import { Dashboard } from '@/components/tabs/Dashboard';
 import { PlatformTab } from '@/components/tabs/PlatformTab';
@@ -17,10 +18,21 @@ import { SettingsTab } from '@/components/tabs/SettingsTab';
 /** Ceiling on how long the splash may hold the UI if a boot call never settles. */
 const SPLASH_TIMEOUT_MS = 5000;
 
+// App-wide icon weight — 'light' reads thinner and more refined than Phosphor's
+// default 'regular', matching the glass/OKLCH premium aesthetic. One switch here
+// re-tunes every icon in the app; call sites never set weight individually.
+// One weight for the whole icon set. 'regular' rather than 'light': these render
+// at 13–19px on a near-black canvas, where a lighter stroke stops holding its
+// shape and drops below the contrast the rest of the UI is held to. The platform
+// logos opt out to 'fill' in icons.ts — they are marks, not glyphs.
+const ICON_CONTEXT = { weight: 'regular' as const };
+
 export default function App() {
   return (
     <MotionConfig reducedMotion="user">
-      <Shell />
+      <IconContext.Provider value={ICON_CONTEXT}>
+        <Shell />
+      </IconContext.Provider>
     </MotionConfig>
   );
 }
@@ -144,7 +156,12 @@ function Shell() {
             carrier line, focus rings, buttons and soft tints all inherit it. */}
         <div className="flex flex-col min-h-0" style={contentStyle}>
           <CarrierLine active={activeCount > 0} />
-          <main id="main-content" tabIndex={-1} className="flex-1 overflow-y-auto">
+          {/* `@container` makes this column — not the viewport — the unit every
+              tab measures against. The rail is a fixed 68px and the scrollbar
+              takes its own slice, so the viewport always over-reports the space
+              a tab actually has; a tab that reflows on `md:` reflows a rail-width
+              too early. Tabs cap and reflow with `@min-[…]:` off this element. */}
+          <main id="main-content" tabIndex={-1} className="@container flex-1 overflow-y-auto">
             {currentPlaylist ? <PlaylistPreview /> : <Screen tab={activeTab} />}
           </main>
         </div>
@@ -153,7 +170,7 @@ function Shell() {
       {/* Upgrade sheet — opened from Settings or any locked control. Nothing
           blocks launch any more: no key simply means the basic tier. */}
       {upgradeOpen && <UpgradeSheet onClose={() => setUpgradeOpen(false)} />}
-      <PremiumNudge />
+      <Notice />
     </div>
   );
 }
@@ -224,7 +241,7 @@ function Rail({
   return (
     <aside className="flex flex-col items-center gap-1 py-3 bg-bg-secondary border-r border-border-soft overflow-y-auto">
       {lib.map(item)}
-      <div className="w-8 h-px my-1.5 bg-border-soft" />
+      <div className="w-8 h-px my-1.5 shrink-0 bg-border-soft" />
       {sources.map(item)}
       <div className="flex-1" />
       {system.map(item)}
@@ -243,6 +260,8 @@ function RailItem({
   badge: number;
   onSelect: (t: TabKey) => void;
 }) {
+  // shrink-0 below: the rail is a scrolling flex column, so at the 640px minimum
+  // window height eight items would squash themselves flat rather than scroll.
   const Icon = nav.icon;
   const platform = PLATFORMS.find((p) => p.key === nav.key);
   const dot = platform ? `var(--color-${platform.accent})` : undefined;
@@ -252,7 +271,7 @@ function RailItem({
       aria-label={nav.label}
       aria-current={active ? 'page' : undefined}
       title={nav.label}
-      className={`no-drag relative grid place-items-center w-11 h-11 rounded-lg transition-colors ${
+      className={`no-drag relative grid place-items-center w-11 h-11 shrink-0 rounded-lg transition-colors ${
         active
           ? 'bg-bg-surface text-text-primary'
           : 'text-text-muted hover:text-text-primary hover:bg-bg-hover'

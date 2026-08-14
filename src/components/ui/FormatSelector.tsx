@@ -1,7 +1,7 @@
-import { Lock } from 'lucide-react';
+import { Lock } from '@/components/ui/icons';
 import { AUDIO_FORMATS } from '@/constants';
 import type { AudioFormat } from '@shared/types';
-import { useTierLocks } from '@/lib/tier';
+import { useTierLocks, premiumCopy } from '@/lib/tier';
 import { Chip } from './Chip';
 
 export interface FormatSelectorProps {
@@ -27,7 +27,7 @@ export function FormatSelector({ value, onChange, className = '' }: FormatSelect
             icon={locked ? Lock : undefined}
             aria-label={locked ? `${f.label} — Premium` : undefined}
             onClick={() =>
-              locked ? nudge(`${f.label} is lossless — a Premium format.`) : onChange(f.value)
+              locked ? nudge(premiumCopy.losslessFormat(f.label)) : onChange(f.value)
             }
           >
             {f.label}

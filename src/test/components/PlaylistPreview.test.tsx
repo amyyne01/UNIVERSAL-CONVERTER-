@@ -75,6 +75,35 @@ describe('PlaylistPreview', () => {
     expect(useAppStore.getState().selectedTracks.size).toBe(2);
   });
 
+  // Selecting 40 of 200 is the real job: shift-click adds the whole span from the
+  // last row you touched, and it only ever adds, so a mis-aimed range is cheap.
+  it('shift-click selects the range from the last clicked row', async () => {
+    const user = userEvent.setup();
+    useAppStore.setState({ selectedTracks: new Set() });
+    render(<PlaylistPreview />);
+
+    await user.click(screen.getByRole('checkbox', { name: /^One —/ }));
+    await user.keyboard('{Shift>}');
+    await user.click(screen.getByRole('checkbox', { name: /^Three —/ }));
+    await user.keyboard('{/Shift}');
+
+    expect([...useAppStore.getState().selectedTracks].sort()).toEqual(['t1', 't2', 't3']);
+  });
+
+  // The tier ceiling has to be visible WHILE choosing, not only after Download.
+  it('shows how many selected tracks the basic cap will skip', async () => {
+    const many = Array.from({ length: 25 }, (_, i) => track(`x${i}`, `Track ${i}`));
+    useAppStore.setState({
+      plan: 'basic',
+      currentPlaylist: { ...playlist, tracks: many, trackCount: 25 },
+      selectedTracks: new Set(many.map((t) => t.id)),
+    });
+
+    render(<PlaylistPreview />);
+    expect(screen.getByText(/Free limit reached — 20 tracks per playlist/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /download 20 of 25/i })).toBeInTheDocument();
+  });
+
   // The basic tier takes the first N of a collection — the same ceiling the main
   // process applies to engine-expanded playlists via --playlist-end.
   it('caps a basic-tier enqueue at the collection limit and says so', async () => {
@@ -90,6 +119,6 @@ describe('PlaylistPreview', () => {
     await clickDownload(user);
 
     await waitFor(() => expect(startMock()).toHaveBeenCalledTimes(20));
-    expect(useAppStore.getState().premiumNudge).toMatch(/20 tracks per collection/);
+    expect(useAppStore.getState().notice?.message).toMatch(/Free limit reached — 20 tracks per playlist/);
   });
 });

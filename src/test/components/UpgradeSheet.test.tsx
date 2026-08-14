@@ -1,12 +1,12 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { UpgradeSheet } from '@/components/UpgradeSheet';
-import { PremiumNudge } from '@/components/PremiumNudge';
+import { Notice } from '@/components/Notice';
 import { useAppStore } from '@/store';
 
 describe('UpgradeSheet', () => {
   beforeEach(() => {
-    useAppStore.setState({ plan: 'basic', isActivated: false, upgradeOpen: true, premiumNudge: null });
+    useAppStore.setState({ plan: 'basic', isActivated: false, upgradeOpen: true, notice: null });
     vi.clearAllMocks();
   });
 
@@ -67,25 +67,40 @@ describe('UpgradeSheet', () => {
   });
 });
 
-describe('PremiumNudge', () => {
+describe('Notice', () => {
   beforeEach(() => {
-    useAppStore.setState({ plan: 'basic', upgradeOpen: false, premiumNudge: null });
+    useAppStore.setState({ plan: 'basic', upgradeOpen: false, notice: null });
   });
 
   it('renders nothing until a premium control is touched', () => {
-    render(<PremiumNudge />);
+    render(<Notice />);
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 
   it('names the limit that was hit and routes on to the sheet', async () => {
     const user = userEvent.setup();
-    render(<PremiumNudge />);
+    render(<Notice />);
 
-    useAppStore.getState().showPremiumNudge('2160p needs Premium — Basic downloads up to 1080p.');
-    expect(await screen.findByRole('status')).toHaveTextContent('2160p needs Premium');
+    useAppStore.getState().showPremiumNudge('2160p video is a Premium feature.');
+    expect(await screen.findByRole('status')).toHaveTextContent('2160p video is a Premium feature');
 
-    await user.click(screen.getByRole('button', { name: /see premium/i }));
+    // The price belongs to the sheet, where the value is laid out beside it —
+    // not to a toast that interrupts someone mid-task.
+    const cta = screen.getByRole('button', { name: /see plans/i });
+    expect(cta).not.toHaveTextContent('$');
+    expect(screen.getByRole('status')).not.toHaveTextContent('$');
+
+    await user.click(cta);
     expect(useAppStore.getState().upgradeOpen).toBe(true);
-    expect(useAppStore.getState().premiumNudge).toBeNull();
+    expect(useAppStore.getState().notice).toBeNull();
+  });
+
+  it('an error notice states the problem and offers no upsell', async () => {
+    render(<Notice />);
+    useAppStore.getState().showError('“Aura” isn’t where it was saved.');
+
+    const toast = await screen.findByRole('status');
+    expect(toast).toHaveTextContent('isn’t where it was saved');
+    expect(screen.queryByRole('button', { name: /premium/i })).not.toBeInTheDocument();
   });
 });

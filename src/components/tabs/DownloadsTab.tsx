@@ -1,16 +1,23 @@
-// Downloads — informative card queue. Live yt-dlp progress (percent / size /
-// speed / ETA), thumbnail + duration, per-task pause / resume / cancel, bulk
-// actions on selection, and history persisted in main (hydrated in App.tsx).
+// Downloads — the queue, ranked by liveness. A transfer in flight is the loudest
+// thing on screen (taller row, three-line mono telemetry, moving progress trace);
+// a finished one is deliberately quiet (a single check mark, one final size, no
+// bar). Failed rows keep their volume because they still need a decision.
+//
+// NOTE ON GROUPING: DownloadTask carries no timestamp (see shared/types.ts) —
+// there is no createdAt/completedAt to group by day with, and the store keeps
+// insertion order only. Rather than invent a date, the list's spine is status:
+// In progress → Needs attention → Completed.
 import { memo, useMemo, useState } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
-  Download, X, XCircle, RotateCcw, FolderOpen,
-  CheckSquare, Square, Trash2, Minus, Music2, Pause, Play,
-} from 'lucide-react';
+  Download, Close, Cancel, Retry, OpenFolder, Check, Alert, Clock,
+  CheckboxChecked, CheckboxEmpty, Remove, CheckboxMixed, Track, Pause, Play,
+} from '@/components/ui/icons';
 import { useAppStore } from '@/store';
 import { Button, IconButton, ProgressBar } from '@/components/ui';
 import { PLATFORMS } from '@/constants';
 import { formatBytes, formatDuration } from '@/lib/format';
+import { revealFile } from '@/lib/reveal';
 import type { DownloadStatus, DownloadTask, SourcePlatform } from '@shared/types';
 
 // ── formatters ────────────────────────────────────────────────────────────────
@@ -27,11 +34,21 @@ function fmtEta(secs: number): string {
     : `${m}:${String(s).padStart(2, '0')}`;
 }
 
-/** progress.filename is a full path — cards show just the file name. */
+/** In flight the FRACTION is the story, so the unit is spelled once ("6.8 / 15.2
+ *  MB") — two numbers that share a scale compare at a glance. Once a file is
+ *  complete the fraction is meaningless, so callers switch to formatBytes(). */
+function fmtTransferred(done: number, total: number): string {
+  const t = formatBytes(total);
+  const d = formatBytes(done);
+  const unit = t.slice(t.indexOf(' ') + 1);
+  return `${d.endsWith(unit) ? d.slice(0, -unit.length - 1) : d} / ${t}`;
+}
+
+/** progress.filename is a full path — rows show just the file name. */
 const baseName = (p: string): string => p.split(/[\\/]/).pop() ?? '';
 
 /** Tasks started via hotkey/palette/history may lack a thumbnail — YouTube's
- *  is derivable from the video id, so those cards still render art. */
+ *  is derivable from the video id, so those rows still render art. */
 function thumbFor(task: DownloadTask): string {
   if (task.thumbnailUrl) return task.thumbnailUrl;
   if (task.source === 'youtube') {
@@ -43,17 +60,29 @@ function thumbFor(task: DownloadTask): string {
 
 // ── status config ─────────────────────────────────────────────────────────────
 
-const STATUS_CFG: Record<DownloadStatus, { label: string; dot: string; pill: string; pulse: boolean }> = {
-  queued:        { label: 'Queued',      dot: 'bg-text-muted', pill: 'bg-bg-hover text-text-muted',   pulse: false },
-  fetching_info: { label: 'Fetching',    dot: 'bg-accent',     pill: 'bg-accent-soft text-accent',    pulse: true  },
-  downloading:   { label: 'Downloading', dot: 'bg-accent',     pill: 'bg-accent-soft text-accent',    pulse: true  },
-  converting:    { label: 'Converting',  dot: 'bg-warning',    pill: 'bg-warning/10 text-warning',    pulse: true  },
-  embedding:     { label: 'Embedding',   dot: 'bg-warning',    pill: 'bg-warning/10 text-warning',    pulse: true  },
-  paused:        { label: 'Paused',      dot: 'bg-warning',    pill: 'bg-warning/10 text-warning',    pulse: false },
-  retrying:      { label: 'Retrying',    dot: 'bg-warning',    pill: 'bg-warning/10 text-warning',    pulse: true  },
-  done:          { label: 'Done',        dot: 'bg-success',    pill: 'bg-success/10 text-success',    pulse: false },
-  failed:        { label: 'Failed',      dot: 'bg-error',      pill: 'bg-error/10 text-error',        pulse: false },
-  cancelled:     { label: 'Cancelled',   dot: 'bg-text-muted', pill: 'bg-bg-hover text-text-muted',   pulse: false },
+/** The word a row shows in its telemetry column. `downloading` and `done` are
+ *  absent on purpose: those two states show a number instead (percent / final
+ *  size), which says more than the word ever did. */
+const STATUS_WORD: Partial<Record<DownloadStatus, { label: string; tone: string }>> = {
+  queued:        { label: 'Queued',     tone: 'text-text-muted' },
+  fetching_info: { label: 'Fetching',   tone: 'text-text-secondary' },
+  converting:    { label: 'Converting', tone: 'text-warning' },
+  embedding:     { label: 'Tagging',    tone: 'text-warning' },
+  paused:        { label: 'Paused',     tone: 'text-warning' },
+  retrying:      { label: 'Retrying',   tone: 'text-warning' },
+  failed:        { label: 'Failed',     tone: 'text-error' },
+  cancelled:     { label: 'Cancelled',  tone: 'text-text-muted' },
+};
+
+/** The quiet state mark — one 13px glyph in a fixed slot, replacing the row of
+ *  identical status pills. Live rows get nothing here; their progress trace and
+ *  percentage already say what they are. */
+const STATE_MARK: Partial<Record<DownloadStatus, { icon: typeof Check; tone: string; label: string }>> = {
+  done:      { icon: Check,  tone: 'text-success',      label: 'Done' },
+  failed:    { icon: Alert,  tone: 'text-error',        label: 'Failed' },
+  cancelled: { icon: Close,  tone: 'text-text-muted',   label: 'Cancelled' },
+  paused:    { icon: Pause,  tone: 'text-warning',      label: 'Paused' },
+  queued:    { icon: Clock,  tone: 'text-text-muted',   label: 'Queued' },
 };
 
 // ── platform maps ─────────────────────────────────────────────────────────────
@@ -77,9 +106,14 @@ const PLAT_TEXT: Record<SourcePlatform, string> = {
 
 // ── shared constants ──────────────────────────────────────────────────────────
 
-// ponytail: Set for O(1) membership tests across filters + card render
+// ponytail: Set for O(1) membership tests across filters + row render
 const ACTIVE = new Set<DownloadStatus>([
   'queued', 'fetching_info', 'downloading', 'converting', 'embedding', 'paused', 'retrying',
+]);
+/** In-flight family — the only states that own a progress trace and the taller
+ *  row. A queued task has nothing to show yet; a finished one has nothing left. */
+const IN_FLIGHT = new Set<DownloadStatus>([
+  'fetching_info', 'downloading', 'converting', 'embedding', 'retrying', 'paused',
 ]);
 /** States where pausing is offered — mid-conversion kills waste finished work. */
 const PAUSABLE = new Set<DownloadStatus>(['queued', 'fetching_info', 'downloading']);
@@ -112,33 +146,40 @@ interface CardProps {
 }
 
 // memo: progress events tick several times per second while downloading —
-// only the card whose task object changed should re-render.
+// only the row whose task object changed should re-render.
 export const QueueCard = memo(function QueueCard({ task, selected, onToggle, onCancel, onPause, onResume, onRetry, onOpen, onRemove }: CardProps) {
+  const reduced = useReducedMotion();
   const { progress, source, format, title, uploader } = task;
   const { status, percent, speed, eta, downloaded, total } = progress;
-  const cfg = STATUS_CFG[status];
   const isPaused = status === 'paused';
   const isDone = status === 'done';
   const isFailed = status === 'failed' || status === 'cancelled';
   const isActive = ACTIVE.has(status);
+  const inFlight = IN_FLIGHT.has(status);
+  const isTransferring = status === 'downloading';
   const pct = Math.max(0, Math.min(100, isDone ? 100 : percent));
+  const word = STATUS_WORD[status];
+  const mark = STATE_MARK[status];
+  const meta = `${formatDuration(task.duration)}${task.duration ? ' · ' : ''}${format || '—'}`;
 
   return (
-    // 72px telemetry row (CATHODE): hairline-separated inside one Card, 40px
-    // thumb, mono readouts, a 2px platform-tinted progress hairline at the base.
+    // Two row heights, one rule: in flight is 76px, everything else 62px. The
+    // height difference is the cheapest, most legible "this is happening now".
     <motion.div
-      layout
-      initial={{ opacity: 0, y: -6 }}
+      layout={!reduced}
+      initial={{ opacity: 0, y: reduced ? 0 : -4 }}
       animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: 4 }}
-      transition={{ duration: 0.18 }}
-      className={`relative flex items-center gap-3.5 h-[72px] px-4 transition-colors ${
-        selected ? 'bg-accent-soft' : 'hover:bg-bg-hover'
+      // Exits stay subtler than entrances so removals don't pull the eye.
+      exit={{ opacity: 0, y: reduced ? 0 : 2 }}
+      transition={{ duration: reduced ? 0 : 0.2, ease: [0.25, 0.46, 0.45, 0.94] }}
+      className={`group relative flex items-center gap-3.5 px-4 transition-colors ${
+        inFlight ? 'h-[76px]' : 'h-[62px]'
+      } ${
+        selected ? 'bg-accent-soft'
+        : status === 'failed' ? 'bg-error/[0.05] hover:bg-error/[0.09]'
+        : 'hover:bg-bg-hover'
       }`}
     >
-      {/* selected: 2px accent bar on the leading edge */}
-      {selected && <span aria-hidden className="absolute left-0 inset-y-2.5 w-[2px] rounded-r bg-accent" />}
-
       {/* checkbox — w-5 box column-aligns with the select-all above */}
       <button
         onClick={onToggle}
@@ -146,36 +187,45 @@ export const QueueCard = memo(function QueueCard({ task, selected, onToggle, onC
         aria-label={selected ? 'Deselect' : 'Select'}
       >
         {selected
-          ? <CheckSquare size={15} className="text-accent" />
-          : <Square size={15} />}
+          ? <CheckboxChecked size={15} className="text-accent" />
+          : <CheckboxEmpty size={15} />}
       </button>
 
-      {/* 40px thumbnail */}
+      {/* thumbnail */}
       <div className="relative w-10 h-10 rounded-md overflow-hidden bg-bg-tertiary border border-border-soft shrink-0">
         {thumbFor(task) ? (
           <img src={thumbFor(task)} alt="" className="w-full h-full object-cover" loading="lazy" />
         ) : (
           <div className="w-full h-full grid place-items-center">
-            <Music2 size={15} className="text-text-muted" />
+            <Track size={15} className="text-text-muted" />
           </div>
         )}
       </div>
 
-      {/* title + platform / status subtitle */}
+      {/* title + platform/uploader (or the failure reason) — the only elastic
+          cell in the row, so every pixel the pane gains lands here. Both lines
+          stay single-line + truncate: a 200-character title or a paragraph-long
+          yt-dlp error must not change the row's height, and the full string is
+          recoverable from the tooltip. */}
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2.5">
-          <p className="flex-1 min-w-0 text-[13px] font-medium text-text-primary truncate leading-snug">
-            {title || baseName(progress.filename) || 'Untitled'}
-          </p>
-          <span className={`inline-flex items-center gap-1.5 px-1.5 h-5 rounded-[4px] font-mono text-[10px] uppercase tracking-[0.06em] whitespace-nowrap shrink-0 ${cfg.pill}`}>
-            <span className={`w-1.5 h-1.5 rounded-full flex-none ${cfg.dot}${cfg.pulse ? ' animate-pulse' : ''}`} />
-            {cfg.label}
-          </span>
-        </div>
+        <p
+          title={title || baseName(progress.filename) || 'Untitled'}
+          className={`text-[13px] truncate leading-snug ${
+            isDone || status === 'cancelled'
+              ? 'font-normal text-text-secondary'
+              : 'font-medium text-text-primary'
+          }`}
+        >
+          {title || baseName(progress.filename) || 'Untitled'}
+        </p>
 
-        {/* platform (mono, platform colour) + inline error/uploader — never hover-only */}
-        <p className="text-[11px] mt-0.5 truncate leading-snug">
-          <span className={`font-mono uppercase tracking-[0.06em] ${PLAT_TEXT[source]}`}>{PLAT_LABEL[source]}</span>
+        <p
+          title={isFailed && progress.error ? progress.error : undefined}
+          className="text-[11px] mt-0.5 truncate leading-snug"
+        >
+          <span className={`font-mono ${PLAT_TEXT[source]}`}>{PLAT_LABEL[source]}</span>
+          {/* Muted, matching every other surface's subtitle. It measures 5.9:1 on
+              light surface / 4.9:1 on the tertiary — comfortably past the bar. */}
           <span className={isFailed && progress.error ? 'text-error' : 'text-text-muted'}>
             {isFailed && progress.error
               ? ` · ${progress.error}`
@@ -187,21 +237,50 @@ export const QueueCard = memo(function QueueCard({ task, selected, onToggle, onC
         </p>
       </div>
 
-      {/* right-aligned mono telemetry readout */}
-      <div className="hidden md:flex flex-col items-end justify-center gap-0.5 w-[132px] shrink-0 font-mono text-[10.5px] tabular-nums text-text-muted">
-        {status === 'downloading' ? (
-          <>
-            <span className="text-text-secondary">{Math.round(pct)}%</span>
-            <span><span className="text-accent">{fmtSpeed(speed)}</span> · {fmtEta(eta)}</span>
-          </>
-        ) : (downloaded > 0 || total > 0) ? (
-          <span>{formatBytes(downloaded)}{total > 0 && ` / ${formatBytes(total)}`}</span>
-        ) : null}
-        <span className="uppercase opacity-70">{formatDuration(task.duration)} · {format || '—'}</span>
+      {/* state mark — fixed slot so the marks read as their own column */}
+      <div className="w-4 shrink-0 grid place-items-center">
+        {mark && (
+          <span role="img" aria-label={mark.label} title={mark.label}>
+            <mark.icon size={13} className={mark.tone} />
+          </span>
+        )}
       </div>
 
-      {/* actions — always visible for the row's state */}
-      <div className="flex items-center gap-0.5 shrink-0">
+      {/* Numeric column: fixed width + right-aligned + tabular so the right edge
+          is a true edge. Transferring gets three lines (it earns them); every
+          other state gets two.
+          Hidden only below a 576px pane — a width the 960px minimum window
+          (≈812px pane) never reaches, so at every real size the numbers are
+          present. Stated as @max-xl rather than a min-width so the safe state
+          (visible) is the default if this row is ever rendered outside the
+          pane container. */}
+      <div className="flex @max-xl:hidden flex-col items-end justify-center w-[128px] shrink-0 font-mono tabular-nums leading-tight">
+        {isTransferring ? (
+          <>
+            <span className="text-[13px] font-semibold text-text-primary">{Math.round(pct)}%</span>
+            <span className="text-[10.5px] text-text-secondary mt-0.5">
+              {total > 0 ? fmtTransferred(downloaded, total) : formatBytes(downloaded)}
+            </span>
+            <span className="text-[10.5px] text-text-muted">
+              {fmtSpeed(speed)} · {fmtEta(eta)}
+            </span>
+          </>
+        ) : (
+          <>
+            {isDone
+              // Complete: the total is the fact. No fraction, no "x / x".
+              ? <span className="text-[12px] text-text-secondary">{formatBytes(total || downloaded)}</span>
+              : word && <span className={`text-[11px] ${word.tone}`}>{word.label}</span>}
+            <span className="text-[10.5px] text-text-muted mt-0.5">{meta}</span>
+          </>
+        )}
+      </div>
+
+      {/* Actions — fixed-width slot (never wider than two buttons) so the numeric
+          column above keeps a constant right edge whatever a row's state is.
+          Destructive/secondary actions are revealed on hover AND focus-within,
+          so keyboard users get them without a pointer. */}
+      <div className="flex items-center justify-end gap-0.5 w-[60px] shrink-0">
         {PAUSABLE.has(status) && (
           <IconButton icon={Pause} label="Pause" size={14} onClick={onPause} className="w-7 h-7 rounded" />
         )}
@@ -209,30 +288,68 @@ export const QueueCard = memo(function QueueCard({ task, selected, onToggle, onC
           <IconButton icon={Play} label="Resume" size={14} onClick={onResume} className="w-7 h-7 rounded text-accent" />
         )}
         {isActive && (
-          <IconButton icon={X} label="Cancel" size={14} onClick={onCancel} className="w-7 h-7 rounded" />
+          <IconButton icon={Close} label="Cancel" size={14} onClick={onCancel} className="w-7 h-7 rounded" />
         )}
         {isFailed && (
-          <IconButton icon={RotateCcw} label="Retry" size={14} onClick={onRetry} className="w-7 h-7 rounded text-error hover:bg-error/10" />
+          <IconButton icon={Retry} label="Retry" size={14} onClick={onRetry} className="w-7 h-7 rounded text-error hover:bg-error/10" />
         )}
         {isDone && (
-          <IconButton icon={FolderOpen} label="Show in folder" size={14} onClick={onOpen} className="w-7 h-7 rounded" />
+          <IconButton
+            icon={OpenFolder} label="Show in folder" size={14} onClick={onOpen}
+            className="w-7 h-7 rounded opacity-0 focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-150 motion-reduce:transition-none"
+          />
         )}
         {TERMINAL.has(status) && (
-          <IconButton icon={Trash2} label="Remove" size={14} onClick={onRemove} className="w-7 h-7 rounded" />
+          <IconButton
+            icon={Remove} label="Remove" size={14} onClick={onRemove}
+            className="w-7 h-7 rounded opacity-0 focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-150 motion-reduce:transition-none"
+          />
         )}
       </div>
 
-      {/* 2px progress hairline at the row's base — shared ProgressBar keeps the
-          progressbar ARIA; overridden to a flush 2px trace */}
-      <ProgressBar
-        percent={pct}
-        status={status}
-        label={`${title || 'Download'} progress`}
-        className="absolute bottom-0 left-0 right-0 !h-0.5 !rounded-none"
-      />
+      {/* The progress trace belongs to in-flight rows only — a bar under every
+          finished row was the reason done and live looked the same. */}
+      {inFlight && (
+        <ProgressBar
+          percent={pct}
+          status={status}
+          label={`${title || 'Download'} progress`}
+          className="absolute bottom-0 left-0 right-0 !h-0.5 !rounded-none"
+        />
+      )}
     </motion.div>
   );
 }, (a, b) => a.task === b.task && a.selected === b.selected);
+
+// ── list spine ────────────────────────────────────────────────────────────────
+
+type GroupKey = 'active' | 'attention' | 'done';
+
+const GROUP_LABEL: Record<GroupKey, string> = {
+  active:    'In progress',
+  attention: 'Needs attention',
+  done:      'Completed',
+};
+
+const GROUP_ORDER: GroupKey[] = ['active', 'attention', 'done'];
+
+function groupOf(status: DownloadStatus): GroupKey {
+  if (status === 'failed' || status === 'cancelled') return 'attention';
+  if (status === 'done') return 'done';
+  return 'active';
+}
+
+/** Section header: a sentence-case name, a mono count, and a hairline running to
+ *  the right edge — a spine you can scan, not a tracked-uppercase eyebrow. */
+function GroupHeader({ label, count }: { label: string; count: number }) {
+  return (
+    <div className="flex items-center gap-2.5 px-1 pb-2">
+      <h3 className="text-[12px] font-medium text-text-secondary">{label}</h3>
+      <span className="font-mono text-[10.5px] tabular-nums text-text-muted">{count}</span>
+      <span aria-hidden className="flex-1 h-px bg-border-soft" />
+    </div>
+  );
+}
 
 // ── DownloadsTab ───────────────────────────────────────────────────────────────
 
@@ -265,6 +382,15 @@ export function DownloadsTab() {
   }), [tasks]);
 
   const filtered = useMemo(() => tasks.filter(t => passes(t, filter)), [tasks, filter]);
+
+  // Status is the spine (no timestamps exist to group by day — see file header).
+  // Empty groups are dropped, and headers only appear once there's more than one
+  // group to tell apart.
+  const groups = useMemo(() => {
+    const by: Record<GroupKey, DownloadTask[]> = { active: [], attention: [], done: [] };
+    for (const t of filtered) by[groupOf(t.progress.status)].push(t);
+    return GROUP_ORDER.filter(k => by[k].length > 0).map(k => ({ key: k, tasks: by[k] }));
+  }, [filtered]);
 
   // Select-all is scoped to what's currently visible, not the whole history.
   const allSelected  = filtered.length > 0 && filtered.every(t => selectedIds.has(t.taskId));
@@ -300,7 +426,7 @@ export function DownloadsTab() {
       });
       removeTask(task.taskId);
     } catch {
-      // leave the failed card in place so the user can retry again
+      // leave the failed row in place so the user can retry again
     }
   }
 
@@ -350,11 +476,50 @@ export function DownloadsTab() {
     void window.electronAPI.download.cancelAll();
   }
 
-  return (
-    <div className="flex flex-col h-full min-h-0 w-full max-w-[1080px] mx-auto px-10">
+  function renderRow(task: DownloadTask) {
+    return (
+      <QueueCard
+        key={task.taskId}
+        task={task}
+        selected={selectedIds.has(task.taskId)}
+        onToggle={() => toggleDownloadSelection(task.taskId)}
+        onCancel={() => { void window.electronAPI.download.cancel(task.taskId); }}
+        onPause={() => { void window.electronAPI.download.pause(task.taskId); }}
+        onResume={() => { void window.electronAPI.download.resume(task.taskId); }}
+        onRetry={() => { void handleRetry(task); }}
+        onOpen={() => {
+          if (task.progress.filename) {
+            void revealFile(task.progress.filename, task.title);
+          }
+        }}
+        onRemove={() => removeTask(task.taskId)}
+      />
+    );
+  }
 
-      {/* ── page header ── */}
-      <div className="flex items-end gap-4 pt-10 pb-5 flex-none">
+  return (
+    // The pane is the container, not the viewport: what changes width here is
+    // the content column (viewport minus the 68px rail, minus whatever outer
+    // container App installs), so every rule below is a @container rule.
+    //
+    // WIDTH CEILING — 1440px, centred. A queue row is scanned left-to-right
+    // (title → numbers → actions); past ~1400px the eye has to travel so far
+    // from the title to the right-aligned telemetry that the row stops reading
+    // as one object. The extra width up to that ceiling is spent entirely on
+    // the title, which is the part that truncates today. Nothing else was
+    // added to "earn" a 2560px row: DownloadTask has no timestamp (see the file
+    // header) and the only other fact — the output path — is already one click
+    // away via Show in folder, so a path column would double the row's ink for
+    // a question that is asked rarely.
+    <div className="@container h-full min-h-0 w-full">
+    <div className="flex flex-col h-full min-h-0 w-full max-w-[1440px] mx-auto px-6 @4xl:px-10">
+
+      {/* ── page header ──
+          flex-wrap + the tighter top padding below @4xl (≈964px window, the
+          960 minimum) keep the title and the two actions on one line at the
+          minimum size, and stop "Really cancel 12?" from crushing the title
+          when the confirm expands. */}
+      <div className="flex flex-wrap items-end gap-4 pt-7 @4xl:pt-10 pb-5 flex-none">
         <div>
           <h2 className="font-display text-[32px] font-semibold text-text-primary tracking-[-0.025em] leading-[1.1]">
             Queue
@@ -368,13 +533,13 @@ export function DownloadsTab() {
 
         <div className="ml-auto flex items-center gap-2">
           {counts.done > 0 && (
-            <Button variant="ghost" size="sm" icon={Trash2} onClick={clearCompletedAndPersist}>
+            <Button variant="ghost" size="sm" icon={Remove} onClick={clearCompletedAndPersist}>
               Clear completed
             </Button>
           )}
           {counts.active > 0 && (
             <Button
-              variant="ghost" size="sm" icon={XCircle}
+              variant="ghost" size="sm" icon={Cancel}
               className={confirmCancelAll ? 'text-error border-error/40' : ''}
               onClick={handleCancelAll}
               aria-live="polite"
@@ -385,18 +550,21 @@ export function DownloadsTab() {
         </div>
       </div>
 
-      {/* ── filter chips + select-all ── */}
-      <div className="flex items-center gap-2 pb-3 flex-none">
+      {/* ── filter chips + select-all ──
+          The four chips + select-all measure ~430px, so they never wrap at the
+          960 minimum; flex-wrap is the guard for a localised label, not a
+          layout we design for. */}
+      <div className="flex flex-wrap items-center gap-2 pb-3 flex-none">
         <button
           onClick={() => allSelected ? clearDownloadSelection() : selectAllDownloads(filtered.map(t => t.taskId))}
           className="no-drag grid place-items-center w-6 h-6 ml-[17px] mr-2 text-text-muted hover:text-accent transition-colors"
           aria-label="Toggle select all"
         >
           {allSelected
-            ? <CheckSquare size={15} className="text-accent" />
+            ? <CheckboxChecked size={15} className="text-accent" />
             : someSelected
-            ? <Minus size={15} />
-            : <Square size={15} />}
+            ? <CheckboxMixed size={15} />
+            : <CheckboxEmpty size={15} />}
         </button>
         {(['all', 'active', 'done', 'failed'] as const).map(f => (
           <button
@@ -419,7 +587,10 @@ export function DownloadsTab() {
 
       {/* ── interrupted-downloads decision banner ── */}
       {interrupted.length > 0 && (
-        <div role="status" className="flex items-center gap-3 mb-3 px-4 py-3 rounded-lg border border-warning/30 bg-warning/10 flex-none">
+        // The sentence is flex-1 min-w-0 so it takes the slack, but it can run
+        // to two lines at 960 — wrapping keeps Resume/Discard whole instead of
+        // squeezing them.
+        <div role="status" className="flex flex-wrap items-center gap-3 mb-3 px-4 py-3 rounded-lg border border-warning/30 bg-warning/10 flex-none">
           <Pause size={15} className="text-warning shrink-0" />
           <p className="text-[12.5px] text-text-primary flex-1 min-w-0">
             <b className="font-mono tabular-nums">{interrupted.length}</b>
@@ -428,7 +599,7 @@ export function DownloadsTab() {
           <Button variant="primary" size="sm" icon={Play} onClick={resumeInterrupted}>
             Resume
           </Button>
-          <Button variant="ghost" size="sm" icon={Trash2} onClick={discardInterrupted}>
+          <Button variant="ghost" size="sm" icon={Remove} onClick={discardInterrupted}>
             Discard
           </Button>
         </div>
@@ -436,14 +607,14 @@ export function DownloadsTab() {
 
       {/* ── bulk-action bar (appears with a selection) ── */}
       {selectedIds.size > 0 && (
-        <div className="flex items-center gap-2 pb-3 flex-none">
+        <div className="flex flex-wrap items-center gap-2 pb-3 flex-none">
           <span className="font-mono text-[11px] tabular-nums text-text-secondary mr-1">
             {selectedIds.size} selected
           </span>
-          <Button variant="ghost" size="sm" icon={XCircle} onClick={cancelSelected} disabled={!cancellableSelected}>
+          <Button variant="ghost" size="sm" icon={Cancel} onClick={cancelSelected} disabled={!cancellableSelected}>
             Cancel
           </Button>
-          <Button variant="ghost" size="sm" icon={Trash2} onClick={removeSelected} disabled={!removableSelected}>
+          <Button variant="ghost" size="sm" icon={Remove} onClick={removeSelected} disabled={!removableSelected}>
             Remove
           </Button>
           <button
@@ -458,43 +629,44 @@ export function DownloadsTab() {
       {/* ── row list ── */}
       <div className="flex-1 overflow-y-auto min-h-0 pb-10">
         {tasks.length === 0 ? (
-          /* empty state */
-          <div className="flex flex-col items-center justify-center h-56 gap-3 text-center select-none">
-            <Download size={28} strokeWidth={1.5} className="text-text-muted" />
-            <p className="text-text-secondary font-medium">No downloads yet</p>
-            <p className="text-[13px] text-text-muted max-w-[30ch] leading-relaxed">
-              Paste a link on any source tab and hit Download.
+          // Nothing has ever been queued — the only state that should teach.
+          <div className="flex flex-col items-center justify-center h-64 gap-3 text-center select-none">
+            <Download size={28} weight="thin" className="text-text-muted" />
+            <p className="text-[14px] font-medium text-text-primary">Your queue is empty</p>
+            <p className="text-[12.5px] text-text-secondary max-w-[34ch] leading-relaxed">
+              Paste a link on any source tab and hit Download — everything you
+              grab lands here, with live speed and progress.
             </p>
           </div>
         ) : filtered.length === 0 ? (
-          <div className="py-10 text-center text-[13px] text-text-muted">
-            No {filter} downloads
+          // A filter that matches nothing is a different problem: there IS
+          // history, it's just hidden. Offer the way back instead of a lesson.
+          <div className="flex flex-col items-center justify-center h-48 gap-2.5 text-center select-none">
+            <p className="text-[13px] text-text-secondary">
+              {filter === 'active' ? 'Nothing is downloading right now.'
+                : filter === 'done' ? 'No finished downloads yet.'
+                : 'No failed or cancelled downloads — all clear.'}
+            </p>
+            <Button variant="ghost" size="sm" onClick={() => setFilter('all')}>
+              Show all {counts.all}
+            </Button>
           </div>
         ) : (
-          <div className="rounded-lg bg-bg-surface border border-border-soft shadow-sm overflow-hidden divide-y divide-border-soft">
-            <AnimatePresence initial={false}>
-              {filtered.map(task => (
-                <QueueCard
-                  key={task.taskId}
-                  task={task}
-                  selected={selectedIds.has(task.taskId)}
-                  onToggle={() => toggleDownloadSelection(task.taskId)}
-                  onCancel={() => { void window.electronAPI.download.cancel(task.taskId); }}
-                  onPause={() => { void window.electronAPI.download.pause(task.taskId); }}
-                  onResume={() => { void window.electronAPI.download.resume(task.taskId); }}
-                  onRetry={() => { void handleRetry(task); }}
-                  onOpen={() => {
-                    if (task.progress.filename) {
-                      void window.electronAPI.shell.showItemInFolder(task.progress.filename);
-                    }
-                  }}
-                  onRemove={() => removeTask(task.taskId)}
-                />
-              ))}
-            </AnimatePresence>
+          <div className="flex flex-col gap-5">
+            {groups.map(g => (
+              <section key={g.key}>
+                {groups.length > 1 && <GroupHeader label={GROUP_LABEL[g.key]} count={g.tasks.length} />}
+                <div className="rounded-lg bg-bg-surface border border-border-soft shadow-sm overflow-hidden divide-y divide-border-soft">
+                  <AnimatePresence initial={false}>
+                    {g.tasks.map(renderRow)}
+                  </AnimatePresence>
+                </div>
+              </section>
+            ))}
           </div>
         )}
       </div>
+    </div>
     </div>
   );
 }

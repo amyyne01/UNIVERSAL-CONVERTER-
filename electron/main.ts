@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, Notification } from 'electron';
+import { app, BrowserWindow, Menu, clipboard, Notification } from 'electron';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { createWindow, getMainWindow } from './window.js';
@@ -7,12 +7,13 @@ import { ConfigManager } from './config.js';
 import { Downloader } from './downloader.js';
 import { SpotifyHandler } from './spotify.js';
 import { LicenseManager } from './license.js';
+import { StatsStore, statsFilePath } from './stats.js';
 import { loadSecrets, type Secrets } from './secrets.js';
 import { detectUrl } from './url-detector.js';
 import {
   setDownloader, createTask, enqueueTask,
   getRecentDownloads, onQueueChange, pauseAllDownloads, resumeAllDownloads,
-  initHistory, flushHistory, hasUnfinishedWork, onDownloadFailure,
+  initHistory, flushHistory, hasUnfinishedWork, onDownloadFailure, onDownloadCompleted,
 } from './queue.js';
 import { initTray } from './tray.js';
 import { registerGlobalHotkey, unregisterGlobalHotkey, unregisterAllHotkeys } from './hotkey.js';
@@ -190,10 +191,20 @@ function syncServices(secrets: Secrets): void {
 }
 
 app.whenReady().then(() => {
+  // The window is frameless with its own title bar, so Electron's default menu is
+  // invisible — but its accelerators (inspector, reload, force-reload, zoom) are
+  // still live. Removing it entirely is what makes this behave like an app rather
+  // than a browser wearing one.
+  Menu.setApplicationMenu(null);
   if (app.isPackaged) installContentSecurityPolicy();
   config = new ConfigManager();
   // Restore download history; interrupted tasks come back paused + resumable.
   initHistory(path.join(app.getPath('userData'), 'downloads-history.json'));
+  // Monthly counters, kept outside the (capped, evicting) history so the totals
+  // can never shrink while the user keeps downloading.
+  const stats = new StatsStore();
+  stats.init(statsFilePath(app.getPath('userData')));
+  onDownloadCompleted((task, filepaths) => stats.record(task.source, filepaths, task.progress.total));
   const downloader = new Downloader();
   setDownloader(downloader);
   const spotify = new SpotifyHandler();
@@ -210,7 +221,7 @@ app.whenReady().then(() => {
     isAutoUpdateEnabled: () => config?.get('autoUpdateEngine') ?? true,
   });
   onDownloadFailure((error) => ytdlp.handleDownloadFailure(error));
-  registerIpcHandlers(config, downloader, spotify, license, updater, ytdlp);
+  registerIpcHandlers(config, downloader, spotify, license, updater, ytdlp, stats);
 
   const win = createWindow();
   loadApp(win);

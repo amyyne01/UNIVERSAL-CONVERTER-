@@ -9,8 +9,8 @@
 import { useState, useRef, useEffect, useCallback, type KeyboardEvent } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import {
-  X, Check, KeyRound, Clipboard, AlertCircle, MessageSquare, Sparkles, ChevronDown,
-} from 'lucide-react';
+  Close, Check, LicenseKey, Paste, Alert, Support, Premium, ChevronDown,
+} from '@/components/ui/icons';
 import { Button } from '@/components/ui/Button';
 import { PLAN_FEATURES } from '@/constants';
 import { useAppStore } from '@/store';
@@ -123,6 +123,10 @@ export function UpgradeSheet({ onClose }: UpgradeSheetProps) {
         if (e.target === e.currentTarget) onClose();
       }}
     >
+      {/* @container: the two cards decide on the sheet's own width, which is capped
+          at 820 and so never matches the window. On a 640px-tall window 90vh is
+          576px and the sheet scrolls internally — the short-height variants below
+          buy back enough of that for the price and the CTA. */}
       <motion.div
         ref={dialogRef}
         role="dialog"
@@ -133,7 +137,7 @@ export function UpgradeSheet({ onClose }: UpgradeSheetProps) {
         initial={reduced ? { opacity: 0 } : { opacity: 0, y: 16, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
-        className="relative w-full max-w-[820px] max-h-[90vh] overflow-y-auto rounded-xl border border-border outline-none"
+        className="@container relative w-full max-w-[820px] max-h-[90vh] overflow-y-auto overscroll-contain rounded-xl border border-border outline-none"
         style={{
           background: 'var(--color-bg-secondary)',
           boxShadow: 'var(--shadow-lg)',
@@ -147,10 +151,10 @@ export function UpgradeSheet({ onClose }: UpgradeSheetProps) {
           className="absolute right-4 top-4 grid place-items-center rounded-md text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors"
           style={{ width: 32, height: 32 }}
         >
-          <X size={16} />
+          <Close size={16} />
         </button>
 
-        <header className="mb-7 pr-10">
+        <header className="mb-7 [@media(max-height:720px)]:mb-4 pr-10">
           <h2 className="font-display text-2xl font-semibold tracking-tight text-text-primary text-balance">
             {isPremium ? 'You’re on Premium' : 'One purchase. Every limit gone.'}
           </h2>
@@ -161,8 +165,13 @@ export function UpgradeSheet({ onClose }: UpgradeSheetProps) {
           </p>
         </header>
 
-        <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] items-start">
+        {/* Side by side while the sheet has ~672px of content — true at the 960px
+            minimum window (759px of card room). Narrower than that they stack, and
+            the plan the user is actually on comes first: their own card is the
+            anchor, the other one is the comparison. */}
+        <div className="grid gap-4 @2xl:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] items-start">
           <PlanCard
+            className={`${isPremium ? 'order-2' : 'order-1'} @2xl:order-none`}
             title="Basic"
             blurb="What you have right now."
             price="Free"
@@ -174,6 +183,7 @@ export function UpgradeSheet({ onClose }: UpgradeSheetProps) {
 
           {/* Premium — the committed card: accent frame, badge, price, the CTA. */}
           <PlanCard
+            className={`${isPremium ? 'order-1' : 'order-2'} @2xl:order-none`}
             title="Premium"
             blurb="Everything, on this machine, forever."
             price={PRICE}
@@ -211,7 +221,7 @@ export function UpgradeSheet({ onClose }: UpgradeSheetProps) {
               </motion.div>
             ) : (
               <div className="flex flex-col gap-2.5">
-                <Button variant="primary" size="md" icon={Sparkles} onClick={openSupport} className="w-full">
+                <Button variant="primary" size="md" icon={Premium} onClick={openSupport} className="w-full">
                   Get a key — {PRICE}
                 </Button>
 
@@ -243,7 +253,7 @@ export function UpgradeSheet({ onClose }: UpgradeSheetProps) {
                         className="field-shell flex items-center gap-2 rounded-lg border border-transparent bg-bg-tertiary transition-[border-color,box-shadow] mt-1"
                         style={{ height: 46, paddingLeft: 12, paddingRight: 6 }}
                       >
-                        <KeyRound size={14} className="text-text-muted shrink-0" />
+                        <LicenseKey size={14} className="text-text-muted shrink-0" />
                         <input
                           ref={inputRef}
                           type="text"
@@ -270,7 +280,7 @@ export function UpgradeSheet({ onClose }: UpgradeSheetProps) {
                           className="shrink-0 grid place-items-center rounded-md border border-border-soft bg-bg-surface text-text-muted hover:border-accent hover:text-text-primary transition-[border-color,color] disabled:opacity-40"
                           style={{ width: 32, height: 32 }}
                         >
-                          <Clipboard size={13} />
+                          <Paste size={13} />
                         </button>
                       </div>
 
@@ -291,7 +301,7 @@ export function UpgradeSheet({ onClose }: UpgradeSheetProps) {
                             borderColor: 'color-mix(in oklab, var(--color-error) 32%, transparent)',
                           }}
                         >
-                          <AlertCircle size={13} className="shrink-0 mt-0.5" />
+                          <Alert size={13} className="shrink-0 mt-0.5" />
                           <span>{errorMsg}</span>
                         </div>
                       )}
@@ -320,7 +330,7 @@ export function UpgradeSheet({ onClose }: UpgradeSheetProps) {
             onClick={openSupport}
             className="inline-flex items-center gap-1.5 text-text-muted text-xs hover:text-text-secondary transition-colors"
           >
-            <MessageSquare size={13} />
+            <Support size={13} />
             Questions? Ask on Discord
           </button>
           <div className="flex-1" />
@@ -343,17 +353,19 @@ interface PlanCardProps {
   active: boolean;
   featured?: boolean;
   delay: number;
+  /** Layout only — the stacking order at narrow sheet widths. */
+  className?: string;
   children?: React.ReactNode;
 }
 
-function PlanCard({ title, blurb, price, priceNote, values, active, featured, delay, children }: PlanCardProps) {
+function PlanCard({ title, blurb, price, priceNote, values, active, featured, delay, className = '', children }: PlanCardProps) {
   return (
     <motion.section
       aria-label={`${title} plan`}
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.34, delay, ease: [0.22, 1, 0.36, 1] }}
-      className="rounded-lg border overflow-hidden"
+      className={`rounded-lg border overflow-hidden ${className}`}
       style={{
         borderColor: featured ? 'color-mix(in oklab, var(--color-accent) 42%, transparent)' : 'var(--color-border-soft)',
         background: featured ? 'var(--color-bg-surface)' : 'var(--color-bg-primary)',
@@ -396,17 +408,21 @@ function PlanCard({ title, blurb, price, priceNote, values, active, featured, de
         <h3 className="font-display text-lg font-semibold text-text-primary leading-none">{title}</h3>
         <p className="text-text-muted text-xs mt-1.5">{blurb}</p>
 
-        <div className="flex items-baseline gap-2.5 mt-5 mb-5">
+        {/* Short window: the price and the CTA under it are what has to stay in
+            view, so the vertical rhythm gives way before they do. */}
+        <div className="flex items-baseline gap-2.5 mt-5 mb-5 [@media(max-height:720px)]:mt-3 [@media(max-height:720px)]:mb-3">
           <span
-            className="font-display font-semibold tabular-nums text-text-primary"
-            style={{ fontSize: featured ? 44 : 34, letterSpacing: '-0.03em', lineHeight: 1 }}
+            className={`font-display font-semibold tabular-nums text-text-primary ${
+              featured ? 'text-[44px] [@media(max-height:720px)]:text-[34px]' : 'text-[34px] [@media(max-height:720px)]:text-[28px]'
+            }`}
+            style={{ letterSpacing: '-0.03em', lineHeight: 1 }}
           >
             {price}
           </span>
           <span className="text-text-muted text-xs leading-tight max-w-[10ch]">{priceNote}</span>
         </div>
 
-        <ul className="flex flex-col gap-2.5 mb-5">
+        <ul className="flex flex-col gap-2.5 mb-5 [@media(max-height:720px)]:gap-1.5 [@media(max-height:720px)]:mb-3">
           {PLAN_FEATURES.map((f, i) => {
             const Icon = f.icon;
             return (

@@ -1,5 +1,5 @@
 import { type SelectHTMLAttributes } from 'react';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown } from '@/components/ui/icons';
 
 export interface SelectOption {
   value: string;

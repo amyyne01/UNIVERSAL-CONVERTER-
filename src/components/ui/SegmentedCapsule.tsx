@@ -1,11 +1,11 @@
 import { useId } from 'react';
 import { motion } from 'framer-motion';
-import type { LucideIcon } from 'lucide-react';
+import type { AppIcon } from '@/components/ui/icons';
 
 export interface SegmentOption<T extends string> {
   value: T;
   label: string;
-  icon?: LucideIcon;
+  icon?: AppIcon;
 }
 
 export interface SegmentedCapsuleProps<T extends string> {

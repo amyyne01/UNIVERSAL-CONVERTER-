@@ -69,6 +69,18 @@ describe('createTask', () => {
     expect(t1.progress.status).toBe('queued');
   });
 
+  // Without a stamp the Downloads list can only group by status, and "when did I
+  // get this?" is unanswerable — including for anything built on the history later.
+  it('stamps createdAt, and keeps the original stamp on a restored task', () => {
+    const fresh = Q.createTask({ url: 'https://youtube.com/watch?v=1' });
+    expect(typeof fresh.createdAt).toBe('number');
+    expect(fresh.createdAt).toBeGreaterThan(0);
+    expect(fresh.completedAt).toBeUndefined();
+
+    const restored = Q.createTask({ url: 'https://youtube.com/watch?v=1', createdAt: 1_700_000_000_000 });
+    expect(restored.createdAt).toBe(1_700_000_000_000);
+  });
+
   it('fills sensible default fallbacks', () => {
     const task = Q.createTask({ url: 'https://test.com' });
     expect(task.format).toBe('mp3');
@@ -230,6 +242,9 @@ describe('cancelTask (all three branches)', () => {
     Q.enqueueTask(b);                                    // B waiting
     expect(Q.cancelTask(b.taskId)).toBe(true);
     expect(statusOf(b.taskId)).toBe('cancelled');
+    // Terminal states are stamped centrally in transition(), so cancelling counts
+    // as settled just like finishing does.
+    expect(typeof Q.getAllTasks().find((t) => t.taskId === b.taskId)?.completedAt).toBe('number');
   });
 
   it('cancels the active job, kills the process, and frees the slot', () => {

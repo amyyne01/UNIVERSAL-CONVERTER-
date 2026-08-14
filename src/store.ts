@@ -54,10 +54,12 @@ export interface AppState {
   /** The upgrade sheet (pricing cards + key entry). */
   upgradeOpen: boolean;
   setUpgradeOpen: (v: boolean) => void;
-  /** Highlighted popup shown the moment a basic install touches a premium control. */
-  premiumNudge: string | null;
+  /** The one transient popup. Two tones, because "you found a ceiling" and
+   *  "that didn't work" need different colour and urgency but identical mechanics. */
+  notice: { message: string; tone: 'premium' | 'error' } | null;
   showPremiumNudge: (reason: string) => void;
-  dismissPremiumNudge: () => void;
+  showError: (message: string) => void;
+  dismissNotice: () => void;
 }
 
 export const useAppStore = create<AppState>()((set, get) => ({
@@ -155,11 +157,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
   isActivated: false,
   setLicense: ({ activated, plan }) => set({ isActivated: activated, plan }),
   upgradeOpen: false,
-  // Opening the sheet clears any nudge — the sheet answers what the nudge asked.
-  setUpgradeOpen: (v) => set({ upgradeOpen: v, ...(v ? { premiumNudge: null } : {}) }),
-  premiumNudge: null,
-  showPremiumNudge: (reason) => set({ premiumNudge: reason }),
-  dismissPremiumNudge: () => set({ premiumNudge: null }),
+  // Opening the sheet clears any notice — the sheet answers what the nudge asked.
+  setUpgradeOpen: (v) => set({ upgradeOpen: v, ...(v ? { notice: null } : {}) }),
+  notice: null,
+  showPremiumNudge: (message) => set({ notice: { message, tone: 'premium' } }),
+  showError: (message) => set({ notice: { message, tone: 'error' } }),
+  dismissNotice: () => set({ notice: null }),
 }));
 
 /** One place that answers "may this install use premium features?". */

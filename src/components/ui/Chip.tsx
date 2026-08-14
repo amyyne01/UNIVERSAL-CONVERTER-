@@ -1,13 +1,13 @@
 import type { ReactNode } from 'react';
 import { motion, type HTMLMotionProps } from 'framer-motion';
-import type { LucideIcon } from 'lucide-react';
+import type { AppIcon } from '@/components/ui/icons';
 
 export interface ChipProps extends Omit<HTMLMotionProps<'button'>, 'children'> {
   selected?: boolean;
   /** Small mono suffix, e.g. a bitrate or "lossless". */
   tag?: string;
   /** Leading glyph — used for the lock on tier-gated options. */
-  icon?: LucideIcon;
+  icon?: AppIcon;
   children?: ReactNode;
 }
 

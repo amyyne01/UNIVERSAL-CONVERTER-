@@ -1,5 +1,6 @@
 import { ipcMain, dialog, shell } from 'electron';
 import type { IpcMainInvokeEvent } from 'electron';
+import { existsSync } from 'node:fs';
 import { getMainWindow } from './window.js';
 import { detectUrl } from './url-detector.js';
 import { confineToRoot, secure } from './security.js';
@@ -9,11 +10,12 @@ import {
 } from './queue.js';
 import { ConfigManager, defaultConfig } from './config.js';
 import type { Downloader } from './downloader.js';
+import type { StatsStore } from './stats.js';
 import type { SpotifyHandler } from './spotify.js';
 import type { LicenseManager } from './license.js';
 import type { Updater } from './updater.js';
 import type { YtdlpUpdater } from './ytdlp-updater.js';
-import type { AppConfig, DownloadTask, Track, VideoQuality } from '../shared/types.js';
+import type { AppConfig, DownloadTask, RevealResult, Track, VideoQuality } from '../shared/types.js';
 import {
   SOURCE_PLATFORMS, VIDEO_QUALITIES, BASIC_LIMITS,
   clampAudioQuality, clampFormat, clampVideoQuality,
@@ -58,7 +60,7 @@ const RATE_DEFAULT = 120;
 const RATE_URL = 60;
 const RATE_DOWNLOAD = 10;
 
-export function registerIpcHandlers(config: ConfigManager, downloader: Downloader, spotify: SpotifyHandler, license: LicenseManager, updater: Updater, ytdlp: YtdlpUpdater): void {
+export function registerIpcHandlers(config: ConfigManager, downloader: Downloader, spotify: SpotifyHandler, license: LicenseManager, updater: Updater, ytdlp: YtdlpUpdater, stats: StatsStore): void {
   // Route EVERY channel through secure(): sender attestation + a per-channel rate
   // budget run before the handler. Additive — no channel's args/returns change.
   const handle = (
@@ -205,11 +207,23 @@ export function registerIpcHandlers(config: ConfigManager, downloader: Downloade
   // ── shell:* ─────────────────────────────────────────────────────────────────
   // Reveal a downloaded file. The path is CONFINED to the configured output dir —
   // a compromised renderer must not be able to reveal/launch arbitrary files (§15).
-  handle('shell:showItemInFolder', RATE_DEFAULT, (_e, p: unknown) => {
-    const abs = confineToRoot(str(p, MAX_PATH), config.get('outputDir'));
+  // Returns whether the file was actually there. A download recorded months ago
+  // may have been moved, renamed or deleted outside the app — showItemInFolder on
+  // a missing path opens nothing and reports nothing, so the click just dies. The
+  // renderer needs the answer to say so out loud.
+  handle('shell:showItemInFolder', RATE_DEFAULT, (_e, p: unknown): RevealResult => {
+    const raw = str(p, MAX_PATH);
+    if (!raw.trim()) return { ok: false, reason: 'no-path' };
+    const abs = confineToRoot(raw, config.get('outputDir'));
     if (!abs) throw new Error('Invalid input: path escapes the output directory');
+    if (!existsSync(abs)) return { ok: false, reason: 'missing' };
     shell.showItemInFolder(abs);
+    return { ok: true };
   });
+
+  // ── stats:* ─────────────────────────────────────────────────────────────────
+  // Read-only: the renderer can never write a counter, only ask what it says.
+  handle('stats:get', RATE_DEFAULT, () => stats.get());
 
   // ── license:* / app:* (LICENSE-ACTIVATION-SYSTEM.md §7) ──────────────────────
   // Renderer only ever sees { activated } / ActivationResult — secrets stay in main.

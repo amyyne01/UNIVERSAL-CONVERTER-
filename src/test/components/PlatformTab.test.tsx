@@ -104,6 +104,27 @@ describe('PlatformTab', () => {
     expect(req.url).toBe('ytsearch:Artist Name - Song Name');
   });
 
+  // "Nothing matched" and "the fetch broke" are different outcomes: only the
+  // second is an alert, and only the second offers a retry.
+  it('separates an empty result set from a failed fetch', async () => {
+    const user = userEvent.setup();
+    (window.electronAPI.youtube.search as any).mockResolvedValue([]);
+
+    render(<PlatformTab platform="youtube" />);
+    await user.type(screen.getByPlaceholderText(/paste a youtube link/i), 'nothing');
+    await user.click(screen.getByRole('button', { name: /fetch/i }));
+
+    expect(await screen.findByText(/no results for/i)).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).toBeNull();
+
+    (window.electronAPI.youtube.search as any).mockRejectedValue(new Error('offline'));
+    await user.click(screen.getByRole('button', { name: /fetch/i }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/something went wrong/i);
+    expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
+  });
+
   it('disables the URL input while a fetch is in flight, preventing a second submit (B19)', async () => {
     let resolveDetect: (v: any) => void;
     (window.electronAPI.url.detect as any).mockReturnValue(new Promise((r) => { resolveDetect = r; }));

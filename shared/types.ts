@@ -101,6 +101,11 @@ export interface DownloadTask {
   /** True when this task was cut off by an app exit and restored on boot —
    *  the Downloads tab asks the user to resume or discard it. */
   interrupted?: boolean;
+  /** Epoch ms when the task was created / when it reached a terminal state.
+   *  Optional because history persisted before these existed has neither —
+   *  every consumer must tolerate their absence rather than showing "1970". */
+  createdAt?: number;
+  completedAt?: number;
   /** Scraped Spotify track (Spotify tasks only) — drives the ytsearch query + tagging (§4). */
   track?: Track;
   /** Spotify bridge (§11): scorer's confidence in the chosen ytsearch match (0..1). */
@@ -248,6 +253,32 @@ export function clampFormat(format: string, plan: Plan): string {
 
 export function clampAudioQuality(quality: string, plan: Plan): string {
   return plan === 'premium' || quality !== 'lossless' ? quality : '320';
+}
+
+// ── Download statistics ───────────────────────────────────────────────────────
+// Counted per calendar month in the main process, NOT derived from the download
+// history — that history is capped and evicts, so a total built on it would start
+// shrinking as the user kept downloading. `files` counts files actually written
+// (a collection writes many), and byPlatform is by file count too, so one large
+// video can't distort the split.
+export interface MonthBucket {
+  /** 'YYYY-MM', local time. */
+  month: string;
+  files: number;
+  bytes: number;
+  byPlatform: Partial<Record<SourcePlatform, number>>;
+}
+
+export interface DownloadStats {
+  current: MonthBucket;
+  /** The last month with activity, for the comparison — null on a first run. */
+  previous: MonthBucket | null;
+}
+
+/** Outcome of revealing a downloaded file — 'missing' means it is no longer on disk. */
+export interface RevealResult {
+  ok: boolean;
+  reason?: 'missing' | 'no-path';
 }
 
 export interface ActivationResult {

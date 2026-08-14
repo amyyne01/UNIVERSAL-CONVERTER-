@@ -1,4 +1,4 @@
-import { Loader2 } from 'lucide-react';
+import { Loading } from '@/components/ui/icons';
 
 export interface SpinnerProps {
   size?: number;
@@ -6,5 +6,5 @@ export interface SpinnerProps {
 }
 
 export function Spinner({ size = 16, className = '' }: SpinnerProps) {
-  return <Loader2 size={size} strokeWidth={1.5} className={`animate-spin ${className}`} />;
+  return <Loading size={size} weight="thin" className={`animate-spin ${className}`} />;
 }

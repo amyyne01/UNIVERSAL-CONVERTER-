@@ -21,8 +21,25 @@ export function createWindow(): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      // A shipped build is an application, not a web page: no inspector, no
+      // console, nothing to poke the renderer with. Development keeps them.
+      devTools: !app.isPackaged,
     },
   });
+
+  // devTools:false stops the API, but the accelerators come from Electron's
+  // default menu and fire before it — so swallow them at the input layer too.
+  // Without this, F12 in a packaged build still opens nothing but is handled,
+  // which is the kind of half-state that invites someone to keep trying.
+  if (app.isPackaged) {
+    mainWindow.webContents.on('before-input-event', (event, input) => {
+      const key = input.key.toLowerCase();
+      const inspector =
+        key === 'f12' ||
+        (input.control && input.shift && (key === 'i' || key === 'j' || key === 'c'));
+      if (inspector) event.preventDefault();
+    });
+  }
 
   // Harden navigation: the renderer is a fixed SPA that never opens windows or
   // navigates off its own origin. Deny both so an injected/compromised page can't

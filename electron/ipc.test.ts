@@ -1,6 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock electron + the modules ipc.ts pulls in at runtime (same specifiers it imports).
+// Only existsSync is stubbed — config.ts imports node:fs's DEFAULT export, so a
+// wholesale replacement breaks the module for everything else in the graph.
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>();
+  const existsSync = vi.fn(() => true);
+  return { ...actual, existsSync, default: { ...actual, existsSync } };
+});
+
 vi.mock('electron', () => ({
   // `app` is read by secure()/assertTrustedSender via security.ts (dev branch → no
   // getAppPath call, but stub it anyway). isPackaged:false picks the Vite-origin path.
@@ -43,6 +51,7 @@ vi.mock('./queue.js', () => ({
 
 import { registerIpcHandlers } from './ipc';
 import { ipcMain, dialog, shell } from 'electron';
+import { existsSync } from 'node:fs';
 
 describe('registerIpcHandlers', () => {
   let config: any;
@@ -366,8 +375,24 @@ describe('registerIpcHandlers', () => {
   });
 
   it('shell:showItemInFolder reveals a file confined to the output dir', () => {
-    handlers.get('shell:showItemInFolder')!(evt(), 'C:\\Downloads\\song.mp3');
+    vi.mocked(existsSync).mockReturnValueOnce(true);
+    const result = handlers.get('shell:showItemInFolder')!(evt(), 'C:\\Downloads\\song.mp3');
     expect(shell.showItemInFolder).toHaveBeenCalledWith('C:\\Downloads\\song.mp3');
+    expect(result).toEqual({ ok: true });
+  });
+
+  // A file recorded weeks ago may be gone. showItemInFolder on a missing path
+  // opens nothing and reports nothing, so the renderer needs the answer to say so.
+  it('shell:showItemInFolder reports a missing file instead of silently doing nothing', () => {
+    vi.mocked(existsSync).mockReturnValueOnce(false);
+    const result = handlers.get('shell:showItemInFolder')!(evt(), 'C:\\Downloads\\gone.mp3');
+    expect(shell.showItemInFolder).not.toHaveBeenCalled();
+    expect(result).toEqual({ ok: false, reason: 'missing' });
+  });
+
+  it('shell:showItemInFolder reports an empty path without touching the shell', () => {
+    expect(handlers.get('shell:showItemInFolder')!(evt(), '   ')).toEqual({ ok: false, reason: 'no-path' });
+    expect(shell.showItemInFolder).not.toHaveBeenCalled();
   });
 
   it('shell:showItemInFolder rejects a path escaping the output dir', () => {

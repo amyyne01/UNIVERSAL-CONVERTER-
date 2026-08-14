@@ -1,4 +1,4 @@
-import { Minus, Square, Copy, X, Search } from 'lucide-react';
+import { WindowMinimize, WindowMaximize, WindowRestore, Close, Search } from '@/components/ui/icons';
 import { useAppStore } from '@/store';
 // 64px variant — the full 4000px icon.png is 2.5 MB and ships for tray/installer only.
 import iconUrl from '../../assets/icon-64.png';
@@ -47,17 +47,17 @@ export default function WindowTitleBar() {
       {/* Right — window controls */}
       <div className="no-drag flex">
         <button onClick={() => window.electronAPI.window.minimize()} aria-label="Minimize" className={ctrl}>
-          <Minus size={15} />
+          <WindowMinimize size={15} />
         </button>
         <button onClick={onMaximize} aria-label={isMax ? 'Restore' : 'Maximize'} className={ctrl}>
-          {isMax ? <Copy size={12} /> : <Square size={12} />}
+          {isMax ? <WindowRestore size={12} /> : <WindowMaximize size={12} />}
         </button>
         <button
           onClick={() => window.electronAPI.window.close()}
           aria-label="Close"
           className="grid place-items-center w-11 h-11 text-text-muted hover:text-text-primary hover:bg-error transition-colors"
         >
-          <X size={15} />
+          <Close size={15} />
         </button>
       </div>
     </header>

@@ -7,7 +7,11 @@ dist-electron/
 dev-release/
 release/
 
-# Secrets — NEVER commit (only the template is tracked)
+# Secrets — NEVER commit. Both formats, everywhere they can land.
+.env
+.env.*
+*.env
+config/.env
 config/secrets.json
 
 # Logs & OS cruft
@@ -21,6 +25,8 @@ graphify-out/
 .claude/
 coverage/
 .shot.mjs
+.shots.mjs
+screenshots/responsive-*.png
 
 # Entitlement/activation layer — never published. The app builds locally with
 # these present; they are deliberately absent from the public tree.

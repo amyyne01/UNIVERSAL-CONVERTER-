@@ -25,6 +25,51 @@ const PREMIUM_VIDEO_VALUES = VIDEO_QUALITIES.filter((q) => isPremiumVideoQuality
 const PREMIUM_FORMAT_VALUES = AUDIO_FORMATS.filter((f) => isPremiumFormat(f.value)).map((f) => f.value);
 const NONE: readonly string[] = [];
 
+// What a locked control says. One home for all of it, because the same sentence
+// was being retyped across four files and had already started to drift.
+//
+// ONE shape, every time: "<thing> is a Premium feature." The user is mid-task and
+// did not come here to read; they need to know instantly that they hit a paywall
+// and where to go. Explaining bitrates or pixel counts makes them decode a
+// sentence to learn something they already understood from the lock icon.
+// The detail belongs in the sheet, next to the price — not in a toast.
+// Two shapes, because there are two kinds of ceiling. A LOCKED capability is
+// binary — the control was never yours, so it just says so. A COUNTED limit is
+// one you were already using and have now run out of, so it names the number you
+// hit; "why did only 5 of my 8 links queue?" has to be answerable on the spot.
+export const premiumCopy = {
+  losslessFormat: (label: string) => `${label} is a Premium feature.`,
+  losslessQuality: () => 'Lossless audio is a Premium feature.',
+  videoQuality: (quality: string) => `${quality} video is a Premium feature.`,
+  scheduler: () => 'Scheduled downloads are a Premium feature.',
+  batch: () =>
+    `Free limit reached — ${BASIC_LIMITS.maxBatchLinks} links at a time. Upgrade for unlimited.`,
+  collection: () =>
+    `Free limit reached — ${BASIC_LIMITS.maxCollectionTracks} tracks per playlist. Upgrade for unlimited.`,
+} as const;
+
+// What Basic GIVES you, stated where the work happens.
+//
+// The nudges above only fire when someone hits a ceiling, which means the tier
+// only ever speaks to a user at the moment it says no. That teaches "the free
+// version is the crippled one". These lines are the other half: on each surface,
+// a quiet statement of what is included at no cost — phrased as a capability, not
+// as a limit. "Free: video up to 1080p" is the same fact as "Basic caps you at
+// 1080p" and lands in the opposite place. A user who feels well-treated by the
+// free tier is the one who believes Premium is worth paying for; a user who feels
+// nickel-and-dimed just resents the lock.
+//
+// Numbers come from BASIC_LIMITS, so these can never promise a ceiling the engine
+// does not actually apply.
+export const basicCopy = {
+  video: `Free: video up to ${BASIC_LIMITS.maxVideoQuality}`,
+  audio: 'Free: MP3, AAC, M4A, OGG and Opus, up to 320 kbps',
+  batch: `Free: ${BASIC_LIMITS.maxBatchLinks} links at a time`,
+  collection: `Free: the first ${BASIC_LIMITS.maxCollectionTracks} tracks of any playlist`,
+  /** The full one-line summary, for the plan card in Settings. */
+  summary: `Included free: ${BASIC_LIMITS.maxVideoQuality} video · 320 kbps audio · ${BASIC_LIMITS.maxBatchLinks}-link batches · ${BASIC_LIMITS.maxCollectionTracks} tracks per playlist`,
+} as const;
+
 export interface TierLocks {
   isPremium: boolean;
   /** Opens the full upgrade sheet (pricing cards). */

@@ -54,6 +54,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   shell: {
     showItemInFolder: (path) => ipcRenderer.invoke('shell:showItemInFolder', path),
   },
+  stats: {
+    get: () => ipcRenderer.invoke('stats:get'),
+  },
   license: {
     check: () => ipcRenderer.invoke('license:check'),
     activate: (key) => ipcRenderer.invoke('license:activate', key),

@@ -1,8 +1,8 @@
 import { motion, type HTMLMotionProps } from 'framer-motion';
-import type { LucideIcon } from 'lucide-react';
+import type { AppIcon } from '@/components/ui/icons';
 
 export interface IconButtonProps extends HTMLMotionProps<'button'> {
-  icon: LucideIcon;
+  icon: AppIcon;
   label: string;
   size?: number;
 }

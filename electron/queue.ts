@@ -115,6 +115,13 @@ function recordHistory(task: DownloadTask): void {
   // path if the file ever gets heavy: persist terminal rows trimmed, not dropped.
 }
 
+/** Notified when a download truly completes, with every file the engine wrote.
+ *  Injected (rather than imported) so the queue owns no statistics logic. */
+let onCompleted: ((task: DownloadTask, filepaths: string[]) => void) | null = null;
+export function onDownloadCompleted(cb: (task: DownloadTask, filepaths: string[]) => void): void {
+  onCompleted = cb;
+}
+
 export function setDownloader(d: Downloader): void {
   downloader = d;
 }
@@ -139,6 +146,10 @@ export function createTask(partial: Partial<DownloadTask>): DownloadTask {
     thumbnailUrl: partial.thumbnailUrl ?? '',
     duration: partial.duration ?? 0,
     uploader: partial.uploader ?? '',
+    // Stamped here so it survives into the persisted history: without it the
+    // Downloads list can only ever group by status, and "when did I get this?"
+    // is unanswerable. A restored task keeps the stamp it was created with.
+    createdAt: partial.createdAt ?? Date.now(),
     progress: {
       status: 'queued', percent: 0, speed: 0, eta: 0,
       downloaded: 0, total: 0, filename: '', error: '',
@@ -335,7 +346,7 @@ function processNextQueueItem(): void {
       task,
       task.track,
       (p) => handleProgress(task, p),
-      (t, filepath) => handleDone(t, filepath),
+      (t, filepath, filepaths) => handleDone(t, filepath, filepaths),
       (t, error) => handleError(t, error),
     );
   } catch (e) {
@@ -355,7 +366,7 @@ function handleProgress(task: DownloadTask, p: DownloadProgress): void {
   emit('download:progress', task.taskId, task.progress);
 }
 
-function handleDone(task: DownloadTask, filepath: string): void {
+function handleDone(task: DownloadTask, filepath: string, filepaths: string[] = []): void {
   if (task.taskId !== currentTaskId) return;
   // ponytail: process exit 0 is authoritative completion — force `done` even if the
   // last seen status was `downloading` (no post-processing markers were emitted).
@@ -369,6 +380,13 @@ function handleDone(task: DownloadTask, filepath: string): void {
       task.progress = { ...task.progress, downloaded: size, total: size };
     } catch { /* file moved or path unparsed — leave counters as reported */ }
   }
+  task.completedAt = Date.now(); // forced 'done' skips transition()'s stamp too
+  // Counted here, and only here: this is the one place a download is genuinely
+  // finished. A collection writes many files and the engine reports each one, so
+  // the count is files rather than tasks. Failed/cancelled never reach this line,
+  // and a retry only arrives once — on the attempt that actually completed.
+  const written = filepaths.length ? filepaths : (task.progress.filename ? [task.progress.filename] : []);
+  onCompleted?.(task, written);
   emit('download:done', task.taskId, task.progress);
   schedulePersist(); // forced 'done' bypasses transition() — persist explicitly
   finishCurrent();
@@ -434,6 +452,10 @@ function transition(task: DownloadTask, next: DownloadStatus): boolean {
   if (cur === next) return true;
   if (!canTransition(cur, next)) return false;
   task.progress = { ...task.progress, status: next };
+  // Stamp the moment it settled. Done here rather than at each call site because
+  // a task reaches its end through several paths (finished, failed, cancelled,
+  // cancel-all) and only this one is common to all of them.
+  if (TERMINAL.has(next)) task.completedAt = Date.now();
   schedulePersist(); // a real status change is exactly what history must capture
   return true;
 }
