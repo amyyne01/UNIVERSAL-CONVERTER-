@@ -19,7 +19,7 @@ export function IconButton({
       whileTap={{ scale: 0.92 }}
       aria-label={label}
       title={label}
-      className={`no-drag grid place-items-center w-9 h-9 rounded-md transition-colors text-text-muted hover:text-text-primary hover:bg-bg-hover ${className}`}
+      className={`no-drag focus-visible:focus-ring grid place-items-center w-9 h-9 rounded-md transition-colors text-text-muted hover:text-text-primary hover:bg-bg-hover ${className}`}
       {...rest}
     >
       <Icon size={size} />

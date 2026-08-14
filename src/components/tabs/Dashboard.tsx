@@ -70,13 +70,16 @@ const SOURCE_COLOR: Record<SourcePlatform, string> = {
 // the feature block and its capability list. The other three are compact rows,
 // each carrying the one fact that distinguishes it (Spotify's search bridge is
 // stated outright rather than hidden — it's why a Spotify grab is best-effort).
-const SOURCE_COPY: Record<PlatformKey, { blurb: string; caps?: string[]; note?: string }> = {
+// `specs` are label/value pairs rather than a bulleted list: the labels line up
+// into a column the eye can scan, and the values stop repeating the word the
+// label already said ("Video to 4K" → Video · Up to 4K).
+const SOURCE_COPY: Record<PlatformKey, { blurb: string; specs?: [string, string][]; note?: string }> = {
   youtube: {
-    blurb: 'The only source that gives you both the video and the audio — and where a plain search lands.',
-    caps: ['Video to 4K · MP4', 'Audio to 320 kbps · FLAC', 'Playlists & channels'],
+    blurb: 'The only source that gives you both the video and the audio, and where a plain search lands.',
+    specs: [['Video', 'Up to 4K · MP4'], ['Audio', 'Up to 320 kbps · FLAC'], ['Batch', 'Playlists & channels']],
   },
   spotify: { blurb: 'Tracks, albums and playlists, tagged from Spotify’s own metadata.', note: 'matched via search' },
-  soundcloud: { blurb: 'Audio only — full-quality streams, including long artist sets.' },
+  soundcloud: { blurb: 'Audio only: full-quality streams, including long artist sets.' },
   reels: { blurb: 'TikTok, Reels and Shorts at original resolution, no watermark.' },
 };
 
@@ -85,10 +88,10 @@ const TERMINAL = new Set<DownloadStatus>(['done', 'failed', 'cancelled']);
 
 /** 'YYYY-MM' → "August". Built from parts: `new Date('2026-08')` parses as UTC
  *  and can name the wrong month either side of the boundary. */
-function monthName(month: string, style: 'long' | 'short' = 'long'): string {
+function monthName(month: string): string {
   const [y, m] = month.split('-').map(Number);
   if (!Number.isFinite(y) || !Number.isFinite(m)) return month;
-  return new Date(y, m - 1, 1).toLocaleString(undefined, { month: style });
+  return new Date(y, m - 1, 1).toLocaleString(undefined, { month: 'long' });
 }
 
 // ── Cell shell ────────────────────────────────────────────────────────────────
@@ -116,13 +119,22 @@ function Cell({ title, aside, className = '', index, children }: CellProps) {
       // Short and out-fast (expo). Reduced motion keeps the fade — a crossfade
       // still reads as "this arrived" — but drops the travel entirely.
       transition={{ duration: reduce ? 0.14 : 0.26, delay: reduce ? 0 : index * 0.045, ease: [0.16, 1, 0.3, 1] }}
-      className={`min-w-0 rounded-lg border border-border-soft bg-bg-surface shadow-sm p-5 ${className}`}
+      className={`min-w-0 flex flex-col rounded-lg border border-border-soft bg-bg-surface shadow-sm p-5 ${className}`}
     >
       <div className="flex items-center justify-between gap-3 mb-4">
-        <h2 className="text-[13.5px] font-display font-semibold text-text-primary">{title}</h2>
+        {/* A card title, not a page subhead. .text-h1/.text-h2 are the fluid page
+            roles; a bento cell label sits BELOW its own metric in the hierarchy
+            (the month figure is 44px), so it stays small and fixed. Scaling it
+            with the window would also change every cell's height at each
+            breakpoint, which is exactly what the grid must not do. */}
+        <h2 className="text-[15px] font-semibold tracking-tight text-text-primary">{title}</h2>
         {aside}
       </div>
-      {children}
+      {/* The body owns the leftover height rather than sitting at the top of it:
+          paired cells stretch to their row's tallest, and whichever of the two
+          is shorter was reading as a half-empty box with its content pinned to
+          the ceiling. Cells that already fill are unaffected. */}
+      <div className="flex-1 min-w-0">{children}</div>
     </motion.section>
   );
 }
@@ -140,35 +152,49 @@ type MonthStats =
   | { state: 'failed' }
   | { state: 'ready'; current: MonthBucket; previous: MonthBucket | null };
 
-function BarRow({ label, value, max, lead }: { label: string; value: number; max: number; lead?: boolean }) {
+// Two bars, one hue. The months are ranked by recency, and hue cannot express a
+// ranking — so the ramp is one colour at two opacities (now at full, last month
+// faded), which reads as an order and survives colour-blindness. Each bar is
+// direct-labelled with its own month and count, so the pair needs no legend.
+function MonthBar({ label, value, max, lead }: { label: string; value: number; max: number; lead?: boolean }) {
   const reduce = useReducedMotion();
   // A month with files must never render as an invisible sliver next to a much
   // bigger one — the floor keeps the comparison legible, not just accurate.
   const pct = value > 0 ? Math.max((value / max) * 100, 3) : 0;
+  const ink = lead ? 'text-text-primary' : 'text-text-secondary';
   return (
-    <div className="grid grid-cols-[2.6rem_minmax(0,1fr)_auto] items-center gap-3">
-      <span className="font-mono text-[11px] text-text-secondary">{label}</span>
-      <span className="block h-1.5 rounded-full bg-bg-hover overflow-hidden">
+    <div className="min-w-0">
+      <div className="flex items-baseline justify-between gap-3 mb-1.5">
+        <span className={`truncate text-[11.5px] ${ink}`}>{label}</span>
+        <span className={`shrink-0 font-mono text-[11.5px] tabular-nums ${ink}`}>{value}</span>
+      </div>
+      <span className="block h-2 rounded-full bg-bg-hover overflow-hidden">
         <motion.span
           className="block h-full rounded-full origin-left"
           // Width is static; only scaleX animates — a growing bar must not be a
           // layout animation.
-          style={{ width: `${pct}%`, background: lead ? 'var(--color-accent)' : 'var(--color-text-muted)' }}
+          style={{ width: `${pct}%`, background: lead ? 'var(--color-accent)' : alpha('var(--color-accent)', 32) }}
           initial={{ scaleX: reduce ? 1 : 0 }}
           animate={{ scaleX: 1 }}
-          transition={{ duration: reduce ? 0 : 0.42, delay: reduce ? 0 : 0.14, ease: [0.16, 1, 0.3, 1] }}
+          transition={{ duration: reduce ? 0 : 0.36, delay: reduce ? 0 : 0.12, ease: [0.16, 1, 0.3, 1] }}
         />
       </span>
-      <span className="font-mono text-[11px] tabular-nums text-text-secondary">{value}</span>
     </div>
   );
+}
+
+/** Neutral blocks in the shape the numbers will take, so the cell doesn't jump
+ *  height when the counters land. Silent to assistive tech — the live word is
+ *  carried by the sr-only text beside it. */
+function Ghost({ className = '' }: { className?: string }) {
+  return <span aria-hidden className={`block rounded-sm bg-bg-hover ${className}`} />;
 }
 
 function MonthCell({ stats, index }: StatsCellProps) {
   const cur = stats.state === 'ready' ? stats.current : null;
   // A previous month with zero files is not a comparison — it's a blank.
   const prev = stats.state === 'ready' && stats.previous?.files ? stats.previous : null;
-  const delta = cur && prev ? Math.round(((cur.files - prev.files) / prev.files) * 100) : null;
+  const diff = cur && prev ? cur.files - prev.files : null;
   const max = Math.max(cur?.files ?? 0, prev?.files ?? 0, 1);
 
   return (
@@ -176,20 +202,35 @@ function MonthCell({ stats, index }: StatsCellProps) {
       index={index}
       title="This month"
       className="@min-[1500px]:col-span-2"
-      aside={cur ? <span className="font-mono text-[11px] text-text-secondary">{monthName(cur.month)}</span> : undefined}
+      // There is no range picker here on purpose: the main process keeps exactly
+      // two buckets (DownloadStats = current + previous), so a period control
+      // would be a control with nothing behind it. The window is stated instead,
+      // and both months it has are drawn at once.
+      aside={cur ? <span className="text-[11.5px] text-text-secondary">{monthName(cur.month)}</span> : undefined}
     >
       {stats.state === 'failed' ? (
-        <p className="text-[13px] text-text-secondary leading-relaxed">
+        <p className="text-[13px] text-text-secondary leading-relaxed max-w-[52ch]">
           This month’s count couldn’t be read. Your downloads are unaffected.
         </p>
       ) : !cur ? (
-        <p className="text-[13px] text-text-secondary">Counting…</p>
+        // Loading holds the ready layout's geometry: figure block left, bars right.
+        <div className="flex flex-col gap-5 @min-[1500px]:flex-row @min-[1500px]:items-center @min-[1500px]:justify-between @min-[1500px]:gap-10">
+          <span className="sr-only" role="status">Counting this month’s files…</span>
+          <div className="min-w-0">
+            <Ghost className="h-[38px] w-24" />
+            <Ghost className="mt-3 h-3 w-44" />
+          </div>
+          <div className="flex flex-col gap-3.5 w-full max-w-[520px] @min-[1500px]:flex-1 @min-[1500px]:max-w-[46%] @min-[1500px]:min-w-[260px]">
+            <Ghost className="h-2 w-full" />
+            <Ghost className="h-2 w-full" />
+          </div>
+        </div>
       ) : cur.files === 0 ? (
         <div className="flex flex-col gap-1.5">
-          <p className="text-[14px] text-text-primary">Nothing downloaded yet this month.</p>
+          <p className="text-[15px] text-text-primary">Nothing downloaded yet this month.</p>
           <p className="text-[13px] text-text-secondary leading-relaxed max-w-[52ch]">
             {prev
-              ? `Last month you kept ${prev.files} ${prev.files === 1 ? 'file' : 'files'} — ${formatBytes(prev.bytes)}.`
+              ? `Last month you kept ${prev.files} ${prev.files === 1 ? 'file' : 'files'} (${formatBytes(prev.bytes)}).`
               : 'Paste a link above; the count starts with your first file.'}
           </p>
         </div>
@@ -197,34 +238,41 @@ function MonthCell({ stats, index }: StatsCellProps) {
         // Past 1500px this cell is two columns wide, so the figure and the
         // month-on-month comparison lie down side by side rather than leaving a
         // half-cell of empty surface under the number.
-        <div className="flex flex-col gap-4 @min-[1500px]:flex-row @min-[1500px]:items-end @min-[1500px]:justify-between @min-[1500px]:gap-10">
+        <div className="flex h-full flex-col justify-center gap-5 @min-[1500px]:flex-row @min-[1500px]:items-center @min-[1500px]:justify-between @min-[1500px]:gap-10">
           <div className="min-w-0">
-            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-              <span className="font-display text-[40px] leading-none tracking-[-0.03em] tabular-nums text-text-primary">
+            {/* One figure leads the cell. The size and the volume are the same
+                fact at two scales, so they sit on one baseline with a 3:1 size
+                step between them rather than competing at 40 and 15. */}
+            <p className="flex items-baseline gap-2.5">
+              <span className="text-[44px] font-semibold leading-none tracking-[-0.02em] tabular-nums text-text-primary">
                 {cur.files}
               </span>
-              <span className="text-[15px] text-text-secondary">{cur.files === 1 ? 'file' : 'files'}</span>
-              <span className="font-mono text-[13px] text-text-secondary">{formatBytes(cur.bytes)}</span>
-            </div>
-            <p className="mt-2 text-[12.5px] text-text-secondary">
-              {prev && delta !== null ? (
-                <>
-                  {/* Neutral, not success/error: downloading less than last month
-                      isn't a failure, so it doesn't get an alarm colour. */}
-                  <span className="font-mono text-text-primary">
-                    {delta > 0 ? '+' : delta < 0 ? '−' : '±'}{Math.abs(delta)}%
-                  </span>
-                  {` vs ${monthName(prev.month)}`}
-                </>
-              ) : (
-                'First month on record — nothing to compare against yet.'
-              )}
+              <span className="text-[14px] text-text-secondary">{cur.files === 1 ? 'file' : 'files'}</span>
+            </p>
+            {/* The comparison is a sentence, not a badge. An absolute count beats
+                a percentage at these magnitudes — "12 more" is a number you can
+                picture; "+35%" of 34 is arithmetic. Neutral either way:
+                downloading less than last month isn't a failure. */}
+            <p className="mt-2.5 text-[12.5px] leading-relaxed text-text-secondary max-w-[44ch]">
+              <span className="font-mono tabular-nums">{formatBytes(cur.bytes)}</span>
+              {prev && diff !== null
+                ? diff === 0
+                  ? ` on disk — the same count as ${monthName(prev.month)}.`
+                  : ` on disk — ${Math.abs(diff)} ${diff > 0 ? 'more' : 'fewer'} than ${monthName(prev.month)}.`
+                : ' on disk. First month on record, so there is nothing to compare against yet.'}
             </p>
           </div>
           {prev && (
-            <div className="flex flex-col gap-2 @min-[1500px]:flex-1 @min-[1500px]:max-w-[46%] @min-[1500px]:min-w-[260px]">
-              <BarRow label={monthName(cur.month, 'short')} value={cur.files} max={max} lead />
-              <BarRow label={monthName(prev.month, 'short')} value={prev.files} max={max} />
+            <div
+              role="img"
+              aria-label={`Files by month: ${monthName(cur.month)} ${cur.files}, ${monthName(prev.month)} ${prev.files}`}
+              // Capped, because at the one-column tier this cell is ~800px wide
+              // and an 8px bar drawn across all of it is a hairline, not a
+              // length you can compare. A bar has a legible measure like text.
+              className="flex flex-col gap-3.5 max-w-[520px] @min-[1500px]:flex-1 @min-[1500px]:max-w-[46%] @min-[1500px]:min-w-[260px]"
+            >
+              <MonthBar label={monthName(cur.month)} value={cur.files} max={max} lead />
+              <MonthBar label={monthName(prev.month)} value={prev.files} max={max} />
             </div>
           )}
         </div>
@@ -267,59 +315,89 @@ function splitRows(byPlatform: Partial<Record<SourcePlatform, number>>): SplitRo
 function SplitCell({ stats, index }: StatsCellProps) {
   const reduce = useReducedMotion();
   const rows = stats.state === 'ready' ? splitRows(stats.current.byPlatform) : [];
+  const total = rows.reduce((s, r) => s + r.count, 0);
 
   return (
     <Cell
       index={index}
       title="Where it came from"
-      // Says outright what the bar measures — a proportion bar that doesn't
-      // name its unit is a bar you have to guess at.
-      aside={rows.length > 0 ? <span className="text-[11.5px] text-text-secondary">by file count</span> : undefined}
+      // Says outright what the bars measure AND how big the whole is — a
+      // proportion that doesn't name its unit or its denominator is a number you
+      // have to guess at.
+      aside={total > 0 ? (
+        <span className="text-[11.5px] text-text-secondary">
+          of <span className="font-mono tabular-nums">{total}</span> files
+        </span>
+      ) : undefined}
     >
       {stats.state === 'failed' ? (
-        <p className="text-[13px] text-text-secondary leading-relaxed">The platform split isn’t available right now.</p>
+        <p className="text-[13px] text-text-secondary leading-relaxed max-w-[52ch]">
+          The platform split isn’t available right now.
+        </p>
       ) : stats.state === 'loading' ? (
-        <p className="text-[13px] text-text-secondary">Counting…</p>
+        // Same three-row shape the real chart takes, so nothing jumps on arrival.
+        <div className="flex flex-col gap-3.5 max-w-[560px]">
+          <span className="sr-only" role="status">Counting where this month’s files came from…</span>
+          {[0, 1, 2].map((i) => (
+            <div key={i}>
+              <Ghost className="h-3 w-24 mb-1.5" />
+              <Ghost className="h-1.5 w-full" />
+            </div>
+          ))}
+        </div>
       ) : rows.length === 0 ? (
-        <div className="flex flex-col gap-3">
-          {/* The empty rail keeps the cell's shape, so the bar doesn't appear
-              from nowhere the moment the first file lands. */}
-          <span aria-hidden className="block h-2.5 rounded-full bg-bg-hover" />
-          <p className="text-[13px] text-text-secondary leading-relaxed max-w-[52ch]">
+        <div className="flex flex-col gap-3.5 max-w-[560px]">
+          {/* Empty rails keep the cell's shape, so the chart doesn't appear from
+              nowhere the moment the first file lands. */}
+          {[0, 1, 2].map((i) => (
+            <span aria-hidden key={i} className="block h-1.5 rounded-full bg-bg-hover" />
+          ))}
+          <p className="mt-0.5 text-[13px] text-text-secondary leading-relaxed max-w-[52ch]">
             Once files start landing, this splits them across YouTube, Spotify, SoundCloud and short-form.
           </p>
         </div>
       ) : (
-        <>
-          <div
-            className="flex gap-[2px] h-2.5"
-            role="img"
-            aria-label={`By file count: ${rows.map((r) => `${r.label} ${Math.round(r.pct)} percent`).join(', ')}`}
-          >
-            {rows.map((r, i) => (
-              <motion.span
-                key={r.key}
-                className="block h-full rounded-full origin-left min-w-[4px]"
-                style={{ flexBasis: `${r.pct}%`, background: r.color }}
-                initial={{ scaleX: reduce ? 1 : 0 }}
-                animate={{ scaleX: 1 }}
-                transition={{ duration: reduce ? 0 : 0.38, delay: reduce ? 0 : 0.1 + i * 0.05, ease: [0.16, 1, 0.3, 1] }}
-              />
-            ))}
-          </div>
-          <ul className="mt-4 flex flex-col gap-2">
-            {rows.map((r) => (
-              <li key={r.key} className="flex items-center gap-2.5 text-[12.5px]">
-                <span aria-hidden className="w-2 h-2 rounded-[3px] shrink-0" style={{ background: r.color }} />
-                <span className="min-w-0 flex-1 truncate text-text-secondary">{r.label}</span>
-                <span className="font-mono text-[11.5px] tabular-nums text-text-primary">{r.count}</span>
-                <span className="font-mono text-[11.5px] tabular-nums text-text-secondary w-9 text-right">
-                  {Math.round(r.pct)}%
+        // Was a single stacked strip plus a swatch legend — two drawings of one
+        // fact, where the legend existed only to decode the colours. These are
+        // direct-labelled horizontal bars instead: every source starts at the
+        // same left edge (position on a common scale, the most accurately read
+        // encoding), each track spans the full width so a bar is still legible
+        // as a share of the whole, and the label sits on the bar it names, so
+        // the legend is gone. Brand hue now marks identity next to a written
+        // name rather than being the only way to tell the segments apart.
+        <ul
+          // Same cap as the month bars: at the one-column tier the cell is ~800px
+          // wide, which strands the percentage a screen away from the name it
+          // belongs to and flattens every bar into a rule.
+          className="flex flex-col gap-3.5 max-w-[560px]"
+          role="img"
+          aria-label={`Share of ${total} files by source: ${rows.map((r) => `${r.label} ${Math.round(r.pct)} percent, ${r.count}`).join('; ')}`}
+        >
+          {rows.map((r, i) => (
+            <li key={r.key} className="min-w-0">
+              <div className="flex items-baseline justify-between gap-3 mb-1.5">
+                <span className={`flex items-center gap-2 min-w-0 text-[12.5px] ${i === 0 ? 'text-text-primary' : 'text-text-secondary'}`}>
+                  <span aria-hidden className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: r.color }} />
+                  <span className="truncate">{r.label}</span>
                 </span>
-              </li>
-            ))}
-          </ul>
-        </>
+                <span className="shrink-0 font-mono text-[11.5px] tabular-nums">
+                  <span className={i === 0 ? 'text-text-primary' : 'text-text-secondary'}>{Math.round(r.pct)}%</span>
+                  <span className="text-text-muted"> · {r.count}</span>
+                </span>
+              </div>
+              <span className="block h-1.5 rounded-full bg-bg-hover overflow-hidden">
+                <motion.span
+                  className="block h-full rounded-full origin-left"
+                  // A source with files never renders as nothing: 2% floor.
+                  style={{ width: `${Math.max(r.pct, 2)}%`, background: r.color }}
+                  initial={{ scaleX: reduce ? 1 : 0 }}
+                  animate={{ scaleX: 1 }}
+                  transition={{ duration: reduce ? 0 : 0.36, delay: reduce ? 0 : 0.1 + i * 0.05, ease: [0.16, 1, 0.3, 1] }}
+                />
+              </span>
+            </li>
+          ))}
+        </ul>
       )}
     </Cell>
   );
@@ -343,25 +421,29 @@ function SourceFeature({ def, onOpen }: SourceProps) {
     <button
       type="button"
       onClick={onOpen}
-      className="no-drag group relative flex flex-col rounded-md p-3 -m-1 text-left hover:bg-bg-hover transition-colors duration-150 cursor-pointer"
+      className="no-drag group relative flex flex-col rounded-md p-3 -m-1 text-left hover:bg-bg-hover focus-visible:bg-bg-hover transition-colors duration-150 cursor-pointer"
     >
       <GoTo
         size={16}
-        className="absolute top-3 right-3 text-text-muted transition-transform duration-200 group-hover:translate-x-0.5 group-hover:-translate-y-0.5"
+        className="absolute top-3 right-3 text-text-muted transition-transform duration-200 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-focus-visible:translate-x-0.5 group-focus-visible:-translate-y-0.5"
       />
       <span className="flex items-center gap-2.5 mb-2">
         <Icon size={22} style={{ color }} />
-        <span className="text-[17px] font-display font-semibold text-text-primary">{def.label}</span>
+        <span className="text-[17px] font-semibold text-text-primary">{def.label}</span>
       </span>
       <span className="block text-[13px] text-text-secondary leading-relaxed max-w-[42ch]">{copy.blurb}</span>
-      {/* Past ~1500px of content column the feature block is wide enough that a
-          stacked list leaves a column of dead space; the capabilities lie down
-          in a row instead, so the extra width buys shape rather than emptiness. */}
-      <span className="mt-4 pt-3 border-t border-border-soft flex flex-col gap-1.5 @min-[1500px]:flex-row @min-[1500px]:flex-wrap @min-[1500px]:gap-x-7">
-        {copy.caps?.map((c) => (
-          <span key={c} className="flex items-center gap-2 text-[12px] text-text-secondary">
-            <span aria-hidden className="w-1 h-1 rounded-full shrink-0" style={{ background: color }} />
-            {c}
+      {/* A spec table, not a bulleted list. The three coloured dots that used to
+          lead these lines were decoration — the block's identity is already the
+          logo above — so the leading column carries a tracked label instead,
+          which is a thing the eye can scan down. Past ~1500px the pairs lie down
+          in three columns, so the extra width buys shape rather than emptiness. */}
+      <span className="mt-4 pt-3.5 border-t border-border-soft grid gap-2 @min-[1500px]:grid-cols-3 @min-[1500px]:gap-x-6">
+        {copy.specs?.map(([k, v]) => (
+          <span key={k} className="flex items-baseline gap-3 min-w-0 @min-[1500px]:flex-col @min-[1500px]:gap-1">
+            <span className="w-11 shrink-0 text-[11px] uppercase tracking-[0.1em] text-text-muted @min-[1500px]:w-auto">
+              {k}
+            </span>
+            <span className="min-w-0 truncate text-[12px] text-text-secondary">{v}</span>
           </span>
         ))}
       </span>
@@ -380,27 +462,24 @@ function SourceRow({ def, onOpen }: SourceProps) {
     <button
       type="button"
       onClick={onOpen}
-      className="no-drag group flex items-center gap-3.5 w-full min-w-0 rounded-md px-3 py-3 text-left hover:bg-bg-hover transition-colors duration-150 cursor-pointer"
+      className="no-drag group flex items-center gap-3 w-full min-w-0 rounded-md px-3 py-2.5 text-left hover:bg-bg-hover focus-visible:bg-bg-hover transition-colors duration-150 cursor-pointer"
     >
-      <span
-        aria-hidden
-        className="flex items-center justify-center w-9 h-9 rounded-md shrink-0"
-        style={{ background: alpha(color, 12) }}
-      >
-        <Icon size={18} style={{ color }} />
-      </span>
+      {/* The logo alone, not a logo inside a tinted plate. Three filled colour
+          plates in a cell that already carries four brand hues is colour spent
+          on chrome; the mark itself is what says "Spotify". */}
+      <Icon size={20} style={{ color }} className="shrink-0" />
       <span className="min-w-0 flex-1">
         <span className="flex items-baseline gap-2 min-w-0">
-          <span className="text-[14px] font-display font-semibold text-text-primary">{def.label}</span>
+          <span className="text-[14px] font-semibold text-text-primary">{def.label}</span>
           {copy.note && (
-            <span className="font-mono text-[10.5px] text-text-secondary truncate">{copy.note}</span>
+            <span className="text-[11px] text-text-muted truncate">{copy.note}</span>
           )}
         </span>
         <span className="block text-[12px] text-text-secondary leading-snug truncate">{copy.blurb}</span>
       </span>
       <GoTo
         size={15}
-        className="text-text-muted shrink-0 transition-transform duration-200 group-hover:translate-x-0.5 group-hover:-translate-y-0.5"
+        className="text-text-muted shrink-0 transition-transform duration-200 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-focus-visible:translate-x-0.5 group-focus-visible:-translate-y-0.5"
       />
     </button>
   );
@@ -411,10 +490,22 @@ function SourceRow({ def, onOpen }: SourceProps) {
 interface RecentTileProps {
   task: DownloadTask;
   onQueue: () => void;
+  /** The newest file: a full-bleed poster instead of a captioned thumbnail. */
+  lead?: boolean;
   className?: string;
 }
 
-function RecentTile({ task, onQueue, className = '' }: RecentTileProps) {
+// The signature bet of this pass. A row of eight identical thumbnails is a
+// contact sheet: nothing in it is more recent-looking than anything else, even
+// though recency is the only thing the strip is sorted by. So the newest file
+// becomes a poster — twice as wide, artwork edge to edge, its caption burned
+// onto the image instead of printed under it — and the rest stay captioned
+// thumbnails. The width difference states the order before you read a word, and
+// the two shapes are held to one height by the grid row, so the strip still
+// reads as one row rather than as two kinds of card. It costs no extra chrome:
+// the poster is not a bordered card inside a bordered cell, it is the same tile
+// with its meta moved onto the scrim it already had.
+function RecentTile({ task, onQueue, lead = false, className = '' }: RecentTileProps) {
   const reduce = useReducedMotion();
   const color = SOURCE_COLOR[task.source] ?? 'var(--color-accent)';
   const filePath = task.progress.filename;
@@ -423,22 +514,34 @@ function RecentTile({ task, onQueue, className = '' }: RecentTileProps) {
   // ink are fixed values rather than theme tokens, which would invert to dark
   // text on a dark scrim in the light theme.
   const overlayInk = 'var(--color-on-media)';
+  const title = task.title || 'Untitled';
 
   return (
     // The lift is the tile's only hover motion; the overlay it reveals is a
-    // crossfade, which is legible with or without the travel.
-    <motion.div whileHover={reduce ? undefined : { y: -3 }} className={`group min-w-0 ${className}`}>
-      <div className="relative aspect-[16/10] rounded-md border border-border-soft overflow-hidden shadow-sm">
+    // crossfade, which is legible with or without the travel. `h-full` + flex:
+    // the poster has no intrinsic height, so it takes the row's — which the
+    // captioned thumbnails set. One row, two shapes, one baseline.
+    <motion.div whileHover={reduce ? undefined : { y: -3 }} className={`group min-w-0 flex flex-col ${className}`}>
+      <div
+        className={`relative rounded-md border border-border-soft overflow-hidden shadow-sm ${
+          lead ? 'flex-1 min-h-[7rem]' : 'aspect-[16/9]'
+        }`}
+      >
+        {/* Absolutely positioned, not in flow: the poster has no aspect-ratio of
+            its own (it borrows the row's height from the thumbnails), and an
+            in-flow image would hand it the artwork's natural height instead —
+            a square album cover then makes one tile four times taller than the
+            row it shares. Out of flow, the artwork can only ever fill. */}
         {task.thumbnailUrl ? (
           <img
             src={task.thumbnailUrl}
             alt=""
-            className="w-full h-full object-cover"
+            className="absolute inset-0 w-full h-full object-cover"
             loading="lazy"
           />
         ) : (
           <div
-            className="w-full h-full"
+            className="absolute inset-0"
             style={{ background: `linear-gradient(135deg, ${alpha(color, 55)}, var(--color-bg-tertiary))` }}
           />
         )}
@@ -450,26 +553,43 @@ function RecentTile({ task, onQueue, className = '' }: RecentTileProps) {
           style={{ background: color, boxShadow: `0 0 7px ${color}` }}
         />
         {task.duration > 0 && (
-          <span className="absolute bottom-2 right-2 font-mono text-[9.5px] text-text-primary bg-bg-primary/[0.78] rounded px-1.5 py-0.5 transition-opacity duration-150 group-hover:opacity-0 group-focus-within:opacity-0">
+          <span className="absolute top-2 right-2 font-mono text-[10px] tabular-nums text-text-primary bg-bg-primary/[0.78] rounded px-1.5 py-0.5 transition-opacity duration-150 group-hover:opacity-0 group-focus-within:opacity-0">
             {formatDuration(task.duration)}
           </span>
         )}
 
-        {/* Identify + act. Revealed by hover AND by keyboard focus landing on
-            either button, so the actions are never hover-only. */}
+        {/* The poster carries its caption at rest, on a gradient that fades out
+            before it reaches the artwork's subject. */}
+        {lead && (
+          <div
+            className="absolute inset-x-0 bottom-0 p-3 pt-8 transition-opacity duration-150 group-hover:opacity-0 group-focus-within:opacity-0"
+            style={{ background: `linear-gradient(to top, var(--color-media-scrim), transparent)` }}
+          >
+            <p className="text-[13px] font-medium leading-snug line-clamp-2" style={{ color: overlayInk }}>
+              {title}
+            </p>
+            <p
+              className="mt-1 font-mono text-[10.5px] tabular-nums truncate"
+              style={{ color: alpha(overlayInk, 72) }}
+            >
+              {task.format.toUpperCase()} · {formatBytes(task.progress.downloaded)}
+              {task.uploader ? ` · ${task.uploader}` : ''}
+            </p>
+          </div>
+        )}
+
+        {/* Act. Revealed by hover AND by keyboard focus landing on either button,
+            so the actions are never hover-only. The title is not repeated here —
+            it is already on the poster, or directly under the thumbnail. */}
         <div
           className="absolute inset-0 flex flex-col justify-end gap-2 p-2 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100"
           style={{ background: 'var(--color-media-scrim)' }}
         >
-          <p
-            className="text-[11.5px] leading-snug line-clamp-2"
-            style={{ color: overlayInk }}
-          >
-            {task.title || 'Untitled'}
-            {task.uploader && (
-              <span className="block opacity-70 truncate">{task.uploader}</span>
-            )}
-          </p>
+          {lead && (
+            <p className="text-[13px] font-medium leading-snug line-clamp-2" style={{ color: overlayInk }}>
+              {title}
+            </p>
+          )}
           <div className="flex items-center gap-1.5">
             {/* Deliberately not disabled when the path is missing: a dead button
                 explains nothing, and a file can vanish after the button renders.
@@ -477,7 +597,8 @@ function RecentTile({ task, onQueue, className = '' }: RecentTileProps) {
             <button
               type="button"
               onClick={() => void revealFile(filePath, task.title)}
-              className="no-drag inline-flex items-center gap-1.5 h-7 px-2 rounded text-[11px] font-medium bg-accent text-on-accent hover:bg-accent-hover transition-colors duration-150"
+              aria-label={`Open the folder holding “${title}”`}
+              className="no-drag inline-flex items-center gap-1.5 h-7 px-2 rounded text-[11px] font-medium bg-accent text-on-accent hover:bg-accent-hover focus-visible:bg-accent-hover transition-colors duration-150"
             >
               <OpenFolder size={13} />
               Open
@@ -485,7 +606,7 @@ function RecentTile({ task, onQueue, className = '' }: RecentTileProps) {
             <button
               type="button"
               onClick={onQueue}
-              aria-label={`Show “${task.title || 'this download'}” in Downloads`}
+              aria-label={`Show “${title}” in Downloads`}
               className="no-drag inline-flex items-center justify-center h-7 px-2 rounded border text-[11px] transition-colors duration-150"
               style={{ color: overlayInk, borderColor: alpha(overlayInk, 30) }}
             >
@@ -495,16 +616,18 @@ function RecentTile({ task, onQueue, className = '' }: RecentTileProps) {
         </div>
       </div>
 
-      {/* Meta */}
-      <div className="mt-2.5 px-0.5">
-        <p className="text-[12.5px] font-medium text-text-primary leading-snug truncate">
-          {task.title || 'Untitled'}
-        </p>
-        <div className="flex justify-between gap-2 mt-1 font-mono text-[10.5px] text-text-secondary">
-          <span className="truncate" style={{ color }}>{task.format.toUpperCase()}</span>
-          <span className="shrink-0">{formatBytes(task.progress.downloaded)}</span>
+      {/* Caption — thumbnails only. Format used to be printed in the platform's
+          own colour, which made four hues of body text out of a field the dot on
+          the artwork already encodes; it is neutral now. */}
+      {!lead && (
+        <div className="mt-2.5 px-0.5">
+          <p className="text-[12.5px] font-medium text-text-primary leading-snug truncate">{title}</p>
+          <div className="flex justify-between gap-2 mt-1 font-mono text-[10.5px] tabular-nums text-text-secondary">
+            <span className="truncate">{task.format.toUpperCase()}</span>
+            <span className="shrink-0">{formatBytes(task.progress.downloaded)}</span>
+          </div>
         </div>
-      </div>
+      )}
     </motion.div>
   );
 }
@@ -545,9 +668,10 @@ export function Dashboard() {
 
   const allTasks = Object.values(downloads);
   const activeCount = allTasks.filter((t) => !TERMINAL.has(t.progress.status)).length;
-  // Most recent first. Eight is the widest row the 3-column grid shows; the
-  // narrower tiers hide the tail rather than wrap it into a ragged second row.
-  const recentTiles = [...allTasks].filter((t) => t.progress.status === 'done').reverse().slice(0, 8);
+  // Most recent first. Seven is the widest row the 3-column grid shows once the
+  // newest file takes two of the eight tracks; the narrower tiers hide the tail
+  // rather than wrap it into a ragged second row.
+  const recentTiles = [...allTasks].filter((t) => t.progress.status === 'done').reverse().slice(0, 7);
 
   // What the field is holding, read locally — no detection call is made until
   // the user commits, so this stays a pure render of the typed text.
@@ -555,6 +679,8 @@ export function Dashboard() {
   const tokens = trimmed ? trimmed.split(/\s+/).filter(Boolean) : [];
   const linkCount = tokens.length > 1 && tokens.every(looksLikeUrl) ? tokens.length : 0;
   const overBatchLimit = locks.batchLimit !== null && linkCount > locks.batchLimit;
+  // One tone drives the link-count chip: caution once the batch is over the ceiling.
+  const batchTone = overBatchLimit ? 'var(--color-warning)' : 'var(--color-accent)';
 
   // Batch: several links at once (drop / multi-line paste) download straight
   // to the queue with saved defaults — batching is the express lane.
@@ -632,11 +758,11 @@ export function Dashboard() {
         setPendingInput(input); // hand the link to the tab so it auto-fetches on arrival
         setActiveTab(tab);
       } else {
-        setError('That link isn’t from a supported platform — YouTube, Spotify, SoundCloud, TikTok, Reels or Shorts.');
+        setError('That link isn’t from a supported platform. Try YouTube, Spotify, SoundCloud, TikTok, Reels or Shorts.');
       }
     } catch {
       // url.detect is local pattern-matching — failure means bad input, not network.
-      setError('That link couldn’t be read — check it and try again.');
+      setError('That link couldn’t be read. Check it and try again.');
     } finally {
       setDetecting(false);
     }
@@ -685,7 +811,7 @@ export function Dashboard() {
           <button
             type="button"
             onClick={locks.openUpgrade}
-            className="no-drag underline underline-offset-2 text-accent hover:text-accent-hover transition-colors"
+            className="no-drag underline underline-offset-2 text-accent hover:text-accent-hover focus-visible:text-accent-hover transition-colors"
           >
             See plans
           </button>
@@ -693,7 +819,7 @@ export function Dashboard() {
       );
     }
     if (linkCount > 1) {
-      return <span className="text-text-secondary">{linkCount} links — Enter queues them all</span>;
+      return <span className="text-text-secondary">{linkCount} links ready. Enter queues them all.</span>;
     }
     if (trimmed && !looksLikeUrl(trimmed)) {
       return <span className="text-text-secondary">Enter searches YouTube for this</span>;
@@ -703,7 +829,7 @@ export function Dashboard() {
         <kbd className="font-mono text-[10.5px] bg-bg-surface border border-border rounded px-1.5 py-0.5 text-text-secondary">Ctrl</kbd>
         {' + '}
         <kbd className="font-mono text-[10.5px] bg-bg-surface border border-border rounded px-1.5 py-0.5 text-text-secondary">V</kbd>
-        {' pastes and fetches from anywhere — drop a handful of links to batch them'}
+        {' pastes and fetches from anywhere. Drop a handful of links to batch them.'}
       </span>
     );
   })();
@@ -717,7 +843,7 @@ export function Dashboard() {
     //   · Padding steps with the column instead of holding at 40px, so the 960px
     //     minimum spends 32px a side on chrome rather than 40.
     //   · Short windows: 640px tall is the enforced minimum, and 80px of vertical
-    //     padding there is 13% of the viewport — trimmed so the grid starts
+    //     padding there is 13% of the viewport, so it is trimmed and the grid starts
     //     peeking above the fold instead of being invisible.
     <div
       className="w-full max-w-[1720px] mx-auto px-8 @min-[1100px]:px-10 @min-[1600px]:px-14 py-10 [@media(max-height:720px)]:py-7"
@@ -737,14 +863,14 @@ export function Dashboard() {
           information — the totals it used to sit beside now live in the This
           month cell, where each number has exactly one home. */}
       <div className="flex flex-wrap items-center justify-between gap-x-8 gap-y-3 mb-6">
-        <h1 className="font-display font-semibold text-[30px] @min-[1240px]:text-[34px] [@media(max-height:720px)]:text-[26px] leading-[1.05] tracking-[-0.03em] text-text-primary">
+        <h1 className="text-h1 font-semibold leading-[1.05] tracking-tight text-text-primary">
           Paste a link. Get the <em className="not-italic text-accent">file.</em>
         </h1>
         {activeCount > 0 && (
           <button
             type="button"
             onClick={() => setActiveTab('queue')}
-            className="no-drag inline-flex items-center gap-2.5 h-9 pl-3 pr-3.5 rounded-md border border-border-soft bg-bg-secondary shadow-sm hover:bg-bg-hover transition-colors duration-150"
+            className="no-drag inline-flex items-center gap-2.5 h-9 pl-3 pr-3.5 rounded-md border border-border-soft bg-bg-secondary shadow-sm hover:bg-bg-hover focus-visible:bg-bg-hover transition-colors duration-150"
           >
             <motion.span
               aria-hidden
@@ -778,8 +904,12 @@ export function Dashboard() {
           size={20}
           className={`shrink-0 transition-colors duration-150 ${trimmed ? 'text-accent' : 'text-text-muted'}`}
         />
+        {/* The shell above owns the focus indicator (`.field-shell:focus-within`),
+            so the control inside deliberately suppresses its own ring on keyboard
+            focus rather than painting a second box around one field. The
+            suppression is scoped to focus-visible, not blanket `outline-none`. */}
         <input
-          className="no-drag flex-1 min-w-0 bg-transparent outline-none text-text-primary placeholder:text-text-muted text-[16px]"
+          className="no-drag flex-1 min-w-0 bg-transparent focus-visible:outline-none text-text-primary placeholder:text-text-muted text-[16px]"
           placeholder="Paste a YouTube, Spotify, SoundCloud or Reels link…"
           aria-label="Paste a link"
           aria-invalid={!!error}
@@ -802,7 +932,7 @@ export function Dashboard() {
             className={`shrink-0 font-mono text-[10.5px] tracking-[0.06em] rounded px-2 py-1 ${
               overBatchLimit ? 'text-warning' : 'text-accent'
             }`}
-            style={{ background: alpha(overBatchLimit ? 'var(--color-warning)' : 'var(--color-accent)', 14) }}
+            style={{ background: alpha(batchTone, 14) }}
           >
             {linkCount} LINKS
           </span>
@@ -846,7 +976,7 @@ export function Dashboard() {
 
       {/* ── The bento ─────────────────────────────────────────────────────────
           One grid for everyone; the cells carry their own empty states.
-          Column counts are keyed to `<main>`, not the viewport — the fixed 68px
+          Column counts are keyed to `<main>`, not the viewport: the fixed 68px
           rail makes viewport breakpoints fire a rail's width early.
             ·  <1000px (960px window ⇒ ~875px column): ONE column, everything
                stacked. Chosen over pairing tiles: at that width a pair puts two
@@ -868,7 +998,7 @@ export function Dashboard() {
           aside={recentTiles.length > 0 ? (
             <button
               type="button"
-              className="no-drag text-[12.5px] text-text-secondary hover:text-text-primary inline-flex items-center gap-1 transition-colors duration-150"
+              className="no-drag text-[12.5px] text-text-secondary hover:text-text-primary focus-visible:text-text-primary inline-flex items-center gap-1 transition-colors duration-150"
               onClick={() => setActiveTab('queue')}
             >
               View all <Forward size={13} />
@@ -876,20 +1006,40 @@ export function Dashboard() {
           ) : undefined}
         >
           {recentTiles.length === 0 ? (
-            <p className="text-[13px] text-text-secondary leading-relaxed max-w-[62ch]">
-              Finished downloads land here, newest first — each one a click away from the file on disk.
-            </p>
+            // The empty state is the row's own geometry, unfilled — the poster
+            // and its thumbnails in outline — so the strip doesn't materialise
+            // out of a paragraph the moment the first file finishes.
+            <>
+              <div aria-hidden className="grid gap-3 grid-cols-4 @min-[1000px]:grid-cols-5 @min-[1500px]:grid-cols-8">
+                {[0, 1, 2, 3].map((i) => (
+                  <span
+                    key={i}
+                    className={`block aspect-[16/9] rounded-md border border-border-soft bg-bg-tertiary ${
+                      i === 0 ? '@min-[1000px]:col-span-2 @min-[1000px]:aspect-auto' : ''
+                    }`}
+                  />
+                ))}
+              </div>
+              <p className="mt-3.5 text-[13px] text-text-secondary leading-relaxed max-w-[62ch]">
+                Finished downloads land here, newest first. Each one is a click away from the file on disk.
+              </p>
+            </>
           ) : (
             // A fitted grid, never a horizontal scroller: the tile track is what
             // used to run past the right edge of the window. The tail is hidden
-            // rather than wrapped, so every tier shows one full row.
+            // rather than wrapped, so every tier shows one full row — 4 items at
+            // the minimum width, 4 once the poster takes two of five tracks, 7
+            // across eight tracks.
             <div className="grid gap-3 grid-cols-4 @min-[1000px]:grid-cols-5 @min-[1500px]:grid-cols-8">
               {recentTiles.map((task, i) => (
                 <RecentTile
                   key={task.taskId}
                   task={task}
+                  lead={i === 0}
                   onQueue={() => setActiveTab('queue')}
-                  className={i >= 5 ? 'hidden @min-[1500px]:block' : i >= 4 ? 'hidden @min-[1000px]:block' : ''}
+                  className={i === 0
+                    ? '@min-[1000px]:col-span-2'
+                    : i >= 4 ? 'hidden @min-[1500px]:flex' : ''}
                 />
               ))}
             </div>

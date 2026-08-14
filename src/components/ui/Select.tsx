@@ -33,7 +33,7 @@ export function Select({ options, className = '', label, lockedValues, onLocked,
       <select
         aria-label={label}
         onChange={handleChange}
-        className={`appearance-none h-10 pl-3 pr-9 rounded-md bg-bg-tertiary border border-transparent text-text-primary text-sm hover:border-border focus:border-accent cursor-pointer ${className}`}
+        className={`appearance-none focus-visible:focus-ring h-10 pl-3 pr-9 rounded-md bg-bg-tertiary border border-transparent text-text-primary text-sm hover:border-border cursor-pointer ${className}`}
         {...rest}
       >
         {options.map((o) => (

@@ -59,7 +59,7 @@ describe('dismissSplash', () => {
     settle(1);
     expect(leaving()).toBeUndefined(); // still visible, deliberately
 
-    vi.advanceTimersByTime(2500); // past MIN_VISIBLE_MS
+    vi.advanceTimersByTime(3500); // past MIN_VISIBLE_MS
     settle(1);
     vi.advanceTimersByTime(300);
     expect(leaving()).toBe('true');
@@ -67,7 +67,7 @@ describe('dismissSplash', () => {
 
   it('freezes the CSS ramp where it got to, without snapping backwards', () => {
     startSplash();
-    vi.advanceTimersByTime(2500);
+    vi.advanceTimersByTime(3500);
     stubGeometry(240); // ramp reached 60% of a 400px track
     dismissSplash();
 
@@ -78,7 +78,7 @@ describe('dismissSplash', () => {
 
   it('completes to 100% BEFORE it starts fading', () => {
     startSplash();
-    vi.advanceTimersByTime(2500);
+    vi.advanceTimersByTime(3500);
     dismissSplash();
 
     frame();
@@ -94,7 +94,7 @@ describe('dismissSplash', () => {
 
   it('removes the overlay so it cannot swallow clicks', () => {
     startSplash();
-    vi.advanceTimersByTime(2500);
+    vi.advanceTimersByTime(3500);
     dismissSplash();
     settle(1);
     vi.advanceTimersByTime(1000);
@@ -103,7 +103,7 @@ describe('dismissSplash', () => {
 
   it('is safe to call twice — the watchdog and the ready path both fire it', () => {
     startSplash();
-    vi.advanceTimersByTime(2500);
+    vi.advanceTimersByTime(3500);
     dismissSplash();
     expect(() => dismissSplash()).not.toThrow();
     settle(1);
@@ -115,7 +115,7 @@ describe('dismissSplash', () => {
     const stop = vi.fn();
     (window as unknown as { __ahgSplash: { stop: () => void } }).__ahgSplash = { stop };
     startSplash();
-    vi.advanceTimersByTime(2500);
+    vi.advanceTimersByTime(3500);
     dismissSplash();
     expect(stop).toHaveBeenCalledOnce();
   });
@@ -124,7 +124,7 @@ describe('dismissSplash', () => {
     vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: true })));
     __resetSplash();
     startSplash();
-    vi.advanceTimersByTime(2500);
+    vi.advanceTimersByTime(3500);
     dismissSplash();
     expect(width()).toBe(100);
     vi.advanceTimersByTime(1000);

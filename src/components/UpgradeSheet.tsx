@@ -155,7 +155,7 @@ export function UpgradeSheet({ onClose }: UpgradeSheetProps) {
         </button>
 
         <header className="mb-7 [@media(max-height:720px)]:mb-4 pr-10">
-          <h2 className="font-display text-2xl font-semibold tracking-tight text-text-primary text-balance">
+          <h2 className="text-h2 text-text-primary text-balance">
             {isPremium ? 'You’re on Premium' : 'One purchase. Every limit gone.'}
           </h2>
           <p className="text-text-secondary text-sm mt-1.5 leading-relaxed max-w-[62ch]">
@@ -384,7 +384,7 @@ function PlanCard({ title, blurb, price, priceNote, values, active, featured, de
         }}
       >
         <span
-          className="font-display text-[11px] font-semibold uppercase"
+          className="text-[11px] font-semibold uppercase"
           style={{ letterSpacing: '0.09em', color: featured ? 'var(--color-accent)' : 'var(--color-text-muted)' }}
         >
           {featured ? 'Pay once' : 'Free forever'}
@@ -405,14 +405,14 @@ function PlanCard({ title, blurb, price, priceNote, values, active, featured, de
       </div>
 
       <div style={{ padding: 'clamp(16px, 2.2vw, 22px)' }}>
-        <h3 className="font-display text-lg font-semibold text-text-primary leading-none">{title}</h3>
+        <h3 className="text-lg font-semibold text-text-primary leading-none">{title}</h3>
         <p className="text-text-muted text-xs mt-1.5">{blurb}</p>
 
         {/* Short window: the price and the CTA under it are what has to stay in
             view, so the vertical rhythm gives way before they do. */}
         <div className="flex items-baseline gap-2.5 mt-5 mb-5 [@media(max-height:720px)]:mt-3 [@media(max-height:720px)]:mb-3">
           <span
-            className={`font-display font-semibold tabular-nums text-text-primary ${
+            className={`font-semibold tabular-nums text-text-primary ${
               featured ? 'text-[44px] [@media(max-height:720px)]:text-[34px]' : 'text-[34px] [@media(max-height:720px)]:text-[28px]'
             }`}
             style={{ letterSpacing: '-0.03em', lineHeight: 1 }}

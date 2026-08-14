@@ -95,6 +95,7 @@ describe('DownloadsTab', () => {
     const user = userEvent.setup();
 
     await user.click(screen.getByRole('button', { name: /clear completed/i }));
+    await user.click(screen.getByRole('button', { name: /confirm/i }));
 
     expect(window.electronAPI.download.remove).toHaveBeenCalledWith(expect.arrayContaining(['a', 'b']));
     const remaining = Object.keys(useAppStore.getState().downloads);

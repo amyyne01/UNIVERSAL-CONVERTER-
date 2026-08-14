@@ -314,7 +314,7 @@ export function SettingsTab() {
       <div className="mx-auto w-full max-w-[820px] @7xl:max-w-[1600px] px-6 @4xl:px-10 py-10 pb-16">
 
         <header className="mb-7">
-          <h1 className="font-display text-[32px] font-semibold text-text-primary tracking-[-0.025em] leading-[1.1]">
+          <h1 className="text-h1 text-text-primary">
             Settings
           </h1>
           <p className="text-sm text-text-secondary mt-1.5">

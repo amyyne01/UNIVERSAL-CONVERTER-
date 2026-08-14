@@ -193,7 +193,7 @@ export function PlaylistPreview() {
               <div className="font-mono text-[10.5px] tracking-[0.08em] uppercase text-spotify mb-1">
                 Spotify Playlist
               </div>
-              <h2 className="font-display font-semibold text-[20px] leading-tight tracking-[-0.015em] text-text-primary truncate">
+              <h2 className="text-h2 text-text-primary truncate">
                 {playlist.name}
               </h2>
               <div className="font-mono text-[10.5px] tracking-[0.08em] uppercase text-text-muted mt-1 tabular-nums">

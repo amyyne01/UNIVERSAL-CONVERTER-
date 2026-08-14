@@ -52,7 +52,6 @@
   --radius-2xl: 26px;
 
   /* SF Pro-superfamily analogue: Geist Sans (≈ SF Pro Display/Text) + Geist Mono (≈ SF Mono) */
-  --font-display: "Geist Sans", system-ui, sans-serif;
   --font-sans: "Geist Sans", system-ui, sans-serif;
   --font-mono: "Geist Mono", monospace;
 
@@ -142,6 +141,15 @@ body {
   outline: none;
 }
 
+/* Shared keyboard-focus ring for every UI primitive — same box-shadow idiom as
+   .field-shell:focus-within above. A Tailwind utility (not a bare class) so it
+   composes with the focus-visible: variant: `focus-visible:focus-ring`. One
+   ring, reused everywhere, instead of each component inventing its own. */
+@utility focus-ring {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-accent) 22%, transparent);
+}
+
 /* Reduced motion — collapse all animation/transition to imperceptible */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
@@ -157,6 +165,13 @@ body {
 
 /* Tabular numerals everywhere mono is used */
 .font-mono { font-feature-settings: "tnum"; }
+
+/* Fluid heading scale — headings only. Body text, labels, and numeric readouts
+   stay at fixed sizes: scaling them with viewport width would shift row
+   heights across dense lists (downloads queue, playlist rows) and break
+   alignment against fixed-size icons/badges next to them. */
+.text-h1 { font-size: clamp(28px, 2.2vw, 40px); line-height: 1.1; letter-spacing: -0.02em; font-weight: 600; }
+.text-h2 { font-size: clamp(19px, 1.3vw, 24px); line-height: 1.25; letter-spacing: -0.015em; font-weight: 600; }
 
 /* Custom scrollbar */
 ::-webkit-scrollbar { width: 10px; height: 10px; }

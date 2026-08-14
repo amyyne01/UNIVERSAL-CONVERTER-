@@ -17,7 +17,7 @@ export function Chip({ selected = false, tag, icon: Icon, className = '', childr
       type="button"
       whileTap={{ scale: 0.96 }}
       aria-pressed={selected}
-      className={`no-drag inline-flex items-center gap-2 h-8 px-3 rounded-md border text-[12.5px] font-medium transition-colors disabled:opacity-50 ${
+      className={`no-drag focus-visible:focus-ring inline-flex items-center gap-2 h-8 px-3 rounded-md border text-[12.5px] font-medium transition-colors disabled:opacity-50 ${
         selected
           ? 'bg-accent-soft border-accent/40 text-accent'
           : 'border-border text-text-secondary hover:text-text-primary hover:bg-bg-hover'

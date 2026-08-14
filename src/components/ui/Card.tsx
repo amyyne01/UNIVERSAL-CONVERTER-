@@ -16,7 +16,7 @@ export interface CardProps extends HTMLMotionProps<'div'> {
 export function Card({ tone = 'default', className = '', ...rest }: CardProps) {
   return (
     <motion.div
-      className={`rounded-lg bg-bg-surface border shadow-sm ${TONES[tone]} ${className}`}
+      className={`rounded-lg bg-bg-surface border shadow-sm focus-visible:focus-ring ${TONES[tone]} ${className}`}
       {...rest}
     />
   );

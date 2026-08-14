@@ -12,7 +12,8 @@ import { Button, Input, Select, FormatSelector, SegmentedCapsule } from '@/compo
 import { buildDownloadRequest, spotifyDownloadUrl } from '@/lib/download';
 import { useTierLocks, premiumCopy, basicCopy } from '@/lib/tier';
 import { formatDuration } from '@/lib/format';
-import type { AudioFormat, VideoQuality, SearchResult, Track, SourcePlatform } from '@shared/types';
+import { ShortFormPreview } from '@/components/ShortFormPreview';
+import type { AudioFormat, VideoQuality, SearchResult, Track, SourcePlatform, MediaMetadata } from '@shared/types';
 
 interface PlatformTabProps {
   platform: PlatformKey;
@@ -98,6 +99,8 @@ export function PlatformTab({ platform }: PlatformTabProps) {
   const [query, setQuery] = useState('');
   const [phase, setPhase] = useState<Phase>({ k: 'idle' });
   const [results, setResults] = useState<ResultItem[]>([]);
+  /** Reels only: the full metadata behind the preview card. */
+  const [preview, setPreview] = useState<MediaMetadata | null>(null);
   const [mediaType, setMediaType] = useState<'audio' | 'video'>(audioOnlyPlatform ? 'audio' : 'video');
   const [audioFormat, setAudioFormat] = useState<AudioFormat>(
     (config?.defaultFormat as AudioFormat) ?? 'mp3',
@@ -165,6 +168,7 @@ export function PlatformTab({ platform }: PlatformTabProps) {
     const isLink = looksLikeUrl(input);
     setPhase({ k: 'busy', note: isLink ? 'Reading the link…' : `Searching ${def.label}…` });
     setResults([]);
+    setPreview(null);
     try {
       // ── Spotify: credential-free scraper ─────────────────────────────────
       if (platform === 'spotify') {
@@ -215,6 +219,16 @@ export function PlatformTab({ platform }: PlatformTabProps) {
         }
         // Show the fetched item as a result card — the user confirms format/quality.
         const meta = await window.electronAPI.url.fetchMetadata(input).catch(() => null);
+        // Short-form is previewed, not listed: the poster IS how you recognise a
+        // vertical clip. Without real metadata there is nothing to preview, and a
+        // card built from the raw URL would only look broken — so say why instead.
+        if (platform === 'reels' && (!meta || !meta.thumbnailUrl)) {
+          return setPhase({
+            k: 'error',
+            msg: "That post couldn't be previewed — it may be private, removed, or need a sign-in.",
+          });
+        }
+        if (platform === 'reels' && meta) setPreview(meta);
         setResults([
           {
             id: detection.id ?? input,
@@ -270,6 +284,10 @@ export function PlatformTab({ platform }: PlatformTabProps) {
   }, [pendingInput, setPendingInput, handleSubmit]);
 
   const directItem = results.length === 1 && results[0].direct && platform !== 'reels' ? results[0] : null;
+  /** The pasted short-form item, rendered as a preview rather than a row. */
+  const reelsItem = platform === 'reels' && preview && results.length === 1 && results[0].direct
+    ? results[0]
+    : null;
 
   return (
     // @container: everything below reflows on the width of THIS column, not the
@@ -286,7 +304,7 @@ export function PlatformTab({ platform }: PlatformTabProps) {
           <Icon size={22} style={{ color: accent }} />
         </div>
         <div>
-          <h1 className="font-display font-semibold text-[32px] leading-[1.1] tracking-[-0.025em] text-text-primary">{def.label}</h1>
+          <h1 className="text-h1 text-text-primary">{def.label}</h1>
           <p className="font-mono text-[10.5px] tracking-[0.08em] uppercase text-text-muted mt-1">{copy.capability}</p>
           {/* What the free tier gives you, on the surface where you'd use it.
               Without this the tier only ever speaks when it says no, which is how
@@ -406,7 +424,14 @@ export function PlatformTab({ platform }: PlatformTabProps) {
           </div>
         )}
 
-        {phase.k === 'results' && (directItem ? (
+        {phase.k === 'results' && reelsItem && preview ? (
+          <ShortFormPreview
+            meta={preview}
+            eyebrow={reelsItem.label ?? def.label}
+            accent={accent}
+            onGet={() => get(reelsItem)}
+          />
+        ) : phase.k === 'results' && (directItem ? (
           <SingleResultCard
             item={directItem}
             accent={accent}
@@ -602,7 +627,7 @@ function SingleResultCard({
         >
           {eyebrow}
         </div>
-        <h3 className="font-display font-semibold text-[20px] leading-[1.25] tracking-[-0.015em] text-text-primary line-clamp-2 mb-0.5">
+        <h3 className="text-h2 text-text-primary line-clamp-2 mb-0.5">
           {item.title}
         </h3>
         {item.subtitle && (

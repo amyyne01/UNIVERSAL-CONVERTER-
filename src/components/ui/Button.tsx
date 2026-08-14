@@ -37,7 +37,7 @@ export function Button({
       whileHover={{ y: -1 }}
       whileTap={{ scale: 0.98 }}
       disabled={disabled || loading}
-      className={`no-drag inline-flex items-center justify-center gap-2 font-display font-medium rounded-md transition-[background,filter] duration-150 disabled:opacity-50 disabled:pointer-events-none ${VARIANTS[variant]} ${SIZES[size]} ${className}`}
+      className={`no-drag focus-visible:focus-ring inline-flex items-center justify-center gap-2 font-medium rounded-md transition-[background,filter] duration-150 disabled:opacity-50 disabled:pointer-events-none ${VARIANTS[variant]} ${SIZES[size]} ${className}`}
       {...rest}
     >
       {loading ? <Spinner size={16} /> : Icon ? <Icon size={16} /> : null}

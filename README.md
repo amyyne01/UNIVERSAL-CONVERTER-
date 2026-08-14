@@ -42,6 +42,8 @@ The app works without paying for it. Everything below is included:
 - **Your own numbers** — what you pulled this month, how it compares to last, and
   which sources it came from.
 - **Light and dark**, following your system by default.
+- **Fully keyboard-operable** — every control shows where the focus is, and every
+  row action is reachable without a mouse.
 - **It keeps itself current** — the app tells you when a new version is out,
   downloads it for you, and swaps itself over on restart. Your settings, your
   download history and your licence all carry across.
@@ -105,15 +107,23 @@ Tracks, sets and artist pages, at the quality the upload allows.
 
 ### Reels & Shorts
 
-TikTok, Instagram Reels and Facebook video — no watermark.
+TikTok, Instagram Reels and Facebook video, without the watermark. Paste a link
+and the post is previewed first: the real poster at its own vertical shape, the
+author, the caption, how long it runs and how many people watched it. If a post
+is private, removed or behind a sign-in, it says so plainly instead of handing
+you a broken card.
 
 ---
 
 ## The queue
 
-Everything in flight and everything finished, in one list: filter by active, done
-or failed, select what you want, clear the rest. Each finished row opens the actual
-file on disk — and tells you plainly if it has since been moved or deleted.
+Everything in flight and everything finished, in one list, grouped so the things
+that need you come first: what is downloading, then anything that needs attention,
+then everything already done. A live download shows its percentage, speed and time
+remaining; a paused one holds its place; a failed one says why. Filter by active,
+done or failed, select what you want, and clear the rest. Anything that deletes
+rows asks first and tells you how many. Each finished row opens the actual file on
+disk, and tells you plainly if it has since been moved or deleted.
 
 ![The download queue](screenshots/03-queue.png)
 

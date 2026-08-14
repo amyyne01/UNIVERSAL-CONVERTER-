@@ -21,11 +21,15 @@ const REMOVE_FLOOR_MS = 400;
 /**
  * Minimum time the splash stays up. Boot is often under a second, so without this
  * the bar is created, finished and gone before it has drawn enough frames to read
- * as movement — indistinguishable from a bar that never animated. Also long enough
- * for the wordmark's ~2.2s reveal to finish, so the app never cuts off its own
- * opening line.
+ * as movement — indistinguishable from a bar that never animated.
+ *
+ * Deliberately longer than it needs to be. It covers the wordmark's ~2.2s reveal
+ * AND at least one swap of the status line (the first lands at 1.5s), so the boot
+ * screen is actually SEEN rather than glimpsed. This is a product decision, not a
+ * technical floor: the app is ready well before this elapses, and the only thing
+ * being waited on is the user's eye.
  */
-const MIN_VISIBLE_MS = 2400;
+const MIN_VISIBLE_MS = 3400;
 
 /** Set by public/splash-boot.js, which runs before this bundle exists. */
 declare global {
