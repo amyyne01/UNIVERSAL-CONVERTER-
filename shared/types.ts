@@ -211,6 +211,20 @@ export interface YtdlpUpdateStatus {
   message?: string;
 }
 
+// §12 app self-update. The events (update:available/progress/…) are the live feed;
+// this is the same state readable at any moment. Both exist because the startup
+// check fires before the lazily-mounted Settings tab has subscribed — without a
+// readable state, an update found at boot would be invisible until the user
+// happened to press Check again.
+export interface UpdateState {
+  phase: 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'uptodate' | 'error';
+  /** The available/downloaded release, when one is known. */
+  version?: string;
+  /** Download progress, 0-100, while phase is 'downloading'. */
+  percent?: number;
+  message?: string;
+}
+
 // ── Tiers ─────────────────────────────────────────────────────────────────────
 // 'basic' is the free default every install starts on; 'premium' is the one-time
 // purchase. BASIC_LIMITS is the ONE definition of what free allows — the renderer

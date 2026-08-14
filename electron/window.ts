@@ -6,8 +6,20 @@ const dir = path.dirname(fileURLToPath(import.meta.url));
 
 let mainWindow: BrowserWindow | null = null;
 
+/**
+ * The taskbar and the Alt-Tab switcher take their icon from the window, not from
+ * the exe — without this they fall back to Electron's own default. A multi-size
+ * .ico is used rather than the 4000x4000 source png: Windows picks the right size
+ * per surface, and nothing has to decode a 2.5 MB bitmap on the first-paint path.
+ */
+function windowIcon(): string {
+  const base = app.isPackaged ? process.resourcesPath : app.getAppPath();
+  return path.join(base, 'assets', 'icon.ico');
+}
+
 export function createWindow(): BrowserWindow {
   mainWindow = new BrowserWindow({
+    icon: windowIcon(),
     width: 1240,
     height: 820,
     minWidth: 960,

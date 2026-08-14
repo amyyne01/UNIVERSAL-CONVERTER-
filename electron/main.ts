@@ -210,9 +210,11 @@ app.whenReady().then(() => {
   const spotify = new SpotifyHandler();
   const secrets = loadSecrets();
   const license = new LicenseManager(secrets);
-  // ponytail: don't auto-check on startup — autoUpdater throws in dev (no feed) and
-  // emits an unhandled 'error'. The renderer drives update:check when appropriate.
   const updater = new Updater({ getWindow: () => getMainWindow() });
+  // Clear anything a previous run staged. If the swap succeeded the file is already
+  // gone (the script moves it); if it failed, a stale half-download is worse than
+  // re-fetching, so either way the directory starts empty.
+  updater.cleanup();
   // #26: the yt-dlp engine is the thing that actually goes stale — let it self-update
   // into userData/bin (checksum-verified) and react to extractor failures.
   const ytdlp = new YtdlpUpdater({
@@ -247,6 +249,11 @@ app.whenReady().then(() => {
   // Resolve/validate the yt-dlp + ffmpeg binaries shortly after launch so the
   // user's first search doesn't eat the one-time cold-start cost.
   setTimeout(() => downloader.warmUp(), 1500);
+  // §12: one app-update check per launch, deferred so it never competes with the
+  // first paint. It only ASKS — the download and the restart are both the user's
+  // click, driven from Settings. In dev there is no portable exe to replace, so the
+  // check still runs but install() would refuse; that is reported, never thrown.
+  setTimeout(() => void updater.check(), 6000);
   // #26 ambient channel: one deferred, non-blocking engine check per launch (the
   // updater's own 24h TTL caps the real network traffic); only auto-installs when
   // the user left auto-update on. Failures are surfaced as status, never thrown.

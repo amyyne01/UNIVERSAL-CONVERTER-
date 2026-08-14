@@ -16,7 +16,7 @@ import path from 'node:path';
 import { app } from 'electron';
 import type { BrowserWindow } from 'electron';
 import type { YtdlpUpdateStatus } from '../shared/types.js';
-import { isTrustedReleaseHost } from './updater.js';
+import { isTrustedReleaseHost, parseChecksum } from './updater.js';
 import type { Downloader } from './downloader.js';
 
 const RELEASE_API = 'https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest';
@@ -38,15 +38,6 @@ export function isEngineStale(text: string): boolean {
     'yt-dlp is out of date',
     'please report this issue',
   ].some((p) => t.includes(p));
-}
-
-/** Pull the expected hash for `name` out of a SHA2-256SUMS body ("<hash>  <name>"). */
-export function parseChecksum(sums: string, name: string): string | null {
-  for (const line of (sums || '').split('\n')) {
-    const [hash, file] = line.trim().split(/\s+/);
-    if (file === name && /^[0-9a-f]{64}$/i.test(hash || '')) return hash.toLowerCase();
-  }
-  return null;
 }
 
 interface YtdlpUpdaterDeps {

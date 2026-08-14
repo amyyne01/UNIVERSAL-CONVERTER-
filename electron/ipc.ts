@@ -240,6 +240,8 @@ export function registerIpcHandlers(config: ConfigManager, downloader: Downloade
 
   // ── update:* (self-update, §12) — delegate to the Updater; host-vetting lives there.
   handle('update:check', RATE_DEFAULT, () => updater.check());
+  // Readable state, so a tab mounted after the startup check still sees its result.
+  handle('update:state', RATE_DEFAULT, () => updater.getState());
   handle('update:download', RATE_DEFAULT, () => updater.download());
   handle('update:install', RATE_DEFAULT, () => updater.install());
 

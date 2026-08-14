@@ -68,6 +68,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   update: {
     check: () => ipcRenderer.invoke('update:check'),
+    state: () => ipcRenderer.invoke('update:state'),
     download: () => ipcRenderer.invoke('update:download'),
     install: () => ipcRenderer.invoke('update:install'),
   },

@@ -15,6 +15,7 @@ import type {
   ReleaseResult,
   RevealResult,
   DownloadStats,
+  UpdateState,
   MediaMetadata,
   YtdlpUpdateStatus,
 } from '@shared/types';
@@ -80,6 +81,7 @@ export interface ElectronAPI {
   };
   update: {
     check: () => Promise<void>;
+    state: () => Promise<UpdateState>;
     download: () => Promise<void>;
     install: () => Promise<void>;
   };

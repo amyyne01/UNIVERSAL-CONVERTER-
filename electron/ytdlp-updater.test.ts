@@ -6,10 +6,10 @@ import path from 'node:path';
 import type { BrowserWindow } from 'electron';
 
 // The updater imports the trusted-host allowlist from updater.ts, which pulls in
-// electron-updater — stub it (it constructs a real NsisUpdater against no app).
-vi.mock('electron-updater', () => ({ default: { autoUpdater: {} }, autoUpdater: {} }));
 
-import { YtdlpUpdater, isEngineStale, parseChecksum } from './ytdlp-updater';
+import { YtdlpUpdater, isEngineStale } from './ytdlp-updater';
+// One definition, in the module that owns release-asset handling.
+import { parseChecksum } from './updater';
 import type { Downloader } from './downloader';
 
 const ASSET = process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp';

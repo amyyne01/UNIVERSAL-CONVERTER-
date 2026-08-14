@@ -20,7 +20,7 @@ export default defineConfig({
       output: {
         manualChunks: {
           'vendor-framer': ['framer-motion'],
-          'vendor-icons': ['lucide-react'],
+          'vendor-icons': ['@phosphor-icons/react'],
         },
       },
     },

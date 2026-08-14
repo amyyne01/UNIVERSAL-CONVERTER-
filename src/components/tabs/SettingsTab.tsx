@@ -205,6 +205,16 @@ export function SettingsTab() {
     const u4 = window.electronAPI.onUpdateNotAvailable(() => setUpdatePhase('uptodate'));
     const u5 = window.electronAPI.onUpdateError(() => setUpdatePhase('error'));
     const u6 = window.electronAPI.onYtdlpStatus(setEngine);
+
+    // This tab is lazy, so the startup update check has usually already fired and
+    // its event is gone. Read the state main kept instead of showing a stale
+    // "check for updates" prompt over an update that was found minutes ago.
+    void window.electronAPI.update.state().then((s) => {
+      if (s.phase === 'idle') return;
+      setUpdatePhase(s.phase);
+      if (s.version) setUpdateVersion(s.version);
+      if (typeof s.percent === 'number') setUpdatePercent(s.percent);
+    });
     // Cheap read: honours the updater's 24h TTL, so this only hits the network once a day.
     void window.electronAPI.ytdlp.version().then(setEngine);
 
