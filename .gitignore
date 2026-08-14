@@ -24,9 +24,14 @@ graphify-out/
 .omc/
 .claude/
 coverage/
+# Throwaway drivers used to measure/capture the real app (see HISTORY).
 .shot.mjs
 .shots.mjs
+.probe.mjs
+.gif.mjs
 screenshots/responsive-*.png
+screenshots/.gifframes/
+screenshots/trace-check.png
 
 # Entitlement/activation layer — never published. The app builds locally with
 # these present; they are deliberately absent from the public tree.

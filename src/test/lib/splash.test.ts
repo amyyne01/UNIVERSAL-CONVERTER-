@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { startSplash, splashStep, dismissSplash, __resetSplash } from '@/lib/splash';
+import { startSplash, dismissSplash, __resetSplash } from '@/lib/splash';
 
 // The module animates on rAF, so the test drives the frames itself rather than
 // waiting on wall-clock time — otherwise these assertions are races.
@@ -12,13 +12,20 @@ function frame(ms = 16): void {
   queue = [];
   due.forEach((cb) => cb(clock));
 }
-/** Run enough frames that the exponential creep has effectively settled. */
-function settle(seconds = 6): void {
+function settle(seconds = 2): void {
   for (let i = 0; i < seconds * 60; i++) frame();
 }
 
-const width = () => parseFloat((document.getElementById('splash-fill') as HTMLElement).style.width);
-const status = () => document.getElementById('splash-status')?.textContent;
+const fill = () => document.getElementById('splash-fill') as HTMLElement;
+const width = () => parseFloat(fill().style.width);
+const leaving = () => document.getElementById('splash')?.dataset.leaving;
+
+/** jsdom has no layout, so getBoundingClientRect is 0 — pin a track/fill size. */
+function stubGeometry(fillPx: number, trackPx = 400): void {
+  const track = fill().parentElement as HTMLElement;
+  track.getBoundingClientRect = () => ({ width: trackPx }) as DOMRect;
+  fill().getBoundingClientRect = () => ({ width: fillPx }) as DOMRect;
+}
 
 beforeEach(() => {
   clock = 0;
@@ -31,9 +38,10 @@ beforeEach(() => {
   vi.useFakeTimers();
   document.body.innerHTML = `
     <div id="splash">
-      <div id="splash-fill" style="width:5%"></div>
+      <div class="sp-trace"><div id="splash-fill"></div></div>
       <div id="splash-status"></div>
     </div>`;
+  stubGeometry(200);
   __resetSplash();
 });
 
@@ -42,60 +50,51 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe('splash progress', () => {
-  it('keeps moving while a boot step is still running', () => {
-    startSplash();
-    const before = width();
-    for (let i = 0; i < 20; i++) frame();
-    // The bug this guards: a bar parked at its last milestone reads as hung.
-    expect(width()).toBeGreaterThan(before);
-  });
-
-  it('never crosses into a step that has not completed', () => {
-    startSplash();
-    settle(); // creep forever with zero steps done
-    // One of three steps in progress => ceiling is the 1/3 boundary (5 + 95/3).
-    expect(width()).toBeLessThanOrEqual(5 + 95 / 3 + 0.01);
-  });
-
-  it('a completed step raises the ceiling the creep may reach', () => {
-    startSplash();
-    settle();
-    const afterFirst = width();
-    splashStep();
-    settle();
-    expect(width()).toBeGreaterThan(afterFirst);
-    expect(width()).toBeLessThanOrEqual(5 + (95 * 2) / 3 + 0.01);
-  });
-
-  it('names the step it is on', () => {
-    startSplash();
-    splashStep();
-    expect(status()).toBe('Restoring downloads');
-  });
-});
-
 describe('dismissSplash', () => {
-  it('completes the bar to 100% BEFORE it starts fading', () => {
+  // The bar is ramped by a CSS animation in index.html so it runs without JS,
+  // even if this bundle stalls. This module only takes it over at the right time.
+  it('holds the splash up long enough for the bar to be seen', () => {
     startSplash();
-    splashStep();
+    dismissSplash(); // ready almost immediately
+    settle(1);
+    expect(leaving()).toBeUndefined(); // still visible, deliberately
+
+    vi.advanceTimersByTime(2500); // past MIN_VISIBLE_MS
+    settle(1);
+    vi.advanceTimersByTime(300);
+    expect(leaving()).toBe('true');
+  });
+
+  it('freezes the CSS ramp where it got to, without snapping backwards', () => {
+    startSplash();
+    vi.advanceTimersByTime(2500);
+    stubGeometry(240); // ramp reached 60% of a 400px track
     dismissSplash();
 
-    // Mid-sweep: bar is climbing and the overlay has not begun to leave.
+    // Pinned to the ramp's position before the sweep starts — never back to 5%.
+    expect(width()).toBeCloseTo(60, 0);
+    expect(fill().style.animation).toBe('none');
+  });
+
+  it('completes to 100% BEFORE it starts fading', () => {
+    startSplash();
+    vi.advanceTimersByTime(2500);
+    dismissSplash();
+
     frame();
-    expect(document.getElementById('splash')?.dataset.leaving).toBeUndefined();
+    expect(leaving()).toBeUndefined(); // mid-sweep, not leaving yet
 
     settle(1);
     expect(width()).toBe(100);
-    // The completion is allowed to read before the fade is triggered.
-    expect(document.getElementById('splash')?.dataset.leaving).toBeUndefined();
+    expect(leaving()).toBeUndefined(); // completion is allowed to read first
 
     vi.advanceTimersByTime(250);
-    expect(document.getElementById('splash')?.dataset.leaving).toBe('true');
+    expect(leaving()).toBe('true');
   });
 
   it('removes the overlay so it cannot swallow clicks', () => {
     startSplash();
+    vi.advanceTimersByTime(2500);
     dismissSplash();
     settle(1);
     vi.advanceTimersByTime(1000);
@@ -104,6 +103,7 @@ describe('dismissSplash', () => {
 
   it('is safe to call twice — the watchdog and the ready path both fire it', () => {
     startSplash();
+    vi.advanceTimersByTime(2500);
     dismissSplash();
     expect(() => dismissSplash()).not.toThrow();
     settle(1);
@@ -111,8 +111,28 @@ describe('dismissSplash', () => {
     expect(document.getElementById('splash')).toBeNull();
   });
 
+  it('stops the message loop before dismissing, so it cannot animate a removed node', () => {
+    const stop = vi.fn();
+    (window as unknown as { __ahgSplash: { stop: () => void } }).__ahgSplash = { stop };
+    startSplash();
+    vi.advanceTimersByTime(2500);
+    dismissSplash();
+    expect(stop).toHaveBeenCalledOnce();
+  });
+
+  it('still completes the bar under prefers-reduced-motion', () => {
+    vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: true })));
+    __resetSplash();
+    startSplash();
+    vi.advanceTimersByTime(2500);
+    dismissSplash();
+    expect(width()).toBe(100);
+    vi.advanceTimersByTime(1000);
+    expect(document.getElementById('splash')).toBeNull();
+  });
+
   it('does nothing when the splash is already gone', () => {
     document.body.innerHTML = '';
-    expect(() => { startSplash(); splashStep(); dismissSplash(); }).not.toThrow();
+    expect(() => { startSplash(); dismissSplash(); }).not.toThrow();
   });
 });

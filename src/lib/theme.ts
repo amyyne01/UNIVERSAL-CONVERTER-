@@ -20,8 +20,12 @@ export function applyTheme(theme: ThemeName): void {
 let listener: (() => void) | null = null;
 
 export function initTheme(): void {
-  const stored = (localStorage.getItem(KEY) as ThemeName | null) ?? 'system';
-  applyTheme(stored);
+  // Deliberately does NOT apply a theme here. public/theme-init.js already set
+  // one pre-paint from the value MAIN resolved out of config.theme — the real
+  // setting. localStorage is only a mirror this module writes afterwards, so
+  // re-applying it on mount would repaint the app from a stale copy and flash
+  // the wrong theme over a correct splash. The authoritative apply happens when
+  // config arrives (store.setConfig -> applyTheme(cfg.theme)).
   if (listener) mq().removeEventListener('change', listener);
   listener = () => {
     const current = (localStorage.getItem(KEY) as ThemeName | null) ?? 'system';

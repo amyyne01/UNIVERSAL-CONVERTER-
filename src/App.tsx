@@ -2,7 +2,7 @@ import { useEffect, type CSSProperties } from 'react';
 import { MotionConfig, motion, useReducedMotion } from 'framer-motion';
 import { useAppStore } from '@/store';
 import { initTheme } from '@/lib/theme';
-import { dismissSplash, splashStep } from '@/lib/splash';
+import { dismissSplash } from '@/lib/splash';
 import { NAV, PLATFORMS, TAB_ORDER, type NavItem, type TabKey } from '@/constants';
 import { IconContext } from '@/components/ui/icons';
 import WindowTitleBar from '@/components/WindowTitleBar';
@@ -65,8 +65,9 @@ function Shell() {
       });
     // The splash waits on config + history only. The tier check can hit the
     // network, so it is never on the path that unblocks the UI — an offline
-    // launch must not stall behind it.
-    const configReady = loadConfig().then(splashStep);
+    // launch must not stall behind it. The bar itself is driven by CSS in
+    // index.html; these two promises decide only WHEN it is allowed to finish.
+    const configReady = loadConfig();
     void window.electronAPI.license
       .check()
       .then((r) => setLicense({ activated: r.activated, plan: r.plan }))
@@ -96,8 +97,7 @@ function Shell() {
     const historyReady = window.electronAPI.download
       .list()
       .then((tasks) => get().setDownloads([...tasks, ...Object.values(get().downloads)]))
-      .catch(() => {})
-      .then(splashStep);
+      .catch(() => {});
 
     // Whichever comes first: both boot steps landing, or the watchdog. A hung
     // IPC call must never leave the user staring at the splash forever.

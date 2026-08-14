@@ -17,7 +17,7 @@ function windowIcon(): string {
   return path.join(base, 'assets', 'icon.ico');
 }
 
-export function createWindow(): BrowserWindow {
+export function createWindow(theme: 'light' | 'dark' = 'dark'): BrowserWindow {
   mainWindow = new BrowserWindow({
     icon: windowIcon(),
     width: 1240,
@@ -26,7 +26,9 @@ export function createWindow(): BrowserWindow {
     minHeight: 640,
     frame: false,
     titleBarStyle: 'hidden',
-    backgroundColor: '#15131c',
+    // The native fill shown before the first frame. Same resolved theme the splash
+    // paints with, so a light setup never flashes dark (or the reverse).
+    backgroundColor: theme === 'dark' ? '#0d1117' : '#f7f9fb',
     show: false,
     webPreferences: {
       preload: path.join(dir, 'preload.cjs'),

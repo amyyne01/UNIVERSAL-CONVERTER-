@@ -7,6 +7,9 @@
     <!-- Fonts are self-hosted via @fontsource imports in src/main.tsx (offline-safe). -->
     <!-- Pre-paint theme bootstrap (external so the production CSP can keep script-src 'self'). -->
     <script src="./theme-init.js"></script>
+    <!-- Splash text layer (wordmark reveal + the looping status line). Deferred
+         so the DOM exists, but it is tiny and runs long before the app bundle. -->
+    <script src="./splash-boot.js" defer></script>
     <!--
       Boot splash — "Carrier Lock". Deliberately inline (CSP allows 'unsafe-inline'
       for styles only): it paints on the FIRST frame, before the bundle, React,
@@ -23,6 +26,10 @@
     -->
     <style>
       :root {
+        /* Shared by .sp-stage and the resolved waveform inside the scan layer:
+           that copy has to span the whole track even though its parent is only
+           as wide as current progress. */
+        --sp-stage-w: min(520px, 68vw);
         --sp-bg: oklch(0.150 0.014 240);
         --sp-ink: oklch(0.955 0.008 220);
         --sp-ink2: oklch(0.760 0.015 225);
@@ -62,7 +69,7 @@
       }
       #splash[data-leaving="true"] { opacity: 0; }
 
-      .sp-stage { width: min(520px, 68vw); }
+      .sp-stage { width: var(--sp-stage-w); }
 
       .sp-word {
         display: flex;
@@ -120,24 +127,60 @@
         width: 5%;
         background: var(--sp-bg);
         z-index: 2;
+        /* A fake progress bar, in the honest sense: it does not track real work,
+           it exists so a slow boot never reads as a freeze. Two chained stages,
+           and NEITHER ever stops moving:
+             sp-fill  — the eager opening run, decelerating (4.2s)
+             sp-crawl — an endless creep that approaches but never reaches the end
+           It is CSS rather than JS on purpose: it starts on the first painted
+           frame and keeps going even if the bundle is slow, stalls, or never
+           arrives — a bar that freezes exactly when the app is struggling is the
+           one case where it matters most.
+           It never gets to 100%. Only src/lib/splash.ts closes the last stretch,
+           when the app is genuinely ready, so a full bar always means a usable
+           app rather than "the animation ran out". */
+        overflow: hidden; /* clips the resolved waveform to current progress */
+        animation:
+          sp-fill 4200ms cubic-bezier(0.33, 1, 0.68, 1) forwards,
+          sp-crawl 45s 4200ms linear forwards;
       }
-      #splash-fill::after {
-        content: "";
+
+      /* The resolved trace: the SAME path as the raw signal, in the accent, held
+         at full track width and revealed by the parent's clip. Because both copies
+         share geometry and drift, the blue line lands exactly on the grey one — the
+         scan head reads as the point where the signal locks, not as a shape change. */
+      .sp-resolved {
         position: absolute;
         left: 0;
-        right: 0;
-        top: 50%;
-        height: 1px;
-        margin-top: -0.5px;
-        background: var(--sp-accent);
-        box-shadow: 0 0 10px var(--sp-glow);
+        top: 0;
+        bottom: 0;
+        width: var(--sp-stage-w);
+      }
+      .sp-resolved svg {
+        display: block;
+        width: 200%;
+        height: 100%;
+        stroke: var(--sp-accent);
+        fill: none;
+        stroke-width: 1;
+        stroke-linejoin: round;
+        filter: drop-shadow(0 0 6px var(--sp-glow));
+        animation: sp-drift 7s linear infinite;
+      }
+      @keyframes sp-fill {
+        from { width: 5%; }
+        to   { width: 92%; }
+      }
+      @keyframes sp-crawl {
+        from { width: 92%; }
+        to   { width: 99%; }
       }
       /* Scan head: the lock point where signal becomes trace. Breathes while
          there is still something to resolve; holds steady once leaving. */
       #splash-fill::before {
         content: "";
         position: absolute;
-        right: -1px;
+        right: 0;
         top: 50%;
         width: 2px;
         height: 15px;
@@ -148,24 +191,47 @@
       }
       #splash[data-leaving="true"] #splash-fill::before { animation: none; }
       @keyframes sp-lock {
-        0%, 100% { opacity: 0.55; }
-        50%      { opacity: 1; }
+        0%, 100% { opacity: 0.45; transform: translateY(-50%) scaleY(0.82); }
+        50%      { opacity: 1;    transform: translateY(-50%) scaleY(1.15); }
       }
 
       .sp-status {
-        height: 13px;
-        margin-top: 14px;
+        /* Taller than the glyphs and overflow-visible: a character mid-flip is
+           drawn outside the text box, and clipping it shears the animation. */
+        height: 22px;
+        margin-top: 12px;
         font-size: 10.5px;
         letter-spacing: 0.09em;
         text-transform: uppercase;
         color: var(--sp-ink2);
+        perspective: 420px;
+        overflow: visible;
       }
 
-      /* Reduced motion: the composition stands still but stays whole — static
-         waveform, steady head, instant progress jumps, quick undelayed fade. */
+      /* One character. Shared by the wordmark scramble and the status flip —
+         both animate transform/opacity only, so neither ever costs a layout. */
+      .sp-ch {
+        display: inline-block;
+        white-space: pre;
+        transition:
+          transform 320ms cubic-bezier(0.16, 1, 0.3, 1),
+          opacity 320ms cubic-bezier(0.16, 1, 0.3, 1);
+      }
+      /* Mid-scramble glyphs read in the accent, so the wordmark resolving matches
+         the trace locking on below it. */
+      .sp-scramble { color: var(--sp-accent); }
+
+      .sp-word { perspective: 420px; }
+
+      /* Reduced motion: the composition stops MOVING, it does not stop existing.
+         No drifting waveform, no breathing head, no 3D character flips — but the
+         bar still fills and the text still crossfades, because the preference is
+         about vestibular motion, not about removing every signal that the app is
+         working. A splash with nothing happening reads as a hang. */
       @media (prefers-reduced-motion: reduce) {
         .sp-raw svg, #splash-fill::before { animation: none; }
-        #splash-fill { transition: none; }
+        .sp-ch { transition: opacity 240ms ease-out; }
+        /* #splash-fill keeps its animation on purpose — see above. */
         #splash { transition: opacity 150ms ease-out 0ms; }
       }
     </style>
@@ -185,7 +251,16 @@
               <use href="#sp-wave" x="520" />
             </svg>
           </div>
-          <div id="splash-fill"></div>
+          <div id="splash-fill">
+            <!-- Same path, referenced not duplicated: the two traces can never
+                 drift out of shape because there is only one geometry. -->
+            <div class="sp-resolved">
+              <svg viewBox="0 0 1040 40" preserveAspectRatio="none" aria-hidden="true">
+                <use href="#sp-wave" vector-effect="non-scaling-stroke" />
+                <use href="#sp-wave" x="520" vector-effect="non-scaling-stroke" />
+              </svg>
+            </div>
+          </div>
         </div>
         <div class="sp-status" id="splash-status">Starting</div>
       </div>

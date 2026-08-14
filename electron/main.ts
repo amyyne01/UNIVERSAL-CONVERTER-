@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, clipboard, Notification } from 'electron';
+import { app, BrowserWindow, Menu, clipboard, Notification, nativeTheme } from 'electron';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { createWindow, getMainWindow } from './window.js';
@@ -41,13 +41,27 @@ function runScheduledShutdown(): void {
 
 const ACTIVE_STATES = new Set<DownloadStatus>(['fetching_info', 'downloading', 'converting', 'embedding']);
 
+/**
+ * The one place the effective theme is decided. config.theme is the real setting;
+ * 'system' resolves against the OS here so the native window fill, the boot splash
+ * and the app all start from the SAME answer. The renderer's localStorage copy is
+ * a mirror written after config loads — it is not consulted for the first paint.
+ */
+function effectiveTheme(): 'light' | 'dark' {
+  const pref = config?.get('theme') ?? 'system';
+  if (pref === 'light' || pref === 'dark') return pref;
+  return nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
+}
+
 function loadApp(win: BrowserWindow): void {
   // loadFile/loadURL REJECT on a failed navigation (missing/corrupt dist, an AV
   // handle, the dev server not up yet). Unhandled, that rejection takes down the
   // main process under Node's default — same class of bug updater.ts guards.
+  // ?theme= is read by public/theme-init.js before the first paint.
+  const theme = effectiveTheme();
   const load = app.isPackaged
-    ? win.loadFile(path.join(app.getAppPath(), 'dist', 'index.html'))
-    : win.loadURL('http://localhost:5173');
+    ? win.loadFile(path.join(app.getAppPath(), 'dist', 'index.html'), { search: `theme=${theme}` })
+    : win.loadURL(`http://localhost:5173/?theme=${theme}`);
   void load.catch((err: unknown) => console.error('[main] failed to load the app window', err));
 }
 
@@ -225,7 +239,7 @@ app.whenReady().then(() => {
   onDownloadFailure((error) => ytdlp.handleDownloadFailure(error));
   registerIpcHandlers(config, downloader, spotify, license, updater, ytdlp, stats);
 
-  const win = createWindow();
+  const win = createWindow(effectiveTheme());
   loadApp(win);
   // Nothing below is needed to paint the first frame, and some of it is slow
   // (tray icon I/O, a global shortcut, a Discord socket, a scheduler catch-up
@@ -264,7 +278,7 @@ app.whenReady().then(() => {
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      loadApp(createWindow());
+      loadApp(createWindow(effectiveTheme()));
     }
   });
 });

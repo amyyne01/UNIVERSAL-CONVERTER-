@@ -17,7 +17,9 @@ It is a single file. Double-click it and the app opens — no installer, no setu
 wizard, and nothing written outside its own folder and the downloads directory you
 choose. Windows 10 and 11, 64-bit.
 
-![Starting up](screenshots/00-loading.png)
+You only ever download it once: from then on it updates itself.
+
+![Starting up](screenshots/00-loading.gif)
 
 ---
 
@@ -40,6 +42,9 @@ The app works without paying for it. Everything below is included:
 - **Your own numbers** — what you pulled this month, how it compares to last, and
   which sources it came from.
 - **Light and dark**, following your system by default.
+- **It keeps itself current** — the app tells you when a new version is out,
+  downloads it for you, and swaps itself over on restart. Your settings, your
+  download history and your licence all carry across.
 - **Ctrl+K** for anything, and a global paste-and-download shortcut you can set.
 
 Every free ceiling is stated up front, on the screen where it applies — you never
@@ -52,7 +57,7 @@ find out you hit one only after a download fails.
 ## Premium — $3.99, once
 
 Not a subscription. One payment, one machine, moveable to a new PC when you
-replace it.
+replace it — release it on the old machine and activate on the new one.
 
 | | Free | Premium |
 |---|---|---|
