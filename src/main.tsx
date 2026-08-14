@@ -11,7 +11,13 @@ import '@fontsource/geist-mono/500.css';
 import '@fontsource/geist-mono/600.css';
 import '@fontsource/geist-mono/700.css';
 import App from './App';
+import { startSplash } from './lib/splash';
 import './index.css';
+
+// Start the boot bar the moment this bundle runs — earlier than App's first
+// effect, which costs a React mount. Everything after this point is what the
+// bar is actually waiting on.
+startSplash();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
