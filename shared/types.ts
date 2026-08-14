@@ -297,7 +297,7 @@ export interface RevealResult {
 
 export interface ActivationResult {
   success: boolean;
-  error?: 'invalid' | 'already_activated' | 'network';
+  error?: 'invalid' | 'already_activated' | 'network' | 'device_in_use';
   message?: string;
   /** Tier the accepted key granted (absent when activation failed). */
   plan?: Plan;
