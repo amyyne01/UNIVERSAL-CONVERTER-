@@ -1,142 +1,147 @@
 # AHG Universal Converter
 
-Modern all-in-one desktop media downloader :
+Paste a link. Get the file.
 
-AHG Universal Converter provides a fast, polished, and portable experience for downloading music and video from multiple platforms through a single unified interface — without requiring accounts, subscriptions, or API credentials.
+One window for YouTube, Spotify, SoundCloud and short-form video — with artwork and
+tags already written into the file. No account, no API keys, nothing to install.
 
----
-
-## Features:
-
-- Multi-platform media downloading:
-<img width="1148" height="690" alt="image" src="https://github.com/user-attachments/assets/ef1dec23-d5e6-4f9c-8ebf-b15b8965e20f" />
-
-- YouTube search + direct URL support
-- Spotify tracks, albums, and playlists
-- SoundCloud tracks, playlists, and sets
-- Batch URL importing with automatic platform detection
-- Video downloads up to 4K
-- Multiple audio formats:
-  - MP3
-  - FLAC
-  - AAC
-  - OGG
-  - WAV
-  - M4A
-- Real-time progress, speed, and ETA tracking:
-- Drag-to-reorder download queue
-- Persistent download history
-- Metadata and thumbnail embedding
-- Configurable output and quality settings
-- Intelligent fallback download system
-- Modern animated UI/UX
-- No installation required
+![The home screen](screenshots/01-dashboard.png)
 
 ---
 
-## Supported Platforms
+## Download
 
-•  <img src="https://cdn.simpleicons.org/youtube/FF0000" width="18" align="center" /> **YouTube** : Videos, playlists, shorts, audio  
-•  <img src="https://cdn.simpleicons.org/spotify/1DB954" width="18" align="center" /> **Spotify** : Tracks, albums, playlists  
-•  <img src="https://cdn.simpleicons.org/soundcloud/FF5500" width="18" align="center" /> **SoundCloud** : Tracks, playlists, sets
+Get the portable `.exe` from the [latest release](https://github.com/amyyne01/UNIVERSAL-CONVERTER-/releases/latest).
+
+It is a single file. Double-click it and the app opens — no installer, no setup
+wizard, and nothing written outside its own folder and the downloads directory you
+choose. Windows 10 and 11, 64-bit.
+
+![Starting up](screenshots/00-loading.png)
 
 ---
 
+## Free, and genuinely usable
 
-## Core Sections
+The app works without paying for it. Everything below is included:
 
-### YouTube:
-<img width="1868" height="896" alt="image" src="https://github.com/user-attachments/assets/5f2daaf9-da35-48c8-a77b-715e3accb437" />
+- **Every source in one field** — paste a YouTube, Spotify, SoundCloud, TikTok,
+  Instagram Reels or Facebook link and the right options appear on their own.
+- **Search without leaving the app** — type words instead of a link to search
+  YouTube or SoundCloud, then download straight from the results.
+- **Video up to 1080p**, audio in MP3, AAC, M4A, OGG or Opus at up to 320 kbps.
+- **Playlists and albums** — preview the tracklist, tick what you want, take the
+  first 20 tracks of any collection.
+- **Batch of 5** — paste or drop up to five links at once and they queue together.
+- **Artwork and tags written in** — title, artist, album and cover art, embedded.
+- **Short-form video without the watermark.**
+- **A queue that survives** — pause, resume, cancel, retry; close the app
+  mid-download and it offers to finish the job next time you open it.
+- **Your own numbers** — what you pulled this month, how it compares to last, and
+  which sources it came from.
+- **Light and dark**, following your system by default.
+- **Ctrl+K** for anything, and a global paste-and-download shortcut you can set.
 
-- Paste URL or search directly
-- Automatic content type detection
-- Download video or audio formats
+Every free ceiling is stated up front, on the screen where it applies — you never
+find out you hit one only after a download fails.
 
-### Spotify:
-<img width="1859" height="945" alt="image" src="https://github.com/user-attachments/assets/c193adc2-2bb5-4791-af4f-088881f4b52f" />
-- Paste track, album, or playlist links
-- Full metadata + album artwork support:
-  <img width="1854" height="955" alt="image" src="https://github.com/user-attachments/assets/142d3ec8-4ceb-4ddf-99c6-874c68a64add" />
-- No API credentials required
+![Reaching the free batch limit](screenshots/02-batch-limit.png)
+
+---
+
+## Premium — $3.99, once
+
+Not a subscription. One payment, one machine, moveable to a new PC when you
+replace it.
+
+| | Free | Premium |
+|---|---|---|
+| Video quality | up to 1080p | **up to 4K, or best available** |
+| Audio formats | MP3, AAC, M4A, OGG, Opus | **+ FLAC, WAV and ALAC, lossless** |
+| Playlists & albums | first 20 tracks | **every track** |
+| Batch paste | 5 links at a time | **as many as you paste** |
+| Scheduled downloads | — | **run unattended, on your days** |
+
+Everything in the free list stays free. Premium only lifts the ceilings.
+
+![Free and Premium side by side](screenshots/08-plans.png)
+
+---
+
+## The sources
+
+### YouTube
+
+Videos, playlists and Shorts. Paste a link or search by name, then choose video or
+audio before it starts.
+
+![The YouTube tab](screenshots/04-youtube.png)
+
+Search results come back in the app, ready to download — no browser round trip.
+
+![Searching YouTube from inside the app](screenshots/05-youtube-results.png)
+
+### Spotify
+
+Tracks, albums and playlists, with full metadata and cover art. Pick exactly which
+tracks you want from the preview before anything is queued. Lossless formats are
+marked, so you always know what you are getting.
+
+![The Spotify tab](screenshots/06-spotify.png)
+
+Albums and playlists open as a tracklist you choose from — nothing is queued until
+you say so.
+
+![Choosing tracks from a playlist](screenshots/11-playlist.png)
 
 ### SoundCloud
-- URL or search support:
-  <img width="1849" height="917" alt="image" src="https://github.com/user-attachments/assets/c50fddbf-4715-4421-bb68-b33f59f3e5bd" />
 
-- Playlist and metadata support
+Tracks, sets and artist pages, at the quality the upload allows.
 
-### Batch Import
-- Paste multiple URLs at once:
-  <img width="1656" height="991" alt="image" src="https://github.com/user-attachments/assets/56b76bd0-c969-46aa-9c4b-281684fb2704" />
+### Reels & Shorts
 
-- Automatic platform detection per line
-
-### Downloads:
-<img width="498" height="156" alt="converted_animation" src="https://github.com/user-attachments/assets/dc2a7814-f070-4c94-aae5-fbf0a1a810e9" />
-
-- Real-time download monitoring
-- Speed and ETA tracking
-- Queue reordering
-- Persistent download history
-
-### Settings: 
-<img width="1919" height="1026" alt="image" src="https://github.com/user-attachments/assets/29238975-5615-4c23-a463-265f6ad2dbb1" />
-
-- Output folder selection
-- Format and quality configuration
-- Metadata + thumbnail embedding
-- Speed limiter controls
-- UI visual customization options
+TikTok, Instagram Reels and Facebook video — no watermark.
 
 ---
 
-## Design Philosophy
+## The queue
 
-- Dark-only interface optimized for low-light environments
-- OKLCH-based warm color palette
-- Plus Jakarta Sans Variable typography
-- Smooth motion system powered by Framer Motion
-- Premium desktop-app inspired UI/UX
+Everything in flight and everything finished, in one list: filter by active, done
+or failed, select what you want, clear the rest. Each finished row opens the actual
+file on disk — and tells you plainly if it has since been moved or deleted.
 
----
-
-## Tech Stack
-
-- Electron 33
-- React 18
-- TypeScript
-- Vite
-- Tailwind CSS 4
-- Framer Motion
-- Zustand
-- Lucide React
-- electron-builder
+![The download queue](screenshots/03-queue.png)
 
 ---
 
-## Under the Hood
+## Everything else
 
-- Bundled `yt-dlp` + `FFmpeg`
-- Multi-layer Spotify metadata scraping
-- Intelligent fallback architecture:
-  - votify
-  - spotDL
-  - yt-dlp
-- GitHub-based license activation system
+Settings keep the parts you tune often within reach: where files land, your default
+format and quality, theme, and the extras — bandwidth cap, proxy, a global hotkey,
+Discord presence — for when you want them. Nothing needs saving; changes apply as
+you make them.
 
+![Settings](screenshots/07-settings.png)
+
+Press **Ctrl+K** anywhere for the command palette: jump to a tab, paste and
+download, switch theme, clear the queue.
+
+![The command palette](screenshots/09-palette.png)
+
+The whole app is at home in light too, and lays out cleanly from a small window up
+to a maximised one on a large display.
+
+![The light theme](screenshots/10-light-dashboard.png)
 
 ---
 
-## Distribution
+## Support
 
-No installer required — download and run.
+Questions, keys and problems: [Discord](https://discord.gg/NMRgaSQVNx).
 
 ---
-
-## Current Version
-
-`v0.3.4`
 
 ## License
 
-MIT
+This is paid software, not an open-source project. No license file is included and
+no rights are granted beyond personal use of a purchased copy — all rights reserved.
