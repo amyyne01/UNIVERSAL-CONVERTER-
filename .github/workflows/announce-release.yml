@@ -19,6 +19,9 @@ jobs:
       CH_TICKET: "<#1491237431368749128>"      # #open-a-ticket
       # @Customer, @Customer +, @Universal Converter
       ROLE_PINGS: "<@&1491191878845202452> <@&1501944831025610964> <@&1503872186430259372>"
+      # ── Interface images attached to each post (max 10, 10 MB total) ───────
+      MEDIA_CHANGELOG: "screenshots/01-dashboard.png screenshots/05-youtube-results.png screenshots/03-queue.png screenshots/07-settings.png"
+      MEDIA_DOWNLOAD: "screenshots/01-dashboard.png"
       # ───────────────────────────────────────────────────────────────────────
       HOOK_CHANGELOG: ${{ secrets.DISCORD_CHANGELOG_WEBHOOK }}
       HOOK_DOWNLOAD: ${{ secrets.DISCORD_DOWNLOAD_WEBHOOK }}
@@ -26,6 +29,12 @@ jobs:
       REPO: ${{ github.repository }}
       TAG: ${{ github.event.release.tag_name || inputs.tag }}
     steps:
+      # The screenshots are attached from the tag, so an announcement always
+      # shows the interface as it looked in that release.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
+
       - name: Announce
         run: |
           set -euo pipefail
@@ -37,14 +46,24 @@ jobs:
           exe_name=$(jq -r '.name // "the .exe"' <<<"$exe")
 
           body=$(jq -r '.body // ""' <<<"$release")
-          # Optional hero image/GIF: put `<!-- media: https://... -->` in the release notes.
-          media=$(sed -n 's|^<!-- media: *\(.*[^ ]\) *-->$|\1|p' <<<"$body" | head -1)
-          # Drop every HTML comment (the media marker + any notes-to-self), tidy blank lines.
+          # `<!-- media: a.png b.gif -->` in the notes overrides MEDIA_CHANGELOG
+          # for this release. Entries are repo paths; an http… entry is linked instead.
+          override=$(sed -n 's|^<!-- media: *\(.*[^ ]\) *-->$|\1|p' <<<"$body" | head -1)
+          # Drop every HTML comment (the marker + any notes-to-self), tidy blank lines.
           body=$(perl -0777 -pe 's/<!--.*?-->//gs; s/\n{3,}/\n\n/g; s/^\s+|\s+$//g' <<<"$body")
 
-          post() {  # post <webhook> <message>
-            jq -n --arg c "$2" '{content:$c, allowed_mentions:{parse:["roles"]}}' \
-              | curl -sS -f -X POST -H "Content-Type: application/json" -d @- "$1" > /dev/null
+          post() {  # post <webhook> <message> [file…]
+            local hook="$1" msg="$2" i=0 links=""; shift 2
+            local args=()
+            for m in "$@"; do
+              case "$m" in
+                http*) links="$links"$'\n'"$m" ;;
+                *) if [ -f "$m" ]; then args+=(-F "files[$i]=@$m"); i=$((i + 1)); fi ;;
+              esac
+            done
+            jq -n --arg c "$msg$links" '{content:$c, allowed_mentions:{parse:["roles"]}}' > payload.json
+            curl -sS -f -X POST -F "payload_json=<payload.json" "${args[@]}" "$hook" > /dev/null
+            echo "posted with $i image(s)"
           }
 
           # ── 1. Changelog channel ────────────────────────────────────────────
@@ -60,9 +79,8 @@ jobs:
           Thank you for supporting the project and testing every release 🌸
 
           $ROLE_PINGS
-          $media
           EOF
-          )"
+          )" ${override:-$MEDIA_CHANGELOG}
 
           # ── 2. Download channel ─────────────────────────────────────────────
           [ -n "$exe_url" ] && link="$exe_url" || link="$url"
@@ -78,6 +96,6 @@ jobs:
 
           $ROLE_PINGS
           EOF
-          )"
+          )" $MEDIA_DOWNLOAD
 
           echo "Announced $TAG"
