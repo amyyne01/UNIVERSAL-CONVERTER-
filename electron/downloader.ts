@@ -9,6 +9,7 @@ import path from 'node:path';
 import { app } from 'electron';
 import type { DownloadTask, DownloadProgress, Track, SearchResult, MediaMetadata } from '../shared/types.js';
 import { LOSSLESS_FORMATS } from '../shared/types.js';
+import { detectUrl } from './url-detector.js';
 
 export type ErrorClass = 'retryable' | 'permanent' | 'auth' | 'geo';
 
@@ -480,8 +481,15 @@ export class Downloader {
   // ── Metadata & search (§3.1) ────────────────────────────────────────────
 
   async fetchMetadata(url: string): Promise<MediaMetadata> {
+    // Same `watch?v=…&list=…` trap buildYtDlpArgs() guards against, and the same
+    // answer — yt-dlp defaults to --yes-playlist, so a video opened from inside a
+    // list (or a YouTube Mix, `list=RD…`) makes this enumerate the entire list
+    // before it can answer. That is the difference between "Reading the link…"
+    // resolving at once and sitting there for a minute on a single video.
+    // detectUrl is the one place that decides collection-vs-single; ask it.
+    const single = detectUrl(url).isCollection ? [] : ['--no-playlist'];
     // ponytail: flat dump (§3.1) — fast, best-effort; first record is the header.
-    const items = await this.runJson(['--dump-json', '--no-warnings', '--flat-playlist', '--', url]);
+    const items = await this.runJson(['--dump-json', '--no-warnings', '--flat-playlist', ...single, '--', url]);
     if (items.length === 0) throw new Error('No metadata returned for URL');
     const head = items[0] ?? {};
     const isCollection = items.length > 1;

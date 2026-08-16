@@ -280,6 +280,30 @@ describe('Downloader', () => {
     expect('likeCount' in meta).toBe(false); // not reported → not invented
   });
 
+  // `watch?v=…&list=RD…` (a YouTube Mix, or any video opened from inside a list) is a
+  // SINGLE video by detection, but yt-dlp defaults to --yes-playlist and would enumerate
+  // the whole list before answering — ~400 records and 20s+ for one video, with the
+  // list's title landing on the card instead of the video's.
+  it('reads a single video without expanding the list it was opened from', async () => {
+    const p = downloader.fetchMetadata('https://www.youtube.com/watch?v=HnvTFVudNbU&list=RDHnvTFVudNbU&start_radio=1');
+    expect((spawn as any).mock.calls[0][1]).toContain('--no-playlist');
+    const proc = (spawn as any).mock.results[0].value;
+    proc.stdout.emit('data', Buffer.from(JSON.stringify({ title: 'La la la', duration: 304 }) + '\n'));
+    proc.emit('close', 0);
+    await expect(p).resolves.toMatchObject({ title: 'La la la', isCollection: false });
+  });
+
+  it('still expands a real playlist link', async () => {
+    const p = downloader.fetchMetadata('https://www.youtube.com/playlist?list=PLabc123');
+    expect((spawn as any).mock.calls[0][1]).not.toContain('--no-playlist');
+    const proc = (spawn as any).mock.results[0].value;
+    proc.stdout.emit('data', Buffer.from(
+      JSON.stringify({ playlist_title: 'A list', title: 'One' }) + '\n' + JSON.stringify({ title: 'Two' }) + '\n',
+    ));
+    proc.emit('close', 0);
+    await expect(p).resolves.toMatchObject({ title: 'A list', isCollection: true });
+  });
+
   // Multi-file stdout capture (§future split-chapters use): every after_move:filepath
   // line is collected, with the same buffered-partial-line stitching as stderr; the
   // primary reported path (2nd arg) stays last-line-wins, matching today's behavior.
