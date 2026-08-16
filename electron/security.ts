@@ -49,14 +49,18 @@ export function assertTrustedSender(event: IpcMainInvokeEvent): void {
 // client — a plain Map is the whole store.
 const rateBuckets = new Map<string, number[]>();
 
-/** Sliding-window rate limit for a channel: records the call, prunes hits older
- *  than windowMs, and returns false once the window holds more than maxPerWindow. */
+/** Sliding-window rate limit for a channel: prunes hits older than windowMs, then
+ *  admits the call only while the window holds fewer than maxPerWindow.
+ *  A REJECTED call is not recorded — counting it would let a burst keep pushing its
+ *  own window forward, so the lockout outlived the burst by however long the caller
+ *  kept retrying instead of draining after windowMs. */
 export function rateLimit(channel: string, maxPerWindow: number, windowMs = 60000): boolean {
   const now = Date.now();
   const hits = (rateBuckets.get(channel) ?? []).filter((t) => now - t < windowMs);
-  hits.push(now);
+  const admitted = hits.length < maxPerWindow;
+  if (admitted) hits.push(now);
   rateBuckets.set(channel, hits);
-  return hits.length <= maxPerWindow;
+  return admitted;
 }
 
 /** Wrap an ipcMain.handle callback so it inherits sender attestation, then a

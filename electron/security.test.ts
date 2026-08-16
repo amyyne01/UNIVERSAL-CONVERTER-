@@ -97,11 +97,30 @@ describe('rateLimit', () => {
       resolve();
     }, 60));
   });
+
+  it('does not record rejected calls, so a burst cannot extend its own lockout', () => {
+    const ch = 'test:ratelimit:noselfextend:' + Math.random();
+    expect(rateLimit(ch, 1, 60)).toBe(true); // t≈0, admitted
+    return new Promise<void>((resolve) => {
+      setTimeout(() => {
+        expect(rateLimit(ch, 1, 60)).toBe(false); // t≈40, rejected — must not be recorded
+      }, 40);
+      setTimeout(() => {
+        // t≈80: the one admitted hit has aged out. If the rejection at t≈40 had been
+        // recorded it would still be inside the window and the caller would stay
+        // locked out purely for having retried.
+        expect(rateLimit(ch, 1, 60)).toBe(true);
+        resolve();
+      }, 80);
+    });
+  });
 });
 
 describe('secure', () => {
   it('attests then rate-limits then delegates; a burst past the limit is rejected', () => {
-    const inner = vi.fn(() => 'ok');
+    // The arg is typed so secure()'s rest-parameter generic infers [string] —
+    // a bare `() => 'ok'` infers [] and every wrapped(event, arg) call is a type error.
+    const inner = vi.fn((_event: any, _arg: string) => 'ok');
     const wrapped = secure('test:secure:burst:' + Math.random(), 2, inner);
     expect(wrapped(mainFrameEvent(), 'a')).toBe('ok');
     expect(wrapped(mainFrameEvent(), 'b')).toBe('ok');

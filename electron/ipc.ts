@@ -54,11 +54,21 @@ function queryStr(value: unknown, max = MAX_QUERY): string {
   return typeof value === 'string' ? value.slice(0, max) : '';
 }
 
-// Per-channel per-minute budgets (Seam #45). download:start spawns a real job so
-// it's the tightest; url detection is bursty-but-cheap; everything else is generous.
+// Per-channel per-minute budgets (Seam #45). Each budget is sized against what the
+// app ITSELF does on its busiest legitimate path, not against an imagined attacker:
+// a budget below real usage doesn't stop abuse, it breaks the feature — and the
+// renderer reports the rejection as a bad link, which sends the user to inspect a
+// perfectly good URL. These are runaway backstops, so they sit well above real use.
 const RATE_DEFAULT = 120;
-const RATE_URL = 60;
-const RATE_DOWNLOAD = 10;
+// url:detect is a pure in-process regex match — no I/O, no spawn, no state. It costs
+// strictly less than the IPC round trip that carries it, and a batch drop calls it
+// once per link, so the ceiling only has to outrun a runaway loop.
+const RATE_DETECT = 1000;
+const RATE_URL = 60; // url:fetchMetadata — one yt-dlp spawn per call, one call per submit.
+// download:start only ENQUEUES; the single-slot FIFO queue is what serialises the
+// actual work, so a batch of links must not be throttled here (at 10 a drag-and-drop
+// of 20 links silently lost the last 10).
+const RATE_DOWNLOAD = 300;
 
 export function registerIpcHandlers(config: ConfigManager, downloader: Downloader, spotify: SpotifyHandler, license: LicenseManager, updater: Updater, ytdlp: YtdlpUpdater, stats: StatsStore): void {
   // Route EVERY channel through secure(): sender attestation + a per-channel rate
@@ -100,7 +110,7 @@ export function registerIpcHandlers(config: ConfigManager, downloader: Downloade
   });
 
   // ── url:* ─────────────────────────────────────────────────────────────────
-  handle('url:detect', RATE_URL, (_e, url: unknown) => detectUrl(urlArg(url)));
+  handle('url:detect', RATE_DETECT, (_e, url: unknown) => detectUrl(urlArg(url)));
   handle('url:fetchMetadata', RATE_URL, (_e, url: unknown) => downloader.fetchMetadata(urlArg(url)));
 
   // ── youtube:* / soundcloud:* (search via the engine, §3.1) ──────────────────
