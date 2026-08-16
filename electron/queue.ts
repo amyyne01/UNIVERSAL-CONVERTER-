@@ -51,8 +51,20 @@ export function initHistory(file: string): void {
   if (!existsSync(file)) return;
   try {
     const saved = JSON.parse(readFileSync(file, 'utf8')) as DownloadTask[];
-    for (const t of saved) {
-      if (!t?.taskId || !t.progress) continue;
+    for (const raw of saved) {
+      if (!raw?.taskId || !raw.progress) continue;
+      // Restore THROUGH createTask rather than trusting the row verbatim. A file
+      // written by an older build (or truncated mid-write) is still valid JSON but
+      // can be missing fields the renderer reads unconditionally — a row with no
+      // `format` threw on `format.toUpperCase()` and took the whole window with it.
+      // Defaults are laid first, the saved values win on top; same shape as config.
+      const base = createTask(raw);
+      const t: DownloadTask = {
+        ...base,
+        ...raw,
+        taskId: raw.taskId,
+        progress: { ...base.progress, ...raw.progress },
+      };
       if (!TERMINAL.has(t.progress.status)) {
         t.progress = { ...t.progress, status: 'paused', speed: 0, eta: 0, error: '' };
         t.interrupted = true; // renderer asks: finish it or erase it

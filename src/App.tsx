@@ -7,6 +7,7 @@ import { NAV, PLATFORMS, TAB_ORDER, type NavItem, type TabKey } from '@/constant
 import { IconContext } from '@/components/ui/icons';
 import WindowTitleBar from '@/components/WindowTitleBar';
 import { CommandPalette } from '@/components/CommandPalette';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { UpgradeSheet } from '@/components/UpgradeSheet';
 import { Notice } from '@/components/Notice';
 import { PlaylistPreview } from '@/components/PlaylistPreview';
@@ -162,7 +163,11 @@ function Shell() {
               a tab actually has; a tab that reflows on `md:` reflows a rail-width
               too early. Tabs cap and reflow with `@min-[…]:` off this element. */}
           <main id="main-content" tabIndex={-1} className="@container flex-1 overflow-y-auto">
-            {currentPlaylist ? <PlaylistPreview /> : <Screen tab={activeTab} />}
+            {/* Keyed per surface: a boundary that has caught an error stays caught
+                until it remounts, so navigating away is the recovery. */}
+            <ErrorBoundary key={currentPlaylist ? 'playlist' : activeTab}>
+              {currentPlaylist ? <PlaylistPreview /> : <Screen tab={activeTab} />}
+            </ErrorBoundary>
           </main>
         </div>
       </div>

@@ -358,6 +358,36 @@ describe('history persistence', () => {
     expect(mid.interrupted).toBe(true);
   });
 
+  // A history file written by an older build is still valid JSON but can lack
+  // fields the renderer reads unconditionally. It used to reach the UI verbatim,
+  // where `format.toUpperCase()` threw and unmounted the entire window.
+  it('fills in every field a partial saved row is missing', () => {
+    existsSyncMock.mockReturnValue(true);
+    readFileSyncMock.mockReturnValue(JSON.stringify([
+      { taskId: 'legacy', progress: { status: 'done' } },
+    ]));
+    Q.initHistory('C:\\hist.json');
+    const t = Q.getAllTasks()[0];
+    expect(t.taskId).toBe('legacy');
+    expect(t.format).toBeTypeOf('string');
+    expect(t.source).toBeTypeOf('string');
+    expect(t.url).toBeTypeOf('string');
+    expect(t.progress.filename).toBeTypeOf('string');
+    expect(t.progress.percent).toBeTypeOf('number');
+  });
+
+  it('keeps the saved values of a complete row', () => {
+    existsSyncMock.mockReturnValue(true);
+    readFileSyncMock.mockReturnValue(JSON.stringify([
+      { taskId: 'full', title: 'Kept', format: 'flac', progress: { status: 'done', percent: 100 } },
+    ]));
+    Q.initHistory('C:\\hist.json');
+    const t = Q.getAllTasks()[0];
+    expect(t.title).toBe('Kept');
+    expect(t.format).toBe('flac');
+    expect(t.progress.percent).toBe(100);
+  });
+
   it('removeTasks drops entries and schedules a persist', () => {
     existsSyncMock.mockReturnValue(true);
     readFileSyncMock.mockReturnValue(JSON.stringify([

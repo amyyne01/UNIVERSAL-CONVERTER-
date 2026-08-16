@@ -249,7 +249,23 @@ export function SettingsTab() {
     if (dir) updateConfig({ outputDir: dir });
   }, [updateConfig]);
 
-  if (!config) return null;
+  // Every control below reads `config`, so there is nothing to draw without it —
+  // but returning null drew an EMPTY PANE: the tab looked broken with no way to
+  // tell whether it was still loading or had given up. App retries the load once;
+  // if that also failed, say so instead of showing a void.
+  if (!config) {
+    return (
+      <div className="mx-auto w-full max-w-[820px] px-6 py-16">
+        <p role="status" className="text-sm text-text-secondary">
+          Loading your settings…
+        </p>
+        <p className="mt-2 text-xs text-text-muted max-w-[54ch] leading-relaxed">
+          If this doesn’t clear, your settings file couldn’t be read. Restart the app — your
+          downloads and license are unaffected.
+        </p>
+      </div>
+    );
+  }
 
   const toggleDay = (d: number) => {
     updateConfig({

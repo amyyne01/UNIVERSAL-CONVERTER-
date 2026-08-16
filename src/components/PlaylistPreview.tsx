@@ -191,7 +191,7 @@ export function PlaylistPreview() {
                 readout and select-all wrap under instead of crushing it. */}
             <div className="min-w-0 flex-1 basis-[220px]">
               <div className="font-mono text-[10.5px] tracking-[0.08em] uppercase text-spotify mb-1">
-                Spotify Playlist
+                {playlist.url.includes('/album/') ? 'Spotify Album' : 'Spotify Playlist'}
               </div>
               <h2 className="text-h2 text-text-primary truncate">
                 {playlist.name}

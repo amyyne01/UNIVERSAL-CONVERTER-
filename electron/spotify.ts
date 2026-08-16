@@ -133,7 +133,10 @@ export class SpotifyHandler {
     const { entity, token } = await this.fetchEmbed(kind, id);
 
     // Tier 2 — full list over the internal GraphQL (token reused across pages).
-    if (token) {
+    // Gated on HAVING a token, not on this page having minted one: within the
+    // 25-min TTL an embed response that omits it is normal, and testing only the
+    // fresh value silently dropped those fetches to the capped Tier 3 list.
+    if (token || this.getToken()) {
       const { tracks, meta, total, complete } = await this.collectTracks(kind, id);
       if (tracks.length)
         return this.buildCollection(kind, id, entity, meta, complete ? total : tracks.length, tracks);
@@ -371,7 +374,11 @@ function mapTrackData(d: any, albumNode: any): Track | null {
 /** Embed entity / condensed embed trackList item → Track. */
 function mapEmbedTrack(e: any, fallbackCover = '', fallbackId = ''): Track | null {
   const uri: string = e?.uri ?? '';
-  const id = uri.startsWith('spotify:track:') ? uri.slice('spotify:track:'.length) : uri.split(':').pop() || fallbackId;
+  // A collection's condensed trackList also carries episodes and local files.
+  // Taking the last uri segment as an id turned those into Tracks pointing at
+  // /track/<episodeId>, which the bridge then fed to yt-dlp as a search query.
+  if (uri && !uri.startsWith('spotify:track:')) return null;
+  const id = uri ? uri.slice('spotify:track:'.length) : fallbackId;
   if (!id) return null;
   const artists = e.artists ? artistNames(e.artists) : e.subtitle ? [String(e.subtitle)] : [];
   const t: Track = {

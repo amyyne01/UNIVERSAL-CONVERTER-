@@ -96,10 +96,21 @@ const mockElectronAPI = {
     release: vi.fn().mockResolvedValue({ success: true }),
   },
   app: { openSupport: vi.fn().mockResolvedValue(undefined) },
+  stats: {
+    get: vi.fn().mockResolvedValue({
+      current: { month: '2026-08', files: 0, bytes: 0, byPlatform: {} },
+      previous: null,
+    }),
+  },
   update: {
     check: vi.fn().mockResolvedValue(undefined),
+    state: vi.fn().mockResolvedValue({ phase: 'idle' }),
     download: vi.fn().mockResolvedValue(undefined),
     install: vi.fn().mockResolvedValue(undefined),
+  },
+  ytdlp: {
+    version: vi.fn().mockResolvedValue({ current: '', latest: '', state: 'idle' }),
+    update: vi.fn().mockResolvedValue({ current: '', latest: '', state: 'idle' }),
   },
   // Event listeners — each returns an unsubscribe fn
   onDownloadQueued: vi.fn().mockReturnValue(vi.fn()),
@@ -114,6 +125,7 @@ const mockElectronAPI = {
   onUpdateProgress: vi.fn().mockReturnValue(vi.fn()),
   onUpdateDownloaded: vi.fn().mockReturnValue(vi.fn()),
   onUpdateError: vi.fn().mockReturnValue(vi.fn()),
+  onYtdlpStatus: vi.fn().mockReturnValue(vi.fn()),
 };
 
 Object.defineProperty(window, 'electronAPI', {

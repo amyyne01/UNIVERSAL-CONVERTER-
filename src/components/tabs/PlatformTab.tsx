@@ -208,8 +208,12 @@ export function PlatformTab({ platform }: PlatformTabProps) {
         if (detection.platform === 'unknown') {
           return setPhase({ k: 'error', msg: `That link isn't one ${def.label} can handle.` });
         }
+        // detection.url, not `input`: detectUrl prepends https:// to a scheme-less
+        // paste ("youtu.be/…"), and the engine must be handed the same normalized
+        // URL the detector matched — not the raw text.
+        const target = detection.url;
         if (detection.isCollection) {
-          const meta = await window.electronAPI.url.fetchMetadata(input);
+          const meta = await window.electronAPI.url.fetchMetadata(target);
           setResults(meta.entries.map(searchToItem));
           return setPhase(
             meta.entries.length
@@ -218,7 +222,7 @@ export function PlatformTab({ platform }: PlatformTabProps) {
           );
         }
         // Show the fetched item as a result card — the user confirms format/quality.
-        const meta = await window.electronAPI.url.fetchMetadata(input).catch(() => null);
+        const meta = await window.electronAPI.url.fetchMetadata(target).catch(() => null);
         // Short-form is previewed, not listed: the poster IS how you recognise a
         // vertical clip. Without real metadata there is nothing to preview, and a
         // card built from the raw URL would only look broken — so say why instead.
@@ -231,12 +235,12 @@ export function PlatformTab({ platform }: PlatformTabProps) {
         if (platform === 'reels' && meta) setPreview(meta);
         setResults([
           {
-            id: detection.id ?? input,
-            title: meta?.title ?? input,
+            id: detection.id ?? target,
+            title: meta?.title ?? target,
             subtitle: meta?.uploader ?? '',
             thumbnailUrl: meta?.thumbnailUrl ?? '',
             duration: meta?.duration ?? 0,
-            url: input,
+            url: target,
             source: detection.platform,
             direct: true,
             label: detection.label,

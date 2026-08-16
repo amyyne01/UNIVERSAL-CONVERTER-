@@ -487,12 +487,16 @@ export class Downloader {
     // before it can answer. That is the difference between "Reading the link…"
     // resolving at once and sitting there for a minute on a single video.
     // detectUrl is the one place that decides collection-vs-single; ask it.
-    const single = detectUrl(url).isCollection ? [] : ['--no-playlist'];
+    const detected = detectUrl(url);
+    const single = detected.isCollection ? [] : ['--no-playlist'];
     // ponytail: flat dump (§3.1) — fast, best-effort; first record is the header.
     const items = await this.runJson(['--dump-json', '--no-warnings', '--flat-playlist', ...single, '--', url]);
     if (items.length === 0) throw new Error('No metadata returned for URL');
     const head = items[0] ?? {};
-    const isCollection = items.length > 1;
+    // Count is not the test — detectUrl is. A playlist holding exactly ONE track
+    // dumps one record, and calling that a single video handed the renderer an
+    // empty `entries` list, which it reported as "That collection is empty".
+    const isCollection = detected.isCollection || items.length > 1;
     const source = platformOf(url);
     return {
       title: String(head.playlist_title ?? head.title ?? ''),
