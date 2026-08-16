@@ -1,0 +1,83 @@
+name: Announce release on Discord
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to (re-)announce, e.g. v1.2.1"
+        required: true
+
+jobs:
+  announce:
+    runs-on: ubuntu-latest
+    env:
+      # ── Discord channels and roles this announcement points at ─────────────
+      CH_DOWNLOAD: "<#1504144492314497024>"    # #download
+      CH_CHANGELOG: "<#1504144571725123596>"   # #changelog
+      CH_TICKET: "<#1491237431368749128>"      # #open-a-ticket
+      # @Customer, @Customer +, @Universal Converter
+      ROLE_PINGS: "<@&1491191878845202452> <@&1501944831025610964> <@&1503872186430259372>"
+      # ───────────────────────────────────────────────────────────────────────
+      HOOK_CHANGELOG: ${{ secrets.DISCORD_CHANGELOG_WEBHOOK }}
+      HOOK_DOWNLOAD: ${{ secrets.DISCORD_DOWNLOAD_WEBHOOK }}
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - name: Announce
+        run: |
+          set -euo pipefail
+          release=$(gh release view "$TAG" --repo "$REPO" --json name,body,url,assets)
+          title=$(jq -r '.name // env.TAG' <<<"$release")
+          url=$(jq -r '.url' <<<"$release")
+          exe=$(jq -r '[.assets[] | select(.name | endswith(".exe"))][0] // {}' <<<"$release")
+          exe_url=$(jq -r '.url // ""' <<<"$exe")
+          exe_name=$(jq -r '.name // "the .exe"' <<<"$exe")
+
+          body=$(jq -r '.body // ""' <<<"$release")
+          # Optional hero image/GIF: put `<!-- media: https://... -->` in the release notes.
+          media=$(sed -n 's|^<!-- media: *\(.*[^ ]\) *-->$|\1|p' <<<"$body" | head -1)
+          # Drop every HTML comment (the media marker + any notes-to-self), tidy blank lines.
+          body=$(perl -0777 -pe 's/<!--.*?-->//gs; s/\n{3,}/\n\n/g; s/^\s+|\s+$//g' <<<"$body")
+
+          post() {  # post <webhook> <message>
+            jq -n --arg c "$2" '{content:$c, allowed_mentions:{parse:["roles"]}}' \
+              | curl -sS -f -X POST -H "Content-Type: application/json" -d @- "$1" > /dev/null
+          }
+
+          # ── 1. Changelog channel ────────────────────────────────────────────
+          post "$HOOK_CHANGELOG" "$(cat <<EOF
+          # $title
+
+          ✨ **What's New**
+
+          ${body:0:1200}
+
+          📋 **Note:** if you encounter any issue after updating, please open a ticket in $CH_TICKET ❤️
+          📥 Check $CH_DOWNLOAD for the link
+          Thank you for supporting the project and testing every release 🌸
+
+          $ROLE_PINGS
+          $media
+          EOF
+          )"
+
+          # ── 2. Download channel ─────────────────────────────────────────────
+          [ -n "$exe_url" ] && link="$exe_url" || link="$url"
+          post "$HOOK_DOWNLOAD" "$(cat <<EOF
+          # $title
+
+          - 📥 **Download:** [Click Here]($link)
+          - 📦 Once downloaded, just launch **$exe_name** — it's portable, there is nothing to install ❤️
+          - 📝 Please check $CH_CHANGELOG to see everything fixed, improved, and added in this update ❤️
+
+          📋 **Note:** if you encounter any issue after updating, please open a ticket in $CH_TICKET ❤️
+          Thank you for supporting the project and testing every release 🌸
+
+          $ROLE_PINGS
+          EOF
+          )"
+
+          echo "Announced $TAG"
