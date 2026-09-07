@@ -15,6 +15,7 @@ const config: AppConfig = {
   theme: 'dark',
   rememberLastDir: true,
   autoPaste: true,
+  clipboardWatch: false,
   showNotifications: true,
   rateLimit: '',
   proxy: '',

@@ -58,8 +58,16 @@ export interface ElectronAPI {
     cancelAll: () => Promise<void>;
     pause: (taskId: string) => Promise<boolean>;
     resume: (taskId: string) => Promise<boolean>;
+    pauseAll: () => Promise<void>;
+    resumeAll: () => Promise<void>;
     list: () => Promise<DownloadTask[]>;
     remove: (taskIds: string[]) => Promise<boolean>;
+  };
+  // Ordering the pending slice. reorder() names the queued ids in their new
+  // order; both drop ids the engine no longer has queued.
+  queue: {
+    reorder: (taskIds: string[]) => Promise<boolean>;
+    promote: (taskId: string) => Promise<boolean>;
   };
   dialog: {
     selectDir: () => Promise<string | null>;
@@ -104,6 +112,12 @@ export interface ElectronAPI {
   onUpdateDownloaded: (cb: (info: { version: string }) => void) => () => void;
   onUpdateError: (cb: (info: { message: string }) => void) => () => void;
   onYtdlpStatus: (cb: (status: YtdlpUpdateStatus) => void) => () => void;
+  /** Opt-in clipboard watcher (electron/clipboard-watch.ts) — fired when the
+   *  clipboard changes to a recognised link, so the UI can offer to download it. */
+  onClipboardDetected: (cb: (detection: UrlDetection) => void) => () => void;
+  /** §14 shell integration: an ahg:// link opened via the OS, already resolved
+   *  and validated in main — cold start or forwarded from a second launch. */
+  onProtocolLink: (cb: (detection: UrlDetection) => void) => () => void;
 }
 
 declare global {

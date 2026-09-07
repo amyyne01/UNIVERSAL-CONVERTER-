@@ -19,6 +19,7 @@ import { motion, useReducedMotion } from 'framer-motion';
 import { Link, GoTo, Forward, OpenFolder, Alert } from '@/components/ui/icons';
 import { useAppStore } from '@/store';
 import { looksLikeUrl } from '@/components/tabs/PlatformTab';
+import { UnifiedSearch } from '@/components/UnifiedSearch';
 import { PLATFORMS } from '@/constants';
 import type { PlatformKey, TabKey } from '@/constants';
 import { Button } from '@/components/ui';
@@ -33,7 +34,7 @@ import type {
 const alpha = (color: string, pct: number) =>
   `color-mix(in oklch, ${color} ${pct}%, transparent)`;
 
-function platformToTab(platform: SourcePlatform): TabKey | null {
+export function platformToTab(platform: SourcePlatform): TabKey | null {
   switch (platform) {
     case 'youtube': return 'youtube';
     case 'spotify': return 'spotify';
@@ -61,6 +62,7 @@ const SOURCE_COLOR: Record<SourcePlatform, string> = {
   tiktok: 'var(--color-reels)',
   facebook: 'var(--color-reels)',
   direct: 'var(--color-accent)',
+  generic: 'var(--color-accent)',
   unknown: 'var(--color-accent)',
 };
 
@@ -650,6 +652,17 @@ export function Dashboard() {
   // toggling — otherwise the highlight flickers off over the field's own icon.
   const dragDepth = useRef(0);
 
+  // Unified search: plain text + Enter searches YouTube/SoundCloud/Spotify at
+  // once, replacing the old "hand it to the YouTube tab" behavior. `nonce`
+  // forces UnifiedSearch to remount on every submit (even a repeat of the same
+  // text) so a superseded query's in-flight requests land in a dead instance
+  // instead of racing the new one.
+  const [searchQuery, setSearchQuery] = useState<string | null>(null);
+  const [searchNonce, setSearchNonce] = useState(0);
+  const [searchBusy, setSearchBusy] = useState(false);
+  const fieldRef = useRef<HTMLInputElement>(null);
+  const resultsRef = useRef<HTMLDivElement>(null);
+
   // Counters are a snapshot, not a stream: read once on mount. A number that
   // ticks while you look at it invites you to watch it, and this screen's job
   // is to get you to the field.
@@ -735,6 +748,7 @@ export function Dashboard() {
     // Several links pasted at once → batch them.
     const parts = input.split(/\s+/).filter(Boolean);
     if (parts.length > 1 && parts.every(looksLikeUrl)) {
+      setSearchQuery(null);
       setDetecting(true);
       setError(null);
       await batchDownload(parts);
@@ -742,12 +756,19 @@ export function Dashboard() {
       return;
     }
 
-    // Plain text isn't an error — it's a search. Hand it to the YouTube tab.
+    // Plain text isn't an error — it's a search, across all three sources at
+    // once. Enter-triggered only (never as-you-type): avoids hammering the
+    // YouTube/SoundCloud scrapers and matches the app's fetch-on-commit model.
     if (!looksLikeUrl(input)) {
-      setPendingInput(input);
-      setActiveTab('youtube');
+      if (input.length < 2) return;
+      setError(null);
+      setSearchQuery(input);
+      setSearchNonce((n) => n + 1);
       return;
     }
+
+    // A real link supersedes any results on screen.
+    setSearchQuery(null);
 
     setDetecting(true);
     setError(null);
@@ -757,8 +778,15 @@ export function Dashboard() {
       if (tab) {
         setPendingInput(input); // hand the link to the tab so it auto-fetches on arrival
         setActiveTab(tab);
+      } else if (detection.platform !== 'unknown') {
+        // 'generic' (any of the ~1800 sites the engine knows) and 'direct' have
+        // no tab of their own, and refusing them here contradicted the detector
+        // that had just accepted them — the same link downloaded fine from a
+        // clipboard offer or inside a 2-link batch. Queue it straight away,
+        // through the batch path that already handles every detected platform.
+        await batchDownload([input]);
       } else {
-        setError('That link isn’t from a supported platform. Try YouTube, Spotify, SoundCloud, TikTok, Reels or Shorts.');
+        setError('That doesn’t look like a link we can download. Paste a full web address.');
       }
     } catch {
       // url.detect is local pattern-matching — failure means bad input, not network.
@@ -800,6 +828,9 @@ export function Dashboard() {
     if (detecting) {
       return <span className="text-text-secondary">{linkCount > 1 ? `Queueing ${linkCount} links…` : 'Reading the link…'}</span>;
     }
+    if (searchBusy) {
+      return <span className="text-text-secondary">Searching YouTube, SoundCloud and Spotify…</span>;
+    }
     // Over the free ceiling, the field stops rather than quietly queueing a
     // subset: pasting eight links and getting five back — with the explanation
     // arriving after the fact — feels like the app decided for you. Blocking up
@@ -822,7 +853,7 @@ export function Dashboard() {
       return <span className="text-text-secondary">{linkCount} links ready. Enter queues them all.</span>;
     }
     if (trimmed && !looksLikeUrl(trimmed)) {
-      return <span className="text-text-secondary">Enter searches YouTube for this</span>;
+      return <span className="text-text-secondary">Enter searches YouTube, SoundCloud and Spotify</span>;
     }
     return (
       <span className="text-text-secondary">
@@ -909,14 +940,33 @@ export function Dashboard() {
             focus rather than painting a second box around one field. The
             suppression is scoped to focus-visible, not blanket `outline-none`. */}
         <input
+          ref={fieldRef}
           className="no-drag flex-1 min-w-0 bg-transparent focus-visible:outline-none text-text-primary placeholder:text-text-muted text-[16px]"
           placeholder="Paste a YouTube, Spotify, SoundCloud or Reels link…"
           aria-label="Paste a link"
           aria-invalid={!!error}
           aria-describedby="paste-status"
           value={url}
-          onChange={(e) => { setUrl(e.target.value); if (error) setError(null); }}
-          onKeyDown={(e) => { if (e.key === 'Enter') void handleFetch(); }}
+          onChange={(e) => {
+            const v = e.target.value;
+            setUrl(v);
+            if (error) setError(null);
+            // Clearing the field brings the tiles back.
+            if (!v.trim() && searchQuery !== null) setSearchQuery(null);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') { void handleFetch(); return; }
+            if (e.key === 'Escape') {
+              // Empty field: drop any results and restore the tiles. A field
+              // that still has text is left alone — Escape there isn't spoken for.
+              if (searchQuery !== null && !url.trim()) setSearchQuery(null);
+              return;
+            }
+            if (e.key === 'ArrowDown' && searchQuery !== null) {
+              const firstRow = resultsRef.current?.querySelector<HTMLElement>('[data-row]');
+              if (firstRow) { e.preventDefault(); firstRow.focus(); }
+            }
+          }}
           onPaste={(e) => {
             const text = e.clipboardData.getData('text').trim();
             if (text) { setUrl(text); void handleFetch(text); }
@@ -987,6 +1037,26 @@ export function Dashboard() {
                widens to two tracks and lays its comparison out beside the
                figure, and Recent shows eight tiles instead of five. Width buys
                content, not gutters. */}
+      {/* Unified search takes the bento's place while active — one region, not
+          a second screen. The tiles return the moment the field empties or
+          Escape clears the results (see the field's onChange/onKeyDown above).
+          ponytail: a plain div, not a motion.div — this wrapper holds
+          UnifiedSearch's own in-flight search state across Dashboard's other
+          re-renders (stats loading, etc.), and framer-motion tags must stay
+          OUT of the way of any subtree with state that must survive a
+          re-render; the shared mock's per-access proxy has no memoization to
+          save it below the plain-DOM level either. Skipped the decorative
+          entrance fade rather than risk a second such bug for a one-shot swap. */}
+      {searchQuery !== null ? (
+        <div ref={resultsRef} className="mt-8">
+          <UnifiedSearch
+            key={searchNonce}
+            query={searchQuery}
+            onBusyChange={setSearchBusy}
+            onEscapeToField={() => fieldRef.current?.focus()}
+          />
+        </div>
+      ) : (
       <div className="mt-8 grid gap-4 @min-[1000px]:grid-cols-2 @min-[1500px]:grid-cols-3">
         <MonthCell stats={stats} index={0} />
         <SplitCell stats={stats} index={1} />
@@ -1067,6 +1137,7 @@ export function Dashboard() {
           </div>
         </Cell>
       </div>
+      )}
     </div>
   );
 }

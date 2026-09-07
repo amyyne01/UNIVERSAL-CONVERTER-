@@ -3,15 +3,18 @@ import { MotionConfig, motion, useReducedMotion } from 'framer-motion';
 import { useAppStore } from '@/store';
 import { initTheme } from '@/lib/theme';
 import { dismissSplash } from '@/lib/splash';
+import { buildDownloadRequest } from '@/lib/download';
 import { NAV, PLATFORMS, TAB_ORDER, type NavItem, type TabKey } from '@/constants';
 import { IconContext } from '@/components/ui/icons';
 import WindowTitleBar from '@/components/WindowTitleBar';
 import { CommandPalette } from '@/components/CommandPalette';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { UpgradeSheet } from '@/components/UpgradeSheet';
+import { UpdateModal } from '@/components/UpdateModal';
 import { Notice } from '@/components/Notice';
+import { ClipboardOffer } from '@/components/ClipboardOffer';
 import { PlaylistPreview } from '@/components/PlaylistPreview';
-import { Dashboard } from '@/components/tabs/Dashboard';
+import { Dashboard, platformToTab } from '@/components/tabs/Dashboard';
 import { PlatformTab } from '@/components/tabs/PlatformTab';
 import { DownloadsTab } from '@/components/tabs/DownloadsTab';
 import { SettingsTab } from '@/components/tabs/SettingsTab';
@@ -92,6 +95,36 @@ function Shell() {
       }),
       window.electronAPI.onWindowMaximized(setWindowMaximized),
       window.electronAPI.onLicenseStateChanged((d) => get().setLicense(d)),
+      window.electronAPI.onClipboardDetected((detection) => get().setClipboardOffer(detection)),
+      // §14 shell integration: an ahg:// link opened via the OS — already
+      // resolved/validated in main. Same "hand it to the tab" path as a
+      // Dashboard paste (setPendingInput), so it lands as a confirmed fetch,
+      // not a silent download.
+      window.electronAPI.onProtocolLink((detection) => {
+        const tab = platformToTab(detection.platform);
+        if (tab) {
+          get().setCurrentPlaylist(null);
+          get().setPendingInput(detection.url);
+          get().setActiveTab(tab);
+          return;
+        }
+        // 'generic' (any other site the engine supports) and 'direct' have no
+        // tab to hand off to, and returning early made a validated ahg:// link
+        // do nothing AT ALL — no download, no error, no visible response. Queue
+        // it, same as accepting a clipboard offer.
+        if (detection.platform === 'unknown') return;
+        void window.electronAPI.download
+          .start(buildDownloadRequest(get().config, {
+            url: detection.url,
+            source: detection.platform,
+            isPlaylist: detection.isCollection,
+          }))
+          .then((task) => {
+            get().addDownload(task);
+            get().setActiveTab('queue');
+          })
+          .catch(() => {});
+      }),
     ];
 
     // Hydrate persisted download history, merging live events on top (last wins).
@@ -175,7 +208,11 @@ function Shell() {
       {/* Upgrade sheet — opened from Settings or any locked control. Nothing
           blocks launch any more: no key simply means the basic tier. */}
       {upgradeOpen && <UpgradeSheet onClose={() => setUpgradeOpen(false)} />}
+      {/* Launch update prompt (§12). Always mounted — it decides for itself whether
+          there is anything to say, and stays silent when the install is current. */}
+      <UpdateModal />
       <Notice />
+      <ClipboardOffer />
     </div>
   );
 }

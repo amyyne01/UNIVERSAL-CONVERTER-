@@ -15,7 +15,11 @@ import { Chip } from '@/components/ui/Chip';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { SegmentedCapsule, type SegmentOption } from '@/components/ui/SegmentedCapsule';
 import type { ThemeName, YtdlpUpdateStatus } from '@shared/types';
-import { AUDIO_FORMATS, AUDIO_QUALITIES, VIDEO_QUALITIES } from '@/constants';
+import {
+  AUDIO_FORMATS, AUDIO_QUALITIES, VIDEO_QUALITIES,
+  SUBTITLE_MODE_OPTIONS, SPONSORBLOCK_OPTIONS, VIDEO_CONTAINER_OPTIONS,
+  VIDEO_CODEC_OPTIONS, COOKIE_BROWSER_OPTIONS, CONCURRENCY_OPTIONS,
+} from '@/constants';
 import { useTierLocks, premiumCopy, basicCopy } from '@/lib/tier';
 
 // ── constants ────────────────────────────────────────────────────────────────
@@ -449,6 +453,158 @@ export function SettingsTab() {
               />
             </Row>
           </div>
+
+          {/* Not a property of the file — a property of the queue — so it sits
+              apart from the three rules above rather than inside their set. */}
+          <Row
+            label="Simultaneous downloads"
+            desc={
+              locks.isPremium
+                ? 'How many downloads run at the same time. The rest wait their turn.'
+                : `${basicCopy.concurrency}. The rest wait their turn.`
+            }
+          >
+            <Select
+              label="Simultaneous downloads"
+              value={String(config.maxConcurrentDownloads)}
+              options={CONCURRENCY_OPTIONS}
+              lockedValues={locks.lockedConcurrency}
+              onLocked={() => locks.nudge(premiumCopy.concurrency())}
+              onChange={(e) => updateConfig({ maxConcurrentDownloads: Number(e.target.value) })}
+              className="w-40"
+            />
+          </Row>
+        </Section>
+
+        {/* ── Download extras ───────────────────────────────────────────────
+            Everything the engine can do beyond format and quality. Grouped
+            apart from "defaults" on purpose: these change what is IN the file
+            (captions, chapter marks, sponsor cuts), not how good it sounds. */}
+        <Section
+          title="Download extras"
+          hint="Subtitles, chapters and sponsor segments. These apply to every download."
+        >
+          <div className="grid grid-cols-3 gap-x-6 gap-y-5 py-5">
+            <Field label="Subtitles">
+              <Select
+                value={config.subtitleMode}
+                onChange={(e) => updateConfig({ subtitleMode: e.target.value as typeof config.subtitleMode })}
+                options={SUBTITLE_MODE_OPTIONS}
+                className="w-full max-w-[13rem]"
+              />
+            </Field>
+
+            <Field label="Subtitle languages">
+              <Input
+                value={config.subtitleLangs}
+                onChange={(e) => updateConfig({ subtitleLangs: e.target.value })}
+                onBlur={(e) => {
+                  // Basic gets one language. Say so at the moment a second is
+                  // typed, rather than silently dropping it at download time.
+                  if (!locks.isPremium && e.target.value.split(',').filter(Boolean).length > 1) {
+                    locks.nudge(premiumCopy.subtitleLanguages());
+                  }
+                }}
+                placeholder="en,fr"
+                disabled={config.subtitleMode === 'off'}
+                className="w-full max-w-[13rem]"
+              />
+            </Field>
+
+            <Field label="Sponsor segments">
+              <Select
+                value={config.sponsorBlock}
+                onChange={(e) => updateConfig({ sponsorBlock: e.target.value as typeof config.sponsorBlock })}
+                options={SPONSORBLOCK_OPTIONS}
+                className="w-full max-w-[13rem]"
+              />
+            </Field>
+
+            <Field label="Video container">
+              <Select
+                value={config.videoContainer}
+                onChange={(e) => updateConfig({ videoContainer: e.target.value as typeof config.videoContainer })}
+                options={VIDEO_CONTAINER_OPTIONS}
+                className="w-full max-w-[13rem]"
+              />
+            </Field>
+
+            <Field label="Video codec">
+              <Select
+                value={config.videoCodec}
+                onChange={(e) => updateConfig({ videoCodec: e.target.value as typeof config.videoCodec })}
+                options={VIDEO_CODEC_OPTIONS}
+                className="w-full max-w-[13rem]"
+              />
+            </Field>
+
+            <Field label="Sign in with">
+              <Select
+                value={config.cookieBrowser}
+                onChange={(e) => updateConfig({ cookieBrowser: e.target.value as typeof config.cookieBrowser })}
+                options={COOKIE_BROWSER_OPTIONS}
+                lockedValues={locks.lockedCookieBrowsers}
+                onLocked={() => locks.nudge(premiumCopy.cookies())}
+                className="w-full max-w-[13rem]"
+              />
+            </Field>
+          </div>
+
+          <div className="divide-y divide-border-soft">
+            <Row
+              label="Auto-generated captions"
+              desc="Use machine-written captions when a video has no real ones"
+            >
+              <Toggle
+                label="Auto-generated captions"
+                checked={config.subtitleAuto}
+                disabled={config.subtitleMode === 'off'}
+                onChange={(v) => {
+                  if (v && !locks.isPremium) return locks.nudge(premiumCopy.subtitleAuto());
+                  updateConfig({ subtitleAuto: v });
+                }}
+              />
+            </Row>
+
+            <Row label="Embed chapters" desc="Keep the video's chapter marks in the file">
+              <Toggle
+                label="Embed chapters"
+                checked={config.embedChapters}
+                onChange={(v) => updateConfig({ embedChapters: v })}
+              />
+            </Row>
+
+            <Row label="Split by chapter" desc="Write one file per chapter instead of one long file">
+              <Toggle
+                label="Split by chapter"
+                checked={config.splitChapters}
+                onChange={(v) => {
+                  if (v && !locks.isPremium) return locks.nudge(premiumCopy.splitChapters());
+                  updateConfig({ splitChapters: v });
+                }}
+              />
+            </Row>
+
+            <Row label="Save cover art" desc="Also write the thumbnail as a separate image">
+              <Toggle
+                label="Save cover art"
+                checked={config.writeThumbnail}
+                onChange={(v) => updateConfig({ writeThumbnail: v })}
+              />
+            </Row>
+
+            <Row
+              label="File naming"
+              desc="yt-dlp template, e.g. %(uploader)s/%(title)s. Leave empty for the title."
+            >
+              <Input
+                value={config.outputTemplate}
+                onChange={(e) => updateConfig({ outputTemplate: e.target.value })}
+                placeholder="%(title)s"
+                className="w-64"
+              />
+            </Row>
+          </div>
         </Section>
 
         {/* ── Appearance & behaviour (two former sections, one card) ────────── */}
@@ -469,6 +625,17 @@ export function SettingsTab() {
               label="Auto-paste from clipboard"
               checked={config.autoPaste}
               onChange={(v) => updateConfig({ autoPaste: v })}
+            />
+          </Row>
+
+          <Row
+            label="Clipboard watcher"
+            desc="Offer a one-click download whenever you copy a link, even outside the app"
+          >
+            <Toggle
+              label="Clipboard watcher"
+              checked={config.clipboardWatch}
+              onChange={(v) => updateConfig({ clipboardWatch: v })}
             />
           </Row>
 

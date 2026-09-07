@@ -49,6 +49,8 @@ export {
   ArrowUpRight as GoTo,
   ArrowRight as Forward,
   Trash as Remove,
+  DotsSixVertical as DragHandle,
+  ArrowLineUp as MoveToFront,
   Pause,
   Play,
   Power,

@@ -7,7 +7,7 @@ import {
   Resolution, Batch, Collection, Audio, Scheduled,
 } from '@/components/ui/icons';
 import type { AudioFormat, VideoQuality, UiSource } from '@shared/types';
-import { BASIC_LIMITS, LOSSLESS_FORMATS, VIDEO_QUALITIES as VIDEO_QUALITY_VALUES } from '@shared/types';
+import { BASIC_LIMITS, LOSSLESS_FORMATS, MAX_CONCURRENT_DOWNLOADS, VIDEO_QUALITIES as VIDEO_QUALITY_VALUES } from '@shared/types';
 
 /** The renderer's navigable tabs (left rail + Ctrl+number order). */
 export type TabKey = 'home' | 'youtube' | 'spotify' | 'soundcloud' | 'reels' | 'queue' | 'settings';
@@ -61,6 +61,65 @@ const VIDEO_QUALITY_LABELS: Partial<Record<VideoQuality, string>> = {
 
 export const VIDEO_QUALITIES: readonly { value: VideoQuality; label: string }[] =
   VIDEO_QUALITY_VALUES.map((value) => ({ value, label: VIDEO_QUALITY_LABELS[value] ?? value }));
+
+// ── Download extras (§5) ─────────────────────────────────────────────────────
+// Presentation labels for the shared unions. The unions themselves live in
+// shared/types.ts; only the wording is a renderer choice.
+export const SUBTITLE_MODE_OPTIONS: readonly Option[] = [
+  { value: 'off',   label: 'Off' },
+  { value: 'embed', label: 'Embed in the file' },
+  { value: 'file',  label: 'Separate .srt' },
+  { value: 'both',  label: 'Both' },
+];
+
+export const SPONSORBLOCK_OPTIONS: readonly Option[] = [
+  { value: 'off',    label: 'Off' },
+  { value: 'mark',   label: 'Mark as chapters' },
+  { value: 'remove', label: 'Cut them out' },
+];
+
+// Which segments SponsorBlock acts on. Labels are the community's category
+// names in plain English; the values must match SPONSORBLOCK_CATEGORIES.
+export const SPONSORBLOCK_CATEGORY_OPTIONS: readonly Option[] = [
+  { value: 'sponsor',        label: 'Sponsor' },
+  { value: 'intro',          label: 'Intro' },
+  { value: 'outro',          label: 'Outro' },
+  { value: 'selfpromo',      label: 'Self-promo' },
+  { value: 'interaction',    label: 'Subscribe reminder' },
+  { value: 'preview',        label: 'Recap' },
+  { value: 'music_offtopic', label: 'Non-music' },
+];
+
+export const VIDEO_CONTAINER_OPTIONS: readonly Option[] = [
+  { value: 'mp4',  label: 'MP4 (most compatible)' },
+  { value: 'mkv',  label: 'MKV (keeps everything)' },
+  { value: 'webm', label: 'WebM' },
+];
+
+export const VIDEO_CODEC_OPTIONS: readonly Option[] = [
+  { value: 'any',  label: 'Whatever is best' },
+  { value: 'h264', label: 'H.264 (plays anywhere)' },
+  { value: 'vp9',  label: 'VP9 (smaller)' },
+  { value: 'av1',  label: 'AV1 (smallest)' },
+];
+
+/** 1..MAX slots. Built from the shared ceiling so the list can never offer a
+ *  number the engine would clamp away. */
+export const CONCURRENCY_OPTIONS: readonly Option[] = Array.from(
+  { length: MAX_CONCURRENT_DOWNLOADS },
+  (_, i) => ({ value: String(i + 1), label: i === 0 ? '1 at a time' : `${i + 1} at a time` }),
+);
+
+export const COOKIE_BROWSER_OPTIONS: readonly Option[] = [
+  { value: '',         label: "Don't use cookies" },
+  { value: 'chrome',   label: 'Chrome' },
+  { value: 'edge',     label: 'Edge' },
+  { value: 'firefox',  label: 'Firefox' },
+  { value: 'brave',    label: 'Brave' },
+  { value: 'chromium', label: 'Chromium' },
+  { value: 'opera',    label: 'Opera' },
+  { value: 'vivaldi',  label: 'Vivaldi' },
+];
 
 export interface PlatformDef {
   key: PlatformKey;

@@ -12,6 +12,7 @@ const PLATFORM_LABEL: Record<SourcePlatform, string> = {
   tiktok: 'TikTok',
   facebook: 'Facebook',
   direct: 'Direct',
+  generic: 'Link',
   unknown: 'Unknown',
 };
 
@@ -20,6 +21,9 @@ function build(url: string, platform: SourcePlatform, contentType: ContentType, 
   const label =
     platform === 'direct' ? 'Direct media' :
     platform === 'unknown' ? 'Unknown link' :
+    // A generic hit carries its hostname as the id, which names the site far
+    // better than the word "Link" does ("vimeo.com video", not "Link video").
+    platform === 'generic' ? `${id ?? PLATFORM_LABEL.generic} ${contentType}` :
     `${PLATFORM_LABEL[platform]} ${contentType}`;
   return { url, platform, contentType, id, isCollection, label };
 }
@@ -88,10 +92,36 @@ const MATCHERS: Array<(url: string) => UrlDetection | null> = [
     const m = url.match(/(?:\/videos\/|\/reel\/|[?&]v=|fb\.watch\/)([A-Za-z0-9]+)/i);
     return m ? build(url, 'facebook', 'video', m[1]) : null;
   },
-  // Final safety net: direct media file by extension.
+  // Direct media file by extension.
   (url) => {
     const m = url.match(/\.(?:mp4|mkv|webm|avi|mov)(?:[?#]|$)/i);
     return m ? build(url, 'direct', 'video') : null;
+  },
+  // Terminal rule: hand any other real http(s) address to the engine anyway.
+  //
+  // The named matchers above exist to extract an id and a content type; the engine
+  // itself supports ~1800 sites, so refusing everything it was never asked about
+  // was the app rejecting links it could in fact download (Vimeo, X, Twitch,
+  // Reddit, Dailymotion, Bandcamp…). This runs LAST, so no specific shape is ever
+  // shadowed by it, and it is deliberately strict about what counts as a link:
+  // detectUrl() prepends https:// to scheme-less input, which would otherwise turn
+  // a typed search phrase into "https://buy me a coffee" and send plain text to a
+  // spawn. A real host, http(s) only, or it stays 'unknown' and the tab searches.
+  //
+  // ponytail: collection-ness is unknowable without fetching, so a generic link is
+  // always treated as a single item (a generic playlist URL yields its first entry).
+  // Add a probe only if that turns out to matter.
+  (url) => {
+    let host: string;
+    try {
+      const u = new URL(url);
+      if (u.protocol !== 'https:' && u.protocol !== 'http:') return null;
+      host = u.hostname;
+    } catch {
+      return null;
+    }
+    if (!/^[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(host)) return null;
+    return build(url, 'generic', 'video', host);
   },
 ];
 

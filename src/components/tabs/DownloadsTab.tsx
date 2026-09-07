@@ -15,12 +15,12 @@
 // there is no createdAt/completedAt to group by day with, and the store keeps
 // insertion order only. Rather than invent a date, the list's spine is status:
 // In progress → Needs attention → Completed.
-import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { memo, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
+import { AnimatePresence, motion, Reorder, useDragControls, useReducedMotion } from 'framer-motion';
 import {
   Download, Close, Cancel, Retry, OpenFolder, Check, Alert, Clock,
   CheckboxChecked, CheckboxEmpty, Remove, CheckboxMixed, Track, Pause, Play,
-  Loading,
+  Loading, DragHandle, MoveToFront,
 } from '@/components/ui/icons';
 import { useAppStore } from '@/store';
 import { Button, IconButton, ProgressBar } from '@/components/ui';
@@ -89,13 +89,13 @@ const PLAT_LABEL: Record<SourcePlatform, string> = {
   spotify: PLATFORMS.find(p => p.key === 'spotify')!.label,
   soundcloud: PLATFORMS.find(p => p.key === 'soundcloud')!.label,
   instagram: 'Reels',  tiktok: 'TikTok',    facebook: 'Facebook',
-  direct: 'Direct',    unknown: 'Unknown',
+  direct: 'Direct',    generic: 'Link',      unknown: 'Unknown',
 };
 
 const PLAT_TEXT: Record<SourcePlatform, string> = {
   youtube: 'text-youtube',      spotify: 'text-spotify',  soundcloud: 'text-soundcloud',
   instagram: 'text-reels',      tiktok: 'text-reels',     facebook: 'text-reels',
-  direct: 'text-text-secondary', unknown: 'text-text-secondary',
+  direct: 'text-text-secondary', generic: 'text-text-secondary', unknown: 'text-text-secondary',
 };
 
 // ── shared constants ──────────────────────────────────────────────────────────
@@ -109,6 +109,12 @@ const ACTIVE = new Set<DownloadStatus>([
 const IN_FLIGHT = new Set<DownloadStatus>([
   'fetching_info', 'downloading', 'converting', 'embedding', 'retrying', 'paused',
 ]);
+/** Actually moving right now — the block that owns the loud %-columns. Paused and
+ *  queued rows are in flight / waiting but are not transferring, and with several
+ *  slots running at once that distinction is what keeps the list legible. */
+const LIVE = new Set<DownloadStatus>([
+  'fetching_info', 'downloading', 'converting', 'embedding', 'retrying',
+]);
 /** States where pausing is offered: mid-conversion kills waste finished work. */
 const PAUSABLE = new Set<DownloadStatus>(['queued', 'fetching_info', 'downloading']);
 const TERMINAL = new Set<DownloadStatus>(['done', 'failed', 'cancelled']);
@@ -120,10 +126,16 @@ const TERMINAL = new Set<DownloadStatus>(['done', 'failed', 'cancelled']);
 const ROW = 'h-16 px-4 gap-3';
 /** Column widths shared by rows and by the empty states, so a queue with no
  *  rows still reads on the same grid as one with fifty. */
+/** The drag handle's cell. Present as an empty spacer in EVERY row of every
+ *  group (and in the ghost/empty rows) so the columns stay aligned queue-wide —
+ *  only queued rows ever put a control in it. */
+const COL_HANDLE = 'w-4 shrink-0';
 const COL_CHECK = 'w-5 shrink-0';
 const COL_ART = 'w-10 h-10 shrink-0';
 const COL_STATE = 'w-[128px] shrink-0';
-const COL_ACTIONS = 'w-[60px] shrink-0';
+// Three actions on a queued row (Do this next / Pause / Cancel) — widened in
+// EVERY state, ghosts included, so the state column's right edge never moves.
+const COL_ACTIONS = 'w-[88px] shrink-0';
 
 // ── filter ────────────────────────────────────────────────────────────────────
 
@@ -156,12 +168,34 @@ interface CardProps {
   onRetry: () => void;
   onOpen: () => void;
   onRemove: () => void;
+  /** Row lives inside the queued tail's Reorder.Group, so it wraps in a
+   *  Reorder.Item instead of a plain motion.li (that is what carries `layout`). */
+  reorderable?: boolean;
+  /** >=2 rows are queued, so the handle is a real control, never a dead grabber. */
+  draggable?: boolean;
+  /** A keyboard grab is held on this row. */
+  grabbed?: boolean;
+  /** One-shot landing tint after a "Do this next" jump. */
+  pulse?: boolean;
+  onReorderKey?: (e: ReactKeyboardEvent<HTMLButtonElement>) => void;
+  onReorderBlur?: () => void;
+  /** Pointer drag ended — commit the new order to the engine. */
+  onDragCommit?: () => void;
+  /** Absent when the row is already first in the queued tail (or isn't queued). */
+  onPromote?: () => void;
 }
 
 // memo: progress events tick several times per second while downloading —
 // only the row whose task object changed should re-render.
-export const QueueCard = memo(function QueueCard({ task, selected, onToggle, onCancel, onPause, onResume, onRetry, onOpen, onRemove }: CardProps) {
+export const QueueCard = memo(function QueueCard({
+  task, selected, onToggle, onCancel, onPause, onResume, onRetry, onOpen, onRemove,
+  reorderable = false, draggable = false, grabbed = false, pulse = false,
+  onReorderKey, onReorderBlur, onDragCommit, onPromote,
+}: CardProps) {
   const reduced = useReducedMotion();
+  // Created unconditionally (hooks rule); only the Reorder.Item wrapper reads it.
+  const controls = useDragControls();
+  const [dragging, setDragging] = useState(false);
   const { progress, source, format, title, uploader } = task;
   const { status, percent, speed, eta, downloaded, total } = progress;
   const isPaused = status === 'paused';
@@ -189,19 +223,39 @@ export const QueueCard = memo(function QueueCard({ task, selected, onToggle, onC
   // percentage above it never slides.
   const rate = [fmtSpeed(speed), fmtEta(eta)].filter(Boolean).join(' · ') || '–';
 
-  return (
-    <motion.li
-      initial={{ opacity: 0, y: reduced ? 0 : -4 }}
-      animate={{ opacity: 1, y: 0 }}
-      // Exits stay subtler than entrances so removals don't pull the eye.
-      exit={{ opacity: 0, y: reduced ? 0 : 2 }}
-      transition={{ duration: reduced ? 0 : 0.2, ease: [0.25, 0.46, 0.45, 0.94] }}
-      className={`group relative flex items-center transition-colors ${ROW} ${
-        selected ? 'bg-accent-soft'
-        : status === 'failed' ? 'bg-error/[0.05] hover:bg-error/[0.09]'
-        : 'hover:bg-bg-hover'
-      }`}
-    >
+  // One class string, both wrappers. A lifted row rises out of the list (surface
+  // background + shadow) so the gap it left reads as its destination.
+  const rowClass = `group relative flex items-center transition-colors ${ROW} ${
+    dragging ? 'shadow-md bg-bg-surface z-10'
+    : grabbed || selected ? 'bg-accent-soft'
+    : status === 'failed' ? 'bg-error/[0.05] hover:bg-error/[0.09]'
+    : 'hover:bg-bg-hover'
+  }`;
+
+  const body = (
+    <>
+      {/* Drag handle — an empty cell on every row that cannot move, so the six
+          columns to its right sit on the same grid in every group and state. */}
+      <div className={`grid place-items-center ${COL_HANDLE}`}>
+        {draggable && (
+          <button
+            type="button"
+            aria-label={`Reorder ${label}`}
+            aria-pressed={grabbed}
+            onPointerDown={(e) => controls.start(e)}
+            onKeyDown={onReorderKey}
+            onBlur={onReorderBlur}
+            className={`no-drag focus-visible:focus-ring grid place-items-center w-4 h-7 rounded cursor-grab active:cursor-grabbing transition-opacity duration-150 motion-reduce:transition-none ${
+              grabbed
+                ? 'opacity-100 text-accent'
+                : 'opacity-0 text-text-muted hover:text-text-secondary focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100'
+            }`}
+          >
+            <DragHandle size={14} />
+          </button>
+        )}
+      </div>
+
       {/* checkbox — column-aligns with the select-all in the strip above */}
       <button
         onClick={onToggle}
@@ -285,13 +339,16 @@ export const QueueCard = memo(function QueueCard({ task, selected, onToggle, onC
         )}
       </motion.div>
 
-      {/* Actions — fixed-width slot (never wider than two buttons) so the state
-          column above keeps a constant right edge whatever a row's state is.
-          Anything that stops a live transfer stays permanently visible; only
-          the recoverable housekeeping actions hide until hover, and those are
-          revealed on focus-within too so keyboard users get them without a
-          pointer. */}
+      {/* Actions — fixed-width slot (never wider than the three a queued row
+          carries) so the state column above keeps a constant right edge whatever
+          a row's state is. Anything that stops a live transfer stays permanently
+          visible, and so does Retry — a recovery action must not hide. Only the
+          housekeeping actions wait for hover, and those reveal on focus-within
+          too so keyboard users get them without a pointer. */}
       <div className={`flex items-center justify-end gap-0.5 ${COL_ACTIONS}`}>
+        {onPromote && (
+          <IconButton icon={MoveToFront} label="Do this next" size={14} onClick={onPromote} className="w-7 h-7 rounded" />
+        )}
         {PAUSABLE.has(status) && (
           <IconButton icon={Pause} label="Pause" size={14} onClick={onPause} className="w-7 h-7 rounded" />
         )}
@@ -334,9 +391,63 @@ export const QueueCard = memo(function QueueCard({ task, selected, onToggle, onC
           className="!absolute bottom-0 left-0 right-0 !h-[3px] !rounded-none"
         />
       )}
+
+      {/* Landing tint after a "Do this next" jump. The row may have travelled
+          from off-screen, so this carries information — where it landed — and
+          that is why it survives: one shot, 600ms, quint. Under reduced motion
+          it holds the tint for the same 600ms instead of fading. */}
+      {pulse && (
+        <motion.span
+          aria-hidden
+          className="absolute inset-0 pointer-events-none bg-accent-soft"
+          initial={{ opacity: 1 }}
+          animate={{ opacity: reduced ? 1 : 0 }}
+          transition={{ duration: reduced ? 0 : 0.6, ease: [0.22, 1, 0.36, 1] }}
+        />
+      )}
+    </>
+  );
+
+  if (reorderable) {
+    return (
+      // dragListener={false} + dragControls: only the handle starts a drag, so a
+      // click anywhere else in the row still selects/pauses/cancels as before,
+      // and dragging never toggles the selection.
+      <Reorder.Item
+        value={task.taskId}
+        dragListener={false}
+        dragControls={controls}
+        onDragStart={() => setDragging(true)}
+        onDragEnd={() => { setDragging(false); onDragCommit?.(); }}
+        whileDrag={reduced ? undefined : { scale: 1.01 }}
+        // The app's canonical spring (SegmentedCapsule's numbers) parts the
+        // siblings; reduced motion swaps them with no spring at all.
+        transition={reduced ? { duration: 0 } : { type: 'spring', stiffness: 480, damping: 34 }}
+        className={rowClass}
+      >
+        {body}
+      </Reorder.Item>
+    );
+  }
+
+  return (
+    <motion.li
+      initial={{ opacity: 0, y: reduced ? 0 : -4 }}
+      animate={{ opacity: 1, y: 0 }}
+      // Exits stay subtler than entrances so removals don't pull the eye.
+      exit={{ opacity: 0, y: reduced ? 0 : 2 }}
+      transition={{ duration: reduced ? 0 : 0.2, ease: [0.25, 0.46, 0.45, 0.94] }}
+      className={rowClass}
+    >
+      {body}
     </motion.li>
   );
-}, (a, b) => a.task === b.task && a.selected === b.selected);
+}, (a, b) =>
+  a.task === b.task && a.selected === b.selected
+  && a.reorderable === b.reorderable && a.draggable === b.draggable
+  && a.grabbed === b.grabbed && a.pulse === b.pulse
+  // Only its presence matters — the handler reads live order through a ref.
+  && !a.onPromote === !b.onPromote);
 
 // ── list spine ────────────────────────────────────────────────────────────────
 
@@ -392,6 +503,7 @@ function useInlineConfirm() {
 function GhostRow({ fade }: { fade: string }) {
   return (
     <li aria-hidden className={`flex items-center ${ROW} ${fade}`}>
+      <span className={COL_HANDLE} />
       <span className={COL_CHECK} />
       <span className={`rounded-md bg-bg-tertiary ${COL_ART}`} />
       <span className="min-w-0 flex-1 flex flex-col gap-1.5">
@@ -417,6 +529,7 @@ function EmptyRow({ icon: Icon, title, body, action }: {
 }) {
   return (
     <li className={`flex items-center ${ROW}`}>
+      <span className={COL_HANDLE} />
       <span className={COL_CHECK} />
       <span className={`grid place-items-center rounded-md bg-bg-tertiary border border-border-soft ${COL_ART}`}>
         <Icon size={17} weight="thin" className="text-text-muted" />
@@ -444,6 +557,30 @@ export function DownloadsTab() {
 
   const [filter, setFilter] = useState<Filter>('all');
   const [confirmCancelAll, setConfirmCancelAll] = useState(false);
+  const [busyAll, setBusyAll] = useState(false);
+
+  // ── queued-tail ordering ──
+  // The engine owns the real order (its `queue` array); the store only knows
+  // insertion order. This is the OPTIMISTIC local view of it: the queued ids in
+  // the order the user last put them. Every mutation goes through applyOrder so
+  // orderRef stays exact — the row handlers are memoized and would otherwise
+  // read a stale array out of their closure.
+  const [order, setOrder] = useState<string[]>([]);
+  const orderRef = useRef<string[]>([]);
+  const applyOrder = (next: string[]): void => { orderRef.current = next; setOrder(next); };
+  // Live queued ids in display order — what the key handlers move within.
+  const pendingIdsRef = useRef<string[]>([]);
+  const [grabbedId, setGrabbedId] = useState<string | null>(null);
+  const grabbedRef = useRef<string | null>(null);
+  const grabOriginRef = useRef<string[]>([]);
+  // The order the list held before the current pointer drag started — onReorder
+  // has already overwritten orderRef by the time the drop commits, so the only
+  // way back from a rejected reorder is a snapshot taken on the first move.
+  const dragOriginRef = useRef<string[] | null>(null);
+  const [announce, setAnnounce] = useState('');
+  const [pulseId, setPulseId] = useState<string | null>(null);
+  const pulseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (pulseTimer.current) clearTimeout(pulseTimer.current); }, []);
   // Both "Clear completed" and the bulk "Remove" button delete rows for good —
   // each gets its own inline arm/confirm/dismiss cycle.
   const clearConfirm = useInlineConfirm();
@@ -474,6 +611,41 @@ export function DownloadsTab() {
     for (const t of filtered) by[groupOf(t.progress.status)].push(t);
     return GROUP_ORDER.filter(k => by[k].length > 0).map(k => ({ key: k, tasks: by[k] }));
   }, [filtered]);
+
+  // WITH SEVERAL SLOTS RUNNING, ORDER IS WHAT KEEPS THE LIST READABLE.
+  // Inside "In progress" the rows sort into three blocks: what is actually
+  // moving (in start order — the store's insertion order is that order), then
+  // what is held, then the queued tail the user can reorder. Nothing else about
+  // a row changes; the loud %-columns simply stop being interleaved with rows
+  // that have nothing to say yet.
+  const lane = useMemo(() => {
+    const rows = filtered.filter(t => groupOf(t.progress.status) === 'active');
+    const rank = new Map(order.map((id, i) => [id, i]));
+    return {
+      live: rows.filter(t => LIVE.has(t.progress.status)),
+      held: rows.filter(t => t.progress.status === 'paused'),
+      // Array.sort is stable, so ids the user never moved keep queue order behind
+      // the ones they did. 1e9 (not Infinity) — Infinity - Infinity is NaN.
+      pending: rows.filter(t => t.progress.status === 'queued')
+        .sort((a, b) => (rank.get(a.taskId) ?? 1e9) - (rank.get(b.taskId) ?? 1e9)),
+    };
+  }, [filtered, order]);
+
+  const pendingIds = useMemo(() => lane.pending.map(t => t.taskId), [lane]);
+  useEffect(() => { pendingIdsRef.current = pendingIds; }, [pendingIds]);
+
+  // Summed live speed is real information (total bandwidth in use). There is
+  // deliberately no aggregate percent bar: averaging unequal files is a number
+  // that looks precise and means nothing.
+  const laneSpeed = lane.live.reduce((n, t) => n + t.progress.speed, 0);
+  // "Everything is paused" is read off the rows, not off a mirrored engine flag.
+  // ponytail: with ONLY queued rows (nothing running yet) Pause all still blocks
+  // the queue but nothing repaints, so the button keeps saying "Pause all" —
+  // upgrade path is a queue:paused event if that edge ever bites.
+  const liveCount = tasks.filter(t => LIVE.has(t.progress.status)).length;
+  const pausedCount = tasks.filter(t => t.progress.status === 'paused').length;
+  const allPaused = pausedCount > 0 && liveCount === 0;
+  const canPauseAll = pausedCount > 0 || tasks.some(t => PAUSABLE.has(t.progress.status));
 
   // Select-all is scoped to what's currently visible, not the whole history.
   const allSelected  = filtered.length > 0 && filtered.every(t => selectedIds.has(t.taskId));
@@ -511,6 +683,98 @@ export function DownloadsTab() {
       removeTask(task.taskId);
     } catch {
       // leave the failed row in place so the user can retry again
+    }
+  }
+
+  /** Push the current queued order to the engine. Optimistic: the list already
+   *  shows it. A rejected call snaps back to what was on screen before. */
+  function commitOrder(ids: string[], previous: string[]): void {
+    applyOrder(ids);
+    window.electronAPI.queue.reorder(ids).catch(() => applyOrder(previous));
+  }
+
+  /** "Do this next" — front of the pending tail, then a one-shot landing tint so
+   *  a row that jumped in from off-screen says where it ended up. */
+  function handlePromote(taskId: string): void {
+    const before = orderRef.current;
+    const next = [taskId, ...pendingIdsRef.current.filter(id => id !== taskId)];
+    applyOrder(next);
+    window.electronAPI.queue.promote(taskId).catch(() => applyOrder(before));
+    setPulseId(taskId);
+    if (pulseTimer.current) clearTimeout(pulseTimer.current);
+    pulseTimer.current = setTimeout(() => setPulseId(null), 600);
+    setAnnounce(`Moved to position 1 of ${next.length}`);
+  }
+
+  /** The drag handle's keyboard twin: Space/Enter grabs and drops, the arrows
+   *  move one slot, Escape restores the slot the row was grabbed from. Every
+   *  outcome is announced — the position change is invisible to a screen reader
+   *  otherwise. Reads order through refs: the rows are memoized, so a closure
+   *  captured at grab time would move stale ids. */
+  function handleReorderKey(taskId: string, e: ReactKeyboardEvent<HTMLButtonElement>): void {
+    const ids = pendingIdsRef.current;
+    const i = ids.indexOf(taskId);
+    if (i === -1) return;
+
+    const grab = (id: string | null): void => { grabbedRef.current = id; setGrabbedId(id); };
+
+    if (e.key === ' ' || e.key === 'Enter') {
+      e.preventDefault();
+      if (grabbedRef.current === taskId) {
+        grab(null);
+        commitOrder(ids, grabOriginRef.current);
+        setAnnounce('Dropped');
+      } else {
+        grabOriginRef.current = orderRef.current;
+        grab(taskId);
+        setAnnounce(`Grabbed. Use the arrow keys to move, Enter to drop, Escape to cancel.`);
+      }
+      return;
+    }
+    if (grabbedRef.current !== taskId) return;
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      applyOrder(grabOriginRef.current);
+      grab(null);
+      setAnnounce('Reorder cancelled');
+      return;
+    }
+    const dir = e.key === 'ArrowUp' ? -1 : e.key === 'ArrowDown' ? 1 : 0;
+    if (!dir) return;
+    e.preventDefault();
+    const j = i + dir;
+    if (j < 0 || j >= ids.length) return;
+    const next = [...ids];
+    [next[i], next[j]] = [next[j], next[i]];
+    pendingIdsRef.current = next; // arrows can repeat faster than the effect syncs
+    applyOrder(next);
+    setAnnounce(`Moved to position ${j + 1} of ${next.length}`);
+  }
+
+  /** A grab abandoned by clicking away commits what the user built. Without this
+   *  the optimistic order stays on screen while the engine keeps its own — the
+   *  list silently lies about what will download next. Enter and Escape have
+   *  explicit outcomes; blur is the third exit and needed one too. */
+  function handleReorderBlur(taskId: string): void {
+    if (grabbedRef.current !== taskId) return;
+    grabbedRef.current = null;
+    setGrabbedId(null);
+    commitOrder(pendingIdsRef.current, grabOriginRef.current);
+    setAnnounce('Dropped');
+  }
+
+  /** Pause all / Resume all — both reversible, so neither is confirmed. */
+  async function handlePauseAll(): Promise<void> {
+    setBusyAll(true);
+    try {
+      if (allPaused) await window.electronAPI.download.resumeAll();
+      else await window.electronAPI.download.pauseAll();
+    } catch {
+      // A rejected call (rate limit, handler throw) left nothing paused, so
+      // saying so beats an unhandled rejection the user never sees.
+      useAppStore.getState().showError('Could not reach the download queue. Try again.');
+    } finally {
+      setBusyAll(false);
     }
   }
 
@@ -566,11 +830,12 @@ export function DownloadsTab() {
     void window.electronAPI.download.cancelAll();
   }
 
-  function renderRow(task: DownloadTask) {
+  function renderRow(task: DownloadTask, extra: Partial<CardProps> = {}) {
     return (
       <QueueCard
         key={task.taskId}
         task={task}
+        {...extra}
         selected={selectedIds.has(task.taskId)}
         onToggle={() => toggleDownloadSelection(task.taskId)}
         onCancel={() => { void window.electronAPI.download.cancel(task.taskId); }}
@@ -619,6 +884,8 @@ export function DownloadsTab() {
           </h2>
           <p className="font-mono text-[11px] uppercase tracking-[0.08em] text-text-muted mt-1">
             <span className="tabular-nums text-text-secondary">{counts.active}</span> active
+            {/* Colour is never the only channel — the word rides along with it. */}
+            {allPaused && <span className="text-warning"> · paused</span>}
             {' · '}
             <span className="tabular-nums text-text-secondary">{counts.all}</span> total
           </p>
@@ -637,6 +904,20 @@ export function DownloadsTab() {
                 Clear completed
               </Button>
             )
+          )}
+          {/* Recoverable before destructive: reading order matches severity, and
+              neither of these two needs a confirm — both undo each other. */}
+          {canPauseAll && (
+            <Button
+              variant="ghost" size="sm"
+              icon={allPaused ? Play : Pause}
+              className={allPaused ? 'text-accent' : ''}
+              loading={busyAll}
+              onClick={() => { void handlePauseAll(); }}
+              aria-live="polite"
+            >
+              {allPaused ? 'Resume all' : 'Pause all'}
+            </Button>
           )}
           {counts.active > 0 && (
             <Button
@@ -668,7 +949,9 @@ export function DownloadsTab() {
           onClick={() => allSelected ? clearDownloadSelection() : selectAllDownloads(filtered.map(t => t.taskId))}
           aria-label="Toggle select all"
           aria-pressed={allSelected ? true : someSelected ? 'mixed' : false}
-          className={`no-drag grid place-items-center ml-4 mr-2 text-text-muted hover:text-accent transition-colors ${COL_CHECK}`}
+          // ml-11 = px-4 (16) + handle (16) + gap-3 (12): the row's checkbox moved
+          // one column right when the drag handle landed, and this tracks it.
+          className={`no-drag grid place-items-center ml-11 mr-2 text-text-muted hover:text-accent transition-colors ${COL_CHECK}`}
         >
           {allSelected
             ? <CheckboxChecked size={15} className="text-accent" />
@@ -748,6 +1031,10 @@ export function DownloadsTab() {
         </div>
       )}
 
+      {/* Reorder outcomes are pure position changes — invisible to a screen
+          reader unless they are said out loud. */}
+      <p aria-live="polite" className="sr-only">{announce}</p>
+
       {/* ── row list ── */}
       <div className="flex-1 overflow-y-auto min-h-0 pb-10">
         {tasks.length === 0 ? (
@@ -788,7 +1075,16 @@ export function DownloadsTab() {
           </div>
         ) : (
           <div className={surface}>
-            {groups.map(g => (
+            {groups.map(g => {
+              // Only "In progress" splits into blocks — the other two groups are
+              // one flat list, exactly as they shipped.
+              const isQueueLane = g.key === 'active';
+              const moving = isQueueLane ? [...lane.live, ...lane.held] : g.tasks;
+              const tail = isQueueLane ? lane.pending : [];
+              // The sub-band is the seam between the two blocks, so it exists
+              // only when there are two blocks to separate.
+              const subBand = moving.length > 0 && tail.length > 0;
+              return (
               /* first:border-t-0 — the surface's own edge already draws the top
                  hairline; every later group closes off the group above it. */
               <section key={g.key} aria-labelledby={`queue-group-${g.key}`} className="border-t border-border-soft first:border-t-0">
@@ -798,17 +1094,75 @@ export function DownloadsTab() {
                   <div className="flex items-center gap-2 h-8 px-4 bg-bg-secondary/60 border-b border-border-soft">
                     <h3 id={`queue-group-${g.key}`} className="text-[11.5px] font-medium text-text-secondary">
                       {GROUP_LABEL[g.key]}
+                      {isQueueLane && allPaused && <span className="text-warning"> · paused</span>}
                     </h3>
                     <span className="font-mono text-[10.5px] tabular-nums text-text-muted">{g.tasks.length}</span>
+                    {/* Total bandwidth in use — the one aggregate that is true
+                        when several rows are moving at once. */}
+                    {isQueueLane && lane.live.length > 0 && (
+                      <span
+                        className="ml-auto font-mono text-[10.5px] tabular-nums text-text-secondary"
+                        aria-label={`${lane.live.length} transferring${laneSpeed > 0 ? `, ${fmtSpeed(laneSpeed)} total` : ''}`}
+                      >
+                        {`↓ ${lane.live.length}`}{laneSpeed > 0 ? ` · ${fmtSpeed(laneSpeed)}` : ''}
+                      </span>
+                    )}
                   </div>
                 )}
-                <ul className="divide-y divide-border-soft">
-                  <AnimatePresence initial={false}>
-                    {g.tasks.map(renderRow)}
-                  </AnimatePresence>
-                </ul>
+
+                {moving.length > 0 && (
+                  <ul className="divide-y divide-border-soft">
+                    <AnimatePresence initial={false}>
+                      {moving.map(t => renderRow(t))}
+                    </AnimatePresence>
+                  </ul>
+                )}
+
+                {/* One hairline of type does three jobs: it separates the loud
+                    %-columns from the rows that are only waiting, it labels the
+                    reorderable region, and it is that region's landmark. */}
+                {subBand && (
+                  <div
+                    id="queue-up-next"
+                    className="flex items-center h-7 pl-32 pr-4 border-t border-border-soft font-mono text-[10.5px] uppercase tracking-[0.08em] text-text-muted"
+                  >
+                    {`Up next · ${tail.length}`}
+                  </div>
+                )}
+
+                {tail.length > 0 && (
+                  <Reorder.Group
+                    axis="y"
+                    values={pendingIds}
+                    // Live during the drag; the engine hears about it on drop.
+                    onReorder={(ids: string[]) => {
+                      dragOriginRef.current ??= orderRef.current.length ? orderRef.current : pendingIdsRef.current;
+                      applyOrder(ids);
+                    }}
+                    aria-labelledby={subBand ? 'queue-up-next' : undefined}
+                    className={`divide-y divide-border-soft ${moving.length > 0 ? 'border-t border-border-soft' : ''}`}
+                  >
+                    {tail.map((t, i) => renderRow(t, {
+                      reorderable: true,
+                      draggable: tail.length > 1,
+                      grabbed: grabbedId === t.taskId,
+                      pulse: pulseId === t.taskId,
+                      onReorderKey: (e) => handleReorderKey(t.taskId, e),
+                      onReorderBlur: () => handleReorderBlur(t.taskId),
+                      onDragCommit: () => {
+                        const before = dragOriginRef.current ?? orderRef.current;
+                        dragOriginRef.current = null;
+                        commitOrder(pendingIdsRef.current, before);
+                      },
+                      // Hidden on the row that is already first — an action that
+                      // cannot act should not be drawn.
+                      ...(i > 0 ? { onPromote: () => handlePromote(t.taskId) } : {}),
+                    }))}
+                  </Reorder.Group>
+                )}
               </section>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

@@ -25,8 +25,9 @@ vi.mock('fs', async () => {
   return { ...actual, existsSync: vi.fn().mockReturnValue(true) };
 });
 
-import { Downloader, classifyError, scoreCandidates } from './downloader';
-import type { DownloadTask, Track, SearchResult } from '../shared/types';
+import { Downloader, classifyError, explainError, needsClientFallback, scoreCandidates } from './downloader';
+import type { DownloadTask, Track, SearchResult, DownloadExtras } from '../shared/types';
+import { mergeExtras } from '../shared/types';
 import { spawn, execSync } from 'child_process';
 import { existsSync } from 'fs';
 
@@ -53,6 +54,11 @@ function makeTask(overrides: Partial<DownloadTask> = {}): DownloadTask {
     ...overrides,
   };
 }
+
+/** One ytsearch5 candidate line, newline-terminated, for the Spotify bridge tests. */
+const BRIDGE_CANDIDATE =
+  JSON.stringify({ id: 'x', title: 'Song', uploader: 'Artist - Topic', duration: 200, webpage_url: 'https://youtu.be/x' }) +
+  String.fromCharCode(10);
 
 describe('Downloader', () => {
   let downloader: Downloader;
@@ -258,6 +264,44 @@ describe('Downloader', () => {
     expect(task.matchConfidence).toBeGreaterThan(0);
   });
 
+  // Found in adversarial review. The bridge pre-pass is a ~1s untracked proc, so
+  // cancel() cannot kill it — but the download it defers MUST be called off, or
+  // the cancelled job downloads anyway. Under concurrent slots a pause→resume in
+  // that window then started a SECOND proc for the same taskId, leaving the first
+  // running and unkillable with both sets of callbacks live.
+  it('does not spawn the download when the job is cancelled during its bridge pre-pass', async () => {
+    const task = makeTask({ source: 'spotify', taskId: 'sp1' });
+    const track: Track = { name: 'Song', artist: 'Artist', artists: ['Artist'], id: '1', album: 'Album', trackNumber: 1, durationMs: 200000, thumbnailUrl: '' };
+    downloader.download(task, track);
+
+    const preProc = (spawn as any).mock.results[0].value;
+    downloader.cancel('sp1');                       // cancelled while the pre-pass is in flight
+    preProc.stdout.emit('data', Buffer.from(BRIDGE_CANDIDATE));
+    preProc.emit('close', 0);
+
+    await new Promise((r) => setTimeout(r, 20));    // let the deferred .then() run
+    expect(spawn).toHaveBeenCalledTimes(1);         // the pre-pass only — no download
+  });
+
+  it('lets a resumed attempt supersede the one it replaced, rather than both spawning', async () => {
+    const task = makeTask({ source: 'spotify', taskId: 'sp2' });
+    const track: Track = { name: 'Song', artist: 'Artist', artists: ['Artist'], id: '1', album: 'Album', trackNumber: 1, durationMs: 200000, thumbnailUrl: '' };
+    downloader.download(task, track);               // attempt 1
+    const first = (spawn as any).mock.results[0].value;
+    downloader.cancel('sp2');                       // pause
+    downloader.download(task, track);               // resume → attempt 2 takes the token
+    const second = (spawn as any).mock.results[1].value;
+
+    first.stdout.emit('data', Buffer.from(BRIDGE_CANDIDATE));
+    first.emit('close', 0);                         // the superseded attempt lands late
+    second.stdout.emit('data', Buffer.from(BRIDGE_CANDIDATE));
+    second.emit('close', 0);
+
+    await new Promise((r) => setTimeout(r, 20));
+    // 2 pre-passes + exactly ONE download — never an orphan alongside the live job.
+    expect(spawn).toHaveBeenCalledTimes(3);
+  });
+
   // Short-form preview metadata (REDESIGN-PLAN §4.2): the extras ride along when the
   // extractor reports them, and stay ABSENT (not 0/'') when it doesn't — the preview
   // card must be able to tell "no likes reported" from "zero likes".
@@ -457,5 +501,194 @@ describe('scoreCandidates', () => {
     const ranked = scoreCandidates(track, [noDur]);
     expect(ranked).toHaveLength(1);
     expect(ranked[0].candidate.url).toBe('nodur');
+  });
+});
+
+// ── The PO-token gate (§5) ───────────────────────────────────────────────────
+// Reproduced live on 2026-08-19 against a freshly posted Marvel trailer
+// (X1aFkAkFASk): metadata resolved, the card rendered, and the download died with
+// `HTTP Error 403: Forbidden`. Retrying the identical command reproduced it three
+// times; excluding the gated player client turned it into a 6.5 MB file.
+describe('PO-token gate: 403 recovery', () => {
+  it('recognises every shape the gate arrives in', () => {
+    expect(needsClientFallback('ERROR: unable to download video data: HTTP Error 403: Forbidden')).toBe(true);
+    expect(needsClientFallback('ERROR: [youtube] X: Requested format is not available')).toBe(true);
+    expect(needsClientFallback('ERROR: [youtube] X: The page needs to be reloaded.')).toBe(true);
+  });
+
+  it('does not mistake an ordinary failure for the gate', () => {
+    expect(needsClientFallback('ERROR: Video unavailable')).toBe(false);
+    expect(needsClientFallback('ERROR: unable to download video data: HTTP Error 500')).toBe(false);
+    expect(needsClientFallback('')).toBe(false);
+  });
+
+  it('classifies a 403 as retryable so the queue gets a second attempt at all', () => {
+    expect(classifyError('unable to download video data: HTTP Error 403: Forbidden')).toBe('retryable');
+    // Pre-fix this fell through every list to 'permanent' — one red row, no retry.
+    expect(classifyError('Requested format is not available')).toBe('retryable');
+  });
+
+  it('does not burn the retry ladder on a premiere that has not happened yet', () => {
+    expect(classifyError('This live event will begin in 3 hours')).toBe('permanent');
+  });
+
+  it('asks the fallback player clients ONLY when the queue latched the flag', () => {
+    const d = new Downloader();
+    const plain = d.buildYtDlpArgs(makeTask({ isAudioOnly: false }), null);
+    expect(plain).not.toContain('--extractor-args');
+
+    const retried = d.buildYtDlpArgs(makeTask({ isAudioOnly: false, fallbackProfile: true }), null);
+    const i = retried.indexOf('--extractor-args');
+    expect(i).toBeGreaterThan(-1);
+    // The gated client must be EXCLUDED, not merely joined: leaving it in the pool
+    // keeps its 1080p entries, the selector still prefers them, and the retry 403s
+    // exactly like the attempt it was supposed to rescue.
+    expect(retried[i + 1]).toBe('youtube:player_client=android,mweb,tv_simply');
+    expect(retried[i + 1]).not.toContain('default');
+  });
+});
+
+describe('explainError', () => {
+  it('replaces raw stderr with something the user can act on', () => {
+    expect(explainError('ERROR: unable to download video data: HTTP Error 403: Forbidden'))
+      .toMatch(/gating/i);
+    expect(explainError('ERROR: Private video. Sign in if you have been granted access'))
+      .toMatch(/sign-in/i);
+    // Note the narrow string: classifyError checks its permanent list BEFORE geo,
+    // so the common wordings ("Video unavailable in your country", "This video is
+    // not available in your country") land as permanent and never reach the geo
+    // branch. Both are non-retryable either way, so only the sentence differs —
+    // pre-existing ordering, left alone here rather than widened blind.
+    expect(explainError('ERROR: The video is geo-restricted')).toMatch(/region/i);
+    expect(explainError('ERROR: This live event will begin in 2 hours')).toMatch(/premiered/i);
+  });
+
+  it('never returns an empty string, whatever it is handed', () => {
+    expect(explainError('')).toBeTruthy();
+    expect(explainError('   ')).toBeTruthy();
+  });
+});
+
+// ── Download extras (§5) ──────────────────────────────────────────────────────
+// Everything below reaches spawn() as an argument, so each case asserts both the
+// flag AND its value where one is carried.
+describe('buildYtDlpArgs — extras', () => {
+  let d: Downloader;
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(execSync).mockReturnValue(Buffer.from('2024.01.01\n'));
+    d = new Downloader();
+  });
+
+  /** The value following `flag`, or undefined when the flag is absent. */
+  const valueOf = (args: string[], flag: string): string | undefined => {
+    const i = args.indexOf(flag);
+    return i === -1 ? undefined : args[i + 1];
+  };
+  const withExtras = (extras: Partial<DownloadExtras>, task: Partial<DownloadTask> = {}) =>
+    d.buildYtDlpArgs(makeTask({ ...task, extras: mergeExtras(extras) }), null);
+
+  it('omits every extra when the task carries none (pre-extras history rows)', () => {
+    const args = d.buildYtDlpArgs(makeTask(), null);
+    for (const flag of [
+      '--sub-langs', '--embed-subs', '--write-subs', '--split-chapters',
+      '--sponsorblock-remove', '--sponsorblock-mark', '--write-thumbnail',
+      '--write-info-json', '--write-description', '--limit-rate', '--proxy',
+      '--cookies-from-browser',
+    ]) {
+      expect(args).not.toContain(flag);
+    }
+  });
+
+  it('embeds subtitles, writes them, or both, per mode', () => {
+    expect(withExtras({ subtitleMode: 'off' })).not.toContain('--sub-langs');
+
+    const embed = withExtras({ subtitleMode: 'embed', subtitleLangs: 'en,fr' });
+    expect(valueOf(embed, '--sub-langs')).toBe('en,fr');
+    expect(embed).toContain('--embed-subs');
+    expect(embed).not.toContain('--write-subs');
+
+    const file = withExtras({ subtitleMode: 'file' });
+    expect(file).toContain('--write-subs');
+    expect(valueOf(file, '--convert-subs')).toBe('srt');
+    expect(file).not.toContain('--embed-subs');
+
+    const both = withExtras({ subtitleMode: 'both' });
+    expect(both).toContain('--embed-subs');
+    expect(both).toContain('--write-subs');
+  });
+
+  it('asks for auto-generated captions only when enabled', () => {
+    expect(withExtras({ subtitleMode: 'embed', subtitleAuto: true })).toContain('--write-auto-subs');
+    expect(withExtras({ subtitleMode: 'embed', subtitleAuto: false })).not.toContain('--write-auto-subs');
+  });
+
+  it('passes SponsorBlock categories and honours mark vs remove', () => {
+    const remove = withExtras({ sponsorBlock: 'remove', sponsorBlockCategories: ['sponsor', 'intro'] });
+    expect(valueOf(remove, '--sponsorblock-remove')).toBe('sponsor,intro');
+
+    const mark = withExtras({ sponsorBlock: 'mark', sponsorBlockCategories: ['outro'] });
+    expect(valueOf(mark, '--sponsorblock-mark')).toBe('outro');
+    expect(mark).not.toContain('--sponsorblock-remove');
+  });
+
+  it('drops SponsorBlock categories that are not real categories', () => {
+    // config.json is hand-editable and this value becomes a spawn argument.
+    const args = withExtras({ sponsorBlock: 'remove', sponsorBlockCategories: ['sponsor', '; rm -rf /', 'nope'] });
+    expect(valueOf(args, '--sponsorblock-remove')).toBe('sponsor');
+  });
+
+  it('emits no SponsorBlock flag at all when every category is invalid', () => {
+    const args = withExtras({ sponsorBlock: 'remove', sponsorBlockCategories: ['bogus'] });
+    expect(args).not.toContain('--sponsorblock-remove');
+  });
+
+  it('falls back to the default for an unknown enum value rather than passing it through', () => {
+    const args = withExtras({
+      subtitleMode: 'evil' as never,
+      videoContainer: '../etc' as never,
+      cookieBrowser: 'not-a-browser' as never,
+    }, { isAudioOnly: false });
+    expect(args).not.toContain('--sub-langs');       // unknown mode → 'off'
+    expect(valueOf(args, '--merge-output-format')).toBe('mp4');
+    expect(args).not.toContain('--cookies-from-browser');
+  });
+
+  it('wires the rate limit and proxy that config had been collecting but never sending', () => {
+    const args = withExtras({ rateLimit: '2M', proxy: 'socks5://127.0.0.1:9050' });
+    expect(valueOf(args, '--limit-rate')).toBe('2M');
+    expect(valueOf(args, '--proxy')).toBe('socks5://127.0.0.1:9050');
+  });
+
+  it('builds a container- and codec-aware video selector', () => {
+    const mp4 = withExtras({ videoContainer: 'mp4', videoCodec: 'h264' }, { isAudioOnly: false, videoQuality: '1080p' });
+    const sel = valueOf(mp4, '-f')!;
+    expect(sel.startsWith('bestvideo[height<=1080][vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]')).toBe(true);
+    expect(sel.endsWith('/best')).toBe(true);          // always degrades to something
+    expect(valueOf(mp4, '--merge-output-format')).toBe('mp4');
+
+    // mkv accepts anything, so constraining ext there would only lose formats.
+    const mkv = withExtras({ videoContainer: 'mkv', videoCodec: 'any' }, { isAudioOnly: false, videoQuality: '720p' });
+    expect(valueOf(mkv, '-f')).not.toContain('[ext=mp4]');
+    expect(valueOf(mkv, '--merge-output-format')).toBe('mkv');
+  });
+
+  it('uses a custom output template but keeps outputDir as the anchor', () => {
+    const args = withExtras({ outputTemplate: '%(uploader)s/%(title)s' });
+    const out = valueOf(args, '-o')!;
+    expect(out.startsWith('C:\\Downloads')).toBe(true);
+    expect(out).toContain('%(uploader)s');
+    expect(out.endsWith('.%(ext)s')).toBe(true);
+  });
+
+  it('refuses an output template that would escape the output directory', () => {
+    for (const bad of ['../../%(title)s', '/etc/%(title)s', 'D:/elsewhere/%(title)s']) {
+      const out = valueOf(withExtras({ outputTemplate: bad }), '-o')!;
+      expect(out.startsWith('C:\\Downloads')).toBe(true);
+      expect(out).not.toContain('..');
+      expect(out).not.toContain('etc');
+      expect(out).not.toContain('elsewhere');
+    }
   });
 });

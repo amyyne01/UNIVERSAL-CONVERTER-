@@ -92,10 +92,16 @@ describe('detectUrl — SoundCloud', () => {
     expect(d.isCollection).toBe(true);
   });
 
-  it('excludes profile sub-pages like /likes', () => {
-    expect(detectUrl('https://soundcloud.com/artist-name/likes').platform).toBe('unknown');
-    expect(detectUrl('https://soundcloud.com/artist-name/reposts').platform).toBe('unknown');
-    expect(detectUrl('https://soundcloud.com/artist-name/followers').platform).toBe('unknown');
+  // The point of the negative lookahead is that these are never mistaken for a
+  // TRACK with a bogus slug id. They now fall through to the generic rule instead
+  // of dying as 'unknown' — the engine does support /likes and /reposts — but the
+  // thing being guarded against, a wrong soundcloud track detection, still holds.
+  it('never claims profile sub-pages like /likes as tracks', () => {
+    for (const sub of ['likes', 'reposts', 'followers']) {
+      const d = detectUrl(`https://soundcloud.com/artist-name/${sub}`);
+      expect(d.platform).not.toBe('soundcloud');
+      expect(d.contentType).not.toBe('track');
+    }
   });
 });
 
@@ -119,10 +125,25 @@ describe('detectUrl — fallbacks', () => {
     expect(d.label).toBe('Direct media');
   });
 
-  it('reports unknown for anything unrecognised', () => {
-    const d = detectUrl('https://example.com/some/page');
-    expect(d.platform).toBe('unknown');
-    expect(d.label).toBe('Unknown link');
+  it('hands any other real address to the engine as generic', () => {
+    const d = detectUrl('https://vimeo.com/123456789');
+    expect(d.platform).toBe('generic');
+    expect(d.contentType).toBe('video');
+    // The hostname names the site far better than the word "Link" does.
+    expect(d.label).toBe('vimeo.com video');
+  });
+
+  it('still reports unknown for input that is not a real address', () => {
+    // detectUrl() prepends https:// to scheme-less input, so a typed search
+    // phrase must NOT become a generic link and get sent to a spawn.
+    for (const input of ['best songs of 2026', 'not a url', 'spotify:weird:thing']) {
+      expect(detectUrl(input).platform).toBe('unknown');
+    }
+  });
+
+  it('does not treat a non-http scheme as a generic link', () => {
+    expect(detectUrl('file:///C:/Windows/System32/notes.txt').platform).toBe('unknown');
+    expect(detectUrl('javascript:alert(1)').platform).toBe('unknown');
   });
 });
 

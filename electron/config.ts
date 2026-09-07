@@ -18,6 +18,7 @@ export const defaultConfig: AppConfig = {
   theme: 'system',
   rememberLastDir: true,
   autoPaste: true,
+  clipboardWatch: false,
   showNotifications: true,
   rateLimit: '',
   proxy: '',
@@ -29,6 +30,28 @@ export const defaultConfig: AppConfig = {
   scheduleDays: [],
   scheduleShutdown: false,
   autoUpdateEngine: true,
+  // Tier-clamped at the IPC boundary before it reaches the queue; 2 is what basic
+  // allows, so an existing config.json with no key at all lands on the free cap.
+  maxConcurrentDownloads: 2,
+  // ── Download extras (§5) ────────────────────────────────────────────────
+  // Flat, like every other key — AppConfig stays flat so isSafeKey/isValidValue
+  // keep working per-key. ipc.ts assembles these into one DownloadExtras when a
+  // task is created. Defaults reproduce the pre-extras behaviour exactly, except
+  // embedChapters, which is free, lossless and what every competitor does.
+  subtitleMode: 'off',
+  subtitleLangs: 'en',
+  subtitleAuto: false,
+  embedChapters: true,
+  splitChapters: false,
+  sponsorBlock: 'off',
+  sponsorBlockCategories: ['sponsor'],
+  writeThumbnail: false,
+  writeInfoJson: false,
+  writeDescription: false,
+  videoContainer: 'mp4',
+  videoCodec: 'any',
+  cookieBrowser: '',
+  outputTemplate: '',
 };
 
 const DEBOUNCE_MS = 400;
@@ -192,7 +215,14 @@ export class ConfigManager {
   private isValidValue(key: string, value: unknown): boolean {
     const def = (defaultConfig as unknown as Record<string, unknown>)[key];
     if (Array.isArray(def) !== Array.isArray(value)) return false;
-    if (Array.isArray(value)) return value.every((v) => typeof v === 'number');
+    if (Array.isArray(value)) {
+      // Element type can't be read off the default (scheduleDays defaults to []),
+      // so the one string-valued array is named. String enums (subtitleMode,
+      // sponsorBlock, …) pass the typeof check here and are enum-validated again
+      // in buildYtDlpArgs — the choke point right before they become spawn args.
+      const elem = key === 'sponsorBlockCategories' ? 'string' : 'number';
+      return value.every((v) => typeof v === elem);
+    }
     return typeof value === typeof def;
   }
 

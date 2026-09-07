@@ -1,18 +1,29 @@
-// Single-slot FIFO download queue + retry / cancel / pause machinery.
-// See HOW-THE-APP-WORKS.md §7 (one-at-a-time queue, state machine) and §8
+// N-slot FIFO download queue + retry / cancel / pause machinery.
+// See HOW-THE-APP-WORKS.md §7 (the queue and its state machine) and §8
 // (retries with exponential backoff, cancellation grace period).
 import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import type { DownloadTask, DownloadProgress, DownloadStatus } from '../shared/types.js';
 import { canTransition } from './state-machine.js';
-import { classifyError, type Downloader } from './downloader.js';
+import { classifyError, explainError, needsClientFallback, type Downloader } from './downloader.js';
 import { getMainWindow } from './window.js';
 
-// ── Module-level singleton state (one slot, oldest-first) ──────────────────
+// ── Module-level singleton state (N slots, oldest-first) ───────────────────
 const queue: DownloadTask[] = [];
-let isDownloading = false;
-let currentTaskId: string | null = null;
-let currentTask: DownloadTask | null = null;
+/** Jobs currently holding a slot, keyed by taskId. Values are the LIVE task
+ *  objects, and every downloader callback is admitted by REFERENCE equality
+ *  (active.get(id) === task), never by id alone: scheduleRetry reuses a taskId
+ *  with a fresh object while a killed process's closure still holds the old one,
+ *  so an id-only guard would admit a dead proc.
+ *
+ *  Pause→resume is the case reference equality does NOT cover: it re-queues the
+ *  SAME object, so a stale closure holding it still matches. What protects that
+ *  path is killing the proc before parking the task, plus (for a Spotify bridge
+ *  pre-pass, where no proc exists yet) the per-attempt token in downloader.ts. */
+const active = new Map<string, DownloadTask>();
+/** Effective slot count. Never derived here from config or the plan — ipc.ts
+ *  pushes the already-clamped value in at boot, on config change, on plan flip. */
+let maxSlots = 1;
 let downloader: Downloader | null = null;
 let paused = false; // §14 "pause all": blocks the queue from starting new jobs.
 
@@ -80,10 +91,12 @@ export function getAllTasks(): DownloadTask[] {
   return [...history.values()];
 }
 
-/** Drop tasks from history (and the waiting queue). The active job is ignored. */
+/** Drop tasks from history (and the waiting queue). Active jobs are ignored —
+ *  every one of them, not just the first: deleting a live row mid-download
+ *  corrupts insertion order when its next transition() re-inserts it. */
 export function removeTasks(ids: string[]): boolean {
   for (const id of ids) {
-    if (id === currentTaskId) continue;
+    if (active.has(id)) continue;
     history.delete(id);
     const idx = queue.findIndex((t) => t.taskId === id);
     if (idx !== -1) queue.splice(idx, 1);
@@ -92,6 +105,8 @@ export function removeTasks(ids: string[]): boolean {
     const timer = retryTimers.get(id);
     if (timer) { clearTimeout(timer); retryTimers.delete(id); }
   }
+  // Removing the last parked row by hand reaches the same wedge cancelAll does.
+  clearPauseIfNothingParked();
   schedulePersist();
   return true;
 }
@@ -138,6 +153,15 @@ export function setDownloader(d: Downloader): void {
   downloader = d;
 }
 
+/** Set how many downloads may run at once. The caller owns the tier clamp
+ *  (clampConcurrency); the queue only schedules. Raising the cap fills the new
+ *  slots from the queue immediately; lowering it never kills a running job — it
+ *  only blocks new starts and lets `active` drain by attrition. */
+export function setMaxSlots(n: number): void {
+  maxSlots = Math.max(1, Math.floor(n));
+  processNextQueueItem();
+}
+
 // ── Task creation (§7: unique id, sensible defaults) ───────────────────────
 export function createTask(partial: Partial<DownloadTask>): DownloadTask {
   return {
@@ -170,10 +194,28 @@ export function createTask(partial: Partial<DownloadTask>): DownloadTask {
     ...(partial.track !== undefined ? { track: partial.track } : {}),
     ...(partial.retryCount !== undefined ? { retryCount: partial.retryCount } : {}),
     ...(partial.originalTaskId !== undefined ? { originalTaskId: partial.originalTaskId } : {}),
+    // playlistLimit is the basic tier's collection cap. It was being dropped here —
+    // ipc.ts computed it and handed it in, createTask never copied it out, so
+    // buildYtDlpArgs never saw it and --playlist-end was never passed. The free
+    // ceiling silently did nothing on every collection download.
+    ...(partial.playlistLimit !== undefined ? { playlistLimit: partial.playlistLimit } : {}),
+    ...(partial.fallbackProfile !== undefined ? { fallbackProfile: partial.fallbackProfile } : {}),
+    // Same trap playlistLimit fell into: assembled by ipc.ts and handed in, so it
+    // has to be copied out here or buildYtDlpArgs never sees a single extra.
+    ...(partial.extras !== undefined ? { extras: partial.extras } : {}),
   };
 }
 
 export function enqueueTask(task: DownloadTask): void {
+  // Enqueued while the whole queue is paused: park it as 'paused' rather than
+  // leaving it 'queued'. Two reasons, one of them a bug.
+  //   Honesty — 'queued' promises "about to start", and it is not.
+  //   Reachability — the renderer infers "everything is paused" from row statuses
+  //   (pausedCount > 0 && liveCount === 0). A 'queued' row makes that false, so
+  //   the control renders as "Pause all", whose click hits the `if (paused)`
+  //   guard and does nothing: the user cannot resume the queue they paused.
+  // Resume flips every parked row back, so this costs nothing on that path.
+  if (paused) transition(task, 'paused');
   queue.push(task);
   recordRecent(task);
   recordHistory(task);
@@ -184,19 +226,18 @@ export function enqueueTask(task: DownloadTask): void {
 
 // ── Per-task pause / resume ─────────────────────────────────────────────────
 /** Pause one task. Active job: kill the process (its .part file stays for
- *  --continue), park it at the front of the queue, and free the slot so the
- *  next job starts. Waiting job: flip it to paused in place. */
+ *  --continue), park it at the front of the queue, and free ITS slot so the next
+ *  waiting job starts — the other running jobs are untouched. Waiting job: flip
+ *  it to paused in place. */
 export function pauseTask(taskId: string): boolean {
-  if (isDownloading && currentTaskId === taskId && currentTask) {
-    const task = currentTask;
+  const task = active.get(taskId);
+  if (task) {
     downloader?.cancel(taskId);
     markRecentlyCancelled(taskId);
     transition(task, 'paused');
     task.progress = { ...task.progress, speed: 0, eta: 0 };
     queue.unshift(task);
-    isDownloading = false;
-    currentTaskId = null;
-    currentTask = null;
+    active.delete(taskId);
     emit('download:progress', task.taskId, task.progress);
     later(processNextQueueItem, NEXT_PAUSE_MS);
     return true;
@@ -216,6 +257,47 @@ export function resumeTask(taskId: string): boolean {
   task.interrupted = false; // the user chose to finish it
   emit('download:progress', task.taskId, task.progress);
   processNextQueueItem();
+  return true;
+}
+
+// ── Reordering the pending slice (§7) ──────────────────────────────────────
+/** Reorder the QUEUED tasks inside `queue` into the order `taskIds` gives.
+ *  Only waiting work can move: a job that has already STARTED lives in `active`,
+ *  never in `queue`, so it is structurally impossible to reorder one ahead of
+ *  itself. Individually-paused tasks keep the exact slots they sit in — the
+ *  queued tasks are written back into the queued slots only, so a reorder can
+ *  neither jump a task past a paused one nor wake it.
+ *  Hostile/stale input is dropped, never rejected: ids that are unknown,
+ *  duplicated, or no longer queued (a row can finish mid-drag) are skipped, and
+ *  queued tasks the caller didn't name keep their relative order behind the
+ *  ones it did. */
+export function reorderQueue(taskIds: string[]): boolean {
+  const slots: number[] = [];
+  for (let i = 0; i < queue.length; i++) {
+    if (queue[i].progress.status === 'queued') slots.push(i);
+  }
+  if (slots.length < 2) return true; // zero or one mover — nothing can change
+  const pending = slots.map((i) => queue[i]);
+  const named: DownloadTask[] = [];
+  const seen = new Set<string>();
+  for (const id of taskIds) {
+    if (seen.has(id)) continue;
+    const t = pending.find((x) => x.taskId === id);
+    if (!t) continue;
+    seen.add(id);
+    named.push(t);
+  }
+  const ordered = [...named, ...pending.filter((t) => !seen.has(t.taskId))];
+  slots.forEach((slot, i) => { queue[slot] = ordered[i]; });
+  return true;
+}
+
+/** "Do this next": move one queued task to the front of the pending slice.
+ *  Returns false when the task isn't waiting any more (already running, gone). */
+export function promoteTask(taskId: string): boolean {
+  const task = queue.find((t) => t.taskId === taskId);
+  if (!task || task.progress.status !== 'queued') return false;
+  reorderQueue([taskId]);
   return true;
 }
 
@@ -242,25 +324,44 @@ export function onDownloadFailure(cb: (error: string) => void): () => void {
  *  tasks). The scheduled-OS-shutdown watcher uses this so the machine is never shut
  *  down while paused downloads remain in the queue. */
 export function hasUnfinishedWork(): boolean {
-  return isDownloading || queue.length > 0;
+  return active.size > 0 || queue.length > 0;
 }
 
-/** Pause everything: stop the active job (reuse cancel machinery — kill the process,
- *  suppress its dying error) and re-queue it at the front; block new starts (§8/§14). */
+/** Pause everything: stop every active job (reuse cancel machinery — kill the
+ *  process, suppress its dying error) and re-queue them at the front; block new
+ *  starts (§8/§14). */
 export function pauseAllDownloads(): void {
   if (paused) return;
   paused = true;
-  if (isDownloading && currentTask) {
-    const task = currentTask;
+  const parked = [...active.values()]; // insertion order = the order they started
+  for (const task of parked) {
     downloader?.cancel(task.taskId);
     markRecentlyCancelled(task.taskId);
     transition(task, 'paused');
-    queue.unshift(task); // resume restarts it from the front
-    isDownloading = false;
-    currentTaskId = null;
-    currentTask = null;
     emit('download:progress', task.taskId, task.progress);
   }
+  // ONE unshift, not one per task: unshifting in a loop reverses their relative
+  // order, so resumeAllDownloads would restart them back to front.
+  if (parked.length) queue.unshift(...parked); // resume restarts them from the front
+  active.clear();
+}
+
+/** The global pause exists to HOLD PARKED WORK. Once none remains — cancelled,
+ *  removed, or drained — the flag has to clear, or the queue stays wedged for the
+ *  rest of the session: processNextQueueItem() returns immediately on `paused`, so
+ *  every newly pasted link sits at 'queued' forever.
+ *
+ *  It is unreachable rather than merely stuck, which is what makes it worth a
+ *  guard: the renderer INFERS "everything is paused" from row statuses
+ *  (`pausedCount > 0 && liveCount === 0`), so with zero paused rows the button
+ *  reads "Pause all" and its click hits pauseAllDownloads' `if (paused) return`.
+ *  Only a restart clears it.
+ *
+ *  ponytail: clearing the flag is smaller than publishing the engine's paused
+ *  state over IPC and fixes every route into the wedge. If the renderer ever needs
+ *  to DISPLAY "queue paused" on its own, publish the flag then. */
+function clearPauseIfNothingParked(): void {
+  if (paused && !queue.some((t) => t.progress.status === 'paused')) paused = false;
 }
 
 /** Resume: flip paused jobs back to queued and pick processing back up. */
@@ -290,13 +391,15 @@ export function cancelTask(taskId: string): boolean {
     emit('download:cancelled', taskId);
     return true;
   }
-  // The active job: kill the process and suppress its dying error for a grace period.
-  if (isDownloading && currentTaskId === taskId) {
+  // An active job: kill its process and suppress its dying error for a grace
+  // period. Exactly one slot is freed; sibling jobs keep running.
+  const running = active.get(taskId);
+  if (running) {
     downloader?.cancel(taskId);
     markRecentlyCancelled(taskId);
-    if (currentTask) transition(currentTask, 'cancelled');
+    transition(running, 'cancelled');
     emit('download:cancelled', taskId);
-    finishCurrent();
+    finishTask(taskId);
     return true;
   }
   // A merely-waiting job: remove it from the list.
@@ -327,50 +430,60 @@ export function cancelAllTasks(): void {
     emit('download:cancelled', t.taskId);
   }
   queue.length = 0;
-  downloader?.cancelAll();
-  if (currentTaskId) {
-    markRecentlyCancelled(currentTaskId);
-    if (currentTask) transition(currentTask, 'cancelled');
-    emit('download:cancelled', currentTaskId);
+  // Cancel-all after pause-all destroys every parked row, which is the shortest
+  // route into the wedge: the flag would survive with nothing left to reveal a
+  // Resume control.
+  clearPauseIfNothingParked();
+  // Mark EVERY active id before the kill, one per slot. With several processes
+  // dying at once, an unmarked one passes handleError's recentlyCancelled check
+  // and paints a red "yt-dlp exited with code 1" row AFTER the user cancelled.
+  for (const [id, task] of active) {
+    markRecentlyCancelled(id);
+    transition(task, 'cancelled');
+    emit('download:cancelled', id);
   }
-  isDownloading = false;
-  currentTaskId = null;
-  currentTask = null;
+  downloader?.cancelAll();
+  active.clear();
   schedulePersist();
 }
 
-// ── Processing: strictly one at a time, oldest first (§7) ───────────────────
+// ── Processing: up to maxSlots at a time, oldest first (§7) ─────────────────
 function processNextQueueItem(): void {
-  if (paused || isDownloading || !downloader) return;
-  // Individually-paused tasks stay parked in the queue; take the first live one.
-  const idx = queue.findIndex((t) => t.progress.status !== 'paused');
-  if (idx === -1) return;
-  const [task] = queue.splice(idx, 1);
+  // Occupancy is re-read on every iteration and never precomputed as a "free
+  // slots" count: two jobs finishing within NEXT_PAUSE_MS queue two pumps, both
+  // fire, and a count cached at entry would let the second one over-start.
+  while (!paused && active.size < maxSlots) {
+    const dl = downloader;
+    if (!dl) return;
+    // Individually-paused tasks stay parked in the queue; take the first live one.
+    const idx = queue.findIndex((t) => t.progress.status !== 'paused');
+    if (idx === -1) return;
+    const [task] = queue.splice(idx, 1);
 
-  isDownloading = true;
-  currentTaskId = task.taskId;
-  currentTask = task;
-  transition(task, 'fetching_info'); // queued → fetching_info
-  emit('download:progress', task.taskId, task.progress);
+    active.set(task.taskId, task);
+    transition(task, 'fetching_info'); // queued → fetching_info
+    emit('download:progress', task.taskId, task.progress);
 
-  try {
-    downloader.download(
-      task,
-      task.track,
-      (p) => handleProgress(task, p),
-      (t, filepath, filepaths) => handleDone(t, filepath, filepaths),
-      (t, error) => handleError(t, error),
-    );
-  } catch (e) {
-    // A synchronous throw (non-string outputDir, arg-build or spawn failure) would
-    // otherwise leave the slot acquired forever — route it through the normal error
-    // path so finishCurrent() frees the queue instead of wedging every later job.
-    handleError(task, String(e));
+    try {
+      dl.download(
+        task,
+        task.track,
+        (p) => handleProgress(task, p),
+        (t, filepath, filepaths) => handleDone(t, filepath, filepaths),
+        (t, error) => handleError(t, error),
+      );
+    } catch (e) {
+      // A synchronous throw (non-string outputDir, arg-build or spawn failure) would
+      // otherwise hold the slot forever — route it through the normal error path so
+      // finishTask() frees it. Caught PER ITERATION on purpose: a throw starting job
+      // 2 of a burst must not abort filling slot 3.
+      handleError(task, String(e));
+    }
   }
 }
 
 function handleProgress(task: DownloadTask, p: DownloadProgress): void {
-  if (task.taskId !== currentTaskId) return; // ignore late callbacks from a finished job
+  if (active.get(task.taskId) !== task) return; // late callback from a killed/finished proc
   // Validate status changes through the state machine; on an illegal change keep
   // the current status but still surface the updated metrics.
   const status = transition(task, p.status) ? p.status : task.progress.status;
@@ -379,7 +492,7 @@ function handleProgress(task: DownloadTask, p: DownloadProgress): void {
 }
 
 function handleDone(task: DownloadTask, filepath: string, filepaths: string[] = []): void {
-  if (task.taskId !== currentTaskId) return;
+  if (active.get(task.taskId) !== task) return;
   // ponytail: process exit 0 is authoritative completion — force `done` even if the
   // last seen status was `downloading` (no post-processing markers were emitted).
   task.progress = { ...task.progress, status: 'done', percent: 100, filename: filepath || task.progress.filename };
@@ -401,22 +514,27 @@ function handleDone(task: DownloadTask, filepath: string, filepaths: string[] = 
   onCompleted?.(task, written);
   emit('download:done', task.taskId, task.progress);
   schedulePersist(); // forced 'done' bypasses transition() — persist explicitly
-  finishCurrent();
+  finishTask(task.taskId);
 }
 
 function handleError(task: DownloadTask, error: string): void {
-  if (task.taskId !== currentTaskId) return;
-  if (recentlyCancelled.has(task.taskId)) { finishCurrent(); return; } // expected dying-process error
+  if (active.get(task.taskId) !== task) return;
+  if (recentlyCancelled.has(task.taskId)) { finishTask(task.taskId); return; } // expected dying-process error
   for (const cb of failureListeners) cb(error);
   const retryCount = task.retryCount ?? 0;
   if (classifyError(error) === 'retryable' && retryCount < MAX_RETRIES) {
     scheduleRetry(task, error);
   } else {
     transition(task, 'failed');
-    task.progress = { ...task.progress, status: 'failed', error };
-    emit('download:error', task.taskId, error);
+    // Raw stderr went straight to the row until now — a user reading
+    // "ERROR: unable to download video data: HTTP Error 403: Forbidden" learns
+    // nothing they can act on. The listeners above still get the raw text, because
+    // isEngineStale() matches on it.
+    const shown = explainError(error);
+    task.progress = { ...task.progress, status: 'failed', error: shown };
+    emit('download:error', task.taskId, shown);
   }
-  finishCurrent();
+  finishTask(task.taskId);
 }
 
 // ── Retry: exponential backoff, re-queued at the FRONT (§8) ────────────────
@@ -430,7 +548,18 @@ function scheduleRetry(task: DownloadTask, error: string): void {
   // Retry IN PLACE: same taskId, bumped count, fresh 'queued' progress. Reusing the
   // id means the succeeded retry reaches a terminal state under the original history
   // entry — no ghost stranded at 'retrying' to resurrect on next launch, no dup row.
-  const retried = createTask({ ...task, retryCount: prev + 1, originalTaskId: task.originalTaskId ?? task.taskId });
+  // A retry that repeats the failed command byte for byte is only useful when the
+  // failure was the network. The PO-token gate (§5) is not — it reproduces exactly,
+  // three times, and then shows a red row. Latch the fallback client set instead, so
+  // the retry is a genuinely different attempt and a gated video lands as a file.
+  const retried = createTask({
+    ...task,
+    retryCount: prev + 1,
+    originalTaskId: task.originalTaskId ?? task.taskId,
+    // Only ever set to true — `|| undefined` keeps a plain network retry from
+    // writing a meaningless `"fallbackProfile": false` into persisted history.
+    fallbackProfile: task.fallbackProfile || needsClientFallback(error) || undefined,
+  });
   retried.taskId = task.taskId;
   history.set(retried.taskId, retried);
   // recent[] holds live references — swap in the fresh object or tray/Discord "recent"
@@ -439,7 +568,10 @@ function scheduleRetry(task: DownloadTask, error: string): void {
   if (ri !== -1) recent[ri] = retried;
   const timer = later(() => {
     retryTimers.delete(retried.taskId);
-    queue.unshift(retried); // re-queue at the front so it resumes promptly
+    // Front of the queue, not a reserved slot: if every slot is busy when the
+    // timer fires, the retry WAITS there. It owned a slot when it failed, but that
+    // slot was refilled long ago, and a retry must not push past maxSlots.
+    queue.unshift(retried);
     emit('download:queued', retried.taskId, retried);
     processNextQueueItem();
   }, delay);
@@ -447,14 +579,16 @@ function scheduleRetry(task: DownloadTask, error: string): void {
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
-function finishCurrent(): void {
-  isDownloading = false;
-  currentTaskId = null;
-  currentTask = null;
-  // The true idle moment: notify subscribers (e.g. the scheduled-shutdown drain-watcher)
-  // now, not just via emit() calls made before isDownloading flipped (§ B1).
+/** Free ONE slot. The delete MUST precede the notification: the scheduled-shutdown
+ *  drain-watcher reads hasUnfinishedWork() from this callback, and notifying first
+ *  leaves the last job's slot still looking occupied, so the shutdown never fires
+ *  (§B1, now per-slot). */
+function finishTask(taskId: string): void {
+  active.delete(taskId);
   for (const cb of changeListeners) { try { cb(); } catch { /* subscriber isolation */ } }
-  later(processNextQueueItem, NEXT_PAUSE_MS); // pick up the next job after a brief pause (§7)
+  // Deferred, never synchronous: a sync pump would re-enter a fill loop that is
+  // still mid-iteration and let two frames both observe the same free slot (§7).
+  later(processNextQueueItem, NEXT_PAUSE_MS); // pick up the next job after a brief pause
 }
 
 /** Apply a validated status change in place. Returns false (and leaves the task untouched)

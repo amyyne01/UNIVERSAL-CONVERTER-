@@ -17,6 +17,22 @@ export function confineToRoot(candidate: string, root: string): string | null {
   return abs;
 }
 
+const MAX_URL = 2048; // classic URL length ceiling — mirrors ipc.ts's own MAX_URL.
+
+/** The exact untrusted-input guard ipc.ts applies to a pasted URL before it
+ *  reaches detectUrl or anything that spawns (§15): a bounded string that
+ *  can't open with "-" and be read as a spawned flag. Shared here so the
+ *  ahg:// protocol handler (electron/protocol.ts) validates an OS-delivered
+ *  link exactly as strictly as a renderer-pasted one, instead of growing a
+ *  second copy of the same check. */
+export function urlArg(value: unknown, maxLen = MAX_URL): string {
+  if (typeof value !== 'string' || value.length > maxLen) {
+    throw new Error('Invalid input: expected a string within length limits');
+  }
+  if (value.startsWith('-')) throw new Error('Invalid input: URL must not start with "-"');
+  return value;
+}
+
 // ── IPC trust boundary: sender attestation + rate limiting (Seam #45) ─────────
 // secure() wraps every invoke handler so each channel — current and future —
 // inherits these two checks. The renderer is a fixed SPA served from the app's

@@ -8,7 +8,7 @@ vi.mock('electron', () => ({
   session: {},
 }));
 
-import { confineToRoot, assertTrustedSender, rateLimit, secure } from './security';
+import { confineToRoot, assertTrustedSender, rateLimit, secure, urlArg } from './security';
 
 // A valid app main frame: dev origin, top === itself.
 const mainFrameEvent = (url = 'http://localhost:5173/') => {
@@ -113,6 +113,30 @@ describe('rateLimit', () => {
         resolve();
       }, 80);
     });
+  });
+});
+
+// The exact untrusted-URL guard ipc.ts applies to a pasted link — reused by
+// electron/protocol.ts so an ahg:// link from the OS is checked the same way.
+describe('urlArg', () => {
+  it('accepts an ordinary http(s) URL', () => {
+    expect(urlArg('https://youtube.com/watch?v=abc12345678')).toBe('https://youtube.com/watch?v=abc12345678');
+  });
+
+  it('rejects a non-string', () => {
+    expect(() => urlArg(42)).toThrow(/string within length limits/);
+  });
+
+  it('rejects a URL over the length ceiling', () => {
+    expect(() => urlArg('https://x.com/' + 'a'.repeat(3000))).toThrow(/length limits/);
+  });
+
+  it('rejects a value starting with "-" (spawned-flag smuggling)', () => {
+    expect(() => urlArg('--exec=calc')).toThrow(/must not start with/);
+  });
+
+  it('honors a custom max length', () => {
+    expect(() => urlArg('https://x.com/abc', 10)).toThrow(/length limits/);
   });
 });
 

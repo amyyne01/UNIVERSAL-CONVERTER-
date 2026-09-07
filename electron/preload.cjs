@@ -45,8 +45,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     cancelAll: () => ipcRenderer.invoke('download:cancelAll'),
     pause: (taskId) => ipcRenderer.invoke('download:pause', taskId),
     resume: (taskId) => ipcRenderer.invoke('download:resume', taskId),
+    pauseAll: () => ipcRenderer.invoke('download:pauseAll'),
+    resumeAll: () => ipcRenderer.invoke('download:resumeAll'),
     list: () => ipcRenderer.invoke('download:list'),
     remove: (taskIds) => ipcRenderer.invoke('download:remove', taskIds),
+  },
+  queue: {
+    reorder: (taskIds) => ipcRenderer.invoke('queue:reorder', taskIds),
+    promote: (taskId) => ipcRenderer.invoke('queue:promote', taskId),
   },
   dialog: {
     selectDir: () => ipcRenderer.invoke('dialog:selectDir'),
@@ -90,4 +96,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onUpdateDownloaded: (callback) => on('update:downloaded', callback),
   onUpdateError: (callback) => on('update:error', callback),
   onYtdlpStatus: (callback) => on('ytdlp:status', callback),
+  onClipboardDetected: (callback) => on('clipboard:detected', callback),
+  // §14 shell integration: an ahg:// link opened via the OS (cold start or
+  // forwarded from a second launch) — resolved and validated in main first.
+  onProtocolLink: (callback) => on('protocol:link', callback),
 });

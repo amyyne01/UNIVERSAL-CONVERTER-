@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { PlatformTab } from '@/components/tabs/PlatformTab';
 import { useAppStore } from '@/store';
@@ -15,6 +15,7 @@ const baseConfig: AppConfig = {
   theme: 'dark',
   rememberLastDir: true,
   autoPaste: true,
+  clipboardWatch: false,
   showNotifications: true,
   rateLimit: '',
   proxy: '',
@@ -142,5 +143,75 @@ describe('PlatformTab', () => {
 
     resolveDetect!({ url: '', platform: 'youtube', contentType: 'video', isCollection: false, label: '', id: '' });
     await waitFor(() => expect(input).not.toBeDisabled());
+  });
+
+  // Batch import (b): a multi-line paste starts one download per link.
+  it('a multi-line paste of links batches straight to the queue', async () => {
+    (window.electronAPI.url.detect as any).mockImplementation((u: string) =>
+      Promise.resolve({ url: u, platform: 'youtube', contentType: 'video', isCollection: false, label: 'YouTube video', id: 'x' }),
+    );
+
+    render(<PlatformTab platform="youtube" />);
+    const input = screen.getByPlaceholderText(/paste a youtube link or search/i);
+    const text = 'https://youtube.com/watch?v=aaaaaaaaaaa\nhttps://youtube.com/watch?v=bbbbbbbbbbb';
+    fireEvent.paste(input, { clipboardData: { getData: () => text } });
+
+    await waitFor(() => expect(window.electronAPI.download.start).toHaveBeenCalledTimes(2));
+    expect(useAppStore.getState().activeTab).toBe('queue');
+  });
+
+  it('a batch pasted over the free tier limit nudges instead of downloading anything', async () => {
+    useAppStore.setState({ plan: 'basic' });
+    render(<PlatformTab platform="youtube" />);
+    const input = screen.getByPlaceholderText(/paste a youtube link or search/i);
+    const text = Array.from({ length: 6 }, (_, i) => `https://example.com/${i}`).join('\n');
+    fireEvent.paste(input, { clipboardData: { getData: () => text } });
+
+    await waitFor(() => expect(useAppStore.getState().notice?.message).toMatch(/free limit reached/i));
+    expect(window.electronAPI.download.start).not.toHaveBeenCalled();
+  });
+
+  it('a single-line paste is not treated as a batch (normal paste behavior)', () => {
+    render(<PlatformTab platform="youtube" />);
+    const input = screen.getByPlaceholderText(/paste a youtube link or search/i);
+    const event = fireEvent.paste(input, {
+      clipboardData: { getData: () => 'https://youtube.com/watch?v=aaaaaaaaaaa' },
+    });
+    expect(event).toBe(true); // not preventDefault()-ed — default paste proceeds
+    expect(window.electronAPI.url.detect).not.toHaveBeenCalled();
+  });
+
+  // The dropped file is read IN THE RENDERER (File.text()), not by asking main to
+  // open a path. Main cannot verify that a drag happened, so a "read this .txt"
+  // channel was an arbitrary-file-read primitive for a compromised renderer — the
+  // one thing the trust boundary exists to deny. Nothing about the drop crosses
+  // the bridge now except the links themselves, as ordinary download requests.
+  it('reads a dropped .txt in the renderer and batches its links', async () => {
+    (window.electronAPI.url.detect as any).mockResolvedValue({
+      url: 'https://youtube.com/watch?v=aaaaaaaaaaa',
+      platform: 'youtube',
+      contentType: 'video',
+      isCollection: false,
+      label: 'YouTube video',
+      id: 'x',
+    });
+
+    const { container } = render(<PlatformTab platform="youtube" />);
+    const file = new File(['https://youtube.com/watch?v=aaaaaaaaaaa'], 'links.txt', { type: 'text/plain' });
+    fireEvent.drop(container.firstElementChild!, { dataTransfer: { files: [file] } });
+
+    await waitFor(() => expect(window.electronAPI.download.start).toHaveBeenCalled());
+    // No path was ever handed across the bridge for this.
+    expect((window.electronAPI as any).file).toBeUndefined();
+  });
+
+  it('rejects a dropped file that is not .txt/.csv without reading it', async () => {
+    const { container } = render(<PlatformTab platform="youtube" />);
+    const file = new File(['https://youtube.com/watch?v=aaaaaaaaaaa'], 'evil.exe', { type: 'application/octet-stream' });
+    const spy = vi.spyOn(file, 'text');
+    fireEvent.drop(container.firstElementChild!, { dataTransfer: { files: [file] } });
+
+    expect(spy).not.toHaveBeenCalled();
+    expect(window.electronAPI.download.start).not.toHaveBeenCalled();
   });
 });

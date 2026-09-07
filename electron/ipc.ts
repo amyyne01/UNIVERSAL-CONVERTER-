@@ -3,10 +3,11 @@ import type { IpcMainInvokeEvent } from 'electron';
 import { existsSync } from 'node:fs';
 import { getMainWindow } from './window.js';
 import { detectUrl } from './url-detector.js';
-import { confineToRoot, secure } from './security.js';
+import { confineToRoot, secure, urlArg } from './security.js';
 import {
   createTask, enqueueTask, cancelTask, cancelAllTasks,
-  pauseTask, resumeTask, getAllTasks, removeTasks,
+  pauseTask, resumeTask, getAllTasks, removeTasks, setMaxSlots,
+  pauseAllDownloads, resumeAllDownloads, reorderQueue, promoteTask,
 } from './queue.js';
 import { ConfigManager, defaultConfig } from './config.js';
 import type { Downloader } from './downloader.js';
@@ -18,7 +19,7 @@ import type { YtdlpUpdater } from './ytdlp-updater.js';
 import type { AppConfig, DownloadTask, RevealResult, Track, VideoQuality } from '../shared/types.js';
 import {
   SOURCE_PLATFORMS, VIDEO_QUALITIES, BASIC_LIMITS,
-  clampAudioQuality, clampFormat, clampVideoQuality,
+  clampAudioQuality, clampConcurrency, clampFormat, clampVideoQuality, clampExtras,
 } from '../shared/types.js';
 
 // All ipcMain.handle() registrations live here, grouped by namespace.
@@ -27,6 +28,12 @@ import {
 const MAX_URL = 2048; // classic URL length ceiling — guards against oversized payloads.
 const MAX_PATH = 4096;
 const MAX_ARTISTS = 64; // cap the scraped-artist list so a hostile track can't balloon it.
+// A task id is a generated `task_<ms>_<9 chars>` — ~28 chars. 64 is generous for
+// it and small enough that a reorder payload can never be a smuggling channel.
+const MAX_TASK_ID = 64;
+// A queue reorder names the whole pending slice at once, so the cap is a list
+// ceiling, not a per-call budget: HISTORY_CAP is 200 and the queue can't exceed it.
+const MAX_REORDER_IDS = 500;
 
 /** Reject non-strings and over-long payloads at the trust boundary. */
 function str(value: unknown, max = MAX_URL): string {
@@ -38,12 +45,6 @@ function str(value: unknown, max = MAX_URL): string {
 
 /** A URL/positional arg for yt-dlp: a string that must not begin with "-", so it
  *  can never be parsed as an option (defense-in-depth with the downloader's `--`). */
-function urlArg(value: unknown): string {
-  const s = str(value);
-  if (s.startsWith('-')) throw new Error('Invalid input: URL must not start with "-"');
-  return s;
-}
-
 const MAX_QUERY = 256; // a search box realistically never exceeds this.
 
 /** A read-only search query: non-strings become "" and over-long input is CLAMPED,
@@ -64,8 +65,13 @@ const RATE_DEFAULT = 120;
 // strictly less than the IPC round trip that carries it, and a batch drop calls it
 // once per link, so the ceiling only has to outrun a runaway loop.
 const RATE_DETECT = 1000;
-const RATE_URL = 60; // url:fetchMetadata — one yt-dlp spawn per call, one call per submit.
-// download:start only ENQUEUES; the single-slot FIFO queue is what serialises the
+// url:fetchMetadata — one yt-dlp spawn per call. Sized like download:start and for
+// the same reason: a drag-and-drop of many links calls it once per link, and at 60
+// the 61st came back as a rejection the renderer showed as "that link can't be read"
+// — sending the user to inspect a URL that was fine. The single-slot queue, not this
+// budget, is what bounds the real work.
+const RATE_URL = 300;
+// download:start only ENQUEUES; the FIFO queue's slot count is what bounds the
 // actual work, so a batch of links must not be throttled here (at 10 a drag-and-drop
 // of 20 links silently lost the last 10).
 const RATE_DOWNLOAD = 300;
@@ -78,6 +84,15 @@ export function registerIpcHandlers(config: ConfigManager, downloader: Downloade
     limit: number,
     fn: (event: IpcMainInvokeEvent, ...args: any[]) => unknown,
   ) => ipcMain.handle(channel, secure(channel, limit, fn));
+
+  // Concurrency is both a user setting and a tier lever, so the queue reads
+  // neither: the clamped slot count is PUSHED in from this boundary — at boot,
+  // on every config change, and whenever a license call can flip the plan (an
+  // upgrade that only took effect after a restart is a paid feature not working).
+  const syncSlots = () =>
+    setMaxSlots(clampConcurrency(config.get('maxConcurrentDownloads'), license.getPlan()));
+  syncSlots();
+  config.onChange(syncSlots);
 
   // ── window:* ──────────────────────────────────────────────────────────────
   handle('window:minimize', RATE_DEFAULT, () => getMainWindow()?.minimize());
@@ -190,6 +205,29 @@ export function registerIpcHandlers(config: ConfigManager, downloader: Downloade
       embedThumbnail: optBool(taskData.embedThumbnail) ?? config.get('embedThumbnail'),
       embedMetadata: optBool(taskData.embedMetadata) ?? config.get('embedMetadata'),
       skipExisting: optBool(taskData.skipExisting) ?? config.get('skipExisting'),
+      // Extras come from CONFIG, never from the renderer — they carry a proxy, a
+      // cookie-jar browser and an output template, all of which reach spawn(), and
+      // the renderer has no business naming any of them. Clamped by plan here for
+      // the same reason format/quality are: the UI locks the controls, but the
+      // boundary is what decides what actually runs.
+      extras: clampExtras({
+        subtitleMode: config.get('subtitleMode'),
+        subtitleLangs: config.get('subtitleLangs'),
+        subtitleAuto: config.get('subtitleAuto'),
+        embedChapters: config.get('embedChapters'),
+        splitChapters: config.get('splitChapters'),
+        sponsorBlock: config.get('sponsorBlock'),
+        sponsorBlockCategories: config.get('sponsorBlockCategories'),
+        writeThumbnail: config.get('writeThumbnail'),
+        writeInfoJson: config.get('writeInfoJson'),
+        writeDescription: config.get('writeDescription'),
+        videoContainer: config.get('videoContainer'),
+        videoCodec: config.get('videoCodec'),
+        cookieBrowser: config.get('cookieBrowser'),
+        outputTemplate: config.get('outputTemplate'),
+        rateLimit: config.get('rateLimit'),
+        proxy: config.get('proxy'),
+      }, plan),
       ...(taskData.track !== undefined ? { track: validateTrack(taskData.track) } : {}),
     });
     enqueueTask(task);
@@ -199,6 +237,18 @@ export function registerIpcHandlers(config: ConfigManager, downloader: Downloade
   handle('download:cancelAll', RATE_DEFAULT, () => cancelAllTasks());
   handle('download:pause', RATE_DEFAULT, (_e, taskId: unknown) => pauseTask(str(taskId, MAX_PATH)));
   handle('download:resume', RATE_DEFAULT, (_e, taskId: unknown) => resumeTask(str(taskId, MAX_PATH)));
+  handle('download:pauseAll', RATE_DEFAULT, () => pauseAllDownloads());
+  handle('download:resumeAll', RATE_DEFAULT, () => resumeAllDownloads());
+  // ── queue:* (ordering the pending slice) ────────────────────────────────────
+  // Untrusted input, dropped rather than rejected: a bad id in the array is a row
+  // that finished mid-drag, not an attack, and failing the whole reorder over one
+  // stale id would lose the eleven good moves next to it (the engine drops it).
+  handle('queue:reorder', RATE_DEFAULT, (_e, ids: unknown): boolean => {
+    if (!Array.isArray(ids)) throw new Error('Invalid input: expected an array of task ids');
+    if (ids.length > MAX_REORDER_IDS) throw new Error('Invalid input: too many task ids');
+    return reorderQueue(ids.map((id) => str(id, MAX_TASK_ID)));
+  });
+  handle('queue:promote', RATE_DEFAULT, (_e, taskId: unknown): boolean => promoteTask(str(taskId, MAX_TASK_ID)));
   handle('download:list', RATE_DEFAULT, (): DownloadTask[] => getAllTasks());
   handle('download:remove', RATE_DEFAULT, (_e, ids: unknown): boolean => {
     if (!Array.isArray(ids)) throw new Error('Invalid input: expected an array of task ids');
@@ -214,6 +264,7 @@ export function registerIpcHandlers(config: ConfigManager, downloader: Downloade
     return canceled || filePaths.length === 0 ? null : filePaths[0];
   });
 
+  // ── file:* ──────────────────────────────────────────────────────────────────
   // ── shell:* ─────────────────────────────────────────────────────────────────
   // Reveal a downloaded file. The path is CONFINED to the configured output dir —
   // a compromised renderer must not be able to reveal/launch arbitrary files (§15).
@@ -237,10 +288,13 @@ export function registerIpcHandlers(config: ConfigManager, downloader: Downloade
 
   // ── license:* / app:* (LICENSE-ACTIVATION-SYSTEM.md §7) ──────────────────────
   // Renderer only ever sees { activated } / ActivationResult — secrets stay in main.
-  handle('license:check', RATE_DEFAULT, () => license.checkLicense());
-  handle('license:activate', RATE_DEFAULT, (_e, key: unknown) => license.activateLicense(str(key)));
-  handle('license:deactivate', RATE_DEFAULT, () => license.deactivateLicense());
-  handle('license:release', RATE_DEFAULT, () => license.releaseLicense());
+  // .finally(syncSlots): each of these can change the plan (activation, a revoked
+  // key found on refresh, a self-service release), and the queue's slot count is
+  // the one tier lever that is cached rather than read per request.
+  handle('license:check', RATE_DEFAULT, () => license.checkLicense().finally(syncSlots));
+  handle('license:activate', RATE_DEFAULT, (_e, key: unknown) => license.activateLicense(str(key)).finally(syncSlots));
+  handle('license:deactivate', RATE_DEFAULT, () => license.deactivateLicense().finally(syncSlots));
+  handle('license:release', RATE_DEFAULT, () => license.releaseLicense().finally(syncSlots));
   // Open the support link. The URL is a MAIN-SIDE CONSTANT — the renderer supplies
   // nothing, so there's no path/URL injection surface; openExternal, not openPath.
   handle('app:openSupport', RATE_DEFAULT, () => {

@@ -14,6 +14,7 @@ const config: AppConfig = {
   theme: 'dark',
   rememberLastDir: true,
   autoPaste: false,
+  clipboardWatch: false,
   showNotifications: true,
   showVisualizer: false,
   showAmbientParticles: false,

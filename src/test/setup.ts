@@ -1,5 +1,20 @@
 import '@testing-library/jest-dom/vitest';
 
+// Blob.text() — jsdom's File/Blob doesn't implement it, but Electron 33 is
+// Chromium 130 and has had it since Chromium 76. PlatformTab reads a dropped
+// links file with it (deliberately, so no path ever crosses the IPC bridge),
+// so without this shim the drop tests fail on the environment, not the code.
+if (typeof Blob !== 'undefined' && !Blob.prototype.text) {
+  Blob.prototype.text = function text(this: Blob): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsText(this);
+    });
+  };
+}
+
 // ResizeObserver — used by framer-motion internally
 global.ResizeObserver = class {
   observe() {}
@@ -44,6 +59,7 @@ const mockElectronAPI = {
       theme: 'dark',
       rememberLastDir: true,
       autoPaste: true,
+      clipboardWatch: false,
       showNotifications: true,
       rateLimit: '',
       proxy: '',
@@ -54,6 +70,25 @@ const mockElectronAPI = {
       scheduleTime: '00:00',
       scheduleDays: [],
       scheduleShutdown: false,
+      autoUpdateEngine: true,
+      maxConcurrentDownloads: 2,
+      // Download extras (§5). Values match electron/config.ts defaultConfig —
+      // a Settings control reading an absent key here renders uncontrolled and
+      // the tab silently stops matching the real app.
+      subtitleMode: 'off',
+      subtitleLangs: 'en',
+      subtitleAuto: false,
+      embedChapters: true,
+      splitChapters: false,
+      sponsorBlock: 'off',
+      sponsorBlockCategories: ['sponsor'],
+      writeThumbnail: false,
+      writeInfoJson: false,
+      writeDescription: false,
+      videoContainer: 'mp4',
+      videoCodec: 'any',
+      cookieBrowser: '',
+      outputTemplate: '',
     }),
     update: vi.fn().mockResolvedValue(true),
   },
@@ -82,8 +117,14 @@ const mockElectronAPI = {
     cancelAll: vi.fn().mockResolvedValue(undefined),
     pause: vi.fn().mockResolvedValue(true),
     resume: vi.fn().mockResolvedValue(true),
+    pauseAll: vi.fn().mockResolvedValue(undefined),
+    resumeAll: vi.fn().mockResolvedValue(undefined),
     list: vi.fn().mockResolvedValue([]),
     remove: vi.fn().mockResolvedValue(true),
+  },
+  queue: {
+    reorder: vi.fn().mockResolvedValue(true),
+    promote: vi.fn().mockResolvedValue(true),
   },
   dialog: { selectDir: vi.fn().mockResolvedValue(null) },
   shell: {
@@ -126,6 +167,8 @@ const mockElectronAPI = {
   onUpdateDownloaded: vi.fn().mockReturnValue(vi.fn()),
   onUpdateError: vi.fn().mockReturnValue(vi.fn()),
   onYtdlpStatus: vi.fn().mockReturnValue(vi.fn()),
+  onClipboardDetected: vi.fn().mockReturnValue(vi.fn()),
+  onProtocolLink: vi.fn().mockReturnValue(vi.fn()),
 };
 
 Object.defineProperty(window, 'electronAPI', {
@@ -163,9 +206,20 @@ vi.mock('framer-motion', async () => {
           : undefined,
     },
   );
+  // Reorder.Group/Item render as the plain ul/li they wrap, with the reorder-only
+  // props stripped — the drag itself needs a real pointer, but everything around
+  // it (handle, keyboard reorder, row anatomy) is testable this way.
+  const Reorder = {
+    Group: ({ children, axis, values, onReorder, as, ...rest }) =>
+      React.createElement('ul', strip(rest), children),
+    Item: ({ children, value, as, ...rest }) =>
+      React.createElement('li', strip(rest), children),
+  };
   return {
     __esModule: true,
     motion,
+    Reorder,
+    useDragControls: () => ({ start: () => {} }),
     AnimatePresence: ({ children }) => React.createElement(React.Fragment, null, children),
     LayoutGroup: ({ children }) => React.createElement(React.Fragment, null, children),
     useMotionValue: (v) => ({ get: () => v, set: () => {}, on: () => () => {} }),

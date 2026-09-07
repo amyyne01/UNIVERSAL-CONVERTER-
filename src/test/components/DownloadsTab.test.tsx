@@ -119,6 +119,104 @@ describe('DownloadsTab', () => {
     await user.click(screen.getByRole('button', { name: /really cancel 3/i }));
     expect(window.electronAPI.download.cancelAll).toHaveBeenCalled();
   });
+
+  it('"Do this next" promotes a queued row and is absent on the row already at the front', async () => {
+    useAppStore.getState().setDownloads([
+      task({ taskId: 'live', progress: progress({ status: 'downloading' }) }),
+      task({ taskId: 'q1', title: 'First waiting', progress: progress({ status: 'queued' }) }),
+      task({ taskId: 'q2', title: 'Second waiting', progress: progress({ status: 'queued' }) }),
+    ]);
+    render(<DownloadsTab />);
+    const user = userEvent.setup();
+
+    // One button, not two: the row already at the head of the tail can't move up.
+    const promote = screen.getAllByRole('button', { name: 'Do this next' });
+    expect(promote).toHaveLength(1);
+
+    await user.click(promote[0]);
+    expect(window.electronAPI.queue.promote).toHaveBeenCalledWith('q2');
+  });
+
+  it('the queued tail is drag-reorderable, and the sub-band labels it', () => {
+    useAppStore.getState().setDownloads([
+      task({ taskId: 'live', progress: progress({ status: 'downloading' }) }),
+      task({ taskId: 'q1', title: 'One', progress: progress({ status: 'queued' }) }),
+      task({ taskId: 'q2', title: 'Two', progress: progress({ status: 'queued' }) }),
+    ]);
+    render(<DownloadsTab />);
+
+    expect(screen.getByText(/Up next · 2/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reorder One' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reorder Two' })).toBeInTheDocument();
+  });
+
+  it('a single queued row keeps its sub-band but gets no handle — never a dead grabber', () => {
+    useAppStore.getState().setDownloads([
+      task({ taskId: 'live', progress: progress({ status: 'downloading' }) }),
+      task({ taskId: 'q1', title: 'One', progress: progress({ status: 'queued' }) }),
+    ]);
+    render(<DownloadsTab />);
+
+    // The band still separates the live block from what's waiting (absence of a
+    // second waiting row is not absence of a wait) — only the grabber is gone.
+    expect(screen.getByText(/Up next · 1/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Reorder / })).not.toBeInTheDocument();
+  });
+
+  it('keyboard reorder: grab, move, drop — committing the new order and announcing it', async () => {
+    useAppStore.getState().setDownloads([
+      task({ taskId: 'live', progress: progress({ status: 'downloading' }) }),
+      task({ taskId: 'q1', title: 'One', progress: progress({ status: 'queued' }) }),
+      task({ taskId: 'q2', title: 'Two', progress: progress({ status: 'queued' }) }),
+    ]);
+    render(<DownloadsTab />);
+    const user = userEvent.setup();
+
+    screen.getByRole('button', { name: 'Reorder Two' }).focus();
+    await user.keyboard('{ }');           // grab
+    await user.keyboard('{ArrowUp}');     // one slot up
+    expect(screen.getByText('Moved to position 1 of 2')).toBeInTheDocument();
+    await user.keyboard('{ }');           // drop
+
+    expect(window.electronAPI.queue.reorder).toHaveBeenCalledWith(['q2', 'q1']);
+    expect(screen.getByText('Dropped')).toBeInTheDocument();
+  });
+
+  it('Escape restores the slot a row was grabbed from and commits nothing', async () => {
+    useAppStore.getState().setDownloads([
+      task({ taskId: 'q1', title: 'One', progress: progress({ status: 'queued' }) }),
+      task({ taskId: 'q2', title: 'Two', progress: progress({ status: 'queued' }) }),
+    ]);
+    render(<DownloadsTab />);
+    const user = userEvent.setup();
+
+    screen.getByRole('button', { name: 'Reorder Two' }).focus();
+    await user.keyboard('{ }{ArrowUp}{Escape}');
+
+    expect(window.electronAPI.queue.reorder).not.toHaveBeenCalled();
+    expect(screen.getByText('Reorder cancelled')).toBeInTheDocument();
+  });
+
+  it('pause all / resume all swap by aggregate state and fire without a confirm step', async () => {
+    useAppStore.getState().setDownloads([
+      task({ taskId: 'a', progress: progress({ status: 'downloading' }) }),
+      task({ taskId: 'b', progress: progress({ status: 'queued' }) }),
+    ]);
+    const { rerender } = render(<DownloadsTab />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('button', { name: 'Pause all' }));
+    expect(window.electronAPI.download.pauseAll).toHaveBeenCalled();
+
+    // Every active row paused → the same control becomes Resume all.
+    useAppStore.getState().setDownloads([
+      task({ taskId: 'a', progress: progress({ status: 'paused' }) }),
+      task({ taskId: 'b', progress: progress({ status: 'queued' }) }),
+    ]);
+    rerender(<DownloadsTab />);
+    await user.click(screen.getByRole('button', { name: 'Resume all' }));
+    expect(window.electronAPI.download.resumeAll).toHaveBeenCalled();
+  });
 });
 
 describe('QueueCard memo comparator (B18)', () => {

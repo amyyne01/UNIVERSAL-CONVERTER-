@@ -1,7 +1,7 @@
 {
   "name": "ahg-universal-converter",
-  "version": "1.2.1",
-  "description": "AHG Universal Converter \u2014 download media from YouTube, Spotify, SoundCloud and short-form video.",
+  "version": "1.3.0",
+  "description": "AHG Universal Converter — download media from YouTube, Spotify, SoundCloud and short-form video.",
   "author": "AHG",
   "private": true,
   "type": "module",
@@ -14,6 +14,7 @@
     "electron:dev": "npm run build:electron && concurrently -k \"vite\" \"wait-on http://localhost:5173 && electron .\"",
     "dev:basic": "set AHG_DEV_PLAN=basic&& npm run electron:dev",
     "dev:premium": "set AHG_DEV_PLAN=premium&& npm run electron:dev",
+    "screenshots": "node scripts/screenshots.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
@@ -85,7 +86,7 @@
       ]
     },
     "portable": {
-      "artifactName": "AHG-Converter-${version}.exe"
+      "artifactName": "AHG-Converter.exe"
     }
   }
 }

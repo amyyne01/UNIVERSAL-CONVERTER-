@@ -13,27 +13,11 @@ import { buildDownloadRequest, spotifyDownloadUrl } from '@/lib/download';
 import { useTierLocks, premiumCopy, basicCopy } from '@/lib/tier';
 import { formatDuration } from '@/lib/format';
 import { ShortFormPreview } from '@/components/ShortFormPreview';
-import type { AudioFormat, VideoQuality, SearchResult, Track, SourcePlatform, MediaMetadata } from '@shared/types';
+import { searchToItem, trackToItem, type ResultItem } from '@/lib/results';
+import type { AudioFormat, VideoQuality, SourcePlatform, MediaMetadata, Track } from '@shared/types';
 
 interface PlatformTabProps {
   platform: PlatformKey;
-}
-
-/** A row in the results list — normalized from a SearchResult or a Spotify Track. */
-interface ResultItem {
-  id: string;
-  title: string;
-  subtitle: string;
-  thumbnailUrl: string;
-  duration: number;
-  url: string;
-  track?: Track;
-  /** Detected source for direct-URL results (reels tab hosts several platforms). */
-  source?: SourcePlatform;
-  /** True when this is THE fetched item for a pasted URL (renders as a big card). */
-  direct?: boolean;
-  /** Human label from url:detect (e.g. "YouTube video") for the result-card eyebrow. */
-  label?: string;
 }
 
 // The fetch is four distinct outcomes, not one string: an untouched tab, work in
@@ -75,8 +59,32 @@ const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
 
 export const looksLikeUrl = (s: string): boolean => /^(https?:\/\/|spotify:|[\w-]+\.[a-z]{2,})/i.test(s.trim());
 
+/** A link-per-line list never needs more, and file.size is checked before the
+ *  read so a stray drop of something huge can't be pulled into memory. */
+const MAX_LINK_FILE_BYTES = 2 * 1024 * 1024;
+
 /** Thrown for local parse/detection failures — distinct from a network/fetch failure. */
 class ValidationError extends Error {}
+
+/** Main already turned yt-dlp's stderr into one readable sentence (explainError);
+ *  Electron then wraps a rejected handler as
+ *  "Error invoking remote method 'url:fetchMetadata': Error: <that sentence>".
+ *  Take the last segment so the user reads the reason, not the plumbing.
+ *
+ *  The wrapper prefix is REQUIRED, not merely stripped when present: any other
+ *  rejection is an ordinary local failure whose message was written for a
+ *  developer ("offline", "Network request failed"), and putting that in front of
+ *  a user is how internals leak into the UI. Those take the generic line. */
+const IPC_WRAPPER = /^Error invoking remote method '[^']*':\s*(?:\w*Error:\s*)?/;
+
+function ipcReason(err: unknown, fallback: string): string {
+  const raw = (err instanceof Error ? err.message : String(err ?? '')).trim();
+  if (!IPC_WRAPPER.test(raw)) return fallback;
+  const reason = raw.replace(IPC_WRAPPER, '').trim();
+  return reason.length > 2 && reason.length < 200 ? reason : fallback;
+}
+
+const GENERIC_FETCH_ERROR = 'Something went wrong — check your connection and try again.';
 
 export function PlatformTab({ platform }: PlatformTabProps) {
   const def = PLATFORMS.find((p) => p.key === platform)!;
@@ -136,6 +144,121 @@ export function PlatformTab({ platform }: PlatformTabProps) {
     : `MP4 · ${
         VIDEO_QUALITIES.find((q) => q.value === locks.effectiveVideoQuality(videoQuality))?.label ?? ''
       }`;
+
+  const [dragOver, setDragOver] = useState(false);
+
+  // Batch import: several links at once — a multi-line/multi-space paste, or a
+  // dropped .txt/.csv — download straight to the queue with THIS tab's current
+  // format/quality selections, same express-lane shape as the Dashboard's own
+  // batch paste (src/components/tabs/Dashboard.tsx's batchDownload).
+  const runBatch = useCallback(async (raw: string[]) => {
+    const urls = raw.map((u) => u.trim()).filter(looksLikeUrl);
+    if (urls.length === 0) return;
+    // Nothing is queued when the batch is over the free ceiling — not even the
+    // first N (see src/lib/tier.ts): dropping the tail would silently decide
+    // for the user instead of letting them trim the list or upgrade.
+    if (locks.batchLimit !== null && urls.length > locks.batchLimit) {
+      locks.nudge(premiumCopy.batch());
+      return;
+    }
+    setPhase({ k: 'busy', note: `Adding ${urls.length} link${urls.length === 1 ? '' : 's'}…` });
+    setResults([]);
+    setPreview(null);
+    let started = 0;
+    for (const u of urls) {
+      try {
+        const det = await window.electronAPI.url.detect(u);
+        if (det.platform === 'unknown') continue;
+        let track: Track | undefined;
+        if (det.platform === 'spotify') {
+          track = (await window.electronAPI.spotify.fetchTrack(det.url)) ?? undefined;
+          if (!track) continue; // collections need the preview flow, not batch
+        }
+        const audioOnly = isAudio || det.platform === 'spotify' || det.platform === 'soundcloud';
+        const task = await window.electronAPI.download.start(
+          buildDownloadRequest(config, {
+            url: track ? spotifyDownloadUrl(track) : det.url,
+            source: det.platform,
+            isPlaylist: det.isCollection,
+            isAudioOnly: audioOnly,
+            format: audioOnly ? audioFormat : 'mp4',
+            quality: audioQuality,
+            videoQuality,
+            track,
+          }),
+        );
+        addDownload(task);
+        started++;
+      } catch { /* skip the bad link, keep batching */ }
+    }
+    if (started > 0) {
+      setActiveTab('queue');
+      setPhase({ k: 'idle' });
+    } else {
+      setPhase({ k: 'error', msg: 'No downloadable links found.' });
+    }
+  }, [locks, config, audioFormat, audioQuality, videoQuality, isAudio, addDownload, setActiveTab]);
+
+  // A multi-line paste into the (single-line) field is a batch, not text to type —
+  // intercept before the browser flattens the newlines away.
+  const handlePaste = useCallback((e: React.ClipboardEvent<HTMLInputElement>) => {
+    const lines = e.clipboardData.getData('text').split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    if (lines.length > 1 && lines.every(looksLikeUrl)) {
+      e.preventDefault();
+      void runBatch(lines);
+    }
+  }, [runBatch]);
+
+  const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+    if (!/\.(txt|csv)$/i.test(file.name)) {
+      setPhase({ k: 'error', msg: 'Drop a .txt or .csv file of links.' });
+      return;
+    }
+    // Read it HERE, in the sandbox. A dropped File is already readable by the
+    // renderer, so asking main to open a path instead bought nothing and cost a
+    // real hole: main cannot verify that a drag gesture happened, so a
+    // "read this .txt" channel is an arbitrary-file-read primitive for any
+    // compromised renderer — the one thing the trust boundary exists to deny.
+    // File.text() needs no fs access and no path ever crosses the bridge.
+    if (file.size > MAX_LINK_FILE_BYTES) {
+      setPhase({ k: 'error', msg: 'That file is too large — keep link lists under 2MB.' });
+      return;
+    }
+    void file
+      .text()
+      .then((text) => {
+        const lines = text.split(/\r?\n|,/).map((l) => l.trim()).filter(looksLikeUrl);
+        if (lines.length === 0) return setPhase({ k: 'error', msg: 'That file had no links in it.' });
+        return runBatch(lines);
+      })
+      .catch(() => setPhase({ k: 'error', msg: 'Could not read that file.' }));
+  }, [runBatch]);
+
+  // Depth counter, not a bare boolean: dragleave fires every time the pointer
+  // crosses a CHILD boundary, so a plain setDragOver(false) strobes the highlight
+  // for the whole drag. Same pattern Dashboard already uses.
+  const dragDepth = useRef(0);
+
+  const handleDragEnter = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    dragDepth.current += 1;
+    setDragOver(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    dragDepth.current = Math.max(0, dragDepth.current - 1);
+    if (dragDepth.current === 0) setDragOver(false);
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setDragOver(true);
+  }, []);
 
   const startDownload = useCallback(
     (item: ResultItem, source: SourcePlatform) => {
@@ -222,16 +345,27 @@ export function PlatformTab({ platform }: PlatformTabProps) {
           );
         }
         // Show the fetched item as a result card — the user confirms format/quality.
-        const meta = await window.electronAPI.url.fetchMetadata(target).catch(() => null);
+        // The failure REASON is kept, not discarded: main sends back one readable
+        // sentence per failure shape, and throwing it away was what made a gated
+        // video, a dead link and a dropped connection all read the same.
+        let metaError = '';
+        const meta = await window.electronAPI.url.fetchMetadata(target).catch((err) => {
+          metaError = ipcReason(err, GENERIC_FETCH_ERROR);
+          return null;
+        });
         // Short-form is previewed, not listed: the poster IS how you recognise a
         // vertical clip. Without real metadata there is nothing to preview, and a
         // card built from the raw URL would only look broken — so say why instead.
         if (platform === 'reels' && (!meta || !meta.thumbnailUrl)) {
           return setPhase({
             k: 'error',
-            msg: "That post couldn't be previewed — it may be private, removed, or need a sign-in.",
+            msg: metaError || "That post couldn't be previewed — it may be private, removed, or need a sign-in.",
           });
         }
+        // Same reasoning for the long-form tabs. A null meta used to fall through and
+        // render a card whose title was the pasted URL and whose thumbnail was blank —
+        // which is exactly what "it didn't fetch the link" looks like from the outside.
+        if (!meta) return setPhase({ k: 'error', msg: metaError || GENERIC_FETCH_ERROR });
         if (platform === 'reels' && meta) setPreview(meta);
         setResults([
           {
@@ -260,9 +394,7 @@ export function PlatformTab({ platform }: PlatformTabProps) {
     } catch (err) {
       setPhase({
         k: 'error',
-        msg: err instanceof ValidationError
-          ? err.message
-          : 'Something went wrong — check your connection and try again.',
+        msg: err instanceof ValidationError ? err.message : ipcReason(err, GENERIC_FETCH_ERROR),
       });
     } finally {
       // Belt and braces: no branch may leave the field disabled with nothing on
@@ -299,8 +431,14 @@ export function PlatformTab({ platform }: PlatformTabProps) {
     // max-w is a ceiling, not a column: past ~1600px a single search field and a
     // one-per-row result list stop being a layout and start being dead canvas.
     <div
-      className="@container mx-auto w-full max-w-[1600px] px-6 lg:px-8 2xl:px-12 py-8 lg:py-10"
+      className={`@container mx-auto w-full max-w-[1600px] px-6 lg:px-8 2xl:px-12 py-8 lg:py-10 rounded-lg border-2 border-dashed transition-colors ${
+        dragOver ? 'border-accent bg-accent-soft' : 'border-transparent'
+      }`}
       style={{ '--color-accent': accent } as React.CSSProperties}
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
     >
       {/* Header — platform glyph in an accent-soft well + Display title + capability readout */}
       <div className="flex items-center gap-4 mb-8">
@@ -330,6 +468,7 @@ export function PlatformTab({ platform }: PlatformTabProps) {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') void handleSubmit(); }}
+          onPaste={handlePaste}
           spellCheck={false}
           autoComplete="off"
           disabled={busy}
@@ -398,7 +537,7 @@ export function PlatformTab({ platform }: PlatformTabProps) {
         {phase.k === 'idle' && (
           <EmptyPanel icon={Icon} accentIcon={accent} title={copy.hint}>
             <span className="font-mono text-[10.5px] tracking-[0.08em] uppercase text-text-muted">
-              Enter to fetch
+              Enter to fetch · paste several links, or drop a .txt/.csv, to batch them
             </span>
           </EmptyPanel>
         )}
@@ -477,9 +616,9 @@ const RESULT_CELL =
   '@5xl:rounded-lg @5xl:border @5xl:border-border-soft @5xl:bg-bg-surface @5xl:shadow-sm @5xl:overflow-hidden';
 
 /** Artwork size classes: album art is square, video stills are 16:9. */
-const artClass = (square: boolean) => (square ? 'w-14 h-14' : 'w-[92px] h-[52px]');
+export const artClass = (square: boolean) => (square ? 'w-14 h-14' : 'w-[92px] h-[52px]');
 
-function Artwork({ src, square, className = '' }: { src: string; square: boolean; className?: string }) {
+export function Artwork({ src, square, className = '' }: { src: string; square: boolean; className?: string }) {
   return (
     <div className={`relative shrink-0 rounded-md overflow-hidden bg-bg-tertiary border border-border-soft ${className}`}>
       {src ? (
@@ -692,7 +831,7 @@ function FetchSkeleton({ note, square, reduce }: { note: string; square: boolean
 }
 
 /** Shared shell for "nothing here yet" and "nothing matched" — same shape, different cause. */
-function EmptyPanel({
+export function EmptyPanel({
   icon: PanelIcon,
   accentIcon,
   title,
@@ -710,20 +849,4 @@ function EmptyPanel({
       {children && <div className="mt-2.5">{children}</div>}
     </div>
   );
-}
-
-function searchToItem(r: SearchResult): ResultItem {
-  return { id: r.id, title: r.title, subtitle: r.uploader, thumbnailUrl: r.thumbnailUrl, duration: r.duration, url: r.url };
-}
-
-function trackToItem(t: Track): ResultItem {
-  return {
-    id: t.id,
-    title: t.name,
-    subtitle: t.artist,
-    thumbnailUrl: t.thumbnailUrl,
-    duration: Math.round(t.durationMs / 1000),
-    url: t.spotifyUrl ?? '',
-    track: t,
-  };
 }

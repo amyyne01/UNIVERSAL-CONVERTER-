@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock electron + the modules ipc.ts pulls in at runtime (same specifiers it imports).
-// Only existsSync is stubbed — config.ts imports node:fs's DEFAULT export, so a
-// wholesale replacement breaks the module for everything else in the graph.
+// Only existsSync is stubbed — config.ts imports node:fs's
+// DEFAULT export, so a wholesale replacement breaks the module for everything else
+// in the graph.
 vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>();
   const existsSync = vi.fn(() => true);
@@ -47,9 +48,15 @@ vi.mock('./queue.js', () => ({
   resumeTask: vi.fn().mockReturnValue(true),
   getAllTasks: vi.fn().mockReturnValue([{ taskId: 't1' }]),
   removeTasks: vi.fn().mockReturnValue(true),
+  setMaxSlots: vi.fn(),
+  pauseAllDownloads: vi.fn(),
+  resumeAllDownloads: vi.fn(),
+  reorderQueue: vi.fn().mockReturnValue(true),
+  promoteTask: vi.fn().mockReturnValue(true),
 }));
 
 import { registerIpcHandlers } from './ipc';
+import { BASIC_LIMITS } from '../shared/types.js';
 import { ipcMain, dialog, shell } from 'electron';
 import { existsSync } from 'node:fs';
 
@@ -75,12 +82,22 @@ describe('registerIpcHandlers', () => {
           embedThumbnail: true,
           embedMetadata: true,
           skipExisting: true,
+          maxConcurrentDownloads: 4, // above the free cap, so the clamp is exercised
+          // Extras (§5) set to values a basic install may NOT have, so the
+          // clamp at the boundary is actually exercised rather than assumed.
+          subtitleMode: 'both',
+          subtitleLangs: 'en,fr,de',
+          subtitleAuto: true,
+          splitChapters: true,
+          cookieBrowser: 'chrome',
+          rateLimit: '2M',
         };
         return defaults[key];
       }),
       set: vi.fn(),
       getAll: vi.fn().mockReturnValue({ outputDir: 'C:\\Downloads' }),
       update: vi.fn(),
+      onChange: vi.fn(),
     };
 
     downloader = {
@@ -137,6 +154,8 @@ describe('registerIpcHandlers', () => {
       'spotify:fetchAlbum', 'spotify:search',
       'download:start', 'download:cancel', 'download:cancelAll',
       'download:pause', 'download:resume', 'download:list', 'download:remove',
+      'download:pauseAll', 'download:resumeAll',
+      'queue:reorder', 'queue:promote',
       'dialog:selectDir',
       'shell:showItemInFolder',
       'license:check', 'license:activate', 'license:deactivate', 'license:release', 'app:openSupport',
@@ -170,6 +189,9 @@ describe('registerIpcHandlers', () => {
   });
 
   it('config:get returns undefined for prototype/unknown keys without touching config', () => {
+    // registerIpcHandlers reads maxConcurrentDownloads once at boot to seed the
+    // queue's slot count — that legitimate read is not what this test is about.
+    config.get.mockClear();
     for (const bad of ['__proto__', 'toString', 'constructor', 'notAKey']) {
       expect(handlers.get('config:get')!(evt(), bad)).toBeUndefined();
     }
@@ -277,6 +299,16 @@ describe('registerIpcHandlers', () => {
         format: 'mp3',
         quality: '320',
         playlistLimit: 20,
+        // Extras are clamped by the SAME boundary, and degraded rather than
+        // rejected: basic keeps subtitles, just one language and no auto-captions.
+        extras: expect.objectContaining({
+          subtitleMode: 'both',
+          subtitleLangs: 'en',
+          subtitleAuto: false,
+          splitChapters: false,
+          cookieBrowser: '',
+          rateLimit: '2M', // not a tier lever — it survives
+        }),
       }),
     );
   });
@@ -296,6 +328,28 @@ describe('registerIpcHandlers', () => {
     const arg = vi.mocked(createTask).mock.calls.at(-1)![0];
     expect(arg).toMatchObject({ videoQuality: '2160p', format: 'flac', quality: 'lossless' });
     expect(arg).not.toHaveProperty('playlistLimit');
+    expect(arg.extras).toMatchObject({
+      subtitleLangs: 'en,fr,de',
+      subtitleAuto: true,
+      splitChapters: true,
+      cookieBrowser: 'chrome',
+    });
+  });
+
+  it('download:start ignores extras sent by the renderer', async () => {
+    const { createTask } = await import('./queue.js');
+    license.getPlan.mockReturnValue('premium');
+
+    handlers.get('download:start')!(evt(), {
+      url: 'https://youtu.be/abc',
+      // A proxy, a cookie jar and an output template all reach spawn(). The
+      // renderer has no business naming any of them, so a supplied set must be
+      // discarded in favour of config's — not merged with it.
+      extras: { proxy: 'http://attacker.example', outputTemplate: '../../%(title)s', cookieBrowser: 'firefox' },
+    });
+
+    const arg = vi.mocked(createTask).mock.calls.at(-1)![0];
+    expect(arg.extras).toMatchObject({ proxy: '', outputTemplate: '', cookieBrowser: 'chrome' });
   });
 
   it('download:start rebuilds a supplied track from bounded fields', async () => {
@@ -344,6 +398,35 @@ describe('registerIpcHandlers', () => {
     expect(() => handlers.get('download:pause')!(evt(), 123)).toThrow();
   });
 
+  it('download:pauseAll / download:resumeAll delegate to the queue, no args', async () => {
+    const { pauseAllDownloads, resumeAllDownloads } = await import('./queue.js');
+    handlers.get('download:pauseAll')!(evt());
+    expect(vi.mocked(pauseAllDownloads)).toHaveBeenCalled();
+    handlers.get('download:resumeAll')!(evt());
+    expect(vi.mocked(resumeAllDownloads)).toHaveBeenCalled();
+  });
+
+  it('queue:reorder passes a validated id array through to the engine', async () => {
+    const { reorderQueue } = await import('./queue.js');
+    expect(handlers.get('queue:reorder')!(evt(), ['a', 'b'])).toBe(true);
+    expect(vi.mocked(reorderQueue)).toHaveBeenCalledWith(['a', 'b']);
+  });
+
+  it('queue:reorder rejects a non-array, an over-long list, and a non-string / over-long id', () => {
+    expect(() => handlers.get('queue:reorder')!(evt(), 'a')).toThrow(/array/);
+    expect(() => handlers.get('queue:reorder')!(evt(), new Array(501).fill('a'))).toThrow(/too many/);
+    expect(() => handlers.get('queue:reorder')!(evt(), ['ok', 42])).toThrow();
+    expect(() => handlers.get('queue:reorder')!(evt(), ['a'.repeat(65)])).toThrow();
+  });
+
+  it('queue:promote validates the id before the engine sees it', async () => {
+    const { promoteTask } = await import('./queue.js');
+    expect(handlers.get('queue:promote')!(evt(), 'mock-task')).toBe(true);
+    expect(vi.mocked(promoteTask)).toHaveBeenCalledWith('mock-task');
+    expect(() => handlers.get('queue:promote')!(evt(), 123)).toThrow();
+    expect(() => handlers.get('queue:promote')!(evt(), 'x'.repeat(65))).toThrow();
+  });
+
   it('download:list returns the queue snapshot', async () => {
     const { getAllTasks } = await import('./queue.js');
     expect(handlers.get('download:list')!(evt())).toEqual([{ taskId: 't1' }]);
@@ -373,6 +456,12 @@ describe('registerIpcHandlers', () => {
     vi.mocked(dialog.showOpenDialog).mockResolvedValueOnce({ canceled: true, filePaths: [] });
     expect(await handlers.get('dialog:selectDir')!(evt())).toBeNull();
   });
+
+
+
+
+
+
 
   it('shell:showItemInFolder reveals a file confined to the output dir', () => {
     vi.mocked(existsSync).mockReturnValueOnce(true);
@@ -409,6 +498,36 @@ describe('registerIpcHandlers', () => {
   it('license:release delegates to releaseLicense', async () => {
     await handlers.get('license:release')!(evt());
     expect(license.releaseLicense).toHaveBeenCalledOnce();
+  });
+
+  // Concurrency is the one tier lever the queue CACHES rather than reading per
+  // request, so the boundary has to push it — at boot, on config change, and on
+  // anything that can flip the plan. Without the last one an upgrade bought
+  // mid-session would keep running the free number of slots until a restart.
+  describe('concurrency is clamped and pushed to the queue at the boundary', () => {
+    it('pushes the tier-clamped slot count at registration and subscribes to config', async () => {
+      const { setMaxSlots } = await import('./queue.js');
+      expect(vi.mocked(setMaxSlots)).toHaveBeenCalledWith(4); // premium: 4 <= cap
+      expect(config.onChange).toHaveBeenCalled();
+    });
+
+    it('clamps a config value above the free cap down instead of rejecting it', async () => {
+      const { setMaxSlots } = await import('./queue.js');
+      vi.mocked(setMaxSlots).mockClear();
+      license.getPlan.mockReturnValue('basic');
+      // The subscription registered at boot IS the config-change path.
+      config.onChange.mock.calls[0][0]();
+      expect(vi.mocked(setMaxSlots)).toHaveBeenCalledWith(BASIC_LIMITS.maxConcurrent);
+    });
+
+    it('re-syncs after every license call, so an upgrade takes effect without a restart', async () => {
+      const { setMaxSlots } = await import('./queue.js');
+      for (const channel of ['license:check', 'license:activate', 'license:deactivate', 'license:release']) {
+        vi.mocked(setMaxSlots).mockClear();
+        await handlers.get(channel)!(evt(), 'KEY-0000-0000-0000');
+        expect(vi.mocked(setMaxSlots), channel).toHaveBeenCalledTimes(1);
+      }
+    });
   });
 
   it('update:* delegate to the Updater', () => {

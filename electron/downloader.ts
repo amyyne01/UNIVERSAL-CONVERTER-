@@ -7,13 +7,52 @@ import { spawn, execSync } from 'child_process';
 import { existsSync } from 'fs';
 import path from 'node:path';
 import { app } from 'electron';
-import type { DownloadTask, DownloadProgress, Track, SearchResult, MediaMetadata } from '../shared/types.js';
-import { LOSSLESS_FORMATS } from '../shared/types.js';
+import type {
+  DownloadTask, DownloadProgress, Track, SearchResult, MediaMetadata, DownloadExtras,
+  VideoContainer, VideoCodec,
+} from '../shared/types.js';
+import {
+  LOSSLESS_FORMATS, defaultExtras, mergeExtras, SUBTITLE_MODES, SPONSORBLOCK_MODES,
+  SPONSORBLOCK_CATEGORIES, VIDEO_CONTAINERS, VIDEO_CODECS, COOKIE_BROWSERS,
+} from '../shared/types.js';
 import { detectUrl } from './url-detector.js';
 
 export type ErrorClass = 'retryable' | 'permanent' | 'auth' | 'geo';
 
 const LOSSLESS = new Set<string>(LOSSLESS_FORMATS);
+
+// ── The PO-token gate (§5) ────────────────────────────────────────────────────
+// YouTube now puts most videos' adaptive (720p+) streams behind a "PO token" we do
+// not mint. The effect is not an error at extraction time — it is worse than that:
+// the one client that still LISTS those formats hands out URLs YouTube then answers
+// with `HTTP Error 403: Forbidden` when the bytes are actually requested. Metadata
+// resolves, the card renders with a title and a thumbnail, and only the download
+// dies. Freshly posted videos from large channels are gated most aggressively,
+// which is why "it worked yesterday on an old video" and "it fails on the trailer
+// that went up this morning" are the same bug.
+//
+// Measured against the failing case (Marvel, X1aFkAkFASk, 2026-08-19):
+//   android_vr (the default here) → lists 1080p/4K DASH → 403 on the media fetch
+//   web / tv / ios / web_safari   → list no adaptive formats at all → "not available"
+//   android / mweb / tv_simply    → serve, but usually only the 360p progressive
+// So there is no client that is both gated-free and high quality. Downgrading every
+// download to buy the 5% case would be the wrong trade — instead these clients are
+// used ONLY on a retry, after the normal attempt has actually failed. A gated video
+// then lands as a real file at whatever quality is obtainable instead of a red row.
+//
+// The gated client is EXCLUDED, not merely joined: listing it alongside the others
+// (`default,android,…`) leaves its 1080p entries in the pool, the format selector
+// still prefers them on quality, and the retry 403s exactly like the attempt it was
+// meant to rescue. Verified both ways against X1aFkAkFASk.
+const FALLBACK_PLAYER_CLIENTS = 'android,mweb,tv_simply';
+
+// --socket-timeout bounds a stalled SOCKET, not a process that is busy (solving the
+// player's JS challenge, walking a manifest) or simply wedged. Nothing else ever
+// killed a metadata spawn, so its promise never settled: the renderer sat on
+// "Reading the link…" with the field disabled and no way out but a restart. That is
+// the shape of "sometimes it just doesn't fetch the link".
+const METADATA_TIMEOUT_MS = 90_000;
+const TIMEOUT_MESSAGE = 'Timed out reading that link — the site did not answer in time.';
 
 // ── Spotify bridge scoring (§11) — all thresholds live here, one source of truth ──
 const MAX_DURATION_DELTA_SEC = 12;   // beyond this a candidate is hard-rejected
@@ -100,6 +139,10 @@ export function classifyError(text: string): ErrorClass {
     'is unavailable', 'video unavailable', 'no longer available',
     'removed', 'deleted', 'does not exist', 'this video is not available',
     'copyright', 'drm', 'is not a valid url', 'unsupported url',
+    // A premiere or a scheduled stream is not a failure and not a retry — the file
+    // does not exist yet. Three backoffs would only make the user wait to be told
+    // the same thing, so terminate immediately and say what is actually happening.
+    'live event will begin', 'premieres in', 'this live stream recording is not available',
   ];
   for (const p of permanent) if (t.includes(p)) return 'permanent';
   const retryable = [
@@ -108,9 +151,55 @@ export function classifyError(text: string): ErrorClass {
     'too many requests',   // 429, matched by phrase not the bare number
     'connection reset', 'reset by peer', 'connection refused',
     'network', 'read error', 'unable to download',
+    // The PO-token gate. These are retryable ONLY because the retry is different
+    // from the attempt that failed — see needsClientFallback().
+    ...GATED_SIGNS,
   ];
   for (const r of retryable) if (t.includes(r)) return 'retryable';
   return 'permanent';
+}
+
+/** yt-dlp text meaning "this player client's streams will not serve to us": a 403 on
+ *  the media fetch, an empty adaptive-format list, or the tv client's reload demand.
+ *  All three are the PO-token gate wearing different hats. Retrying the SAME command
+ *  reproduces them exactly; the queue reads this to retry with FALLBACK_PLAYER_CLIENTS
+ *  instead, which is the only thing that turns them into a file. */
+const GATED_SIGNS = [
+  '403: forbidden',
+  'requested format is not available',
+  'page needs to be reloaded',
+];
+
+export function needsClientFallback(text: string): boolean {
+  const t = (text || '').toLowerCase();
+  return GATED_SIGNS.some((s) => t.includes(s));
+}
+
+/** One sentence a user can act on, from yt-dlp's stderr. Unrecognised text is passed
+ *  through rather than swallowed — a shape we have not seen yet must still be legible,
+ *  and "something went wrong" for every failure is exactly what made a gated video,
+ *  a dead link and a dropped connection indistinguishable. */
+export function explainError(text: string): string {
+  const raw = (text || '').trim();
+  if (!raw) return 'That link could not be read.';
+  if (raw.startsWith(TIMEOUT_MESSAGE)) return TIMEOUT_MESSAGE;
+  const t = raw.toLowerCase();
+  if (needsClientFallback(t)) {
+    return 'YouTube is gating this video’s streams — the download will retry at the quality it will actually serve.';
+  }
+  switch (classifyError(t)) {
+    case 'auth':
+      return 'That post needs a sign-in — it may be private, age-restricted or members-only.';
+    case 'geo':
+      return 'That post is not available in your region.';
+    case 'retryable':
+      return 'The site did not answer — check your connection and try again.';
+    default:
+      if (t.includes('live event will begin') || t.includes('premieres in')) {
+        return 'That video has not premiered yet — try again once it is live.';
+      }
+      return 'That post could not be read — it may be private, removed, or need a sign-in.';
+  }
 }
 
 export class Downloader {
@@ -120,6 +209,10 @@ export class Downloader {
   // Killed procs, keyed by identity (not taskId): a pause→resume reuses the
   // taskId, so a string key could suppress the *resumed* proc's real close (§).
   private readonly killedProcs = new WeakSet<Proc>();
+  // Spotify bridge pre-passes still in flight, keyed by taskId, valued by a
+  // per-attempt token. Present = a download is about to be spawned for that task
+  // and may still be called off; see download().
+  private readonly pendingBridge = new Map<string, object>();
 
   // ── Argument building (§5) ──────────────────────────────────────────────
 
@@ -138,6 +231,30 @@ export class Downloader {
 
     if (ffmpegPath) args.push('--ffmpeg-location', ffmpegPath);
 
+    // Set by the queue on a retry, never by the renderer: the previous attempt
+    // failed the PO-token gate, so ask the clients whose URLs actually serve.
+    if (task.fallbackProfile) {
+      args.push('--extractor-args', `youtube:player_client=${FALLBACK_PLAYER_CLIENTS}`);
+    }
+
+    // Extras (§5). Absent on rows persisted before extras existed, and possibly
+    // partial in a hand-edited history file, so merge over the defaults rather
+    // than trusting the object's shape.
+    const x: DownloadExtras = mergeExtras(task.extras);
+    // Every extras value below becomes a spawn argument, and config.json is
+    // hand-editable, so each string enum is checked against its const list here —
+    // the last gate before the value leaves the process. An unknown value falls
+    // back to the default instead of being passed through.
+    const pick = <T extends string>(v: string, allowed: readonly T[], fallback: T): T =>
+      (allowed as readonly string[]).includes(v) ? (v as T) : fallback;
+
+    const container = pick(x.videoContainer, VIDEO_CONTAINERS, 'mp4');
+
+    if (x.rateLimit) args.push('--limit-rate', x.rateLimit);
+    if (x.proxy) args.push('--proxy', x.proxy);
+    const cookieBrowser = pick(x.cookieBrowser, COOKIE_BROWSERS, '');
+    if (cookieBrowser) args.push('--cookies-from-browser', cookieBrowser);
+
     if (task.isAudioOnly) {
       const codec = task.format;
       args.push('-f', 'bestaudio/best', '--extract-audio', '--audio-format', codec);
@@ -146,16 +263,47 @@ export class Downloader {
         args.push('--audio-quality', `${task.quality}K`);
       }
     } else {
-      args.push('-f', this.videoSelector(task.videoQuality), '--merge-output-format', 'mp4');
+      args.push(
+        '-f', this.videoSelector(task.videoQuality, container, pick(x.videoCodec, VIDEO_CODECS, 'any')),
+        '--merge-output-format', container,
+      );
     }
 
     if (task.embedMetadata) args.push('--embed-metadata');
     if (task.embedThumbnail) args.push('--embed-thumbnail');
     if (task.skipExisting) args.push('--no-overwrites');
 
+    // Subtitles. --embed-subs alone fetches them without keeping a file;
+    // --write-subs alone keeps a .srt without muxing. 'both' does both.
+    const subMode = pick(x.subtitleMode, SUBTITLE_MODES, 'off');
+    if (subMode !== 'off') {
+      args.push('--sub-langs', x.subtitleLangs || defaultExtras.subtitleLangs);
+      if (x.subtitleAuto) args.push('--write-auto-subs');
+      if (subMode === 'embed' || subMode === 'both') args.push('--embed-subs');
+      if (subMode === 'file' || subMode === 'both') args.push('--write-subs', '--convert-subs', 'srt');
+    }
+
+    if (x.embedChapters) args.push('--embed-chapters');
+    if (x.splitChapters) args.push('--split-chapters');
+
+    const sbMode = pick(x.sponsorBlock, SPONSORBLOCK_MODES, 'off');
+    if (sbMode !== 'off') {
+      const cats = x.sponsorBlockCategories.filter((c) =>
+        (SPONSORBLOCK_CATEGORIES as readonly string[]).includes(c));
+      if (cats.length) args.push(sbMode === 'remove' ? '--sponsorblock-remove' : '--sponsorblock-mark', cats.join(','));
+    }
+
+    if (x.writeThumbnail) args.push('--write-thumbnail');
+    if (x.writeInfoJson) args.push('--write-info-json');
+    if (x.writeDescription) args.push('--write-description');
+
     // Output template + collection sub-folder + per-collection download archive.
+    // A user template replaces the name part only — outputDir stays the anchor.
     const sub = task.isPlaylist ? this.sanitize(task.playlistName) : '';
-    const name = task.isPlaylist ? '%(title)s.%(ext)s' : `${this.sanitize(task.title) || '%(title)s'}.%(ext)s`;
+    const template = this.safeTemplate(x.outputTemplate);
+    const name = template
+      ? `${template}.%(ext)s`
+      : task.isPlaylist ? '%(title)s.%(ext)s' : `${this.sanitize(task.title) || '%(title)s'}.%(ext)s`;
     args.push('-o', path.join(task.outputDir, sub, name));
     if (task.isPlaylist) {
       args.push('--download-archive', path.join(task.outputDir, sub, '.download-archive.txt'));
@@ -179,15 +327,43 @@ export class Downloader {
     return args;
   }
 
-  /** Prefer mp4 video+audio capped at the requested height, falling back to best. */
-  private videoSelector(quality: DownloadTask['videoQuality']): string {
+  /** A preference with fallbacks (§5): the requested codec in the requested
+   *  container at or below the requested height, degrading one constraint at a
+   *  time so a video that cannot satisfy the preference still downloads.
+   *  mp4 keeps the ext filters that let streams be stitched without a re-encode;
+   *  mkv/webm accept anything, so constraining ext there only loses formats. */
+  private videoSelector(
+    quality: DownloadTask['videoQuality'],
+    container: VideoContainer = 'mp4',
+    codec: VideoCodec = 'any',
+  ): string {
     const heights: Record<string, number> = { '360p': 360, '480p': 480, '720p': 720, '1080p': 1080, '2160p': 2160 };
     const h = heights[quality];
-    if (!h) return 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best';
-    return (
-      `bestvideo[height<=${h}][ext=mp4]+bestaudio[ext=m4a]/` +
-      `bestvideo[height<=${h}]+bestaudio/best[height<=${h}]/best`
-    );
+    const height = h ? `[height<=${h}]` : '';
+    const vcodec = { any: '', h264: '[vcodec^=avc1]', vp9: '[vcodec^=vp9]', av1: '[vcodec^=av01]' }[codec];
+    const ext = container === 'mp4' ? '[ext=mp4]' : '';
+    const aext = container === 'mp4' ? '[ext=m4a]' : '';
+    return [
+      `bestvideo${height}${vcodec}${ext}+bestaudio${aext}`, // everything asked for
+      `bestvideo${height}${vcodec}+bestaudio`,              // drop the container preference
+      `bestvideo${height}${ext}+bestaudio${aext}`,          // drop the codec preference
+      `bestvideo${height}+bestaudio`,                       // drop both
+      h ? `best${height}` : 'best',                         // progressive at the height cap
+      'best',
+    ].join('/');
+  }
+
+  /** Accept a user output template only if it stays UNDER outputDir: no absolute
+   *  path, no drive letter, no '..' segment. A template legitimately contains
+   *  '/' (that is how it makes sub-folders), so slashes are allowed and only
+   *  traversal is refused. An unsafe template falls back to the built-in naming
+   *  rather than failing the download. */
+  private safeTemplate(template: string): string {
+    const t = (template || '').trim().replace(/\\/g, '/');
+    if (!t) return '';
+    if (t.startsWith('/') || /^[a-z]:/i.test(t)) return '';
+    if (t.split('/').some((seg) => seg === '..')) return '';
+    return t;
   }
 
   private sanitize(s: string): string {
@@ -212,12 +388,29 @@ export class Downloader {
     const args = this.buildYtDlpArgs(task, this.getFfmpegPath());
     // Spotify bridge (§4, §11): resolve audio via search instead of the (undownloadable) URL.
     // Scored pre-pass is async; non-Spotify downloads stay fully synchronous.
-    // ponytail: the ~1s pre-pass proc isn't tracked in `active`, so a cancel during
-    //           that brief window is a no-op — acceptable; the download proc IS tracked.
+    //
+    // The ~1s pre-pass proc is not in `active`, so cancel() cannot kill it — but it
+    // CAN stop the download that was about to be spawned, and under concurrent slots
+    // it has to. Cancelling inside the window used to let the deferred spawn land
+    // anyway; a pause→resume in those same seconds then started a SECOND proc under
+    // the same taskId, which overwrote the first in `active` and left it running,
+    // unkillable, with both procs' callbacks still passing the reference guard —
+    // two yt-dlp processes contending for one .part file, either able to free the
+    // live job's slot.
+    //
+    // The token is per-ATTEMPT, not per-task: a resume replaces it, so the
+    // superseded attempt fails the identity check instead of racing. Same
+    // reference-equality admission the queue uses for its own callbacks.
     if (task.source === 'spotify' && track) {
+      const attempt = {};
+      this.pendingBridge.set(task.taskId, attempt);
       this.resolveSpotifyBridge(task, track, args)
         .catch(() => { /* keep the blind ytsearch1 fallback already written into args */ })
-        .then(() => this.spawnDownload(bin, task, args, onProgress, onDone, onError));
+        .then(() => {
+          if (this.pendingBridge.get(task.taskId) !== attempt) return; // cancelled or superseded
+          this.pendingBridge.delete(task.taskId);
+          this.spawnDownload(bin, task, args, onProgress, onDone, onError);
+        });
       return;
     }
 
@@ -320,6 +513,10 @@ export class Downloader {
   }
 
   cancel(taskId: string): void {
+    // Call off a spawn still waiting behind its bridge pre-pass. Done before the
+    // proc lookup because in that window there IS no proc yet — returning early
+    // on `!proc` is what let the cancelled download start anyway.
+    this.pendingBridge.delete(taskId);
     const proc = this.active.get(taskId);
     if (!proc) return;
     this.killedProcs.add(proc);
@@ -328,6 +525,7 @@ export class Downloader {
   }
 
   cancelAll(): void {
+    this.pendingBridge.clear();
     for (const proc of this.active.values()) {
       this.killedProcs.add(proc);
       this.killTree(proc);
@@ -490,8 +688,12 @@ export class Downloader {
     const detected = detectUrl(url);
     const single = detected.isCollection ? [] : ['--no-playlist'];
     // ponytail: flat dump (§3.1) — fast, best-effort; first record is the header.
-    const items = await this.runJson(['--dump-json', '--no-warnings', '--flat-playlist', ...single, '--', url]);
-    if (items.length === 0) throw new Error('No metadata returned for URL');
+    // The raw stderr is translated HERE, at the one boundary the renderer awaits:
+    // every failure used to reach the UI as the same "something went wrong", which
+    // sent people to re-check a link that was never the problem.
+    const items = await this.runJson(['--dump-json', '--no-warnings', '--flat-playlist', ...single, '--', url])
+      .catch((err: unknown) => { throw new Error(explainError(err instanceof Error ? err.message : String(err))); });
+    if (items.length === 0) throw new Error('That link returned nothing to download.');
     const head = items[0] ?? {};
     // Count is not the test — detectUrl is. A playlist holding exactly ONE track
     // dumps one record, and calling that a single video handed the renderer an
@@ -553,19 +755,52 @@ export class Downloader {
     this.ytDlpPath = undefined;
   }
 
-  /** Run yt-dlp in inspect mode and parse newline-delimited JSON records. */
-  private runJson(args: string[]): Promise<any[]> {
+  /** Run yt-dlp in inspect mode, once, and parse newline-delimited JSON records.
+   *  Every exit path settles the promise exactly once and clears the watchdog. */
+  private async runJson(args: string[]): Promise<any[]> {
+    try {
+      return await this.runJsonOnce(args);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      // One second attempt, and only for a genuinely transient failure. A removed or
+      // private video answers identically twice, so retrying it only doubles the wait
+      // before the user hears the truth; a timeout has already cost them 90 seconds.
+      if (msg === TIMEOUT_MESSAGE || classifyError(msg) !== 'retryable') throw err;
+      return this.runJsonOnce(args);
+    }
+  }
+
+  private runJsonOnce(args: string[]): Promise<any[]> {
     return new Promise((resolve, reject) => {
       const bin = this.getYtDlpPath();
       if (!bin) { reject(new Error('yt-dlp not found')); return; }
-      // --socket-timeout bounds a stalled connection so metadata/search can't hang forever.
-      const proc = spawn(bin, ['--socket-timeout', '20', ...args], { windowsHide: true });
+      // --socket-timeout bounds a stalled connection; --retries lets yt-dlp itself ride
+      // out a hiccup mid-extraction rather than handing us a hard failure the user reads
+      // as a bad link. The download path always had this; the metadata path never did.
+      const proc = spawn(bin, ['--socket-timeout', '20', '--retries', '3', ...args], { windowsHide: true });
       let out = '';
       let err = '';
+      let settled = false;
+      // The watchdog is the only thing that can end a WEDGED proc (see METADATA_TIMEOUT_MS).
+      // `settled` guards it against the ordinary close/error paths and vice versa.
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        this.killTree(proc);
+        reject(new Error(TIMEOUT_MESSAGE));
+      }, METADATA_TIMEOUT_MS);
+      timer.unref?.();
+      const settle = (fn: () => void): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        fn();
+      };
+
       proc.stdout?.on('data', (d: Buffer) => { out += d.toString(); });
       proc.stderr?.on('data', (d: Buffer) => { err += d.toString(); });
-      proc.on('error', reject);
-      proc.on('close', (code) => {
+      proc.on('error', (e: Error) => settle(() => reject(e)));
+      proc.on('close', (code) => settle(() => {
         if (code !== 0 && !out.trim()) { reject(new Error(err.trim() || `yt-dlp exited with code ${code}`)); return; }
         const items: any[] = [];
         for (const line of out.split('\n')) {
@@ -574,7 +809,7 @@ export class Downloader {
           try { items.push(JSON.parse(t)); } catch { /* ignore non-JSON noise */ }
         }
         resolve(items);
-      });
+      }));
     });
   }
 }

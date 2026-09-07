@@ -11,6 +11,9 @@ export const SOURCE_PLATFORMS = [
   'tiktok',
   'facebook',
   'direct',
+  // Any other site the engine supports (~1800 of them). Matched by the terminal
+  // rule in url-detector.ts, after every named platform has had its chance.
+  'generic',
   'unknown',
 ] as const;
 export type SourcePlatform = (typeof SOURCE_PLATFORMS)[number];
@@ -73,6 +76,97 @@ export const LOSSLESS_FORMATS = ['flac', 'wav', 'alac'] as const;
 export const VIDEO_QUALITIES = ['360p', '480p', '720p', '1080p', '2160p', 'best'] as const;
 export type VideoQuality = (typeof VIDEO_QUALITIES)[number];
 
+// ── Download extras (§5) ──────────────────────────────────────────────────────
+// Everything yt-dlp can do that isn't format/quality. Grouped into ONE object
+// rather than seventeen more DownloadTask fields: the boundary validates it in
+// one place, buildYtDlpArgs reads it in one place, and a persisted history row
+// written before extras existed simply has none (= today's behaviour).
+
+/** 'file' writes a .srt beside the media; 'embed' muxes it in; 'both' does both. */
+export const SUBTITLE_MODES = ['off', 'embed', 'file', 'both'] as const;
+export type SubtitleMode = (typeof SUBTITLE_MODES)[number];
+
+export const SPONSORBLOCK_MODES = ['off', 'mark', 'remove'] as const;
+export type SponsorBlockMode = (typeof SPONSORBLOCK_MODES)[number];
+
+export const SPONSORBLOCK_CATEGORIES = [
+  'sponsor', 'intro', 'outro', 'selfpromo', 'interaction', 'preview', 'music_offtopic',
+] as const;
+export type SponsorBlockCategory = (typeof SPONSORBLOCK_CATEGORIES)[number];
+
+export const VIDEO_CONTAINERS = ['mp4', 'mkv', 'webm'] as const;
+export type VideoContainer = (typeof VIDEO_CONTAINERS)[number];
+
+/** 'any' lets yt-dlp pick; the rest express a preference with a fallback (§5). */
+export const VIDEO_CODECS = ['any', 'h264', 'vp9', 'av1'] as const;
+export type VideoCodec = (typeof VIDEO_CODECS)[number];
+
+/** '' = don't touch cookies. The rest are yt-dlp's --cookies-from-browser names. */
+export const COOKIE_BROWSERS = ['', 'chrome', 'edge', 'firefox', 'brave', 'chromium', 'opera', 'vivaldi'] as const;
+export type CookieBrowser = (typeof COOKIE_BROWSERS)[number];
+
+export interface DownloadExtras {
+  subtitleMode: SubtitleMode;
+  /** Comma-separated yt-dlp language list, e.g. "en,fr". */
+  subtitleLangs: string;
+  /** Include machine-generated captions when no human ones exist. */
+  subtitleAuto: boolean;
+  embedChapters: boolean;
+  /** Write one file per chapter instead of one file. Mutually exclusive with sections. */
+  splitChapters: boolean;
+  sponsorBlock: SponsorBlockMode;
+  sponsorBlockCategories: string[];
+  /** Cover art as a separate image file (in addition to any embedded copy). */
+  writeThumbnail: boolean;
+  writeInfoJson: boolean;
+  writeDescription: boolean;
+  videoContainer: VideoContainer;
+  videoCodec: VideoCodec;
+  cookieBrowser: CookieBrowser;
+  /** yt-dlp output template; '' keeps the built-in title-based naming. */
+  outputTemplate: string;
+  /** Bandwidth cap passed to --limit-rate, e.g. "2M"; '' = unlimited. */
+  rateLimit: string;
+  proxy: string;
+}
+
+export const defaultExtras: DownloadExtras = {
+  subtitleMode: 'off',
+  subtitleLangs: 'en',
+  subtitleAuto: false,
+  embedChapters: true,
+  splitChapters: false,
+  sponsorBlock: 'off',
+  sponsorBlockCategories: ['sponsor'],
+  writeThumbnail: false,
+  writeInfoJson: false,
+  writeDescription: false,
+  videoContainer: 'mp4',
+  videoCodec: 'any',
+  cookieBrowser: '',
+  outputTemplate: '',
+  rateLimit: '',
+  proxy: '',
+};
+
+/** Complete a possibly-partial set of extras from the defaults.
+ *
+ *  Iterating the DEFAULTS rather than the input makes this a whitelist: unknown
+ *  keys (and `__proto__`, from a hand-edited config or a persisted history row)
+ *  are dropped rather than copied onto the result. It also skips explicitly
+ *  `undefined` values, which a plain `{...defaults, ...extras}` spread would
+ *  happily copy over a good default — leaving fields that reach spawn() as
+ *  literal "undefined". Both call sites (clampExtras, buildYtDlpArgs) use it. */
+export function mergeExtras(extras?: Partial<DownloadExtras>): DownloadExtras {
+  const out = { ...defaultExtras };
+  if (!extras) return out;
+  for (const key of Object.keys(defaultExtras) as (keyof DownloadExtras)[]) {
+    const value = extras[key];
+    if (value !== undefined) (out as Record<string, unknown>)[key] = value;
+  }
+  return out;
+}
+
 export interface DownloadTask {
   taskId: string;
   url: string;
@@ -112,6 +206,15 @@ export interface DownloadTask {
   matchConfidence?: number;
   /** Spotify bridge (§11): the direct video URL the scorer picked to download. */
   matchedUrl?: string;
+  /** Set by the QUEUE on a retry after the PO-token gate (§5) — never by the
+   *  renderer. Tells the downloader to ask the player clients whose stream URLs
+   *  actually serve, at the cost of the formats they do not list. */
+  fallbackProfile?: boolean;
+  /** Subtitles/chapters/SponsorBlock/container/cookies/naming (§5). Built from
+   *  config at the IPC boundary and clamped by plan there — never trusted from
+   *  the renderer. Absent on rows persisted before extras existed: that means
+   *  "no extras", which is exactly the pre-extras behaviour. */
+  extras?: DownloadExtras;
 }
 
 export interface Track {
@@ -186,6 +289,9 @@ export interface AppConfig {
   theme: ThemeName;
   rememberLastDir: boolean;
   autoPaste: boolean;
+  /** Opt-in background clipboard watcher: offers a one-click download when a
+   *  recognised link is copied anywhere, even outside the app (electron/clipboard-watch.ts). */
+  clipboardWatch: boolean;
   showNotifications: boolean;
   /** Optional bandwidth cap, e.g. "2M"; empty = unlimited. */
   rateLimit: string;
@@ -200,6 +306,28 @@ export interface AppConfig {
   scheduleShutdown: boolean;
   /** #26: allow the yt-dlp engine to self-update (weekly + on an extractor failure). */
   autoUpdateEngine: boolean;
+  /** How many downloads may run at once. Clamped by tier at the IPC boundary
+   *  (clampConcurrency) before it reaches the queue — the raw user number is what
+   *  gets stored, exactly like defaultVideoQuality. */
+  maxConcurrentDownloads: number;
+  // Download extras (§5). Flat here, assembled into one DownloadExtras by ipc.ts
+  // when a task is created. No config migration is needed for these: load() lays
+  // defaults first and merges saved values on top, so a config.json written
+  // before they existed picks them up at their defaults automatically.
+  subtitleMode: SubtitleMode;
+  subtitleLangs: string;
+  subtitleAuto: boolean;
+  embedChapters: boolean;
+  splitChapters: boolean;
+  sponsorBlock: SponsorBlockMode;
+  sponsorBlockCategories: string[];
+  writeThumbnail: boolean;
+  writeInfoJson: boolean;
+  writeDescription: boolean;
+  videoContainer: VideoContainer;
+  videoCodec: VideoCodec;
+  cookieBrowser: CookieBrowser;
+  outputTemplate: string;
 }
 
 // #26 yt-dlp engine self-update. `current`/`latest` are yt-dlp release tags
@@ -231,6 +359,10 @@ export interface UpdateState {
 // reads it to lock controls, the main process reads it to clamp what actually runs.
 export type Plan = 'basic' | 'premium';
 
+/** Hard app ceiling on concurrent downloads — the premium cap. Above ~5 the
+ *  bottleneck stops being the app and starts being the connection. */
+export const MAX_CONCURRENT_DOWNLOADS = 5;
+
 export const BASIC_LIMITS = {
   /** Highest video quality basic may download; anything above is clamped to it. */
   maxVideoQuality: '1080p',
@@ -238,10 +370,20 @@ export const BASIC_LIMITS = {
   maxBatchLinks: 5,
   /** Items taken from any playlist/album. */
   maxCollectionTracks: 20,
+  /** Concurrent download slots on the free tier. */
+  maxConcurrent: 2,
   /** Lossless codecs (FLAC/WAV/ALAC) are premium-only. */
   lossless: false,
   /** Scheduled/missed-run downloads are premium-only. */
   scheduler: false,
+  /** Subtitle languages a single download may request. */
+  maxSubtitleLangs: 1,
+  /** Machine-generated captions are premium-only (human ones are free). */
+  subtitleAuto: false,
+  /** --cookies-from-browser (age-gated/private/members-only) is premium-only. */
+  cookies: false,
+  /** One-file-per-chapter is premium-only; embedding chapter marks is free. */
+  splitChapters: false,
 } as const;
 
 /** True when `q` sits above the basic ceiling in the VIDEO_QUALITIES order. */
@@ -267,6 +409,35 @@ export function clampFormat(format: string, plan: Plan): string {
 
 export function clampAudioQuality(quality: string, plan: Plan): string {
   return plan === 'premium' || quality !== 'lossless' ? quality : '320';
+}
+
+/** Slots a plan may actually run. Degrades rather than rejects, like the others:
+ *  a hand-edited config asking for 20 gets the tier ceiling, and junk (NaN, a
+ *  string, 0, -3) gets 1 — never a queue that starts nothing or everything. */
+export function clampConcurrency(n: number, plan: Plan): number {
+  const cap = plan === 'premium' ? MAX_CONCURRENT_DOWNLOADS : BASIC_LIMITS.maxConcurrent;
+  return Math.min(Math.max(1, Math.floor(Number(n) || 1)), cap);
+}
+
+/** Cut a set of extras down to what `plan` is actually allowed to run. Like the
+ *  other clamps this DEGRADES rather than rejects: basic asking for 5 subtitle
+ *  languages gets the first one, not an error. */
+export function clampExtras(extras: Partial<DownloadExtras>, plan: Plan): DownloadExtras {
+  const full = mergeExtras(extras);
+  if (plan === 'premium') return full;
+  const langs = full.subtitleLangs
+    .split(',')
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .slice(0, BASIC_LIMITS.maxSubtitleLangs)
+    .join(',');
+  return {
+    ...full,
+    subtitleLangs: langs || defaultExtras.subtitleLangs,
+    subtitleAuto: BASIC_LIMITS.subtitleAuto && full.subtitleAuto,
+    splitChapters: BASIC_LIMITS.splitChapters && full.splitChapters,
+    cookieBrowser: BASIC_LIMITS.cookies ? full.cookieBrowser : '',
+  };
 }
 
 // ── Download statistics ───────────────────────────────────────────────────────

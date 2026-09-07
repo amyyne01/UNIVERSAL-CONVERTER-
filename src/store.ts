@@ -2,7 +2,7 @@
 // so referential change triggers re-render (CLAUDE.md). Subscribe with narrow
 // selectors. Persistence + theme side effects live in config actions.
 import { create } from 'zustand';
-import type { AppConfig, DownloadTask, DownloadProgress, Plan, Playlist } from '@shared/types';
+import type { AppConfig, DownloadTask, DownloadProgress, Plan, Playlist, UrlDetection } from '@shared/types';
 import type { TabKey } from '@/constants';
 import { applyTheme } from '@/lib/theme';
 
@@ -60,6 +60,11 @@ export interface AppState {
   showPremiumNudge: (reason: string) => void;
   showError: (message: string) => void;
   dismissNotice: () => void;
+
+  // ── clipboard watcher ──────────────────────────────────────
+  /** The most recent link the clipboard watcher offered to download, or null. */
+  clipboardOffer: UrlDetection | null;
+  setClipboardOffer: (d: UrlDetection | null) => void;
 }
 
 export const useAppStore = create<AppState>()((set, get) => ({
@@ -163,6 +168,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
   showPremiumNudge: (message) => set({ notice: { message, tone: 'premium' } }),
   showError: (message) => set({ notice: { message, tone: 'error' } }),
   dismissNotice: () => set({ notice: null }),
+
+  // ── clipboard watcher ──
+  clipboardOffer: null,
+  setClipboardOffer: (d) => set({ clipboardOffer: d }),
 }));
 
 /** One place that answers "may this install use premium features?". */
