@@ -111,6 +111,7 @@ const clamp01 = (n: number): number => Math.max(0, Math.min(1, n));
 
 // Delimited progress template (§6): a marker + bytes|total|estimate|speed|eta.
 const PROGRESS_MARKER = '[PROGRESS]';
+const FILEPATH_MARKER = '[FILEPATH]'; // prefixes the --print after_move line so it's never confused with chatter
 const PROGRESS_TEMPLATE =
   `download:${PROGRESS_MARKER}%(progress.downloaded_bytes)s|%(progress.total_bytes)s` +
   `|%(progress.total_bytes_estimate)s|%(progress.speed)s|%(progress.eta)s`;
@@ -250,7 +251,8 @@ export class Downloader {
       '--progress-template', PROGRESS_TEMPLATE,
       '--retries', '10',
       '--concurrent-fragments', '4',
-      '--print', 'after_move:filepath',
+      '--print', `after_move:${FILEPATH_MARKER}%(filepath)s`,
+      '--no-quiet', // --print implies --quiet, which silences progress and phase lines
     ];
 
     if (ffmpegPath) args.push('--ffmpeg-location', ffmpegPath);
@@ -472,6 +474,9 @@ export class Downloader {
   /** Spawn the download proc and wire up progress/stdout/close/error (§5, §6). */
   private spawnDownload(bin: string, task: DownloadTask, args: string[], onProgress?: ProgressCb, onDone?: DoneCb, onError?: ErrorCb): void {
     const proc = spawn(bin, args, { windowsHide: true });
+    // StringDecoder stitches a multi-byte character (Arabic/CJK titles) split across two chunks.
+    proc.stdout?.setEncoding?.('utf8');
+    proc.stderr?.setEncoding?.('utf8');
     this.active.set(task.taskId, proc);
 
     const progress: DownloadProgress = {
@@ -492,9 +497,15 @@ export class Downloader {
       if (/^\s*ERROR:/.test(line)) errorOut += line + '\n';
     };
 
+    // --no-quiet puts everything on stdout: only [FILEPATH]-prefixed lines are paths;
+    // progress/phase lines go to parseLine; any other chatter is ignored.
     const flushStdout = (line: string) => {
-      const t = line.trim();
-      if (t) { filepaths.push(t); finalPath = t; } // --print after_move:filepath (§5)
+      // Untrimmed on purpose: an echoed title/URL with leading spaces must not pass as a path line.
+      const t = line.replace(/\r$/, '');
+      if (t.startsWith(FILEPATH_MARKER)) {
+        const p = t.slice(FILEPATH_MARKER.length).trim();
+        if (p) { filepaths.push(p); finalPath = p; }
+      } else flush(t);
     };
 
     // The same identity guard the close/error handlers use, and for the same
@@ -528,10 +539,10 @@ export class Downloader {
     });
 
     proc.on('close', (code: number | null) => {
+      if (this.active.get(task.taskId) === proc) this.active.delete(task.taskId);
+      if (this.killedProcs.has(proc)) return; // only THIS proc was killed — and none of its leftovers may be emitted
       if (stderrBuf) flush(stderrBuf); // flush leftover on close (§6)
       if (stdoutBuf) flushStdout(stdoutBuf); // flush leftover on close (§6)
-      if (this.active.get(task.taskId) === proc) this.active.delete(task.taskId);
-      if (this.killedProcs.has(proc)) return; // only THIS proc was killed
       if (code === 0) {
         progress.status = 'done';
         progress.percent = 100;
@@ -582,21 +593,20 @@ export class Downloader {
   /** Parse one stderr line; updates progress + emits. Returns the carried percent. */
   private parseLine(line: string, progress: DownloadProgress, lastPercent: number, onProgress?: ProgressCb): number {
     // Phase markers.
-    if (line.includes('[ExtractAudio]') || line.includes('[Merger]')) {
+    if (line.startsWith('[ExtractAudio]') || line.startsWith('[Merger]')) {
       progress.status = 'converting';
       onProgress?.(progress);
       return lastPercent;
     }
-    if (line.includes('[Metadata]') || line.includes('[EmbedThumbnail]') || line.includes('[ThumbnailsConvertor]')) {
+    if (/^\[(Metadata|EmbedThumbnail|ThumbnailsConvertor|EmbedSubtitle)\]/.test(line)) {
       progress.status = 'embedding';
       onProgress?.(progress);
       return lastPercent;
     }
 
     // Delimited template line.
-    const marker = line.indexOf(PROGRESS_MARKER);
-    if (marker !== -1) {
-      const [dl, total, est, speed, eta] = line.slice(marker + PROGRESS_MARKER.length).split('|');
+    if (line.startsWith(PROGRESS_MARKER)) {
+      const [dl, total, est, speed, eta] = line.slice(PROGRESS_MARKER.length).split('|');
       const downloaded = toNum(dl);
       const totalBytes = toNum(total) || toNum(est);
       if (totalBytes > 0) lastPercent = Math.min(100, (downloaded / totalBytes) * 100);

@@ -178,7 +178,7 @@ describe('Downloader', () => {
     downloader.download(task, undefined, onProgress, onDone);
 
     const proc = (spawn as any).mock.results[0].value;
-    proc.stdout.emit('data', Buffer.from('C:\\Downloads\\Test Song.mp3\n'));
+    proc.stdout.emit('data', Buffer.from('[FILEPATH]C:\\Downloads\\Test Song.mp3\n'));
     proc.emit('close', 0);
 
     expect(onDone).toHaveBeenCalledWith(task, expect.any(String), expect.any(Array));
@@ -224,8 +224,7 @@ describe('Downloader', () => {
     downloader.cancel(task.taskId);
     onProgress.mockClear();
 
-    proc.stderr.emit('data', Buffer.from('[download]  42.0% of 10.00MiB at 1.00MiB/s ETA 00:05\n'));
-    proc.stdout.emit('data', Buffer.from('C:\\Downloads\\stale.mp3\n'));
+    proc.stdout.emit('data', Buffer.from('[PROGRESS]420|1000|NA|1|1\n[Merger] x\n[FILEPATH]C:\\Downloads\\stale.mp3\n'));
     proc.emit('close', 0);
 
     expect(onProgress).not.toHaveBeenCalled();
@@ -370,7 +369,7 @@ describe('Downloader', () => {
 
     const proc = (spawn as any).mock.results[0].value;
     // Split across chunks, mid-line, to exercise the partial-line buffer too.
-    proc.stdout.emit('data', Buffer.from('C:\\Downloads\\Song - Part1.mp3\nC:\\Down'));
+    proc.stdout.emit('data', Buffer.from('[FILEPATH]C:\\Downloads\\Song - Part1.mp3\n[FILEPATH]C:\\Down'));
     proc.stdout.emit('data', Buffer.from('loads\\Song - Part2.mp3\n'));
     proc.emit('close', 0);
 
@@ -379,6 +378,90 @@ describe('Downloader', () => {
       'C:\\Downloads\\Song - Part2.mp3',
       ['C:\\Downloads\\Song - Part1.mp3', 'C:\\Downloads\\Song - Part2.mp3']
     );
+  });
+
+  // E+ progress protocol: --print implies --quiet, so the app passes --no-quiet and
+  // reads EVERYTHING from stdout; only [FILEPATH]-prefixed lines are paths.
+  describe('stdout protocol (--no-quiet)', () => {
+    const start = (onProgress = vi.fn(), onDone = vi.fn()) => {
+      const task = makeTask();
+      downloader.download(task, undefined, onProgress, onDone);
+      return { task, onProgress, onDone, proc: (spawn as any).mock.results[0].value };
+    };
+    const last = (fn: ReturnType<typeof vi.fn>) => fn.mock.calls[fn.mock.calls.length - 1][0];
+
+    it('passes --no-quiet and the prefixed --print value', () => {
+      const args = downloader.buildYtDlpArgs(makeTask(), null);
+      expect(args).toContain('--no-quiet');
+      expect(args[args.indexOf('--print') + 1]).toBe('after_move:[FILEPATH]%(filepath)s');
+    });
+
+    it('turns a stdout [PROGRESS] line into downloading progress with percent and speed', () => {
+      const { onProgress, proc } = start();
+      proc.stdout.emit('data', Buffer.from('[PROGRESS]500|1000|NA|2048.5|3\n'));
+      expect(last(onProgress)).toMatchObject({ status: 'downloading', percent: 50, speed: 2048.5, eta: 3 });
+    });
+
+    it('keeps percent on an NA total and never invents a value from an NA speed', () => {
+      const { onProgress, proc } = start();
+      proc.stdout.emit('data', Buffer.from('[PROGRESS]500|1000|NA|100|3\n'));
+      proc.stdout.emit('data', Buffer.from('[PROGRESS]600|NA|NA|4096|NA\n'));
+      expect(last(onProgress)).toMatchObject({ percent: 50, speed: 4096 });
+      proc.stdout.emit('data', Buffer.from('[PROGRESS]700|NA|NA|NA|NA\n'));
+      expect(last(onProgress)).toMatchObject({ percent: 50, speed: 0 });
+    });
+
+    it('never treats non-prefixed stdout chatter as a path', () => {
+      const { onDone, proc } = start();
+      proc.stdout.emit('data', Buffer.from('[youtube] Extracting URL\n[download] Destination: C:/x.webm\nC:/bare/path.mp3\n'));
+      proc.emit('close', 0);
+      expect(onDone).toHaveBeenCalledWith(expect.anything(), '', []);
+    });
+
+    it('stitches a [FILEPATH] prefix split across two chunks', () => {
+      const { task, onDone, proc } = start();
+      proc.stdout.emit('data', Buffer.from('[FILE'));
+      proc.stdout.emit('data', Buffer.from('PATH]C:/Downloads/Split.mp3\r\n'));
+      proc.emit('close', 0);
+      expect(onDone).toHaveBeenCalledWith(task, 'C:/Downloads/Split.mp3', ['C:/Downloads/Split.mp3']);
+    });
+
+    it('ignores an indented or embedded [FILEPATH] echo and a marker inside a title', () => {
+      const { onProgress, onDone, proc } = start();
+      proc.stdout.emit('data', Buffer.from('   [FILEPATH]C:/spoof/lead.mp3\nDeleting original file C:/o/[PROGRESS]1|2.mp4\n'));
+      proc.emit('close', 0);
+      expect(onDone).toHaveBeenCalledWith(expect.anything(), '', []);
+      expect(onProgress.mock.calls.every((c) => c[0].status !== 'downloading' || c[0].percent === 100)).toBe(true);
+    });
+
+    it('moves status to embedding on an [EmbedSubtitle] marker', () => {
+      const { onProgress, proc } = start();
+      proc.stdout.emit('data', Buffer.from('[EmbedSubtitle] Embedding subtitles in "a.mkv"\n'));
+      expect(last(onProgress).status).toBe('embedding');
+    });
+
+    it('moves status to converting and embedding on stdout phase markers', () => {
+      const { onProgress, proc } = start();
+      proc.stdout.emit('data', Buffer.from('[Merger] Merging formats into "a.mkv"\n'));
+      expect(last(onProgress).status).toBe('converting');
+      proc.stdout.emit('data', Buffer.from('[Metadata] Adding metadata to "a.mkv"\n'));
+      expect(last(onProgress).status).toBe('embedding');
+    });
+
+    it('finishes done with the right path when the file already exists', () => {
+      const { task, onProgress, onDone, proc } = start();
+      proc.stdout.emit('data', Buffer.from('[download] C:/Downloads/a.mp3 has already been downloaded\n[FILEPATH]C:/Downloads/a.mp3\n'));
+      proc.emit('close', 0);
+      expect(last(onProgress)).toMatchObject({ status: 'done', percent: 100 });
+      expect(onDone).toHaveBeenCalledWith(task, 'C:/Downloads/a.mp3', ['C:/Downloads/a.mp3']);
+    });
+
+    it('collects several [FILEPATH] lines in order', () => {
+      const { task, onDone, proc } = start();
+      proc.stdout.emit('data', Buffer.from('[FILEPATH]C:/d/1.mp3\n[download] x\n[FILEPATH]C:/d/2.mp3\n[FILEPATH]C:/d/3.mp3\n'));
+      proc.emit('close', 0);
+      expect(onDone).toHaveBeenCalledWith(task, 'C:/d/3.mp3', ['C:/d/1.mp3', 'C:/d/2.mp3', 'C:/d/3.mp3']);
+    });
   });
 
   it('calls onError with the parsed stderr phrase on non-zero exit', () => {

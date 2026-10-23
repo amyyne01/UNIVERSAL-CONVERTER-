@@ -30,6 +30,7 @@ export function urlArg(value: unknown, maxLen = MAX_URL): string {
     throw new Error('Invalid input: expected a string within length limits');
   }
   if (value.startsWith('-')) throw new Error('Invalid input: URL must not start with "-"');
+  if (/[\r\n]/.test(value)) throw new Error('Invalid input: URL must be a single line');
   return value;
 }
 

@@ -23,6 +23,11 @@ describe('state-machine', () => {
     }
   });
 
+  it('lets a collection return to downloading after an item finishes post-processing', () => {
+    expect(canTransition('converting', 'downloading')).toBe(true);
+    expect(canTransition('embedding', 'downloading')).toBe(true);
+  });
+
   it('treats done and cancelled as terminal (no exits)', () => {
     expect(transitions.done).toEqual([]);
     expect(transitions.cancelled).toEqual([]);
