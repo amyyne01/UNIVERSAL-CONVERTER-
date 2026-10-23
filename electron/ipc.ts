@@ -204,7 +204,7 @@ export function registerIpcHandlers(config: ConfigManager, downloader: Downloade
       quality: clampAudioQuality(quality, plan),
       videoQuality: clampVideoQuality(videoQuality, plan),
       ...(basic && isPlaylist ? { playlistLimit: BASIC_LIMITS.maxCollectionTracks } : {}),
-      ...(taskData.playlistItems !== undefined ? { playlistItems: playlistItemsArg(taskData.playlistItems) } : {}),
+      ...(!basic && taskData.playlistItems !== undefined ? { playlistItems: playlistItemsArg(taskData.playlistItems) } : {}),
       isAudioOnly: optBool(taskData.isAudioOnly),
       isPlaylist,
       playlistName: optStr(taskData.playlistName),

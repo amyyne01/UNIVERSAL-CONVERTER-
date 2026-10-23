@@ -20,7 +20,7 @@ jobs:
       # @Customer, @Customer +, @Universal Converter
       ROLE_PINGS: "<@&1491191878845202452> <@&1501944831025610964> <@&1503872186430259372>"
       # ── Interface images attached to each post (max 10, 10 MB total) ───────
-      MEDIA_CHANGELOG: "screenshots/01-dashboard.png screenshots/05-youtube-results.png screenshots/03-queue.png screenshots/07-settings.png"
+      MEDIA_CHANGELOG: "screenshots/feature-1-sources.png screenshots/feature-2-palettes.png screenshots/feature-3-errors.png screenshots/feature-4-more.png"
       MEDIA_DOWNLOAD: "screenshots/01-dashboard.png"
       # ───────────────────────────────────────────────────────────────────────
       HOOK_CHANGELOG: ${{ secrets.DISCORD_CHANGELOG_WEBHOOK }}

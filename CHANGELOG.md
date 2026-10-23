@@ -2,22 +2,22 @@
 
 **Fewer failures, clearer failures, and a lot more places to download from.**
 
-<p align="center"><img src="screenshots/01-dashboard.png" width="760" alt="Dashboard"></p>
-
 ## What's new
 
 ### Eight more sources
 Paste a link from **X (Twitter), Vimeo, Twitch, Bandcamp, Reddit, Dailymotion, Mixcloud or Rumble** and the app recognises it straight away. Bandcamp albums and artists, Vimeo showcases and channels, Twitch videos and clips, Mixcloud users and Dailymotion playlists download as a collection.
 
-<p align="center"><img src="screenshots/05-youtube-results.png" width="760" alt="Search results"></p>
+<p align="center"><img src="screenshots/feature-1-sources.png" width="760" alt="Eight new sources"></p>
 
 ### Seven colour palettes
 Settings → Appearance now has **Aurora, Slate, Moss, Ember, Paper, Lagoon and Orchid**, each in light and dark. Pick one and the whole app changes live, with no flash on the next start. Every pair of colours was checked for readable contrast.
 
-<p align="center"><img src="screenshots/09-palette.png" width="760" alt="Palettes"></p>
+<p align="center"><img src="screenshots/feature-2-palettes.png" width="760" alt="Palettes"></p>
 
 ### Clearer failures
 When a download fails you now see why, in plain words, and what to do next: private video, removed, age-restricted, sign-in needed, not available in your country, protected content, rate limited, no network, disk full. Failed rows have a **Copy details** button for support. Retrying rows say **"Retrying in 15s (2 of 3)"**. Things that can't succeed are no longer retried.
+
+<p align="center"><img src="screenshots/feature-3-errors.png" width="760" alt="Clearer failures"></p>
 
 ### Your own logged-in access
 **Import cookies.txt** (Settings, Plus) lets downloads run as your own signed-in account, so private, members-only and age-gated videos you can already watch work.
