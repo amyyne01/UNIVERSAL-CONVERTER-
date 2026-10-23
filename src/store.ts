@@ -4,7 +4,7 @@
 import { create } from 'zustand';
 import type { AppConfig, DownloadTask, DownloadProgress, Plan, Playlist, UrlDetection } from '@shared/types';
 import type { TabKey } from '@/constants';
-import { applyTheme } from '@/lib/theme';
+import { applyTheme, applyPalette } from '@/lib/theme';
 
 export interface AppState {
   // ── downloads ──────────────────────────────────────────────
@@ -125,6 +125,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setConfig: (cfg) => {
     set({ config: cfg });
     applyTheme(cfg.theme);
+    applyPalette(cfg.palette);
   },
   updateConfig: (partial) => {
     const cur = get().config;
@@ -132,6 +133,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     set({ config: { ...cur, ...partial } });
     void window.electronAPI.config.update(partial);
     if (partial.theme) applyTheme(partial.theme);
+    if (partial.palette) applyPalette(partial.palette);
   },
 
   // ── ui ──
@@ -173,6 +175,3 @@ export const useAppStore = create<AppState>()((set, get) => ({
   clipboardOffer: null,
   setClipboardOffer: (d) => set({ clipboardOffer: d }),
 }));
-
-/** One place that answers "may this install use premium features?". */
-export const useIsPremium = (): boolean => useAppStore((s) => s.plan === 'premium');

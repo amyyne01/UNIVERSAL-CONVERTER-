@@ -21,7 +21,9 @@ vi.mock('node:fs', () => {
   const readFileSync = vi.fn();
   const writeFileSync = vi.fn();
   const statSync = vi.fn(() => ({ size: 0 }));
-  return { default: { existsSync, readFileSync, writeFileSync, statSync }, existsSync, readFileSync, writeFileSync, statSync };
+  const renameSync = vi.fn();
+  const rmSync = vi.fn();
+  return { default: { existsSync, readFileSync, writeFileSync, statSync, renameSync, rmSync }, existsSync, readFileSync, writeFileSync, statSync, renameSync, rmSync };
 });
 
 // queue.ts is a module-level singleton (N slots, shared history/timers). Each test
@@ -876,5 +878,50 @@ describe('the global pause never outlives its parked work', () => {
 
     // The guard must not overshoot into "pause never works".
     expect(startsNewWork()).toBe(false);
+  });
+});
+
+describe('progress throttle', () => {
+  const setup = async () => {
+    const send = vi.fn();
+    const win = await import('./window.js');
+    vi.mocked(win.getMainWindow).mockReturnValue({ webContents: { send } } as never);
+    const t = Q.createTask({ url: 'a', title: 'A' });
+    Q.enqueueTask(t);
+    const progress = onProgressAt(0);
+    const cb = vi.fn();
+    Q.onQueueChange(cb);
+    send.mockClear();
+    cb.mockClear();
+    const tick = (percent: number, status = 'downloading') =>
+      progress({ ...t.progress, status, percent });
+    return { send, cb, tick };
+  };
+
+  it('caps ticks at one IPC send per 250ms, keeps the latest, and never wakes listeners', async () => {
+    const { send, cb, tick } = await setup();
+    tick(1); // status change queued -> downloading: always emitted
+    send.mockClear();
+    cb.mockClear();
+    vi.advanceTimersByTime(300);
+    for (let i = 2; i <= 40; i++) { tick(i); vi.advanceTimersByTime(10); } // 390ms of ticks
+    expect(send.mock.calls.length).toBeLessThanOrEqual(2);
+    vi.advanceTimersByTime(300); // trailing send flushes the newest tick
+    expect(send.mock.calls.at(-1)![2].percent).toBe(40);
+    expect(cb).not.toHaveBeenCalled();
+  });
+
+  it('always passes a status change and the final tick through, waking listeners', async () => {
+    const { send, cb, tick } = await setup();
+    tick(1);
+    send.mockClear();
+    cb.mockClear();
+    tick(50);                  // throttled
+    tick(100);                 // final tick: immediate
+    expect(send.mock.calls.at(-1)![2].percent).toBe(100);
+    send.mockClear();
+    tick(100, 'converting');   // status change: immediate
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(cb).toHaveBeenCalled();
   });
 });

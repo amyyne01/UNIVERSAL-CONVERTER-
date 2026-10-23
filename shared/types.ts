@@ -11,12 +11,34 @@ export const SOURCE_PLATFORMS = [
   'tiktok',
   'facebook',
   'direct',
+  // First-class non-core sources: detected with an id/content type, then routed
+  // through the same generic queue path (no tab of their own).
+  'twitter',
+  'vimeo',
+  'twitch',
+  'bandcamp',
+  'reddit',
+  'dailymotion',
+  'mixcloud',
+  'rumble',
   // Any other site the engine supports (~1800 of them). Matched by the terminal
   // rule in url-detector.ts, after every named platform has had its chance.
   'generic',
   'unknown',
 ] as const;
 export type SourcePlatform = (typeof SOURCE_PLATFORMS)[number];
+
+/** Display names of the non-core sources (one home; main and renderer both read it). */
+export const MORE_SOURCE_LABELS = {
+  twitter: 'X / Twitter',
+  vimeo: 'Vimeo',
+  twitch: 'Twitch',
+  bandcamp: 'Bandcamp',
+  reddit: 'Reddit',
+  dailymotion: 'Dailymotion',
+  mixcloud: 'Mixcloud',
+  rumble: 'Rumble',
+} as const satisfies Partial<Record<SourcePlatform, string>>;
 
 /** The four UI tabs media is grouped under. */
 export type UiSource = 'youtube' | 'spotify' | 'soundcloud' | 'reels';
@@ -92,7 +114,6 @@ export type SponsorBlockMode = (typeof SPONSORBLOCK_MODES)[number];
 export const SPONSORBLOCK_CATEGORIES = [
   'sponsor', 'intro', 'outro', 'selfpromo', 'interaction', 'preview', 'music_offtopic',
 ] as const;
-export type SponsorBlockCategory = (typeof SPONSORBLOCK_CATEGORIES)[number];
 
 export const VIDEO_CONTAINERS = ['mp4', 'mkv', 'webm'] as const;
 export type VideoContainer = (typeof VIDEO_CONTAINERS)[number];
@@ -123,6 +144,9 @@ export interface DownloadExtras {
   videoContainer: VideoContainer;
   videoCodec: VideoCodec;
   cookieBrowser: CookieBrowser;
+  /** Absolute path of an imported cookies.txt (--cookies); '' = none. Set by the
+   *  main process only, and wins over cookieBrowser when present. */
+  cookiesFile: string;
   /** yt-dlp output template; '' keeps the built-in title-based naming. */
   outputTemplate: string;
   /** Bandwidth cap passed to --limit-rate, e.g. "2M"; '' = unlimited. */
@@ -144,6 +168,7 @@ export const defaultExtras: DownloadExtras = {
   videoContainer: 'mp4',
   videoCodec: 'any',
   cookieBrowser: '',
+  cookiesFile: '',
   outputTemplate: '',
   rateLimit: '',
   proxy: '',
@@ -167,6 +192,19 @@ export function mergeExtras(extras?: Partial<DownloadExtras>): DownloadExtras {
   return out;
 }
 
+/** Why a download failed, in a form the UI can branch on. Set on failed tasks
+ *  alongside the human-readable message; derived from yt-dlp stderr by
+ *  errorCodeOf() in the downloader (the one classifier). */
+export const ERROR_CODES = [
+  'private', 'removed', 'age_restricted', 'login_required', 'geo_blocked', 'drm',
+  'rate_limited', 'network', 'unsupported', 'ffmpeg_missing', 'disk_full', 'unknown',
+] as const;
+export type ErrorCode = (typeof ERROR_CODES)[number];
+
+/** §8 retry backoff (5s, 15s, 45s); its length is the retry cap. The queue schedules
+ *  with it and the Downloads tab counts down from it. */
+export const RETRY_BACKOFF_MS = [5000, 15000, 45000] as const;
+
 export interface DownloadTask {
   taskId: string;
   url: string;
@@ -181,6 +219,10 @@ export interface DownloadTask {
   playlistName: string;
   /** Cap on items taken from a collection (basic tier); absent = no cap. */
   playlistLimit?: number;
+  /** yt-dlp --playlist-items spec, e.g. "1,3-5". Validated at the IPC boundary. */
+  playlistItems?: string;
+  /** Set when the task fails; the raw message stays in progress.error. */
+  errorCode?: ErrorCode;
   embedThumbnail: boolean;
   embedMetadata: boolean;
   skipExisting: boolean;
@@ -276,6 +318,21 @@ export interface MediaMetadata {
 
 export type ThemeName = 'light' | 'dark' | 'system';
 
+/** Colour palettes: the one list of ids. `accent` is the swatch colour per theme and
+ *  must match src/palettes.css (src/test/lib/theme.test.ts enforces it). 'aurora' is
+ *  the base look in index.css and needs no palette block. */
+export const PALETTES = [
+  { id: 'aurora', label: 'Aurora', accent: { dark: 'oklch(0.800 0.135 195)', light: 'oklch(0.485 0.105 215)' } },
+  { id: 'slate',  label: 'Slate',  accent: { dark: 'oklch(0.720 0.140 258)', light: 'oklch(0.500 0.170 262)' } },
+  { id: 'moss',   label: 'Moss',   accent: { dark: 'oklch(0.760 0.170 150)', light: 'oklch(0.480 0.140 150)' } },
+  { id: 'ember',  label: 'Ember',  accent: { dark: 'oklch(0.800 0.112 25)',  light: 'oklch(0.522 0.170 25)' } },
+  { id: 'paper',  label: 'Paper',  accent: { dark: 'oklch(0.800 0.130 55)',  light: 'oklch(0.514 0.136 50)' } },
+  { id: 'lagoon', label: 'Lagoon', accent: { dark: 'oklch(0.800 0.130 165)', light: 'oklch(0.492 0.091 175)' } },
+  { id: 'orchid', label: 'Orchid', accent: { dark: 'oklch(0.800 0.170 335)', light: 'oklch(0.520 0.150 335)' } },
+] as const;
+export type PaletteName = (typeof PALETTES)[number]['id'];
+export const isPaletteName = (v: unknown): v is PaletteName => PALETTES.some((p) => p.id === v);
+
 export interface AppConfig {
   /** Config-file shape version, used by the load() migration harness (electron/config.ts). */
   schemaVersion: number;
@@ -287,6 +344,7 @@ export interface AppConfig {
   embedMetadata: boolean;
   skipExisting: boolean;
   theme: ThemeName;
+  palette: PaletteName;
   rememberLastDir: boolean;
   autoPaste: boolean;
   /** Opt-in background clipboard watcher: offers a one-click download when a
@@ -437,8 +495,14 @@ export function clampExtras(extras: Partial<DownloadExtras>, plan: Plan): Downlo
     subtitleAuto: BASIC_LIMITS.subtitleAuto && full.subtitleAuto,
     splitChapters: BASIC_LIMITS.splitChapters && full.splitChapters,
     cookieBrowser: BASIC_LIMITS.cookies ? full.cookieBrowser : '',
+    cookiesFile: BASIC_LIMITS.cookies ? full.cookiesFile : '',
   };
 }
+
+/** Outcome of picking + importing a Netscape cookies.txt (premium). */
+export type CookiesImportResult =
+  | { ok: true }
+  | { ok: false; reason: 'premium' | 'cancelled' | 'invalid' };
 
 // ── Download statistics ───────────────────────────────────────────────────────
 // Counted per calendar month in the main process, NOT derived from the download
@@ -481,6 +545,8 @@ export interface LicenseCheck {
   machineId?: string;
   integrityFailed?: boolean;
   machineMismatch?: boolean;
+  /** Offline for longer than the grace window — reconnect once to re-verify the key. */
+  offlineExpired?: boolean;
 }
 
 // #21 self-service machine transfer. releaseLicense() frees the gist claim so the

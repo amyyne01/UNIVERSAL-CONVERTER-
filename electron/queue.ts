@@ -1,9 +1,12 @@
 // N-slot FIFO download queue + retry / cancel / pause machinery.
 // See HOW-THE-APP-WORKS.md §7 (the queue and its state machine) and §8
 // (retries with exponential backoff, cancellation grace period).
-import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
+import { writeFileAtomic } from './atomic-write.js';
+import { logLine, tail } from './log.js';
 import { isAbsolute } from 'node:path';
 import type { DownloadTask, DownloadProgress, DownloadStatus } from '../shared/types.js';
+import { RETRY_BACKOFF_MS } from '../shared/types.js';
 import { canTransition } from './state-machine.js';
 import { classifyError, explainError, needsClientFallback, type Downloader } from './downloader.js';
 import { getMainWindow } from './window.js';
@@ -33,6 +36,10 @@ const recent: DownloadTask[] = [];
 const RECENT_CAP = 8;
 /** onQueueChange subscribers — fired on every status change / enqueue / finish via emit(). */
 const changeListeners = new Set<() => void>();
+/** Progress IPC throttle: last send time + pending trailing send, per task. */
+const PROGRESS_INTERVAL_MS = 250;
+const tickAt = new Map<string, number>();
+const tickTimers = new Map<string, ReturnType<typeof setTimeout>>();
 /** #26 onDownloadFailure subscribers — fired with the raw error text on every failure. */
 const failureListeners = new Set<(error: string) => void>();
 
@@ -41,8 +48,8 @@ const retryTimers = new Map<string, ReturnType<typeof setTimeout>>();
 /** Tasks cancelled within the grace window — their dying-process error is suppressed (§8). */
 const recentlyCancelled = new Map<string, ReturnType<typeof setTimeout>>();
 
-const MAX_RETRIES = 3;
-const BACKOFF_MS = [5000, 15000, 45000]; // §8: 5s, 15s, 45s (each delay triples).
+const BACKOFF_MS = RETRY_BACKOFF_MS; // §8: 5s, 15s, 45s (each delay triples).
+const MAX_RETRIES = BACKOFF_MS.length;
 const NEXT_PAUSE_MS = 500; // ponytail: brief deliberate pause between jobs (§7).
 const CANCEL_GRACE_MS = 3000; // window during which the killed process's error is expected.
 
@@ -115,7 +122,7 @@ export function removeTasks(ids: string[]): boolean {
 export function flushHistory(): void {
   if (!historyFile) return;
   if (persistTimer) { clearTimeout(persistTimer); persistTimer = null; }
-  try { writeFileSync(historyFile, JSON.stringify([...history.values()])); } catch { /* best-effort */ }
+  try { writeFileAtomic(historyFile, JSON.stringify([...history.values()])); } catch { /* best-effort */ }
 }
 
 function schedulePersist(): void {
@@ -199,6 +206,7 @@ export function createTask(partial: Partial<DownloadTask>): DownloadTask {
     // buildYtDlpArgs never saw it and --playlist-end was never passed. The free
     // ceiling silently did nothing on every collection download.
     ...(partial.playlistLimit !== undefined ? { playlistLimit: partial.playlistLimit } : {}),
+    ...(partial.playlistItems !== undefined ? { playlistItems: partial.playlistItems } : {}),
     ...(partial.fallbackProfile !== undefined ? { fallbackProfile: partial.fallbackProfile } : {}),
     // Same trap playlistLimit fell into: assembled by ipc.ts and handed in, so it
     // has to be copied out here or buildYtDlpArgs never sees a single extra.
@@ -486,9 +494,37 @@ function handleProgress(task: DownloadTask, p: DownloadProgress): void {
   if (active.get(task.taskId) !== task) return; // late callback from a killed/finished proc
   // Validate status changes through the state machine; on an illegal change keep
   // the current status but still surface the updated metrics.
-  const status = transition(task, p.status) ? p.status : task.progress.status;
+  const before = task.progress.status;
+  const status = transition(task, p.status) ? p.status : before;
   task.progress = { ...p, status };
-  emit('download:progress', task.taskId, task.progress);
+  // Status change or final tick: through emit(), which also wakes the change listeners.
+  if (status !== before || status !== 'downloading' || p.percent >= 100) {
+    clearTick(task.taskId);
+    emit('download:progress', task.taskId, task.progress);
+    return;
+  }
+  // Plain tick: IPC only (listeners care about status, not percent), ~4 Hz per task,
+  // with a trailing send so the last tick of a burst is never lost.
+  const wait = PROGRESS_INTERVAL_MS - (Date.now() - (tickAt.get(task.taskId) ?? 0));
+  if (wait <= 0) { sendTick(task); return; }
+  if (!tickTimers.has(task.taskId)) {
+    tickTimers.set(task.taskId, later(() => {
+      tickTimers.delete(task.taskId);
+      if (active.get(task.taskId) === task) sendTick(task);
+    }, wait));
+  }
+}
+
+function sendTick(task: DownloadTask): void {
+  tickAt.set(task.taskId, Date.now());
+  getMainWindow()?.webContents.send('download:progress', task.taskId, task.progress);
+}
+
+function clearTick(taskId: string): void {
+  const t = tickTimers.get(taskId);
+  if (t) clearTimeout(t);
+  tickTimers.delete(taskId);
+  tickAt.set(taskId, Date.now());
 }
 
 function handleDone(task: DownloadTask, filepath: string, filepaths: string[] = []): void {
@@ -521,6 +557,7 @@ function handleError(task: DownloadTask, error: string): void {
   if (active.get(task.taskId) !== task) return;
   if (recentlyCancelled.has(task.taskId)) { finishTask(task.taskId); return; } // expected dying-process error
   for (const cb of failureListeners) cb(error);
+  logLine('error', `download failed: ${tail(error)}`);
   const retryCount = task.retryCount ?? 0;
   if (classifyError(error) === 'retryable' && retryCount < MAX_RETRIES) {
     scheduleRetry(task, error);
@@ -585,6 +622,8 @@ function scheduleRetry(task: DownloadTask, error: string): void {
  *  (§B1, now per-slot). */
 function finishTask(taskId: string): void {
   active.delete(taskId);
+  clearTick(taskId);
+  tickAt.delete(taskId);
   for (const cb of changeListeners) { try { cb(); } catch { /* subscriber isolation */ } }
   // Deferred, never synchronous: a sync pump would re-enter a fill loop that is
   // still mid-iteration and let two frames both observe the same free slot (§7).

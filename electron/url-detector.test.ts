@@ -126,11 +126,11 @@ describe('detectUrl — fallbacks', () => {
   });
 
   it('hands any other real address to the engine as generic', () => {
-    const d = detectUrl('https://vimeo.com/123456789');
+    const d = detectUrl('https://example.org/watch/123456789');
     expect(d.platform).toBe('generic');
     expect(d.contentType).toBe('video');
     // The hostname names the site far better than the word "Link" does.
-    expect(d.label).toBe('vimeo.com video');
+    expect(d.label).toBe('example.org video');
   });
 
   it('still reports unknown for input that is not a real address', () => {
@@ -152,5 +152,63 @@ describe('detectUrl — normalisation', () => {
     const d = detectUrl('  youtube.com/watch?v=dQw4w9WgXcQ  ');
     expect(d.url).toBe('https://youtube.com/watch?v=dQw4w9WgXcQ');
     expect(d.platform).toBe('youtube');
+  });
+});
+
+describe('detectUrl — non-core sources', () => {
+  const cases: Array<[string, string, string, string | undefined, boolean]> = [
+    ['https://x.com/NASA/status/1234567890', 'twitter', 'video', '1234567890', false],
+    ['https://twitter.com/i/web/status/99', 'twitter', 'video', '99', false],
+    ['https://vimeo.com/76979871', 'vimeo', 'video', '76979871', false],
+    ['https://player.vimeo.com/video/76979871', 'vimeo', 'video', '76979871', false],
+    ['https://vimeo.com/channels/staffpicks/76979871', 'vimeo', 'video', '76979871', false],
+    ['https://vimeo.com/showcase/1234567', 'vimeo', 'playlist', '1234567', true],
+    ['https://vimeo.com/album/1234567', 'vimeo', 'playlist', '1234567', true],
+    ['https://vimeo.com/channels/staffpicks', 'vimeo', 'playlist', 'staffpicks', true],
+    ['https://www.twitch.tv/videos/2345678', 'twitch', 'video', '2345678', false],
+    ['https://clips.twitch.tv/FunnySlug-abc', 'twitch', 'video', 'FunnySlug-abc', false],
+    ['https://www.twitch.tv/chan/clip/Slug_1', 'twitch', 'video', 'Slug_1', false],
+    ['https://www.twitch.tv/somechan/videos', 'twitch', 'playlist', 'somechan', true],
+    ['https://artist.bandcamp.com/track/song-one', 'bandcamp', 'track', 'song-one', false],
+    ['https://artist.bandcamp.com/album/record', 'bandcamp', 'album', 'record', true],
+    ['https://artist.bandcamp.com/music', 'bandcamp', 'album', 'artist', true],
+    ['https://www.reddit.com/r/videos/comments/abc123/title/', 'reddit', 'video', 'abc123', false],
+    ['https://www.dailymotion.com/video/x2mvxf6', 'dailymotion', 'video', 'x2mvxf6', false],
+    ['https://dai.ly/x2mvxf6', 'dailymotion', 'video', 'x2mvxf6', false],
+    ['https://www.dailymotion.com/playlist/x6hz', 'dailymotion', 'playlist', 'x6hz', true],
+    ['https://www.mixcloud.com/someuser/some-show/', 'mixcloud', 'track', 'some-show', false],
+    ['https://www.mixcloud.com/someuser/', 'mixcloud', 'playlist', 'someuser', true],
+    ['https://rumble.com/v5abcd-some-title.html', 'rumble', 'video', 'v5abcd-some-title.html', false],
+  ];
+  it.each(cases)('%s', (url, platform, type, id, isCollection) => {
+    const d = detectUrl(url);
+    expect(d.platform).toBe(platform);
+    expect(d.contentType).toBe(type);
+    expect(d.id).toBe(id);
+    expect(d.isCollection).toBe(isCollection);
+  });
+
+  it('labels with the display name', () => {
+    expect(detectUrl('https://x.com/a/status/1').label).toBe('X / Twitter video');
+  });
+
+  it.each([
+    'https://twitch.tv.evil.com/videos/123',
+    'https://evil.com/twitch.tv/videos/123',
+    'https://notx.com/a/status/1',
+    'https://x.com.evil.io/a/status/1',
+    'https://vimeo.com.evil.io/76979871',
+    'https://evilbandcamp.com/track/x',
+    'https://bandcamp.com.evil.io/track/x',
+    'https://evil.com/?u=https://vimeo.com/76979871',
+    'https://fakemixcloud.com/u/show/',
+  ])('lookalike %s stays generic', (url) => {
+    expect(detectUrl(url).platform).toBe('generic');
+  });
+
+  it('a bare Twitch channel (live) is not treated as a collection', () => {
+    const d = detectUrl('https://www.twitch.tv/somechan');
+    expect(d.platform).toBe('generic');
+    expect(d.isCollection).toBe(false);
   });
 });

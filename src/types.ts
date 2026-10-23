@@ -5,6 +5,7 @@ import type {
   AppConfig,
   UrlDetection,
   SearchResult,
+  CookiesImportResult,
   DownloadTask,
   DownloadProgress,
   Track,
@@ -71,6 +72,9 @@ export interface ElectronAPI {
   };
   dialog: {
     selectDir: () => Promise<string | null>;
+  };
+  cookies: {
+    import: () => Promise<CookiesImportResult>;
   };
   shell: {
     showItemInFolder: (path: string) => Promise<RevealResult>;

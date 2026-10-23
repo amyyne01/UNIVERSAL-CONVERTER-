@@ -6,5 +6,5 @@ export interface SpinnerProps {
 }
 
 export function Spinner({ size = 16, className = '' }: SpinnerProps) {
-  return <Loading size={size} weight="thin" className={`animate-spin ${className}`} />;
+  return <Loading size={size} weight="thin" className={`animate-spin motion-reduce:animate-none ${className}`} />;
 }

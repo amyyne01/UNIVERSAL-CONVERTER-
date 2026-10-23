@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { ProgressBar } from '@/components/ui/ProgressBar';
+import { Spinner } from '@/components/ui/Spinner';
 import type { DownloadStatus } from '@shared/types';
 
 /** Find a div by class membership (avoids CSS-selector slash escaping issues). */
@@ -93,5 +94,38 @@ describe('ProgressBar', () => {
   it('sets aria-label from the optional label prop', () => {
     render(<ProgressBar percent={50} status="downloading" label="video.mp4" />);
     expect(screen.getByRole('progressbar', { name: 'video.mp4' })).toBeInTheDocument();
+  });
+});
+
+describe('reduced motion (setup mocks useReducedMotion → true)', () => {
+  it('keeps a static, announced busy state for indeterminate phases', () => {
+    render(<ProgressBar percent={0} status="converting" label="Song" />);
+    // No sweep to watch, so the busy state is carried by text a reader gets too.
+    expect(screen.getByRole('progressbar', { name: 'Song' })).toHaveAttribute('aria-valuetext', 'converting');
+  });
+
+  it('Spinner switches its spin off under prefers-reduced-motion', () => {
+    const { container } = render(<Spinner />);
+    expect(container.querySelector('svg')).toHaveClass('motion-reduce:animate-none');
+  });
+});
+
+describe('transform-driven fill', () => {
+  it('scales the fill with scaleX from the left edge instead of animating width', () => {
+    render(<ProgressBar percent={42} status="downloading" />);
+    const fill = screen.getByRole('progressbar').firstElementChild as HTMLElement;
+    expect(fill.style.transform).toBe('scaleX(0.42)');
+    expect(fill.style.width).toBe('');
+    expect(fill).toHaveClass('origin-left');
+  });
+
+  it('clamps the scale to 0..1', () => {
+    render(<ProgressBar percent={150} status="downloading" />);
+    expect((screen.getByRole('progressbar').firstElementChild as HTMLElement).style.transform).toBe('scaleX(1)');
+  });
+
+  it('drops the live sheen under reduced motion', () => {
+    const { container } = render(<ProgressBar percent={50} status="downloading" />);
+    expect(container.querySelector('span[aria-hidden]')).toBeNull();
   });
 });

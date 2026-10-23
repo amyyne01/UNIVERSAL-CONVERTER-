@@ -11,6 +11,8 @@ vi.mock('node:fs', () => {
       return store.get(p);
     }),
     writeFileSync: vi.fn((p: string, data: unknown) => { store.set(p, String(data)); }),
+    renameSync: vi.fn((a: string, b: string) => { store.set(b, store.get(a) as string); store.delete(a); }),
+    rmSync: vi.fn(),
     statSync: vi.fn((p: string) => {
       if (!sizes.has(p)) throw new Error('ENOENT');
       return { size: sizes.get(p) };

@@ -27,9 +27,3 @@ export const transitions: Record<DownloadStatus, readonly DownloadStatus[]> = {
 export function canTransition(from: DownloadStatus, to: DownloadStatus): boolean {
   return transitions[from].includes(to);
 }
-
-export function assertTransition(from: DownloadStatus, to: DownloadStatus): void {
-  if (!canTransition(from, to)) {
-    throw new Error(`Illegal download status transition: ${from} -> ${to}`);
-  }
-}

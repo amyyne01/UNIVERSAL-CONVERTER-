@@ -20,14 +20,15 @@ import { AnimatePresence, motion, Reorder, useDragControls, useReducedMotion } f
 import {
   Download, Close, Cancel, Retry, OpenFolder, Check, Alert, Clock,
   CheckboxChecked, CheckboxEmpty, Remove, CheckboxMixed, Track, Pause, Play,
-  Loading, DragHandle, MoveToFront,
+  Loading, DragHandle, MoveToFront, CopyText,
 } from '@/components/ui/icons';
 import { useAppStore } from '@/store';
 import { Button, IconButton, ProgressBar } from '@/components/ui';
 import { PLATFORMS } from '@/constants';
 import { formatBytes, formatDuration } from '@/lib/format';
 import { revealFile } from '@/lib/reveal';
-import type { DownloadStatus, DownloadTask, SourcePlatform } from '@shared/types';
+import { describeError } from '@/lib/errors';
+import { MORE_SOURCE_LABELS, RETRY_BACKOFF_MS, type DownloadStatus, type DownloadTask, type SourcePlatform } from '@shared/types';
 
 // ── formatters ────────────────────────────────────────────────────────────────
 // Byte/duration formatting lives once in src/lib/format.ts (hour-aware).
@@ -55,6 +56,24 @@ function thumbFor(task: DownloadTask): string {
     if (m) return `https://i.ytimg.com/vi/${m[1]}/mqdefault.jpg`;
   }
   return '';
+}
+
+/** Seconds left on a retry's backoff, or null when the row isn't retrying. The
+ *  queue emits no countdown, only the 'retrying' status — but the delay is a pure
+ *  function of retryCount (RETRY_BACKOFF_MS), so the row counts it down from the
+ *  moment it enters that status. */
+function useRetryCountdown(status: DownloadStatus, retryCount = 0): number | null {
+  const [left, setLeft] = useState<number | null>(null);
+  useEffect(() => {
+    if (status !== 'retrying') { setLeft(null); return; }
+    const delay = RETRY_BACKOFF_MS[Math.min(retryCount, RETRY_BACKOFF_MS.length - 1)];
+    const end = Date.now() + delay;
+    const tick = (): void => setLeft(Math.max(0, Math.ceil((end - Date.now()) / 1000)));
+    tick();
+    const id = setInterval(tick, 500);
+    return () => clearInterval(id);
+  }, [status, retryCount]);
+  return left;
 }
 
 // ── status config ─────────────────────────────────────────────────────────────
@@ -90,12 +109,14 @@ const PLAT_LABEL: Record<SourcePlatform, string> = {
   soundcloud: PLATFORMS.find(p => p.key === 'soundcloud')!.label,
   instagram: 'Reels',  tiktok: 'TikTok',    facebook: 'Facebook',
   direct: 'Direct',    generic: 'Link',      unknown: 'Unknown',
+  ...MORE_SOURCE_LABELS,
 };
 
 const PLAT_TEXT: Record<SourcePlatform, string> = {
   youtube: 'text-youtube',      spotify: 'text-spotify',  soundcloud: 'text-soundcloud',
   instagram: 'text-reels',      tiktok: 'text-reels',     facebook: 'text-reels',
   direct: 'text-text-secondary', generic: 'text-text-secondary', unknown: 'text-text-secondary',
+  ...(Object.fromEntries(Object.keys(MORE_SOURCE_LABELS).map(k => [k, 'text-text-secondary'])) as Record<keyof typeof MORE_SOURCE_LABELS, string>),
 };
 
 // ── shared constants ──────────────────────────────────────────────────────────
@@ -206,6 +227,12 @@ export const QueueCard = memo(function QueueCard({
   const isTransferring = status === 'downloading';
   const pct = Math.max(0, Math.min(100, isDone ? 100 : percent));
   const state = STATE[status];
+  const retryLeft = useRetryCountdown(status, task.retryCount);
+  // Failed rows lead with the readable reason; the raw yt-dlp text stays one
+  // click away ("Copy details"). Rows saved before errorCode existed fall back
+  // to the raw text, which is all they have.
+  const isFailedRow = status === 'failed';
+  const reason = isFailedRow && task.errorCode ? describeError(task.errorCode) : progress.error;
   const label = title || baseName(progress.filename) || 'Untitled';
 
   // The look-up facts, one line, one order, every state. Empty parts drop out
@@ -297,13 +324,17 @@ export const QueueCard = memo(function QueueCard({
 
         <p
           title={isFailed && progress.error ? progress.error : undefined}
-          className="text-[11px] mt-0.5 truncate leading-snug"
+          className={`text-[11px] mt-0.5 leading-snug ${isFailedRow ? 'line-clamp-2' : 'truncate'}`}
         >
           <span className={`font-medium ${PLAT_TEXT[source]}`}>{PLAT_LABEL[source]}</span>
           {/* Muted, matching every other surface's subtitle. It measures 5.9:1 on
               light surface / 4.9:1 on the tertiary — comfortably past the bar. */}
-          {isFailed && progress.error ? (
-            <span className="text-error">{` · ${progress.error}`}</span>
+          {isFailed && reason ? (
+            <span className="text-error">{` · ${reason}`}</span>
+          ) : status === 'retrying' && retryLeft !== null ? (
+            <span className="text-warning">
+              {` · Retrying in ${retryLeft}s (${Math.min((task.retryCount ?? 0) + 1, RETRY_BACKOFF_MS.length)} of ${RETRY_BACKOFF_MS.length})`}
+            </span>
           ) : (
             <>
               {uploader && <span className="text-text-muted">{` · ${uploader}`}</span>}
@@ -332,7 +363,7 @@ export const QueueCard = memo(function QueueCard({
             <span className="font-mono tabular-nums text-[10.5px] text-text-muted mt-0.5">{rate}</span>
           </>
         ) : state && (
-          <span className={`inline-flex items-center gap-1.5 text-[11.5px] ${state.tone}`}>
+          <span className={`inline-flex items-center gap-1.5 text-[11.5px] ${state.tone} ${isDone || isFailedRow ? 'badge-pop' : ''}`}>
             <state.icon size={13} />
             {state.label}
           </span>
@@ -357,6 +388,13 @@ export const QueueCard = memo(function QueueCard({
         )}
         {isActive && (
           <IconButton icon={Close} label="Cancel" size={14} onClick={onCancel} className="w-7 h-7 rounded" />
+        )}
+        {isFailedRow && progress.error && (
+          <IconButton
+            icon={CopyText} label="Copy details" size={14}
+            onClick={() => { void navigator.clipboard?.writeText(progress.error); }}
+            className="w-7 h-7 rounded"
+          />
         )}
         {isFailed && (
           <IconButton icon={Retry} label="Retry" size={14} onClick={onRetry} className="w-7 h-7 rounded text-error hover:bg-error/10" />

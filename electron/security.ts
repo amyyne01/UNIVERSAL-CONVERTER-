@@ -33,6 +33,35 @@ export function urlArg(value: unknown, maxLen = MAX_URL): string {
   return value;
 }
 
+const MAX_PLAYLIST_ITEMS = 256;
+const PLAYLIST_ITEMS_RE = /^\d+(-\d+)?(,\d+(-\d+)?)*$/;
+
+/** A yt-dlp --playlist-items spec ("1,3-5"): digits, commas and ranges only, bounded.
+ *  Throws on anything else — it becomes a spawn argument. */
+export function playlistItemsArg(value: unknown): string {
+  if (typeof value !== 'string' || value.length > MAX_PLAYLIST_ITEMS || !PLAYLIST_ITEMS_RE.test(value)) {
+    throw new Error('Invalid input: playlistItems');
+  }
+  return value;
+}
+
+export const MAX_COOKIES_BYTES = 2 * 1024 * 1024;
+
+/** True when `text` is a plausible Netscape cookies.txt: bounded, and every line is
+ *  blank, a `#` comment, or 7 tab-separated fields. The content stays untrusted
+ *  (yt-dlp parses it); this only refuses obvious non-cookie files before they are
+ *  copied under userData. */
+export function isNetscapeCookies(text: string): boolean {
+  if (text.length === 0 || text.length > MAX_COOKIES_BYTES || text.includes('\0')) return false;
+  let cookies = 0;
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.trim() || line.startsWith('#')) continue;
+    if (line.split('\t').length !== 7) return false;
+    cookies++;
+  }
+  return cookies > 0;
+}
+
 // ── IPC trust boundary: sender attestation + rate limiting (Seam #45) ─────────
 // secure() wraps every invoke handler so each channel — current and future —
 // inherits these two checks. The renderer is a fixed SPA served from the app's

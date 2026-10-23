@@ -157,6 +157,14 @@ describe('Updater.check', () => {
     expect(of('update:available')).toHaveLength(0);
   });
 
+  it('refuses when a trusted URL redirects to an untrusted host', async () => {
+    const fetchFn = vi.fn(async () => ({ ok: true, status: 200, url: 'https://evil.example/feed.json', json: async () => release() }));
+    const { updater, of } = make({ fetchFn: fetchFn as never });
+    await updater.check();
+    expect(of('update:error')[0].payload.message).toMatch(/redirected to untrusted host/);
+    expect(of('update:available')).toHaveLength(0);
+  });
+
   it('surfaces a network failure as an error event rather than throwing', async () => {
     const fetchFn = vi.fn(async () => { throw new Error('offline'); });
     const { updater, of } = make({ fetchFn: fetchFn as never });

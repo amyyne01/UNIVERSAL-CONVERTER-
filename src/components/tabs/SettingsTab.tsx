@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, type ReactNode } from 'react';
+import { useState, useEffect, useCallback, type KeyboardEvent, type ReactNode } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import {
   Sun, Moon, SystemTheme, OpenFolder, Refresh, ChevronRight,
@@ -14,7 +14,8 @@ import { Card } from '@/components/ui/Card';
 import { Chip } from '@/components/ui/Chip';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { SegmentedCapsule, type SegmentOption } from '@/components/ui/SegmentedCapsule';
-import type { ThemeName, YtdlpUpdateStatus } from '@shared/types';
+import { PALETTES, type PaletteName, type ThemeName, type YtdlpUpdateStatus } from '@shared/types';
+import { resolveTheme } from '@/lib/theme';
 import {
   AUDIO_FORMATS, AUDIO_QUALITIES, VIDEO_QUALITIES,
   SUBTITLE_MODE_OPTIONS, SPONSORBLOCK_OPTIONS, VIDEO_CONTAINER_OPTIONS,
@@ -29,6 +30,45 @@ const THEME_OPTIONS: readonly SegmentOption<ThemeName>[] = [
   { value: 'dark',  label: 'Dark',  icon: Moon },
   { value: 'system', label: 'System', icon: SystemTheme },
 ];
+
+/** Colour-palette radiogroup: one tab stop, arrow keys move AND select (so the app
+ *  previews live), each swatch is its palette's accent for the current mode. */
+function PaletteSwatches({ value, mode, onChange }: {
+  value: PaletteName; mode: 'light' | 'dark'; onChange: (p: PaletteName) => void;
+}) {
+  const move = (e: KeyboardEvent<HTMLButtonElement>, i: number) => {
+    const step = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0;
+    if (!step) return;
+    e.preventDefault();
+    const next = PALETTES[(i + step + PALETTES.length) % PALETTES.length];
+    onChange(next.id);
+    (e.currentTarget.parentElement?.children[PALETTES.indexOf(next)] as HTMLElement | undefined)?.focus();
+  };
+  return (
+    <div role="radiogroup" aria-label="Colour palette" className="no-drag flex gap-2">
+      {PALETTES.map((p, i) => {
+        const active = p.id === value;
+        return (
+          <button
+            key={p.id}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            aria-label={p.label}
+            title={p.label}
+            tabIndex={active ? 0 : -1}
+            onClick={() => onChange(p.id)}
+            onKeyDown={(e) => move(e, i)}
+            className={`focus-visible:focus-ring size-6 rounded-full transition-shadow ${
+              active ? 'ring-2 ring-offset-2 ring-text-primary ring-offset-bg-surface' : 'hover:ring-2 hover:ring-border'
+            }`}
+            style={{ background: p.accent[mode] }}
+          />
+        );
+      })}
+    </div>
+  );
+}
 
 const DAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'] as const;
 const DAY_NAMES = [
@@ -187,6 +227,16 @@ export function SettingsTab() {
     activated: false,
   });
   const [cooldownUntil, setCooldownUntil] = useState<string | null>(null);
+  const [cookiesNote, setCookiesNote] = useState('');
+
+  // Same lock as the "Sign in with" picker: a locked tier nudges instead of opening the dialog.
+  async function importCookies(): Promise<void> {
+    if (locks.lockedCookieBrowsers.length > 0) return locks.nudge(premiumCopy.cookies());
+    const r = await window.electronAPI.cookies.import();
+    if (r.ok) setCookiesNote('Cookies imported. Age-gated and private links can now be fetched.');
+    else if (r.reason === 'invalid') setCookiesNote("That file isn't a cookies.txt export. Export it again from your browser and retry.");
+    else if (r.reason === 'premium') locks.nudge(premiumCopy.cookies());
+  }
 
   // license check + update event listeners on mount
   useEffect(() => {
@@ -552,6 +602,15 @@ export function SettingsTab() {
 
           <div className="divide-y divide-border-soft">
             <Row
+              label="Import cookies.txt"
+              desc={cookiesNote || 'For sites your browser is signed in to but cannot be read directly'}
+            >
+              <Button variant="ghost" size="sm" onClick={() => { void importCookies(); }}>
+                Choose file
+              </Button>
+            </Row>
+
+            <Row
               label="Auto-generated captions"
               desc="Use machine-written captions when a video has no real ones"
             >
@@ -614,6 +673,14 @@ export function SettingsTab() {
               options={THEME_OPTIONS}
               value={config.theme}
               onChange={(t) => updateConfig({ theme: t })}
+            />
+          </Row>
+
+          <Row label="Palette" desc="Accent and surface colours">
+            <PaletteSwatches
+              value={config.palette}
+              mode={resolveTheme(config.theme)}
+              onChange={(palette) => updateConfig({ palette })}
             />
           </Row>
 

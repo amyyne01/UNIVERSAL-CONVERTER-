@@ -78,18 +78,6 @@ export const SPONSORBLOCK_OPTIONS: readonly Option[] = [
   { value: 'remove', label: 'Cut them out' },
 ];
 
-// Which segments SponsorBlock acts on. Labels are the community's category
-// names in plain English; the values must match SPONSORBLOCK_CATEGORIES.
-export const SPONSORBLOCK_CATEGORY_OPTIONS: readonly Option[] = [
-  { value: 'sponsor',        label: 'Sponsor' },
-  { value: 'intro',          label: 'Intro' },
-  { value: 'outro',          label: 'Outro' },
-  { value: 'selfpromo',      label: 'Self-promo' },
-  { value: 'interaction',    label: 'Subscribe reminder' },
-  { value: 'preview',        label: 'Recap' },
-  { value: 'music_offtopic', label: 'Non-music' },
-];
-
 export const VIDEO_CONTAINER_OPTIONS: readonly Option[] = [
   { value: 'mp4',  label: 'MP4 (most compatible)' },
   { value: 'mkv',  label: 'MKV (keeps everything)' },

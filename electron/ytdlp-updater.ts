@@ -153,6 +153,8 @@ export class YtdlpUpdater {
     const fetchFn = this.deps.fetchFn ?? fetch;
     const res = await fetchFn(url, { headers: { 'User-Agent': 'AHG-Universal-Converter' } });
     if (!res.ok) throw new Error(`Engine update failed: HTTP ${res.status}`);
+    // fetch follows redirects; the host that actually answered must be trusted too.
+    if (res.url && !isTrustedReleaseHost(res.url)) throw new Error(`Engine update refused: redirected to untrusted host "${res.url}"`);
     return res;
   }
 

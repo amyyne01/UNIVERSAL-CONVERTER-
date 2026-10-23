@@ -9,7 +9,7 @@ import type { UrlDetection } from '../shared/types.js';
 // forwarding in main.ts — to the one already-running window rather than a second
 // copy of it.
 
-export const PROTOCOL_SCHEME = 'ahg';
+const PROTOCOL_SCHEME = 'ahg';
 const PREFIX = `${PROTOCOL_SCHEME}://`;
 
 /** Register as the OS handler for ahg:// links. In dev the executable IS

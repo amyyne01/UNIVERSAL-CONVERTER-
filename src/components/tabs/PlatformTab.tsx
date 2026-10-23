@@ -12,6 +12,7 @@ import { Button, Input, Select, FormatSelector, SegmentedCapsule } from '@/compo
 import { buildDownloadRequest, spotifyDownloadUrl } from '@/lib/download';
 import { useTierLocks, premiumCopy, basicCopy } from '@/lib/tier';
 import { formatDuration } from '@/lib/format';
+import { describeError } from '@/lib/errors';
 import { ShortFormPreview } from '@/components/ShortFormPreview';
 import { searchToItem, trackToItem, type ResultItem } from '@/lib/results';
 import type { AudioFormat, VideoQuality, SourcePlatform, MediaMetadata, Track } from '@shared/types';
@@ -83,8 +84,6 @@ function ipcReason(err: unknown, fallback: string): string {
   const reason = raw.replace(IPC_WRAPPER, '').trim();
   return reason.length > 2 && reason.length < 200 ? reason : fallback;
 }
-
-const GENERIC_FETCH_ERROR = 'Something went wrong — check your connection and try again.';
 
 export function PlatformTab({ platform }: PlatformTabProps) {
   const def = PLATFORMS.find((p) => p.key === platform)!;
@@ -350,7 +349,7 @@ export function PlatformTab({ platform }: PlatformTabProps) {
         // video, a dead link and a dropped connection all read the same.
         let metaError = '';
         const meta = await window.electronAPI.url.fetchMetadata(target).catch((err) => {
-          metaError = ipcReason(err, GENERIC_FETCH_ERROR);
+          metaError = ipcReason(err, describeError('unknown'));
           return null;
         });
         // Short-form is previewed, not listed: the poster IS how you recognise a
@@ -365,7 +364,7 @@ export function PlatformTab({ platform }: PlatformTabProps) {
         // Same reasoning for the long-form tabs. A null meta used to fall through and
         // render a card whose title was the pasted URL and whose thumbnail was blank —
         // which is exactly what "it didn't fetch the link" looks like from the outside.
-        if (!meta) return setPhase({ k: 'error', msg: metaError || GENERIC_FETCH_ERROR });
+        if (!meta) return setPhase({ k: 'error', msg: metaError || describeError('unknown') });
         if (platform === 'reels' && meta) setPreview(meta);
         setResults([
           {
@@ -394,7 +393,7 @@ export function PlatformTab({ platform }: PlatformTabProps) {
     } catch (err) {
       setPhase({
         k: 'error',
-        msg: err instanceof ValidationError ? err.message : ipcReason(err, GENERIC_FETCH_ERROR),
+        msg: err instanceof ValidationError ? err.message : ipcReason(err, describeError('unknown')),
       });
     } finally {
       // Belt and braces: no branch may leave the field disabled with nothing on
@@ -532,7 +531,7 @@ export function PlatformTab({ platform }: PlatformTabProps) {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.16, ease: EASE }}
       >
-        {phase.k === 'busy' && <FetchSkeleton note={phase.note} square={audioOnlyPlatform} reduce={!!reduce} />}
+        {phase.k === 'busy' && <FetchSkeleton note={phase.note} square={audioOnlyPlatform} />}
 
         {phase.k === 'idle' && (
           <EmptyPanel icon={Icon} accentIcon={accent} title={copy.hint}>
@@ -797,7 +796,7 @@ function SingleResultCard({
 // ── Waiting / nothing states ─────────────────────────────────────────────────
 
 /** Row-shaped placeholders: the answer lands where the wait was, so nothing jumps. */
-function FetchSkeleton({ note, square, reduce }: { note: string; square: boolean; reduce: boolean }) {
+function FetchSkeleton({ note, square }: { note: string; square: boolean }) {
   return (
     <section aria-busy="true" aria-live="polite">
       <div className="px-1 mb-2 font-mono text-[10.5px] tracking-[0.08em] uppercase text-text-muted">
@@ -805,17 +804,12 @@ function FetchSkeleton({ note, square, reduce }: { note: string; square: boolean
       </div>
       {/* Six, not four: six divides evenly by the 1/2/3 column counts the results
           land in, so the placeholder block is the same shape as the answer. */}
-      <div className={`${RESULT_GRID} ${RESULT_SURFACE}`}>
+      <div className={`${RESULT_GRID} ${RESULT_SURFACE} skeleton-shimmer`}>
         {[0, 1, 2, 3, 4, 5].map((i) => (
-          <motion.div
+          <div
             key={i}
             aria-hidden
             className={`flex items-center gap-4 px-3.5 py-3 ${RESULT_CELL}`}
-            // Opacity only — a 4-row breathe reads as "working" without costing a
-            // layout pass, and reduced motion gets the same shapes, held still.
-            initial={{ opacity: reduce ? 0.6 : 0.45 }}
-            animate={reduce ? undefined : { opacity: [0.45, 0.8, 0.45] }}
-            transition={{ duration: 1.4, repeat: Infinity, delay: i * 0.12, ease: 'easeInOut' }}
           >
             <div className={`shrink-0 rounded-md bg-bg-tertiary ${artClass(square)}`} />
             <div className="min-w-0 flex-1 space-y-2">
@@ -823,7 +817,7 @@ function FetchSkeleton({ note, square, reduce }: { note: string; square: boolean
               <div className="h-2.5 rounded bg-bg-tertiary" style={{ width: `${38 - i * 4}%` }} />
             </div>
             <div className="shrink-0 h-8 w-[74px] rounded-md bg-bg-tertiary" />
-          </motion.div>
+          </div>
         ))}
       </div>
     </section>

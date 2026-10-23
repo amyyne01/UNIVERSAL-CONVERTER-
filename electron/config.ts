@@ -1,7 +1,8 @@
 import { app } from 'electron';
-import { readFileSync, writeFileSync, renameSync } from 'node:fs';
+import { readFileSync, writeFileSync, statSync } from 'node:fs';
+import { writeFileAtomic } from './atomic-write.js';
 import path from 'node:path';
-import type { AppConfig } from '../shared/types.js';
+import { isPaletteName, type AppConfig } from '../shared/types.js';
 
 // HOW-THE-APP-WORKS §10: persisted, human-readable settings in the per-user
 // app-data folder. Defaults laid first, saved values merged on top, unknown
@@ -16,6 +17,7 @@ export const defaultConfig: AppConfig = {
   embedMetadata: true,
   skipExisting: true,
   theme: 'system',
+  palette: 'aurora',
   rememberLastDir: true,
   autoPaste: true,
   clipboardWatch: false,
@@ -77,6 +79,18 @@ export function migrateConfig(obj: Record<string, unknown>): Record<string, unkn
   }
   return result;
 }
+
+const isDir = (p: string): boolean => {
+  try { return statSync(p).isDirectory(); } catch { return false; }
+};
+
+/** Shape rules for string settings that reach spawn() or the filesystem. */
+const STRING_RULES: Record<string, (v: string) => boolean> = {
+  outputDir: isDir,
+  proxy: (v) => /^(https?|socks5h?):\/\//.test(v),
+  rateLimit: (v) => /^\d+[KMG]?$/.test(v),
+  palette: isPaletteName,
+};
 
 export class ConfigManager {
   private config: AppConfig;
@@ -223,7 +237,12 @@ export class ConfigManager {
       const elem = key === 'sponsorBlockCategories' ? 'string' : 'number';
       return value.every((v) => typeof v === elem);
     }
-    return typeof value === typeof def;
+    if (typeof value !== typeof def) return false;
+    // Boundary shapes for values that become spawn args / write targets. '' always
+    // passes (unset); anything else that doesn't fit is rejected, never coerced.
+    if (value === '') return key !== 'palette';
+    const rule = STRING_RULES[key];
+    return rule ? rule(value as string) : true;
   }
 
   /** Re-anchor an empty outputDir to the OS Downloads folder on every write, not just
@@ -251,11 +270,8 @@ export class ConfigManager {
       // Rotate the backup ring before overwriting, so a later corrupt config.json
       // can be restored from a recent-good snapshot instead of resetting to defaults.
       this.rotateBackups();
-      // Atomic write: a crash mid-write to the tmp file leaves the real config.json
-      // untouched, instead of truncated (which load() would silently factory-reset).
-      const tmpPath = `${this.filePath}.tmp`;
-      writeFileSync(tmpPath, JSON.stringify(this.config, null, 2), 'utf-8');
-      renameSync(tmpPath, this.filePath);
+      // Atomic: a crash mid-write leaves config.json untouched, not truncated.
+      writeFileAtomic(this.filePath, JSON.stringify(this.config, null, 2));
     } catch { /* best-effort persistence */ }
   }
 }

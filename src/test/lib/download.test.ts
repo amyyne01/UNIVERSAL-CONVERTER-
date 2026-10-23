@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildDownloadRequest, spotifyDownloadUrl } from '@/lib/download';
+import { buildDownloadRequest, spotifyDownloadUrl, toPlaylistItems } from '@/lib/download';
 import type { AppConfig, Track } from '@shared/types';
 
 const config: AppConfig = {
@@ -83,5 +83,15 @@ describe('spotifyDownloadUrl', () => {
 
   it('falls back to a ytsearch query when no spotifyUrl', () => {
     expect(spotifyDownloadUrl(track)).toBe('ytsearch:Artist - Song');
+  });
+});
+
+describe('toPlaylistItems', () => {
+  it('collapses runs into ranges', () => {
+    expect(toPlaylistItems([1, 2, 3, 5])).toBe('1-3,5');
+    expect(toPlaylistItems([5, 1, 3, 2, 2])).toBe('1-3,5');
+    expect(toPlaylistItems([4])).toBe('4');
+    expect(toPlaylistItems([])).toBe('');
+    expect(toPlaylistItems([1, 3, 5])).toBe('1,3,5');
   });
 });

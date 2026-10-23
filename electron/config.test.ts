@@ -8,11 +8,13 @@ vi.mock('node:fs', () => {
   const readFileSync = vi.fn();
   const writeFileSync = vi.fn();
   const renameSync = vi.fn();
-  return { default: { readFileSync, writeFileSync, renameSync }, readFileSync, writeFileSync, renameSync };
+  const rmSync = vi.fn();
+  const statSync = vi.fn();
+  return { default: { readFileSync, writeFileSync, renameSync, rmSync, statSync }, readFileSync, writeFileSync, renameSync, rmSync, statSync };
 });
 
 import { ConfigManager, defaultConfig, migrateConfig } from './config';
-import { readFileSync, writeFileSync, renameSync } from 'node:fs';
+import { readFileSync, writeFileSync, renameSync, statSync } from 'node:fs';
 
 const mockRead = vi.mocked(readFileSync);
 const mockWrite = vi.mocked(writeFileSync);
@@ -25,9 +27,50 @@ beforeEach(() => {
   mockRead.mockImplementation(() => {
     throw new Error('ENOENT');
   });
+  // every path is an existing directory unless a test says otherwise
+  vi.mocked(statSync).mockReturnValue({ isDirectory: () => true } as never);
+});
+
+describe('boundary validation of spawn/filesystem settings', () => {
+  it('rejects a bad outputDir, proxy and rateLimit and keeps the prior value', () => {
+    const cfg = new ConfigManager();
+    cfg.set('proxy', 'http://p:8080');
+    cfg.set('rateLimit', '2M');
+    cfg.set('outputDir', 'D:\\Good');
+    vi.mocked(statSync).mockImplementation(() => { throw new Error('ENOENT'); });
+    cfg.set('outputDir', 'D:\\Gone');
+    cfg.update({ proxy: 'ftp://x', rateLimit: '2 M --exec' });
+    cfg.set('proxy', '--proxy');
+    expect(cfg.get('outputDir')).toBe('D:\\Good');
+    expect(cfg.get('proxy')).toBe('http://p:8080');
+    expect(cfg.get('rateLimit')).toBe('2M');
+  });
+
+  it('rejects an outputDir that is a file, accepts socks5h and plain numbers', () => {
+    const cfg = new ConfigManager();
+    vi.mocked(statSync).mockReturnValue({ isDirectory: () => false } as never);
+    cfg.set('outputDir', 'D:\\file.txt');
+    expect(cfg.get('outputDir')).toBe('C:\\Downloads');
+    cfg.set('proxy', 'socks5h://127.0.0.1:9050');
+    cfg.set('rateLimit', '500');
+    expect(cfg.get('proxy')).toBe('socks5h://127.0.0.1:9050');
+    expect(cfg.get('rateLimit')).toBe('500');
+  });
 });
 
 describe('ConfigManager', () => {
+  it('accepts a known palette and strips an unknown or empty one', () => {
+    mockRead.mockReturnValue(JSON.stringify({ palette: 'moss' }));
+    expect(new ConfigManager().get('palette')).toBe('moss');
+    for (const bad of ['neon', '', 7]) {
+      mockRead.mockReturnValue(JSON.stringify({ palette: bad }));
+      const cfg = new ConfigManager();
+      expect(cfg.get('palette')).toBe('aurora');
+      cfg.set('palette', bad as never);
+      expect(cfg.get('palette')).toBe('aurora');
+    }
+  });
+
   it('fills missing keys with defaults', () => {
     mockRead.mockReturnValue(JSON.stringify({ outputDir: 'D:\\Music' }));
     const cfg = new ConfigManager();

@@ -41,6 +41,7 @@ export {
   DownloadSimple as Download,
   LinkSimple as Link,
   Clipboard as Paste,
+  Copy as CopyText,
   FolderOpen as OpenFolder,
   ArrowClockwise as Refresh,
   ArrowCounterClockwise as Retry,

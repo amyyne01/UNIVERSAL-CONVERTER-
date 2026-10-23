@@ -1,6 +1,6 @@
 // Theme resolution. The effective theme is also set pre-paint in index.html;
 // this keeps it in sync at runtime and tracks the OS when set to 'system'.
-import type { ThemeName } from '@shared/types';
+import { isPaletteName, type PaletteName, type ThemeName } from '@shared/types';
 
 const KEY = 'ahg-theme';
 // One cached MediaQueryList: add/removeEventListener must target the SAME object,
@@ -32,4 +32,15 @@ export function initTheme(): void {
     if (current === 'system') applyTheme('system');
   };
   mq().addEventListener('change', listener);
+}
+
+const PALETTE_KEY = 'ahg-palette';
+
+/** Palette is orthogonal to mode: <html data-palette> picks the colour set,
+ *  data-theme picks light/dark. Unknown ids fall back to the default so a stale
+ *  mirror or hand-edited config can never leave the app unstyled. */
+export function applyPalette(palette: PaletteName): void {
+  const id = isPaletteName(palette) ? palette : 'aurora';
+  document.documentElement.dataset.palette = id;
+  try { localStorage.setItem(PALETTE_KEY, id); } catch { /* storage unavailable — the attribute still applies */ }
 }

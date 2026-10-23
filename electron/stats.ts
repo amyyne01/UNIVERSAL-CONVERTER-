@@ -14,7 +14,8 @@
 // It counts FILES, not tasks: one playlist task can write twenty files, and the
 // engine tells us exactly which ones (yt-dlp's `--print after_move:filepath`,
 // collected by downloader.ts and passed through on completion).
-import { existsSync, readFileSync, writeFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
+import { writeFileAtomic } from './atomic-write.js';
 import path from 'node:path';
 import type { DownloadStats, MonthBucket, SourcePlatform } from '../shared/types.js';
 
@@ -72,7 +73,7 @@ export class StatsStore {
   private save(): void {
     if (!this.file) return;
     try {
-      writeFileSync(this.file, JSON.stringify(this.data), 'utf-8');
+      writeFileAtomic(this.file, JSON.stringify(this.data));
     } catch {
       // best-effort: a lost counter must never break a download
     }

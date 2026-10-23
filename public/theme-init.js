@@ -35,4 +35,13 @@
     resolved = dark ? 'dark' : 'light';
   }
   document.documentElement.dataset.theme = resolved;
+  // Palette mirror (written by lib/theme.ts applyPalette). Unlike theme there is no
+  // OS signal to guess from, so a missing/invalid value just means the default look;
+  // an unknown id matches no CSS block, and the real config re-applies it on load.
+  try {
+    var p = localStorage.getItem('ahg-palette');
+    if (p && /^[a-z]{1,16}$/.test(p)) document.documentElement.dataset.palette = p;
+  } catch (e) {
+    /* storage unavailable — default palette */
+  }
 })();

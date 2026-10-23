@@ -21,8 +21,6 @@ const FULL = {
   licenseGistId: 'gist123',
   githubToken: 'tok_abc',
   discordClientId: 'dc_id',
-  discordClientSecret: 'dc_secret',
-  discordBotToken: 'dc_bot',
 };
 
 beforeEach(() => {
@@ -56,8 +54,6 @@ describe('loadSecrets', () => {
       licenseGistId: '',
       githubToken: 'only_token',
       discordClientId: '',
-      discordClientSecret: '',
-      discordBotToken: '',
     });
   });
 
@@ -69,8 +65,6 @@ describe('loadSecrets', () => {
       licenseGistId: '',
       githubToken: '',
       discordClientId: '',
-      discordClientSecret: '',
-      discordBotToken: '',
     });
   });
 });
@@ -106,8 +100,6 @@ describe('loadSecrets from .env', () => {
       licenseGistId: 'gist_from_env',
       githubToken: 'tok_from_env',
       discordClientId: 'dc_id_quoted',
-      discordClientSecret: 'dc_secret_quoted',
-      discordBotToken: 'dc_bot',
     });
   });
 
@@ -124,7 +116,7 @@ describe('loadSecrets from .env', () => {
     mockRead.mockImplementation(() => { throw new Error('ENOENT'); });
     expect(loadSecrets()).toEqual({
       licenseGistId: '', githubToken: '',
-      discordClientId: '', discordClientSecret: '', discordBotToken: '',
+      discordClientId: '',
     });
   });
 });

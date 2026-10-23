@@ -1,8 +1,15 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { DownloadsTab, QueueCard } from '@/components/tabs/DownloadsTab';
 import { useAppStore } from '@/store';
+import { formatDuration } from '@/lib/format';
 import type { DownloadProgress, DownloadTask } from '@shared/types';
+
+// formatDuration runs once per QueueCard render, so its call count is a render count.
+vi.mock('@/lib/format', async (orig) => {
+  const m = await orig<typeof import('@/lib/format')>();
+  return { ...m, formatDuration: vi.fn(m.formatDuration) };
+});
 
 function progress(overrides: Partial<DownloadProgress> = {}): DownloadProgress {
   return {
@@ -238,5 +245,50 @@ describe('QueueCard memo comparator (B18)', () => {
 
     // Different selected → must re-render.
     expect(QueueCard.compare!(base, { ...base, selected: true })).toBe(false);
+  });
+});
+
+describe('failed and retrying rows', () => {
+  beforeEach(() => {
+    useAppStore.setState({ downloads: {}, selectedDownloadIds: new Set() });
+    vi.clearAllMocks();
+  });
+
+  it('shows the readable reason and copies the raw message on "Copy details"', async () => {
+    const raw = 'ERROR: [youtube] abc: Private video. Sign in if you have been granted access';
+    useAppStore.getState().setDownloads([
+      task({ errorCode: 'private', progress: progress({ status: 'failed', error: raw }) }),
+    ]);
+    render(<DownloadsTab />);
+    expect(screen.getByText(/This video is private\./)).toBeInTheDocument();
+    expect(screen.queryByText(/ERROR: \[youtube\]/)).not.toBeInTheDocument();
+
+    const user = userEvent.setup(); // installs its own clipboard stub — spy after it
+    const writeText = vi.spyOn(navigator.clipboard, 'writeText');
+    await user.click(screen.getByRole('button', { name: 'Copy details' }));
+    expect(writeText).toHaveBeenCalledWith(raw);
+  });
+
+  it('counts a retrying row down: "Retrying in Ns (n of 3)"', () => {
+    useAppStore.getState().setDownloads([
+      task({ retryCount: 1, progress: progress({ status: 'retrying' }) }),
+    ]);
+    render(<DownloadsTab />);
+    expect(screen.getByText(/Retrying in 15s \(2 of 3\)/)).toBeInTheDocument();
+  });
+
+  it('a progress tick re-renders only the row it belongs to', () => {
+    useAppStore.getState().setDownloads([
+      task({ taskId: 'a', duration: 11 }),
+      task({ taskId: 'b', duration: 22 }),
+    ]);
+    render(<DownloadsTab />);
+    const calls = () => vi.mocked(formatDuration).mock.calls.map(([d]) => d);
+    vi.mocked(formatDuration).mockClear();
+    act(() => {
+      useAppStore.getState().updateDownloadProgress('a', progress({ percent: 60 }));
+    });
+    expect(calls().filter((d) => d === 22)).toHaveLength(0);
+    expect(calls().filter((d) => d === 11).length).toBeGreaterThan(0);
   });
 });

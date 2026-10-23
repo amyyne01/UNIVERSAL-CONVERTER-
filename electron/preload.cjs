@@ -57,6 +57,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   dialog: {
     selectDir: () => ipcRenderer.invoke('dialog:selectDir'),
   },
+  cookies: {
+    import: () => ipcRenderer.invoke('cookies:import'),
+  },
   shell: {
     showItemInFolder: (path) => ipcRenderer.invoke('shell:showItemInFolder', path),
   },

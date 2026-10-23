@@ -102,6 +102,7 @@ const mockElectronAPI = {
     }),
     fetchMetadata: vi.fn().mockResolvedValue(null),
   },
+  cookies: { import: vi.fn().mockResolvedValue({ ok: false, reason: 'cancelled' }) },
   youtube: { search: vi.fn().mockResolvedValue([]) },
   soundcloud: { search: vi.fn().mockResolvedValue([]) },
   spotify: {

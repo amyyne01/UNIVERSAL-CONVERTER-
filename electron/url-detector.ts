@@ -1,4 +1,4 @@
-import type { UrlDetection, SourcePlatform, ContentType } from '../shared/types.js';
+import { MORE_SOURCE_LABELS, type UrlDetection, type SourcePlatform, type ContentType } from '../shared/types.js';
 
 // HOW-THE-APP-WORKS.md §2 — ordered URL-recognition cascade.
 // Trim → prepend https:// if no scheme → walk a FIXED ordered list, first match wins,
@@ -11,6 +11,7 @@ const PLATFORM_LABEL: Record<SourcePlatform, string> = {
   instagram: 'Instagram',
   tiktok: 'TikTok',
   facebook: 'Facebook',
+  ...MORE_SOURCE_LABELS,
   direct: 'Direct',
   generic: 'Link',
   unknown: 'Unknown',
@@ -37,6 +38,37 @@ export function parseSpotifyUrl(url: string): { type: 'track' | 'playlist' | 'al
   if (!m) return { type: null, id: null };
   return { type: m[1].toLowerCase() as 'track' | 'playlist' | 'album' | 'artist', id: m[2] };
 }
+
+// Non-core sources. Each rule is tested against `hostname + pathname`, anchored at the
+// start, so a lookalike (twitch.tv.evil.com, evil.com/twitch.tv/…) can never match.
+// Order matters: a specific shape (single item) precedes its collection rule.
+const W = String.raw`(?:www\.|m\.|mobile\.)?`;
+const MIXCLOUD_RESERVED = 'discover|select|upload|settings|about|pro|categories|search|dashboard|terms';
+const SOURCE_RULES: Array<[RegExp, SourcePlatform, ContentType]> = [
+  [new RegExp(String.raw`^${W}(?:twitter|x)\.com/(?:i/web|[^/]+)/status/(\d+)`, 'i'), 'twitter', 'video'],
+  [/^player\.vimeo\.com\/video\/(\d+)/i, 'vimeo', 'video'],
+  [new RegExp(String.raw`^${W}vimeo\.com/(?:channels/[^/]+|groups/[^/]+/videos)/(\d+)`, 'i'), 'vimeo', 'video'],
+  [new RegExp(String.raw`^${W}vimeo\.com/(?:showcase|album)/(\d+)/?$`, 'i'), 'vimeo', 'playlist'],
+  [new RegExp(String.raw`^${W}vimeo\.com/(?:channels|groups)/([^/]+)/?$`, 'i'), 'vimeo', 'playlist'],
+  [new RegExp(String.raw`^${W}vimeo\.com/(\d+)(?:/[a-f0-9]+)?/?$`, 'i'), 'vimeo', 'video'],
+  [new RegExp(String.raw`^${W}twitch\.tv/videos/(\d+)`, 'i'), 'twitch', 'video'],
+  [new RegExp(String.raw`^${W}twitch\.tv/[^/]+/v(?:ideo)?/(\d+)`, 'i'), 'twitch', 'video'],
+  [/^clips\.twitch\.tv\/([\w-]+)/i, 'twitch', 'video'],
+  [new RegExp(String.raw`^${W}twitch\.tv/[^/]+/clip/([\w-]+)`, 'i'), 'twitch', 'video'],
+  // Channel archive only; a bare twitch.tv/<name> is a LIVE stream and never ends.
+  [new RegExp(String.raw`^${W}twitch\.tv/([^/]+)/(?:videos|clips)/?$`, 'i'), 'twitch', 'playlist'],
+  [/^[a-z0-9-]+\.bandcamp\.com\/track\/([^/?#]+)/i, 'bandcamp', 'track'],
+  [/^[a-z0-9-]+\.bandcamp\.com\/album\/([^/?#]+)/i, 'bandcamp', 'album'],
+  [/^(?!www\.)([a-z0-9-]+)\.bandcamp\.com(?:\/music)?\/?$/i, 'bandcamp', 'album'],
+  [/^(?:[a-z]+\.)?reddit\.com\/(?:(?:r|user)\/[^/]+\/)?comments\/(\w+)/i, 'reddit', 'video'],
+  [/^(?:v\.)?redd\.it\/(\w+)/i, 'reddit', 'video'],
+  [new RegExp(String.raw`^${W}dailymotion\.com/(?:embed/)?video/(\w+)`, 'i'), 'dailymotion', 'video'],
+  [/^dai\.ly\/(\w+)/i, 'dailymotion', 'video'],
+  [new RegExp(String.raw`^${W}dailymotion\.com/playlist/(\w+)`, 'i'), 'dailymotion', 'playlist'],
+  [new RegExp(String.raw`^${W}mixcloud\.com/(?!(?:${MIXCLOUD_RESERVED})/)[^/]+/(?!(?:stream|uploads|favorites|listens|playlists|followers|following)(?:/|$))([^/]+)/?$`, 'i'), 'mixcloud', 'track'],
+  [new RegExp(String.raw`^${W}mixcloud\.com/(?!(?:${MIXCLOUD_RESERVED})(?:/|$))([^/]+)/?$`, 'i'), 'mixcloud', 'playlist'],
+  [new RegExp(String.raw`^${W}rumble\.com/(v(?!ideos)[\w.-]+)`, 'i'), 'rumble', 'video'],
+];
 
 // The fixed ordered cascade. Each matcher returns a detection or null; first non-null wins.
 const MATCHERS: Array<(url: string) => UrlDetection | null> = [
@@ -92,6 +124,18 @@ const MATCHERS: Array<(url: string) => UrlDetection | null> = [
     const m = url.match(/(?:\/videos\/|\/reel\/|[?&]v=|fb\.watch\/)([A-Za-z0-9]+)/i);
     return m ? build(url, 'facebook', 'video', m[1]) : null;
   },
+  // First-class non-core sources (http/https only, host-anchored).
+  (url) => {
+    let u: URL;
+    try { u = new URL(url); } catch { return null; }
+    if (u.protocol !== 'https:' && u.protocol !== 'http:') return null;
+    const subject = u.hostname + u.pathname;
+    for (const [re, platform, type] of SOURCE_RULES) {
+      const m = subject.match(re);
+      if (m) return build(url, platform, type, m[1]);
+    }
+    return null;
+  },
   // Direct media file by extension.
   (url) => {
     const m = url.match(/\.(?:mp4|mkv|webm|avi|mov)(?:[?#]|$)/i);
@@ -126,7 +170,7 @@ const MATCHERS: Array<(url: string) => UrlDetection | null> = [
 ];
 
 export function detectUrl(input: string): UrlDetection {
-  const trimmed = input.trim();
+  const trimmed = input.trim().slice(0, 2048); // bounds regex work on clipboard text
   // A bare address (no scheme) gets https://; spotify:/http(s): URIs keep theirs.
   const url = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed) ? trimmed : `https://${trimmed}`;
 

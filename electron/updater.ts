@@ -29,7 +29,7 @@ const SUMS_ASSET = 'SHA256SUMS.txt';
 // §9/§12: releases ship as GitHub assets. GitHub serves the API from api.github.com
 // and redirects asset bytes to objects.githubusercontent.com; anything else is
 // refused outright. Exported so the engine updater reuses this one allowlist.
-export const TRUSTED_HOSTS = new Set(['github.com', 'objects.githubusercontent.com', 'api.github.com']);
+const TRUSTED_HOSTS = new Set(['github.com', 'objects.githubusercontent.com', 'release-assets.githubusercontent.com', 'api.github.com']);
 const GITHUB_BASE = 'https://github.com/';
 
 /** §9/§12: a release URL is trusted only when it's https on an allowlisted host.
@@ -211,6 +211,8 @@ export class Updater {
     const fetchFn = this.deps.fetchFn ?? fetch;
     const res = await fetchFn(url, { headers: { 'User-Agent': 'AHG-Universal-Converter' } });
     if (!res.ok) throw new Error(`Update failed: HTTP ${res.status}`);
+    // fetch follows redirects; the host that actually answered must be trusted too.
+    if (res.url && !isTrustedReleaseHost(res.url)) throw new Error(`Update refused: redirected to untrusted host "${res.url}"`);
     return res;
   }
 

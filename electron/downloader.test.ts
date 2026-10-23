@@ -25,7 +25,7 @@ vi.mock('fs', async () => {
   return { ...actual, existsSync: vi.fn().mockReturnValue(true) };
 });
 
-import { Downloader, classifyError, explainError, needsClientFallback, scoreCandidates } from './downloader';
+import { Downloader, classifyError, errorCodeOf, explainError, needsClientFallback, scoreCandidates } from './downloader';
 import type { DownloadTask, Track, SearchResult, DownloadExtras } from '../shared/types';
 import { mergeExtras } from '../shared/types';
 import { spawn, execSync } from 'child_process';
@@ -346,6 +346,18 @@ describe('Downloader', () => {
     ));
     proc.emit('close', 0);
     await expect(p).resolves.toMatchObject({ title: 'A list', isCollection: true });
+  });
+
+  it.each([
+    'https://artist.bandcamp.com/album/record',
+    'https://vimeo.com/showcase/1234567',
+    'https://www.twitch.tv/somechan/videos',
+    'https://www.mixcloud.com/someuser/',
+  ])('fetches %s flat as a collection (no --no-playlist)', (url) => {
+    void downloader.fetchMetadata(url).catch(() => {});
+    const args = (spawn as any).mock.calls[0][1];
+    expect(args).toContain('--flat-playlist');
+    expect(args).not.toContain('--no-playlist');
   });
 
   // Multi-file stdout capture (§future split-chapters use): every after_move:filepath
@@ -690,5 +702,69 @@ describe('buildYtDlpArgs — extras', () => {
       expect(out).not.toContain('etc');
       expect(out).not.toContain('elsewhere');
     }
+  });
+});
+
+describe('errorCodeOf', () => {
+  const cases: [string, string][] = [
+    ['ERROR: Private video. Sign in if you have been granted access', 'private'],
+    ['ERROR: Video unavailable. This video has been removed by the uploader', 'removed'],
+    ['ERROR: Sign in to confirm your age', 'age_restricted'],
+    ['ERROR: Sign in to confirm you are not a bot', 'login_required'],
+    ['ERROR: This video is members-only content', 'login_required'],
+    ['ERROR: This video is not available in your country', 'geo_blocked'],
+    ['ERROR: This video is DRM protected', 'drm'],
+    ['ERROR: HTTP Error 429: Too Many Requests', 'rate_limited'],
+    ['ERROR: unable to download video data: connection reset by peer', 'network'],
+    ['ERROR: Unsupported URL: https://example.com', 'unsupported'],
+    ['ERROR: Postprocessing: ffmpeg is not installed', 'ffmpeg_missing'],
+    ['OSError: [Errno 28] No space left on device', 'disk_full'],
+    ['something nobody has seen before', 'unknown'],
+    ['', 'unknown'],
+  ];
+  it.each(cases)('maps %j to %s', (text, code) => {
+    expect(errorCodeOf(text)).toBe(code);
+  });
+  it('leaves the retryable verdict alone', () => {
+    expect(classifyError('ERROR: HTTP Error 429: Too Many Requests')).toBe('retryable');
+    expect(classifyError('ERROR: Private video')).toBe('auth');
+  });
+});
+
+describe('buildYtDlpArgs — playlist items, cookies file, politeness', () => {
+  let d: Downloader;
+  beforeEach(() => {
+    vi.clearAllMocks();
+    d = new Downloader();
+  });
+  const valueOf = (args: string[], flag: string) => args[args.indexOf(flag) + 1];
+
+  it('emits --playlist-items for a collection', () => {
+    const args = d.buildYtDlpArgs(makeTask({ isPlaylist: true, playlistName: 'L', playlistItems: '1,3-5' }), null);
+    expect(valueOf(args, '--playlist-items')).toBe('1,3-5');
+    expect(d.buildYtDlpArgs(makeTask({ isPlaylist: true, playlistName: 'L' }), null)).not.toContain('--playlist-items');
+  });
+
+  it('paces collections but not a single video', () => {
+    const list = d.buildYtDlpArgs(makeTask({ isPlaylist: true, playlistName: 'L' }), null);
+    expect(list).toContain('--sleep-requests');
+    expect(list).toContain('--sleep-interval');
+    const one = d.buildYtDlpArgs(makeTask(), null);
+    expect(one).not.toContain('--sleep-requests');
+    expect(one).not.toContain('--sleep-interval');
+  });
+
+  it('prefers an imported cookies file and falls back to the browser jar', () => {
+    const file = d.buildYtDlpArgs(makeTask({ extras: mergeExtras({ cookiesFile: 'C:\\ud\\cookies.txt', cookieBrowser: 'chrome' }) }), null);
+    expect(valueOf(file, '--cookies')).toBe('C:\\ud\\cookies.txt');
+    expect(file).not.toContain('--cookies-from-browser');
+    const browser = d.buildYtDlpArgs(makeTask({ extras: mergeExtras({ cookieBrowser: 'chrome' }) }), null);
+    expect(valueOf(browser, '--cookies-from-browser')).toBe('chrome');
+    expect(browser).not.toContain('--cookies');
+  });
+
+  it('refuses a relative cookies path', () => {
+    const args = d.buildYtDlpArgs(makeTask({ extras: mergeExtras({ cookiesFile: '--exec=evil' }) }), null);
+    expect(args).not.toContain('--cookies');
   });
 });

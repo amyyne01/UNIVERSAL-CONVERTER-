@@ -24,6 +24,7 @@ import { Updater } from './updater.js';
 import { YtdlpUpdater } from './ytdlp-updater.js';
 import { installContentSecurityPolicy } from './security.js';
 import { registerProtocolHandler, extractProtocolUrl, resolveProtocolLink } from './protocol.js';
+import { initLog, logLine, errText } from './log.js';
 import type { DownloadStatus } from '../shared/types.js';
 
 let config: ConfigManager | null = null;
@@ -242,7 +243,13 @@ app.on('second-instance', (_event, argv) => {
   if (link) forwardProtocolLink(link);
 });
 
+// Last-resort diagnostics: log, don't crash-loop. Registered before ready so a boot fault is caught too.
+process.on('uncaughtException', (e) => logLine('error', `uncaughtException: ${errText(e)}`));
+process.on('unhandledRejection', (e) => logLine('error', `unhandledRejection: ${errText(e)}`));
+app.on('render-process-gone', (_e, _wc, d) => logLine('error', `render-process-gone: ${d.reason} (exit ${d.exitCode})`));
+
 app.whenReady().then(() => {
+  initLog(app.getPath('userData'));
   // The window is frameless with its own title bar, so Electron's default menu is
   // invisible — but its accelerators (inspector, reload, force-reload, zoom) are
   // still live. Removing it entirely is what makes this behave like an app rather

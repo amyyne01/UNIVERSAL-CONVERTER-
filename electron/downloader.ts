@@ -8,7 +8,7 @@ import { existsSync } from 'fs';
 import path from 'node:path';
 import { app } from 'electron';
 import type {
-  DownloadTask, DownloadProgress, Track, SearchResult, MediaMetadata, DownloadExtras,
+  DownloadTask, ErrorCode, DownloadProgress, Track, SearchResult, MediaMetadata, DownloadExtras,
   VideoContainer, VideoCodec,
 } from '../shared/types.js';
 import {
@@ -175,6 +175,30 @@ export function needsClientFallback(text: string): boolean {
   return GATED_SIGNS.some((s) => t.includes(s));
 }
 
+// Needles per code, first match wins — so the specific outranks the general
+// ('age-restricted' before the broad 'sign in'). Anything not listed falls back to
+// classifyError's own verdict: retryable → 'network', else 'unknown'.
+const ERROR_CODE_NEEDLES: [ErrorCode, string[]][] = [
+  ['ffmpeg_missing', ['ffmpeg is not installed', 'ffmpeg not found', 'ffprobe and ffmpeg not found', 'ffmpeg-location']],
+  ['disk_full', ['no space left', 'disk full', 'enospc', 'not enough space']],
+  ['drm', ['drm']],
+  ['age_restricted', ['age-restricted', 'age restricted', 'confirm your age']],
+  ['private', ['private']],
+  ['login_required', ['sign in', 'login required', 'members-only', 'members only']],
+  ['geo_blocked', ['geo', 'region', 'not available in your country']],
+  ['rate_limited', ['too many requests', 'http error 429', 'rate-limit', 'rate limit']],
+  ['unsupported', ['unsupported url', 'is not a valid url']],
+  ['removed', ['removed', 'deleted', 'does not exist', 'no longer available', 'video unavailable', 'is unavailable', 'this video is not available', 'copyright']],
+];
+
+/** The typed twin of classifyError: WHY a download failed, for the UI to branch on.
+ *  Pure and independent of the retry decision — classifyError still owns that. */
+export function errorCodeOf(text: string): ErrorCode {
+  const t = (text || '').toLowerCase();
+  for (const [code, needles] of ERROR_CODE_NEEDLES) if (needles.some((n) => t.includes(n))) return code;
+  return classifyError(t) === 'retryable' ? 'network' : 'unknown';
+}
+
 /** One sentence a user can act on, from yt-dlp's stderr. Unrecognised text is passed
  *  through rather than swallowed — a shape we have not seen yet must still be legible,
  *  and "something went wrong" for every failure is exactly what made a gated video,
@@ -252,8 +276,10 @@ export class Downloader {
 
     if (x.rateLimit) args.push('--limit-rate', x.rateLimit);
     if (x.proxy) args.push('--proxy', x.proxy);
+    // An imported cookies.txt wins; the browser jar is the fallback. Never logged.
     const cookieBrowser = pick(x.cookieBrowser, COOKIE_BROWSERS, '');
-    if (cookieBrowser) args.push('--cookies-from-browser', cookieBrowser);
+    if (x.cookiesFile && path.isAbsolute(x.cookiesFile)) args.push('--cookies', x.cookiesFile);
+    else if (cookieBrowser) args.push('--cookies-from-browser', cookieBrowser);
 
     if (task.isAudioOnly) {
       const codec = task.format;
@@ -312,6 +338,11 @@ export class Downloader {
       if (task.playlistLimit && task.playlistLimit > 0) {
         args.push('--playlist-end', String(Math.floor(task.playlistLimit)));
       }
+      if (task.playlistItems) args.push('--playlist-items', task.playlistItems);
+      // Politeness: pace a many-request job so the site doesn't rate-limit us.
+      // ponytail: collections only — scheduled runs just resume paused tasks, so a
+      // scheduled single video isn't distinguishable here; add a task flag if needed.
+      args.push('--sleep-requests', '1', '--sleep-interval', '1');
     } else {
       // `watch?v=…&list=…` — what YouTube hands you for a video opened from inside
       // a playlist — is classified as a single video, but yt-dlp defaults to
@@ -378,7 +409,10 @@ export class Downloader {
 
   // ── Download (§5, §6) ───────────────────────────────────────────────────
 
-  download(task: DownloadTask, track?: Track, onProgress?: ProgressCb, onDone?: DoneCb, onError?: ErrorCb): void {
+  download(task: DownloadTask, track?: Track, onProgress?: ProgressCb, onDone?: DoneCb, onErrorCb?: ErrorCb): void {
+    // Every failure path funnels through here, so the typed code is stamped once.
+    delete task.errorCode;
+    const onError: ErrorCb = (t, e) => { t.errorCode = errorCodeOf(e); onErrorCb?.(t, e); };
     const bin = this.getYtDlpPath();
     if (!bin) {
       onError?.(task, 'yt-dlp not found. Please ensure yt-dlp is installed or bundled in bin/.');

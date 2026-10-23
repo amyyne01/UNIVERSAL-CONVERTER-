@@ -150,6 +150,14 @@ describe('update', () => {
     expect(resetBinaryCache).not.toHaveBeenCalled();
   });
 
+  it('refuses when a trusted URL redirects to an untrusted host', async () => {
+    const fetchFn = vi.fn(async () => ({ ok: true, status: 200, url: 'https://evil.example/x', json: async () => releaseFeed(ASSET_URL, SUMS_URL) })) as unknown as typeof fetch;
+    const { updater } = setup({ fetchFn });
+    const status = await updater.update();
+    expect(status.state).toBe('error');
+    expect(status.message).toMatch(/redirected to untrusted host/i);
+  });
+
   it('refuses an off-allowlist asset host before fetching a byte', async () => {
     const evil = 'https://evil.example.com/yt-dlp.exe';
     const fetchFn = fetcher({ [API]: releaseFeed(evil, SUMS_URL), [evil]: PAYLOAD });

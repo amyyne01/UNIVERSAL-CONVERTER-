@@ -1,9 +1,11 @@
-import { ipcMain, dialog, shell } from 'electron';
+import { app, ipcMain, dialog, shell } from 'electron';
 import type { IpcMainInvokeEvent } from 'electron';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
+import path from 'node:path';
+import { writeFileAtomic } from './atomic-write.js';
 import { getMainWindow } from './window.js';
 import { detectUrl } from './url-detector.js';
-import { confineToRoot, secure, urlArg } from './security.js';
+import { confineToRoot, isNetscapeCookies, MAX_COOKIES_BYTES, playlistItemsArg, secure, urlArg } from './security.js';
 import {
   createTask, enqueueTask, cancelTask, cancelAllTasks,
   pauseTask, resumeTask, getAllTasks, removeTasks, setMaxSlots,
@@ -16,7 +18,7 @@ import type { SpotifyHandler } from './spotify.js';
 import type { LicenseManager } from './license.js';
 import type { Updater } from './updater.js';
 import type { YtdlpUpdater } from './ytdlp-updater.js';
-import type { AppConfig, DownloadTask, RevealResult, Track, VideoQuality } from '../shared/types.js';
+import type { AppConfig, CookiesImportResult, DownloadTask, RevealResult, Track, VideoQuality } from '../shared/types.js';
 import {
   SOURCE_PLATFORMS, VIDEO_QUALITIES, BASIC_LIMITS,
   clampAudioQuality, clampConcurrency, clampFormat, clampVideoQuality, clampExtras,
@@ -27,6 +29,13 @@ import {
 // args are validated at the boundary before the engine acts on them.
 const MAX_URL = 2048; // classic URL length ceiling — guards against oversized payloads.
 const MAX_PATH = 4096;
+// The one place an imported cookies.txt lives. Resolved through confineToRoot so the
+// destination is provably inside userData; it holds login cookies, so its content and
+// path are never logged.
+const cookiesPath = (): string => {
+  const root = app.getPath('userData');
+  return confineToRoot('cookies.txt', root) ?? path.join(root, 'cookies.txt');
+};
 const MAX_ARTISTS = 64; // cap the scraped-artist list so a hostile track can't balloon it.
 // A task id is a generated `task_<ms>_<9 chars>` — ~28 chars. 64 is generous for
 // it and small enough that a reorder payload can never be a smuggling channel.
@@ -195,6 +204,7 @@ export function registerIpcHandlers(config: ConfigManager, downloader: Downloade
       quality: clampAudioQuality(quality, plan),
       videoQuality: clampVideoQuality(videoQuality, plan),
       ...(basic && isPlaylist ? { playlistLimit: BASIC_LIMITS.maxCollectionTracks } : {}),
+      ...(taskData.playlistItems !== undefined ? { playlistItems: playlistItemsArg(taskData.playlistItems) } : {}),
       isAudioOnly: optBool(taskData.isAudioOnly),
       isPlaylist,
       playlistName: optStr(taskData.playlistName),
@@ -224,6 +234,8 @@ export function registerIpcHandlers(config: ConfigManager, downloader: Downloade
         videoContainer: config.get('videoContainer'),
         videoCodec: config.get('videoCodec'),
         cookieBrowser: config.get('cookieBrowser'),
+        // The imported file's location is fixed (userData), never renderer-named.
+        cookiesFile: existsSync(cookiesPath()) ? cookiesPath() : '',
         outputTemplate: config.get('outputTemplate'),
         rateLimit: config.get('rateLimit'),
         proxy: config.get('proxy'),
@@ -262,6 +274,30 @@ export function registerIpcHandlers(config: ConfigManager, downloader: Downloade
       ? await dialog.showOpenDialog(win, { properties: ['openDirectory'] })
       : await dialog.showOpenDialog({ properties: ['openDirectory'] });
     return canceled || filePaths.length === 0 ? null : filePaths[0];
+  });
+
+  // ── cookies:* (premium: a Netscape cookies.txt for age-gated/private posts) ──
+  // The renderer passes nothing: the native dialog picks the file, so no
+  // renderer-supplied path ever reaches the filesystem. The contents are untrusted —
+  // size-capped and shape-checked before being copied under userData.
+  handle('cookies:import', RATE_DEFAULT, async (): Promise<CookiesImportResult> => {
+    if (license.getPlan() !== 'premium' && !BASIC_LIMITS.cookies) return { ok: false, reason: 'premium' };
+    const opts = { properties: ['openFile' as const], filters: [{ name: 'Cookies', extensions: ['txt'] }] };
+    const win = getMainWindow();
+    const { canceled, filePaths } = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts);
+    if (canceled || filePaths.length === 0) return { ok: false, reason: 'cancelled' };
+    try {
+      const src = path.resolve(filePaths[0]);
+      const st = statSync(src);
+      if (!st.isFile() || st.size > MAX_COOKIES_BYTES) return { ok: false, reason: 'invalid' };
+      const text = readFileSync(src, 'utf-8');
+      if (!isNetscapeCookies(text)) return { ok: false, reason: 'invalid' };
+      mkdirSync(path.dirname(cookiesPath()), { recursive: true });
+      writeFileAtomic(cookiesPath(), text);
+      return { ok: true };
+    } catch {
+      return { ok: false, reason: 'invalid' }; // unreadable file — say nothing about why
+    }
   });
 
   // ── file:* ──────────────────────────────────────────────────────────────────

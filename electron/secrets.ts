@@ -18,16 +18,12 @@ export interface Secrets {
   licenseGistId: string;
   githubToken: string;
   discordClientId: string;
-  discordClientSecret: string;
-  discordBotToken: string;
 }
 
 const EMPTY: Secrets = {
   licenseGistId: '',
   githubToken: '',
   discordClientId: '',
-  discordClientSecret: '',
-  discordBotToken: '',
 };
 
 /** .env key for each secret — SCREAMING_SNAKE, the convention people expect. */
@@ -35,8 +31,6 @@ const ENV_KEYS: Record<keyof Secrets, string> = {
   licenseGistId: 'AHG_LICENSE_GIST_ID',
   githubToken: 'AHG_GITHUB_TOKEN',
   discordClientId: 'AHG_DISCORD_CLIENT_ID',
-  discordClientSecret: 'AHG_DISCORD_CLIENT_SECRET',
-  discordBotToken: 'AHG_DISCORD_BOT_TOKEN',
 };
 
 const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
@@ -90,8 +84,6 @@ export function loadSecrets(): Secrets {
         licenseGistId: str(env[ENV_KEYS.licenseGistId]),
         githubToken: str(env[ENV_KEYS.githubToken]),
         discordClientId: str(env[ENV_KEYS.discordClientId]),
-        discordClientSecret: str(env[ENV_KEYS.discordClientSecret]),
-        discordBotToken: str(env[ENV_KEYS.discordBotToken]),
       };
       // A .env that parses but carries none of our keys is somebody else's file —
       // fall through rather than locking the app to an empty set.
@@ -108,8 +100,6 @@ export function loadSecrets(): Secrets {
         licenseGistId: str(raw.licenseGistId),
         githubToken: str(raw.githubToken),
         discordClientId: str(raw.discordClientId),
-        discordClientSecret: str(raw.discordClientSecret),
-        discordBotToken: str(raw.discordBotToken),
       };
     } catch {
       // missing / unreadable / invalid JSON → try the next path

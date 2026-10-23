@@ -14,7 +14,7 @@ const RAIL = { home: 78, queue: 126, youtube: 190, spotify: 238, settings: -30 }
 const done = [], skipped = [];
 
 const app = await electron.launch({
-  args: ['.'],
+  args: ['.', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows'],
   cwd: process.cwd(),
   env: { ...process.env, AHG_DEV_PLAN: 'basic', NODE_ENV: 'development' },
 });
@@ -26,7 +26,10 @@ win.on('console', (m) => { if (m.type() === 'error') errors.push(m.text().slice(
 await app.evaluate(async ({ BrowserWindow }, [width, height]) => {
   const b = BrowserWindow.getAllWindows()[0];
   b.setSize(width, height);
+  b.setSkipTaskbar(true);
   b.center();
+  b.setOpacity(0); // invisible but still painting: an off-screen window renders blank
+  b.setIgnoreMouseEvents(true); // capture must not steal focus or clicks from the user
 }, [W, H]);
 
 const shot = async (name, ms = 450) => {

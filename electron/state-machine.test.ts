@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { DownloadStatus } from '../shared/types.js';
-import { transitions, canTransition, assertTransition } from './state-machine';
+import { transitions, canTransition } from './state-machine';
 
 const ALL = Object.keys(transitions) as DownloadStatus[];
 
@@ -30,10 +30,5 @@ describe('state-machine', () => {
 
   it('never lists a self-transition', () => {
     for (const s of ALL) expect(transitions[s]).not.toContain(s);
-  });
-
-  it('assertTransition throws only on illegal transitions', () => {
-    expect(() => assertTransition('downloading', 'converting')).not.toThrow();
-    expect(() => assertTransition('done', 'downloading')).toThrow(/Illegal/);
   });
 });

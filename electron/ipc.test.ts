@@ -4,6 +4,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // Only existsSync is stubbed — config.ts imports node:fs's
 // DEFAULT export, so a wholesale replacement breaks the module for everything else
 // in the graph.
+const TMP_UD = vi.hoisted(() => `${process.env.TEMP ?? process.env.TMPDIR ?? '/tmp'}/ahg-ipc-test-ud`);
+
 vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>();
   const existsSync = vi.fn(() => true);
@@ -13,7 +15,7 @@ vi.mock('node:fs', async (importOriginal) => {
 vi.mock('electron', () => ({
   // `app` is read by secure()/assertTrustedSender via security.ts (dev branch → no
   // getAppPath call, but stub it anyway). isPackaged:false picks the Vite-origin path.
-  app: { isPackaged: false, getAppPath: vi.fn(() => 'C:\\app') },
+  app: { isPackaged: false, getAppPath: vi.fn(() => 'C:\\app'), getPath: vi.fn(() => TMP_UD) },
   ipcMain: { handle: vi.fn() },
   dialog: { showOpenDialog: vi.fn().mockResolvedValue({ canceled: false, filePaths: ['C:\\Picked'] }) },
   shell: { openExternal: vi.fn().mockResolvedValue(undefined), showItemInFolder: vi.fn() },
@@ -58,7 +60,9 @@ vi.mock('./queue.js', () => ({
 import { registerIpcHandlers } from './ipc';
 import { BASIC_LIMITS } from '../shared/types.js';
 import { ipcMain, dialog, shell } from 'electron';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdtempSync, writeFileSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 describe('registerIpcHandlers', () => {
   let config: any;
@@ -156,7 +160,7 @@ describe('registerIpcHandlers', () => {
       'download:pause', 'download:resume', 'download:list', 'download:remove',
       'download:pauseAll', 'download:resumeAll',
       'queue:reorder', 'queue:promote',
-      'dialog:selectDir',
+      'dialog:selectDir', 'cookies:import',
       'shell:showItemInFolder',
       'license:check', 'license:activate', 'license:deactivate', 'license:release', 'app:openSupport',
       'update:check', 'update:download', 'update:install',
@@ -462,6 +466,52 @@ describe('registerIpcHandlers', () => {
 
 
 
+
+  describe('cookies:import', () => {
+    const row = ['.a.com', 'TRUE', '/', 'TRUE', '0', 'k', 'v'].join('\t');
+    const pick = (p: string) => vi.mocked(dialog.showOpenDialog).mockResolvedValueOnce({ canceled: false, filePaths: [p] });
+    let dir: string;
+    beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'ahg-ck-')); });
+
+    it('refuses on the free tier without opening a dialog', async () => {
+      license.getPlan.mockReturnValue('basic');
+      expect(await handlers.get('cookies:import')!(evt())).toEqual({ ok: false, reason: 'premium' });
+      expect(dialog.showOpenDialog).not.toHaveBeenCalled();
+    });
+
+    it('rejects a missing path, a directory and a non-cookie file', async () => {
+      const notCookies = join(dir, 'a.txt');
+      writeFileSync(notCookies, 'hello');
+      for (const p of [join(dir, 'nope.txt'), dir, notCookies]) {
+        pick(p);
+        expect(await handlers.get('cookies:import')!(evt())).toEqual({ ok: false, reason: 'invalid' });
+      }
+    });
+
+    it('reports a cancelled dialog', async () => {
+      vi.mocked(dialog.showOpenDialog).mockResolvedValueOnce({ canceled: true, filePaths: [] });
+      expect(await handlers.get('cookies:import')!(evt())).toEqual({ ok: false, reason: 'cancelled' });
+    });
+
+    it('copies a valid file under userData; premium download:start passes it on, basic does not', async () => {
+      const good = join(dir, 'c.txt');
+      writeFileSync(good, `# Netscape HTTP Cookie File\n${row}\n`);
+      pick(good);
+      expect(await handlers.get('cookies:import')!(evt())).toEqual({ ok: true });
+      const dest = join(TMP_UD, 'cookies.txt');
+      expect(readFileSync(dest, 'utf-8')).toContain(row);
+      const start = handlers.get('download:start')!;
+      expect(start(evt(), { url: 'https://youtu.be/abc' }).extras.cookiesFile).toBe(dest);
+      license.getPlan.mockReturnValue('basic');
+      expect(start(evt(), { url: 'https://youtu.be/abc' }).extras.cookiesFile).toBe('');
+    });
+  });
+
+  it('download:start validates playlistItems', () => {
+    const start = handlers.get('download:start')!;
+    expect(start(evt(), { url: 'https://youtu.be/abc', playlistItems: '1,3-5' }).playlistItems).toBe('1,3-5');
+    expect(() => start(evt(), { url: 'https://youtu.be/abc', playlistItems: '1;rm' })).toThrow();
+  });
 
   it('shell:showItemInFolder reveals a file confined to the output dir', () => {
     vi.mocked(existsSync).mockReturnValueOnce(true);

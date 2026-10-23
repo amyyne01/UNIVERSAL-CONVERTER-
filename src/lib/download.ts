@@ -23,3 +23,16 @@ export function buildDownloadRequest(
 export function spotifyDownloadUrl(track: Track): string {
   return track.spotifyUrl || `ytsearch:${track.artist} - ${track.name}`;
 }
+
+/** 1-based item numbers → yt-dlp `--playlist-items` spec, runs collapsed: [1,2,3,5] → "1-3,5". */
+export function toPlaylistItems(nums: number[]): string {
+  const sorted = [...new Set(nums)].sort((a, b) => a - b);
+  const parts: string[] = [];
+  for (let i = 0; i < sorted.length; i++) {
+    let j = i;
+    while (sorted[j + 1] === sorted[j] + 1) j++;
+    parts.push(j > i ? `${sorted[i]}-${sorted[j]}` : String(sorted[i]));
+    i = j;
+  }
+  return parts.join(',');
+}

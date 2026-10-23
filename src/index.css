@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./palettes.css";
 
 /* ── CATHODE — Ink & Phosphor design system ─────────────────────────────────
    Deep blue-black ink canvas (hue 240) with one luminous phosphor-cyan trace
@@ -22,21 +23,22 @@
 
   --color-accent: oklch(0.800 0.135 195);
   --color-accent-hover: oklch(0.860 0.125 193);
-  --color-accent-soft: oklch(0.800 0.135 195 / 0.14);
+  --color-accent-soft: color-mix(in oklch, var(--color-accent) 14%, transparent);
   --color-accent-deep: oklch(0.320 0.060 210);
   --color-on-accent: oklch(0.170 0.020 240);
 
-  --color-youtube: oklch(0.635 0.235 27);
+  --color-youtube: oklch(0.690 0.220 27);
   --color-spotify: oklch(0.730 0.180 150);
   --color-soundcloud: oklch(0.725 0.190 55);
-  --color-reels: oklch(0.665 0.255 352);
+  --color-reels: oklch(0.700 0.235 352);
 
   --color-success: oklch(0.740 0.160 150);
   --color-warning: oklch(0.830 0.145 85);
-  --color-error: oklch(0.660 0.205 24);
+  --color-error: oklch(0.680 0.195 24);
 
   --color-border: oklch(0.55 0.020 230 / 0.28);
   --color-border-soft: oklch(0.55 0.020 230 / 0.14);
+  --color-border-control: oklch(0.54 0.025 230);
   --color-inner-light: oklch(0.98 0.005 220 / 0.06);
 
   /* Ink and scrim for content sitting ON artwork (thumbnails, cover art). These
@@ -59,9 +61,9 @@
   --shadow-sm: inset 0 1px 0 var(--color-inner-light), 0 1px 2px oklch(0 0 0 / 0.30);
   --shadow-md: inset 0 1px 0 var(--color-inner-light), 0 2px 10px oklch(0 0 0 / 0.30);
   --shadow-lg: inset 0 1px 0 var(--color-inner-light), 0 12px 40px oklch(0 0 0 / 0.45);
-  --shadow-glow: 0 0 32px oklch(0.80 0.135 195 / 0.16);
+  --shadow-glow: 0 0 32px color-mix(in oklch, var(--color-accent) 16%, transparent);
 
-  --ease-out-quart: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
   --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -86,29 +88,30 @@
   --color-text-secondary: oklch(0.430 0.020 238);
   --color-text-muted: oklch(0.500 0.018 235);
 
-  --color-accent: oklch(0.500 0.105 215);
-  --color-accent-hover: oklch(0.440 0.110 215);
-  --color-accent-soft: oklch(0.500 0.105 215 / 0.10);
+  --color-accent: oklch(0.485 0.105 215);
+  --color-accent-hover: oklch(0.425 0.110 215);
+  --color-accent-soft: color-mix(in oklch, var(--color-accent) 10%, transparent);
   --color-accent-deep: oklch(0.880 0.045 205);
   --color-on-accent: oklch(0.985 0.003 220);
 
-  --color-youtube: oklch(0.550 0.210 27);
-  --color-spotify: oklch(0.520 0.150 150);
-  --color-soundcloud: oklch(0.530 0.140 55);
-  --color-reels: oklch(0.550 0.220 352);
+  --color-youtube: oklch(0.525 0.210 27);
+  --color-spotify: oklch(0.480 0.150 150);
+  --color-soundcloud: oklch(0.510 0.140 55);
+  --color-reels: oklch(0.525 0.220 352);
 
-  --color-success: oklch(0.520 0.140 150);
-  --color-warning: oklch(0.550 0.125 80);
-  --color-error: oklch(0.550 0.190 24);
+  --color-success: oklch(0.480 0.140 150);
+  --color-warning: oklch(0.500 0.125 80);
+  --color-error: oklch(0.520 0.190 24);
 
   --color-border: oklch(0.35 0.015 240 / 0.16);
   --color-border-soft: oklch(0.35 0.015 240 / 0.09);
+  --color-border-control: oklch(0.60 0.020 238);
   --color-inner-light: oklch(1 0 0 / 0);
 
   --shadow-sm: 0 1px 2px oklch(0.25 0.02 240 / 0.06);
   --shadow-md: 0 2px 10px oklch(0.25 0.02 240 / 0.08);
   --shadow-lg: 0 12px 40px oklch(0.25 0.02 240 / 0.13);
-  --shadow-glow: 0 0 32px oklch(0.500 0.105 215 / 0.12);
+  --shadow-glow: 0 0 32px color-mix(in oklch, var(--color-accent) 12%, transparent);
 }
 
 :root[data-theme="dark"] { color-scheme: dark; }
@@ -122,6 +125,7 @@ body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
+  transition: background-color 200ms var(--ease-out-quart); /* palette preview; collapsed by reduced-motion below */
 }
 
 /* Keyboard focus — visible ring, shown instantly (never animated) */
@@ -139,6 +143,14 @@ body {
 }
 .field-shell :focus-visible {
   outline: none;
+}
+
+/* Control boundaries (inputs, off toggles) read at >=3:1 (WCAG 1.4.11) via an inset
+   ring on a dedicated token; --color-border stays a quiet hairline for cards. Layered
+   as components so utilities and the focus rule above still win. */
+@layer components {
+  .field-shell { box-shadow: inset 0 0 0 1px var(--color-border-control); }
+  [role="switch"][aria-checked="false"] { box-shadow: inset 0 0 0 1px var(--color-border-control); }
 }
 
 /* Shared keyboard-focus ring for every UI primitive — same box-shadow idiom as
@@ -182,3 +194,42 @@ body {
   background-clip: padding-box;
 }
 ::-webkit-scrollbar-thumb:hover { background: oklch(0.55 0.022 235 / 0.5); background-clip: padding-box; }
+
+/* ── motion ─────────────────────────────────────────────────────────────────
+   Speed tokens (exit is shorter than enter) and the shared motion classes.
+   The reduced-motion block above collapses every duration; the classes below
+   also drop their animation outright so nothing is left holding a frame. */
+:root {
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+  --dur-enter: 280ms;
+  --dur-exit: 160ms;
+}
+
+/* Active-download status dot. */
+.pulse-dot { animation: pulse-dot 1.8s ease-in-out infinite; }
+@keyframes pulse-dot { 50% { opacity: 0.35; } }
+
+/* Success / failure badge pop, 0.9 -> 1. */
+.badge-pop { animation: badge-pop 220ms var(--ease-out-quart) both; }
+@keyframes badge-pop { from { opacity: 0; transform: scale(0.9); } }
+
+/* Sparkline: each new sample slides in by one slot, linear so the scroll is steady. */
+.spark-scroll { animation: spark-scroll 1s linear; }
+@keyframes spark-scroll { from { transform: translateX(1px); } }
+
+/* ONE sheen over the whole skeleton block (a single gradient, not one per row). */
+.skeleton-shimmer { position: relative; overflow: hidden; }
+.skeleton-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 30%, color-mix(in oklch, var(--color-text-primary) 7%, transparent) 50%, transparent 70%);
+  transform: translateX(-100%);
+  animation: skeleton-shimmer 1.6s ease-in-out infinite;
+}
+@keyframes skeleton-shimmer { to { transform: translateX(100%); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse-dot, .badge-pop, .spark-scroll, .skeleton-shimmer::after { animation: none; }
+}

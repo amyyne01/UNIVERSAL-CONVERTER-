@@ -20,7 +20,9 @@ import { Link, GoTo, Forward, OpenFolder, Alert } from '@/components/ui/icons';
 import { useAppStore } from '@/store';
 import { looksLikeUrl } from '@/components/tabs/PlatformTab';
 import { UnifiedSearch } from '@/components/UnifiedSearch';
+import { SpeedSparkline } from '@/components/SpeedSparkline';
 import { PLATFORMS } from '@/constants';
+import { MORE_SOURCE_LABELS } from '@shared/types';
 import type { PlatformKey, TabKey } from '@/constants';
 import { Button } from '@/components/ui';
 import { formatBytes, formatDuration } from '@/lib/format';
@@ -64,6 +66,7 @@ const SOURCE_COLOR: Record<SourcePlatform, string> = {
   direct: 'var(--color-accent)',
   generic: 'var(--color-accent)',
   unknown: 'var(--color-accent)',
+  ...(Object.fromEntries(Object.keys(MORE_SOURCE_LABELS).map(k => [k, 'var(--color-accent)'])) as Record<keyof typeof MORE_SOURCE_LABELS, string>),
 };
 
 // The four sources do genuinely different jobs, so they don't get one repeated
@@ -903,15 +906,7 @@ export function Dashboard() {
             onClick={() => setActiveTab('queue')}
             className="no-drag inline-flex items-center gap-2.5 h-9 pl-3 pr-3.5 rounded-md border border-border-soft bg-bg-secondary shadow-sm hover:bg-bg-hover focus-visible:bg-bg-hover transition-colors duration-150"
           >
-            <motion.span
-              aria-hidden
-              className="w-1.5 h-1.5 rounded-full shrink-0"
-              style={{ background: 'var(--color-accent)' }}
-              // The one thing on this screen that says "work is happening right
-              // now". A static dot still says "active" when motion is reduced.
-              animate={reduce ? { opacity: 1 } : { opacity: [1, 0.35, 1] }}
-              transition={reduce ? { duration: 0 } : { duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
-            />
+            <span aria-hidden className="pulse-dot w-1.5 h-1.5 rounded-full shrink-0 bg-accent" />
             <span className="text-[13px] text-text-primary">
               <span className="font-mono tabular-nums">{activeCount}</span> in flight
             </span>
@@ -1058,6 +1053,11 @@ export function Dashboard() {
         </div>
       ) : (
       <div className="mt-8 grid gap-4 @min-[1000px]:grid-cols-2 @min-[1500px]:grid-cols-3">
+        {activeCount > 0 && (
+          <Cell index={0} title="Speed" className="@min-[1000px]:col-span-2 @min-[1500px]:col-span-3">
+            <SpeedSparkline />
+          </Cell>
+        )}
         <MonthCell stats={stats} index={0} />
         <SplitCell stats={stats} index={1} />
 
