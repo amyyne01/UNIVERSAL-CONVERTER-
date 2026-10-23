@@ -31,6 +31,38 @@ beforeEach(() => {
   vi.mocked(statSync).mockReturnValue({ isDirectory: () => true } as never);
 });
 
+it('carries no dead keys (A6)', () => {
+  for (const k of ['rememberLastDir', 'ffmpegPath', 'autoPaste']) expect(k in defaultConfig).toBe(false);
+});
+
+// A6: a download folder is absolute, '..'-free, an existing dir and not a system location.
+describe('outputDir boundary (A6)', () => {
+  beforeEach(() => {
+    vi.unstubAllEnvs();
+    vi.stubEnv('SystemRoot', 'C:\\WINDOWS');
+    vi.stubEnv('windir', 'C:\\WINDOWS');
+    vi.stubEnv('SystemDrive', 'C:');
+    vi.stubEnv('ProgramFiles', 'C:\\Program Files');
+    vi.stubEnv('ProgramFiles(x86)', 'C:\\Program Files (x86)');
+    vi.stubEnv('ProgramData', 'C:\\ProgramData');
+  });
+  it.each([
+    'C:\\Windows', 'C:\\Windows\\System32', 'C:\\Program Files\\x', 'C:\\Program Files (x86)', 'C:\\ProgramData',
+    'C:\\', '..\\..\\x', 'relative\\dir', 'D:\\Music\\..\\..\\Windows', '\\\\server\\share',
+  ])('refuses %j and set() says so', (dir) => {
+    const cfg = new ConfigManager();
+    expect(cfg.set('outputDir', dir)).toBe(false);
+    expect(cfg.get('outputDir')).toBe('C:\\Downloads');
+  });
+  it('accepts a Temp test folder and a normal user folder', () => {
+    const cfg = new ConfigManager();
+    const temp = `${process.env.LOCALAPPDATA ?? 'C:\\Users\\u\\AppData\\Local'}\\Temp\\claude\\out`;
+    expect(cfg.set('outputDir', temp)).toBe(true);
+    expect(cfg.get('outputDir')).toBe(temp);
+    expect(cfg.set('outputDir', 'D:\\Music')).toBe(true);
+  });
+});
+
 describe('boundary validation of spawn/filesystem settings', () => {
   it('rejects a bad outputDir, proxy and rateLimit and keeps the prior value', () => {
     const cfg = new ConfigManager();
@@ -105,24 +137,24 @@ describe('ConfigManager', () => {
   });
 
   it('strips unknown keys on load', () => {
-    mockRead.mockReturnValue(JSON.stringify({ outputDir: 'X', bogusKey: 'nope' }));
+    mockRead.mockReturnValue(JSON.stringify({ outputDir: 'D:/X', bogusKey: 'nope' }));
     const cfg = new ConfigManager();
-    expect(cfg.get('outputDir')).toBe('X');
+    expect(cfg.get('outputDir')).toBe('D:/X');
     expect((cfg.getAll() as Record<string, unknown>).bogusKey).toBeUndefined();
   });
 
   it('rejects __proto__ to prevent prototype pollution', () => {
-    mockRead.mockReturnValue('{"__proto__":{"polluted":true},"constructor":{"x":1},"outputDir":"Y"}');
+    mockRead.mockReturnValue('{"__proto__":{"polluted":true},"constructor":{"x":1},"outputDir":"D:/Y"}');
     const cfg = new ConfigManager();
     expect(({} as Record<string, unknown>).polluted).toBeUndefined();
     expect((cfg.getAll() as Record<string, unknown>).polluted).toBeUndefined();
-    expect(cfg.get('outputDir')).toBe('Y');
+    expect(cfg.get('outputDir')).toBe('D:/Y');
   });
 
   it('update merges partial values and strips unknown/dangerous keys', () => {
     const cfg = new ConfigManager();
-    cfg.update({ outputDir: 'Z', defaultQuality: '192' });
-    expect(cfg.get('outputDir')).toBe('Z');
+    cfg.update({ outputDir: 'D:/Z', defaultQuality: '192' });
+    expect(cfg.get('outputDir')).toBe('D:/Z');
     expect(cfg.get('defaultQuality')).toBe('192');
     expect(cfg.get('defaultFormat')).toBe('mp3'); // untouched
 
@@ -133,11 +165,11 @@ describe('ConfigManager', () => {
 
   it('saveNow writes config to disk immediately', () => {
     const cfg = new ConfigManager();
-    cfg.set('outputDir', 'W');
+    cfg.set('outputDir', 'D:/W');
     cfg.saveNow();
     expect(mockWrite).toHaveBeenCalledTimes(1);
     const [, content] = mockWrite.mock.calls[0];
-    expect(content).toContain('"outputDir": "W"');
+    expect(content).toContain('"outputDir": "D:/W"');
   });
 
   it('debounces set writes (~400ms)', () => {
@@ -228,13 +260,13 @@ describe('ConfigManager', () => {
       const filePath = String(p);
       if (filePath.endsWith('config.backup.1.json')) throw new Error('corrupt');
       if (filePath.endsWith('config.backup.2.json')) {
-        return JSON.stringify({ outputDir: 'FromRing', schemaVersion: 1 });
+        return JSON.stringify({ outputDir: 'D:/FromRing', schemaVersion: 1 });
       }
       if (filePath.endsWith('config.json')) return '{not valid json';
       throw new Error('ENOENT');
     });
     const cfg = new ConfigManager();
-    expect(cfg.get('outputDir')).toBe('FromRing');
+    expect(cfg.get('outputDir')).toBe('D:/FromRing');
     expect(cfg.wasRestoredFromBackup()).toBe(true);
   });
 

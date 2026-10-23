@@ -685,17 +685,6 @@ export function SettingsTab() {
           </Row>
 
           <Row
-            label="Auto-paste from clipboard"
-            desc="Detect and fill a URL when you switch to this window"
-          >
-            <Toggle
-              label="Auto-paste from clipboard"
-              checked={config.autoPaste}
-              onChange={(v) => updateConfig({ autoPaste: v })}
-            />
-          </Row>
-
-          <Row
             label="Clipboard watcher"
             desc="Offer a one-click download whenever you copy a link, even outside the app"
           >

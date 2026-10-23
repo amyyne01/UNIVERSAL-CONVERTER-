@@ -34,6 +34,15 @@ export function urlArg(value: unknown, maxLen = MAX_URL): string {
   return value;
 }
 
+/** urlArg for everything that spawns yt-dlp: http(s) links only, plus the Spotify
+ *  bridge's `ytsearch:` query. url:detect keeps plain urlArg — it classifies any
+ *  pasted text and must answer 'unknown', not throw. */
+export function mediaUrlArg(value: unknown): string {
+  const url = urlArg(value);
+  if (!/^(https?:\/\/|ytsearch:)/i.test(url)) throw new Error('Invalid input: only http(s) links can be downloaded');
+  return url;
+}
+
 const MAX_PLAYLIST_ITEMS = 256;
 const PLAYLIST_ITEMS_RE = /^\d+(-\d+)?(,\d+(-\d+)?)*$/;
 
@@ -129,14 +138,16 @@ export function secure<A extends unknown[], R>(
 // HOW-THE-APP-WORKS §15: constrain what the renderer may load and connect to.
 // Applied in packaged builds only — the Vite dev server needs a looser policy
 // (inline scripts, eval, ws: HMR), so dev is left alone.
-const CSP = [
+// connect-src 'none': the renderer talks to main over IPC only; 'self' on a file://
+// page would let it fetch() local files. img-src stays https: for the many thumbnail CDNs.
+export const CSP = [
   "default-src 'self'",
   "script-src 'self'",
   "style-src 'self' 'unsafe-inline'",
   "font-src 'self' data:",
   "img-src 'self' data: https:",
   "media-src 'self' https:",
-  "connect-src 'self'",
+  "connect-src 'none'",
   "object-src 'none'",
   "base-uri 'self'",
   "frame-src 'none'",

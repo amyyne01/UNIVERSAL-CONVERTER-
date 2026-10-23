@@ -31,6 +31,15 @@
   --color-spotify: oklch(0.730 0.180 150);
   --color-soundcloud: oklch(0.725 0.190 55);
   --color-reels: oklch(0.700 0.235 352);
+  /* Monogram tiles for the sources with no tab of their own: one hue each, kept clear of status and platform hues (check-contrast.mjs guards it). */
+  --color-src-twitter: oklch(0.760 0.020 240);
+  --color-src-vimeo: oklch(0.760 0.130 230);
+  --color-src-twitch: oklch(0.760 0.130 275);
+  --color-src-bandcamp: oklch(0.760 0.130 20);
+  --color-src-reddit: oklch(0.760 0.130 115);
+  --color-src-dailymotion: oklch(0.760 0.130 330);
+  --color-src-mixcloud: oklch(0.760 0.130 70);
+  --color-src-rumble: oklch(0.760 0.130 170);
 
   --color-success: oklch(0.740 0.160 150);
   --color-warning: oklch(0.830 0.145 85);
@@ -57,6 +66,10 @@
   --font-sans: "Geist Sans", system-ui, sans-serif;
   --font-mono: "Geist Mono", monospace;
 
+  /* Type floor: nothing renders under 11px. */
+  --text-2xs: 11px;
+  --text-2xs--line-height: 1.4;
+
   /* Hairline + inner-light elevation: every shadow carries a 1px inner top highlight. */
   --shadow-sm: inset 0 1px 0 var(--color-inner-light), 0 1px 2px oklch(0 0 0 / 0.30);
   --shadow-md: inset 0 1px 0 var(--color-inner-light), 0 2px 10px oklch(0 0 0 / 0.30);
@@ -64,7 +77,6 @@
   --shadow-glow: 0 0 32px color-mix(in oklch, var(--color-accent) 16%, transparent);
 
   --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
-  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -98,6 +110,14 @@
   --color-spotify: oklch(0.480 0.150 150);
   --color-soundcloud: oklch(0.510 0.140 55);
   --color-reels: oklch(0.525 0.220 352);
+  --color-src-twitter: oklch(0.470 0.020 240);
+  --color-src-vimeo: oklch(0.470 0.140 250);
+  --color-src-twitch: oklch(0.470 0.120 275);
+  --color-src-bandcamp: oklch(0.470 0.120 20);
+  --color-src-reddit: oklch(0.470 0.120 115);
+  --color-src-dailymotion: oklch(0.470 0.120 330);
+  --color-src-mixcloud: oklch(0.400 0.090 70);
+  --color-src-rumble: oklch(0.470 0.120 170);
 
   --color-success: oklch(0.480 0.140 150);
   --color-warning: oklch(0.500 0.125 80);
@@ -196,15 +216,9 @@ body {
 ::-webkit-scrollbar-thumb:hover { background: oklch(0.55 0.022 235 / 0.5); background-clip: padding-box; }
 
 /* ── motion ─────────────────────────────────────────────────────────────────
-   Speed tokens (exit is shorter than enter) and the shared motion classes.
+   The shared motion classes.
    The reduced-motion block above collapses every duration; the classes below
    also drop their animation outright so nothing is left holding a frame. */
-:root {
-  --dur-fast: 120ms;
-  --dur-base: 200ms;
-  --dur-enter: 280ms;
-  --dur-exit: 160ms;
-}
 
 /* Active-download status dot. */
 .pulse-dot { animation: pulse-dot 1.8s ease-in-out infinite; }

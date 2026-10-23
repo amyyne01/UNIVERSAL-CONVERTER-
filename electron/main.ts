@@ -13,8 +13,9 @@ import { detectUrl } from './url-detector.js';
 import {
   setDownloader, createTask, enqueueTask,
   getRecentDownloads, onQueueChange, pauseAllDownloads, resumeAllDownloads,
-  initHistory, flushHistory, hasUnfinishedWork, onDownloadFailure, onDownloadCompleted,
+  initHistory, flushHistory, hasUnfinishedWork, onDownloadFailure, onDownloadCompleted, getAllTasks,
 } from './queue.js';
+import { downloadFeedback } from './feedback.js';
 import { initTray } from './tray.js';
 import { registerGlobalHotkey, unregisterGlobalHotkey, unregisterAllHotkeys } from './hotkey.js';
 import { ClipboardWatcher } from './clipboard-watch.js';
@@ -135,7 +136,7 @@ function initServices(secrets: Secrets, license: LicenseManager): void {
       resumeAll: resumeAllDownloads,
       toggleWindow,
       pasteAndDownload,
-      quit: () => app.quit(),
+      quit: () => { logLine('info', 'quit from tray'); app.quit(); },
     },
   });
   onQueueChange(() => tray?.update());
@@ -223,6 +224,8 @@ function syncServices(secrets: Secrets): void {
 // that — app.quit() alone races app.whenReady() in the losing instance); the
 // 'second-instance' event is that failed launch's argv, forwarded to us.
 if (!app.requestSingleInstanceLock()) {
+  initLog(app.getPath('userData')); // whenReady never runs in this losing instance
+  logLine('info', 'second instance: quitting');
   app.quit();
   process.exit(0);
 }
@@ -247,6 +250,9 @@ app.on('second-instance', (_event, argv) => {
 process.on('uncaughtException', (e) => logLine('error', `uncaughtException: ${errText(e)}`));
 process.on('unhandledRejection', (e) => logLine('error', `unhandledRejection: ${errText(e)}`));
 app.on('render-process-gone', (_e, _wc, d) => logLine('error', `render-process-gone: ${d.reason} (exit ${d.exitCode})`));
+// Close/quit breadcrumbs: a window that vanished on its own must leave its cause in ahg.log.
+app.on('child-process-gone', (_e, d) => logLine('error', `child-process-gone: ${d.type} ${d.reason} (exit ${d.exitCode})`));
+app.on('browser-window-created', (_e, w) => w.on('unresponsive', () => logLine('error', 'window unresponsive')));
 
 app.whenReady().then(() => {
   initLog(app.getPath('userData'));
@@ -263,7 +269,17 @@ app.whenReady().then(() => {
   // can never shrink while the user keeps downloading.
   const stats = new StatsStore();
   stats.init(statsFilePath(app.getPath('userData')));
-  onDownloadCompleted((task, filepaths) => stats.record(task.source, filepaths, task.progress.total));
+  const feedback = downloadFeedback({
+    enabled: () => config!.get('showNotifications') && Notification.isSupported(),
+    notify: (body) => new Notification({ title: 'Download complete', body }).show(),
+    setProgress: (p) => getMainWindow()?.setProgressBar(p),
+  });
+  onDownloadCompleted((task, filepaths) => {
+    stats.record(task.source, filepaths, task.progress.total);
+    feedback.completed(task);
+  });
+  // Percent ticks bypass onQueueChange (IPC only), so the taskbar samples once a second.
+  setInterval(() => feedback.progress(getAllTasks()), 1000).unref();
   const downloader = new Downloader();
   setDownloader(downloader);
   const spotify = new SpotifyHandler();
@@ -336,6 +352,7 @@ app.whenReady().then(() => {
 
 // §10: one final, immediate, non-debounced save; then tear down the ambient layer.
 app.on('before-quit', () => {
+  logLine('info', 'before-quit');
   config?.saveNow();
   flushHistory();
   unregisterAllHotkeys();
@@ -346,5 +363,6 @@ app.on('before-quit', () => {
 });
 
 app.on('window-all-closed', () => {
+  logLine('info', 'window-all-closed');
   if (process.platform !== 'darwin') app.quit();
 });

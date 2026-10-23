@@ -1,5 +1,29 @@
 import { describe, it, expect } from 'vitest';
-import { formatDuration, formatBytes } from '@/lib/format';
+import { formatDuration, formatBytes, linkLabel } from '@/lib/format';
+
+describe('linkLabel', () => {
+  it('names the host and the id, so a batch of untitled rows tells apart', () => {
+    const urls = [
+      'https://www.youtube.com/watch?v=aaaaaaaaaaa',
+      'https://youtu.be/bbbbbbbbbbb',
+      'https://vimeo.com/999999999',
+      'https://x.com/someone/status/123456',
+      'https://artist.bandcamp.com/track/song-name',
+      'https://www.reddit.com/r/videos/comments/abc123/title/',
+      'https://www.dailymotion.com/video/x8abcd',
+    ];
+    const labels = urls.map(linkLabel);
+    expect(labels[0]).toBe('youtube.com · aaaaaaaaaaa');
+    expect(labels[1]).toBe('youtu.be/bbbbbbbbbbb');
+    expect(labels[2]).toBe('vimeo.com/999999999');
+    expect(new Set(labels).size).toBe(urls.length);
+  });
+
+  it('shortens a long path and survives text that is not a URL', () => {
+    expect(linkLabel('https://example.com/' + 'a'.repeat(80)).length).toBeLessThanOrEqual(48);
+    expect(linkLabel('not a url')).toBe('not a url');
+  });
+});
 
 describe('formatDuration', () => {
   it('returns empty string for falsy input', () => {

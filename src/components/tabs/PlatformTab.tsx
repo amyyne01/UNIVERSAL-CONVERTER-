@@ -2,6 +2,7 @@
 // URL → detect/parse → single download or playlist preview; plain text → search.
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
+import { EASE_OUT_EXPO as EASE } from '@/components/ui/motion';
 import {
   Search, Link, Download, Video, Audio, Clock, Alert, Retry, Track as TrackIcon,
   type AppIcon,
@@ -56,9 +57,10 @@ const PLATFORM_COPY: Record<PlatformKey, { capability: string; hint: string; emp
   },
 };
 
-const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
 
-export const looksLikeUrl = (s: string): boolean => /^(https?:\/\/|spotify:|[\w-]+\.[a-z]{2,})/i.test(s.trim());
+// Any scheme:// counts as a link (file://, ftp://…) so it reaches url.detect and is
+// refused as unsupported, instead of being searched for as text.
+export const looksLikeUrl = (s: string): boolean => /^([a-z][\w+.-]*:\/\/|spotify:|[\w-]+\.[a-z]{2,})/i.test(s.trim());
 
 /** A link-per-line list never needs more, and file.size is checked before the
  *  read so a stray drop of something huge can't be pulled into memory. */
@@ -298,7 +300,7 @@ export function PlatformTab({ platform }: PlatformTabProps) {
           // parseUrl is local pattern-matching — failure means bad input, not network.
           const { type } = await window.electronAPI.spotify
             .parseUrl(input)
-            .catch(() => { throw new ValidationError("That link couldn't be read — check it and try again."); });
+            .catch(() => { throw new ValidationError("That link couldn't be read. Check it and try again."); });
           if (type === 'playlist' || type === 'album') {
             const pl =
               type === 'playlist'
@@ -326,7 +328,7 @@ export function PlatformTab({ platform }: PlatformTabProps) {
         // url.detect is local pattern-matching — failure means bad input, not network.
         const detection = await window.electronAPI.url
           .detect(input)
-          .catch(() => { throw new ValidationError("That link couldn't be read — check it and try again."); });
+          .catch(() => { throw new ValidationError("That link couldn't be read. Check it and try again."); });
         if (detection.platform === 'unknown') {
           return setPhase({ k: 'error', msg: `That link isn't one ${def.label} can handle.` });
         }
@@ -336,6 +338,20 @@ export function PlatformTab({ platform }: PlatformTabProps) {
         const target = detection.url;
         if (detection.isCollection) {
           const meta = await window.electronAPI.url.fetchMetadata(target);
+          // A YouTube playlist opens the picker (all ticked): untick what you
+          // don't want and it downloads as ONE job with --playlist-items.
+          if (platform === 'youtube' && meta.entries.length) {
+            setCurrentPlaylist({
+              id: detection.id ?? target, name: meta.title, description: '', owner: meta.uploader,
+              thumbnailUrl: meta.thumbnailUrl, url: target, trackCount: meta.entries.length,
+              tracks: meta.entries.map((e, i) => ({
+                id: e.id, name: e.title, artist: e.uploader, artists: [e.uploader], album: '',
+                trackNumber: i + 1, durationMs: (e.duration || 0) * 1000, thumbnailUrl: e.thumbnailUrl,
+              })),
+            });
+            useAppStore.getState().selectAllTracks();
+            return setPhase({ k: 'idle' });
+          }
           setResults(meta.entries.map(searchToItem));
           return setPhase(
             meta.entries.length
@@ -446,7 +462,7 @@ export function PlatformTab({ platform }: PlatformTabProps) {
         </div>
         <div>
           <h1 className="text-h1 text-text-primary">{def.label}</h1>
-          <p className="font-mono text-[10.5px] tracking-[0.08em] uppercase text-text-muted mt-1">{copy.capability}</p>
+          <p className="font-mono text-2xs tracking-[0.08em] uppercase text-text-muted mt-1">{copy.capability}</p>
           {/* What the free tier gives you, on the surface where you'd use it.
               Without this the tier only ever speaks when it says no, which is how
               a free version starts feeling like a demo instead of a product. */}
@@ -535,7 +551,7 @@ export function PlatformTab({ platform }: PlatformTabProps) {
 
         {phase.k === 'idle' && (
           <EmptyPanel icon={Icon} accentIcon={accent} title={copy.hint}>
-            <span className="font-mono text-[10.5px] tracking-[0.08em] uppercase text-text-muted">
+            <span className="font-mono text-2xs tracking-[0.08em] uppercase text-text-muted">
               Enter to fetch · paste several links, or drop a .txt/.csv, to batch them
             </span>
           </EmptyPanel>
@@ -671,10 +687,10 @@ function ResultList({
   return (
     <section aria-label="Results">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-1 mb-2">
-        <span className="font-mono text-[10.5px] tracking-[0.08em] uppercase text-text-muted tabular-nums">
+        <span className="font-mono text-2xs tracking-[0.08em] uppercase text-text-muted tabular-nums">
           {items.length} result{items.length === 1 ? '' : 's'}
         </span>
-        <span className="font-mono text-[10.5px] tracking-[0.08em] uppercase text-text-muted">
+        <span className="font-mono text-2xs tracking-[0.08em] uppercase text-text-muted">
           Arrows move · Enter downloads
         </span>
       </div>
@@ -764,7 +780,7 @@ function SingleResultCard({
           being readable, so the Download button wraps under instead of squeezing it. */}
       <div className="min-w-0 flex-1 basis-[240px]">
         <div
-          className="font-mono text-[10.5px] tracking-[0.08em] uppercase mb-1.5"
+          className="font-mono text-2xs tracking-[0.08em] uppercase mb-1.5"
           style={{ color: accent }}
         >
           {eyebrow}
@@ -775,7 +791,7 @@ function SingleResultCard({
         {item.subtitle && (
           <p className="text-sm text-text-secondary truncate">{item.subtitle}</p>
         )}
-        <div className="flex items-center gap-3 mt-2.5 font-mono text-[10.5px] tracking-[0.08em] uppercase text-text-muted tabular-nums">
+        <div className="flex items-center gap-3 mt-2.5 font-mono text-2xs tracking-[0.08em] uppercase text-text-muted tabular-nums">
           {item.duration > 0 && (
             <span className="flex items-center gap-1.5">
               <Clock size={12} />
@@ -799,7 +815,7 @@ function SingleResultCard({
 function FetchSkeleton({ note, square }: { note: string; square: boolean }) {
   return (
     <section aria-busy="true" aria-live="polite">
-      <div className="px-1 mb-2 font-mono text-[10.5px] tracking-[0.08em] uppercase text-text-muted">
+      <div className="px-1 mb-2 font-mono text-2xs tracking-[0.08em] uppercase text-text-muted">
         {note}
       </div>
       {/* Six, not four: six divides evenly by the 1/2/3 column counts the results

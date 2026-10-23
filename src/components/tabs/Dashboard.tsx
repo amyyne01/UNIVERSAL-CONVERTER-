@@ -16,13 +16,13 @@
 // Uses only tokens defined in index.css.
 import { useState, useCallback, useEffect, useRef, type ReactNode } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
+import { EASE_OUT_EXPO } from '@/components/ui/motion';
 import { Link, GoTo, Forward, OpenFolder, Alert } from '@/components/ui/icons';
 import { useAppStore } from '@/store';
 import { looksLikeUrl } from '@/components/tabs/PlatformTab';
 import { UnifiedSearch } from '@/components/UnifiedSearch';
 import { SpeedSparkline } from '@/components/SpeedSparkline';
-import { PLATFORMS } from '@/constants';
-import { MORE_SOURCE_LABELS } from '@shared/types';
+import { PLATFORMS, SOURCE_META } from '@/constants';
 import type { PlatformKey, TabKey } from '@/constants';
 import { Button } from '@/components/ui';
 import { formatBytes, formatDuration } from '@/lib/format';
@@ -56,19 +56,6 @@ const PLATFORM_COLOR: Record<string, string> = {
   reels: 'var(--color-reels)',
 };
 
-const SOURCE_COLOR: Record<SourcePlatform, string> = {
-  youtube: 'var(--color-youtube)',
-  spotify: 'var(--color-spotify)',
-  soundcloud: 'var(--color-soundcloud)',
-  instagram: 'var(--color-reels)',
-  tiktok: 'var(--color-reels)',
-  facebook: 'var(--color-reels)',
-  direct: 'var(--color-accent)',
-  generic: 'var(--color-accent)',
-  unknown: 'var(--color-accent)',
-  ...(Object.fromEntries(Object.keys(MORE_SOURCE_LABELS).map(k => [k, 'var(--color-accent)'])) as Record<keyof typeof MORE_SOURCE_LABELS, string>),
-};
-
 // The four sources do genuinely different jobs, so they don't get one repeated
 // card template. YouTube leads: it's the only source that yields both video and
 // audio, and it's where plain-text input is routed to be searched — so it gets
@@ -90,6 +77,10 @@ const SOURCE_COPY: Record<PlatformKey, { blurb: string; specs?: [string, string]
 
 // Terminal statuses: not counted as "active"
 const TERMINAL = new Set<DownloadStatus>(['done', 'failed', 'cancelled']);
+
+/** Sources that are music first: a pasted link defaults to audio. */
+const AUDIO_SOURCES = new Set<SourcePlatform>(['spotify', 'soundcloud', 'bandcamp', 'mixcloud']);
+const NOT_SUPPORTED = 'This site isn’t supported. Paste a link from YouTube, Spotify, SoundCloud, Vimeo and more.';
 
 /** 'YYYY-MM' → "August". Built from parts: `new Date('2026-08')` parses as UTC
  *  and can name the wrong month either side of the boundary. */
@@ -123,7 +114,7 @@ function Cell({ title, aside, className = '', index, children }: CellProps) {
       animate={{ opacity: 1, y: 0 }}
       // Short and out-fast (expo). Reduced motion keeps the fade — a crossfade
       // still reads as "this arrived" — but drops the travel entirely.
-      transition={{ duration: reduce ? 0.14 : 0.26, delay: reduce ? 0 : index * 0.045, ease: [0.16, 1, 0.3, 1] }}
+      transition={{ duration: reduce ? 0.14 : 0.26, delay: reduce ? 0 : index * 0.045, ease: EASE_OUT_EXPO }}
       className={`min-w-0 flex flex-col rounded-lg border border-border-soft bg-bg-surface shadow-sm p-5 ${className}`}
     >
       <div className="flex items-center justify-between gap-3 mb-4">
@@ -181,7 +172,7 @@ function MonthBar({ label, value, max, lead }: { label: string; value: number; m
           style={{ width: `${pct}%`, background: lead ? 'var(--color-accent)' : alpha('var(--color-accent)', 32) }}
           initial={{ scaleX: reduce ? 1 : 0 }}
           animate={{ scaleX: 1 }}
-          transition={{ duration: reduce ? 0 : 0.36, delay: reduce ? 0 : 0.12, ease: [0.16, 1, 0.3, 1] }}
+          transition={{ duration: reduce ? 0 : 0.36, delay: reduce ? 0 : 0.12, ease: EASE_OUT_EXPO }}
         />
       </span>
     </div>
@@ -352,11 +343,6 @@ function SplitCell({ stats, index }: StatsCellProps) {
         </div>
       ) : rows.length === 0 ? (
         <div className="flex flex-col gap-3.5 max-w-[560px]">
-          {/* Empty rails keep the cell's shape, so the chart doesn't appear from
-              nowhere the moment the first file lands. */}
-          {[0, 1, 2].map((i) => (
-            <span aria-hidden key={i} className="block h-1.5 rounded-full bg-bg-hover" />
-          ))}
           <p className="mt-0.5 text-[13px] text-text-secondary leading-relaxed max-w-[52ch]">
             Once files start landing, this splits them across YouTube, Spotify, SoundCloud and short-form.
           </p>
@@ -397,7 +383,7 @@ function SplitCell({ stats, index }: StatsCellProps) {
                   style={{ width: `${Math.max(r.pct, 2)}%`, background: r.color }}
                   initial={{ scaleX: reduce ? 1 : 0 }}
                   animate={{ scaleX: 1 }}
-                  transition={{ duration: reduce ? 0 : 0.36, delay: reduce ? 0 : 0.1 + i * 0.05, ease: [0.16, 1, 0.3, 1] }}
+                  transition={{ duration: reduce ? 0 : 0.36, delay: reduce ? 0 : 0.1 + i * 0.05, ease: EASE_OUT_EXPO }}
                 />
               </span>
             </li>
@@ -512,7 +498,7 @@ interface RecentTileProps {
 // with its meta moved onto the scrim it already had.
 function RecentTile({ task, onQueue, lead = false, className = '' }: RecentTileProps) {
   const reduce = useReducedMotion();
-  const color = SOURCE_COLOR[task.source] ?? 'var(--color-accent)';
+  const color = SOURCE_META[task.source].color;
   const filePath = task.progress.filename;
 
   // The overlay sits on artwork, which is theme-independent — so its scrim and
@@ -558,7 +544,7 @@ function RecentTile({ task, onQueue, lead = false, className = '' }: RecentTileP
           style={{ background: color, boxShadow: `0 0 7px ${color}` }}
         />
         {task.duration > 0 && (
-          <span className="absolute top-2 right-2 font-mono text-[10px] tabular-nums text-text-primary bg-bg-primary/[0.78] rounded px-1.5 py-0.5 transition-opacity duration-150 group-hover:opacity-0 group-focus-within:opacity-0">
+          <span className="absolute top-2 right-2 font-mono text-2xs tabular-nums text-text-primary bg-bg-primary/[0.78] rounded px-1.5 py-0.5 transition-opacity duration-150 group-hover:opacity-0 group-focus-within:opacity-0">
             {formatDuration(task.duration)}
           </span>
         )}
@@ -574,7 +560,7 @@ function RecentTile({ task, onQueue, lead = false, className = '' }: RecentTileP
               {title}
             </p>
             <p
-              className="mt-1 font-mono text-[10.5px] tabular-nums truncate"
+              className="mt-1 font-mono text-2xs tabular-nums truncate"
               style={{ color: alpha(overlayInk, 72) }}
             >
               {task.format.toUpperCase()} · {formatBytes(task.progress.downloaded)}
@@ -627,7 +613,7 @@ function RecentTile({ task, onQueue, lead = false, className = '' }: RecentTileP
       {!lead && (
         <div className="mt-2.5 px-0.5">
           <p className="text-[12.5px] font-medium text-text-primary leading-snug truncate">{title}</p>
-          <div className="flex justify-between gap-2 mt-1 font-mono text-[10.5px] tabular-nums text-text-secondary">
+          <div className="flex justify-between gap-2 mt-1 font-mono text-2xs tabular-nums text-text-secondary">
             <span className="truncate">{task.format.toUpperCase()}</span>
             <span className="shrink-0">{formatBytes(task.progress.downloaded)}</span>
           </div>
@@ -642,6 +628,9 @@ function RecentTile({ task, onQueue, lead = false, className = '' }: RecentTileP
 export function Dashboard() {
   const downloads = useAppStore((s) => s.downloads);
   const setActiveTab = useAppStore((s) => s.setActiveTab);
+  const outputDir = useAppStore((s) => s.config?.outputDir);
+  const defaultFormat = useAppStore((s) => s.config?.defaultFormat);
+  const hotkey = useAppStore((s) => s.config?.globalHotkey);
   const setPendingInput = useAppStore((s) => s.setPendingInput);
   const locks = useTierLocks();
   const reduce = useReducedMotion();
@@ -722,7 +711,7 @@ export function Dashboard() {
           track = (await window.electronAPI.spotify.fetchTrack(u)) ?? undefined;
           if (!track) continue; // collections go through the preview flow, not batch
         }
-        const audioOnly = det.platform === 'spotify' || det.platform === 'soundcloud';
+        const audioOnly = AUDIO_SOURCES.has(det.platform);
         const task = await window.electronAPI.download.start({
           url: det.url,
           source: det.platform,
@@ -789,11 +778,12 @@ export function Dashboard() {
         // through the batch path that already handles every detected platform.
         await batchDownload([input]);
       } else {
-        setError('That doesn’t look like a link we can download. Paste a full web address.');
+        setError(NOT_SUPPORTED);
       }
     } catch {
-      // url.detect is local pattern-matching — failure means bad input, not network.
-      setError('That link couldn’t be read. Check it and try again.');
+      // url.detect is local pattern-matching (and refuses non-web schemes) —
+      // failure means a link we won't take, not a network problem.
+      setError(NOT_SUPPORTED);
     } finally {
       setDetecting(false);
     }
@@ -860,10 +850,23 @@ export function Dashboard() {
     }
     return (
       <span className="text-text-secondary">
-        <kbd className="font-mono text-[10.5px] bg-bg-surface border border-border rounded px-1.5 py-0.5 text-text-secondary">Ctrl</kbd>
+        <kbd className="font-mono text-2xs bg-bg-surface border border-border rounded px-1.5 py-0.5 text-text-secondary">Ctrl</kbd>
         {' + '}
-        <kbd className="font-mono text-[10.5px] bg-bg-surface border border-border rounded px-1.5 py-0.5 text-text-secondary">V</kbd>
-        {' pastes and fetches from anywhere. Drop a handful of links to batch them.'}
+        <kbd className="font-mono text-2xs bg-bg-surface border border-border rounded px-1.5 py-0.5 text-text-secondary">V</kbd>
+        {' pastes and fetches. '}
+        {/* Where the file goes and in what, stated before the first download. */}
+        {outputDir && (
+          <>
+            {`Saves ${(defaultFormat ?? 'mp3').toUpperCase()} audio to `}
+            <span className="font-mono text-text-primary" title={outputDir}>{outputDir}</span>
+            {' '}
+            <button type="button" aria-label="Change output folder" onClick={() => setActiveTab('settings')} className="no-drag text-accent hover:underline focus-visible:focus-ring rounded">
+              Change
+            </button>
+            {'. '}
+          </>
+        )}
+        {hotkey && `${hotkey} grabs a copied link from any app.`}
       </span>
     );
   })();
@@ -937,7 +940,7 @@ export function Dashboard() {
         <input
           ref={fieldRef}
           className="no-drag flex-1 min-w-0 bg-transparent focus-visible:outline-none text-text-primary placeholder:text-text-muted text-[16px]"
-          placeholder="Paste a YouTube, Spotify, SoundCloud or Reels link…"
+          placeholder="Paste a link from YouTube, Spotify, SoundCloud, Vimeo and more…"
           aria-label="Paste a link"
           aria-invalid={!!error}
           aria-describedby="paste-status"
@@ -974,7 +977,7 @@ export function Dashboard() {
         {/* A multi-link paste is an object, not a hint — it gets a count in the field. */}
         {linkCount > 1 && (
           <span
-            className={`shrink-0 font-mono text-[10.5px] tracking-[0.06em] rounded px-2 py-1 ${
+            className={`shrink-0 font-mono text-2xs tracking-[0.06em] rounded px-2 py-1 ${
               overBatchLimit ? 'text-warning' : 'text-accent'
             }`}
             style={{ background: alpha(batchTone, 14) }}
@@ -1076,24 +1079,13 @@ export function Dashboard() {
           ) : undefined}
         >
           {recentTiles.length === 0 ? (
-            // The empty state is the row's own geometry, unfilled — the poster
-            // and its thumbnails in outline — so the strip doesn't materialise
-            // out of a paragraph the moment the first file finishes.
-            <>
-              <div aria-hidden className="grid gap-3 grid-cols-4 @min-[1000px]:grid-cols-5 @min-[1500px]:grid-cols-8">
-                {[0, 1, 2, 3].map((i) => (
-                  <span
-                    key={i}
-                    className={`block aspect-[16/9] rounded-md border border-border-soft bg-bg-tertiary ${
-                      i === 0 ? '@min-[1000px]:col-span-2 @min-[1000px]:aspect-auto' : ''
-                    }`}
-                  />
-                ))}
-              </div>
-              <p className="mt-3.5 text-[13px] text-text-secondary leading-relaxed max-w-[62ch]">
+            // Empty: one message, one action. No ghost tiles that read as loading.
+            <div className="flex flex-wrap items-center gap-3">
+              <p className="text-[13px] text-text-secondary leading-relaxed max-w-[62ch]">
                 Finished downloads land here, newest first. Each one is a click away from the file on disk.
               </p>
-            </>
+              <Button variant="ghost" size="sm" onClick={() => fieldRef.current?.focus()}>Paste a link</Button>
+            </div>
           ) : (
             // A fitted grid, never a horizontal scroller: the tile track is what
             // used to run past the right edge of the window. The tail is hidden

@@ -14,3 +14,4 @@ export {
   type SegmentOption,
 } from './SegmentedCapsule';
 export { Spinner, type SpinnerProps } from './Spinner';
+export { SourceMonogram, type SourceMonogramProps } from './SourceMonogram';

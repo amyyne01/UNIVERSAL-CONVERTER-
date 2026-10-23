@@ -11,6 +11,22 @@ export function formatDuration(secs: number): string {
   return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
 }
 
+/** A short, unique name for a link with no title yet: "youtube.com · <id>" for
+ *  watch links, "host/path" otherwise (long paths end in "…"). */
+export function linkLabel(url: string): string {
+  try {
+    const u = new URL(url);
+    const host = u.hostname.replace(/^(www|m)\./, '');
+    const v = u.searchParams.get('v');
+    if (v) return `${host} · ${v}`;
+    const path = u.pathname.replace(/\/+$/, '');
+    const full = host + path;
+    return full.length > 48 ? `${full.slice(0, 47)}…` : full;
+  } catch {
+    return url;
+  }
+}
+
 /** Binary (1024-based) byte formatting: "512 B", "3.4 MB", "1.2 GB". */
 export function formatBytes(n: number): string {
   if (n <= 0) return '—';

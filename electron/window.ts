@@ -1,6 +1,7 @@
 import { app, BrowserWindow } from 'electron';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { logLine } from './log.js';
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -79,6 +80,7 @@ export function createWindow(theme: 'light' | 'dark' = 'dark'): BrowserWindow {
 
   mainWindow.once('ready-to-show', () => mainWindow?.show());
   mainWindow.on('closed', () => {
+    logLine('info', 'main window closed');
     mainWindow = null;
   });
   return mainWindow;

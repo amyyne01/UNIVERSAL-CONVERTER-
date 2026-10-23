@@ -17,6 +17,7 @@
 // In progress → Needs attention → Completed.
 import { memo, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
 import { AnimatePresence, motion, Reorder, useDragControls, useReducedMotion } from 'framer-motion';
+import { EASE_OUT_QUINT } from '@/components/ui/motion';
 import {
   Download, Close, Cancel, Retry, OpenFolder, Check, Alert, Clock,
   CheckboxChecked, CheckboxEmpty, Remove, CheckboxMixed, Track, Pause, Play,
@@ -24,11 +25,11 @@ import {
 } from '@/components/ui/icons';
 import { useAppStore } from '@/store';
 import { Button, IconButton, ProgressBar } from '@/components/ui';
-import { PLATFORMS } from '@/constants';
-import { formatBytes, formatDuration } from '@/lib/format';
+import { SOURCE_META } from '@/constants';
+import { formatBytes, formatDuration, linkLabel } from '@/lib/format';
 import { revealFile } from '@/lib/reveal';
-import { describeError } from '@/lib/errors';
-import { MORE_SOURCE_LABELS, RETRY_BACKOFF_MS, type DownloadStatus, type DownloadTask, type SourcePlatform } from '@shared/types';
+import { describeError, isPermanentError } from '@/lib/errors';
+import { RETRY_BACKOFF_MS, type DownloadStatus, type DownloadTask } from '@shared/types';
 
 // ── formatters ────────────────────────────────────────────────────────────────
 // Byte/duration formatting lives once in src/lib/format.ts (hour-aware).
@@ -100,25 +101,6 @@ const STATE: Partial<Record<DownloadStatus, { icon: typeof Check; label: string;
 
 // ── platform maps ─────────────────────────────────────────────────────────────
 
-// youtube/spotify/soundcloud labels derive from the shared PLATFORMS constant;
-// the short-form platforms and the direct/unknown fallbacks have no PLATFORMS
-// entry (they're all grouped under one 'reels' nav tab), so those stay local.
-const PLAT_LABEL: Record<SourcePlatform, string> = {
-  youtube: PLATFORMS.find(p => p.key === 'youtube')!.label,
-  spotify: PLATFORMS.find(p => p.key === 'spotify')!.label,
-  soundcloud: PLATFORMS.find(p => p.key === 'soundcloud')!.label,
-  instagram: 'Reels',  tiktok: 'TikTok',    facebook: 'Facebook',
-  direct: 'Direct',    generic: 'Link',      unknown: 'Unknown',
-  ...MORE_SOURCE_LABELS,
-};
-
-const PLAT_TEXT: Record<SourcePlatform, string> = {
-  youtube: 'text-youtube',      spotify: 'text-spotify',  soundcloud: 'text-soundcloud',
-  instagram: 'text-reels',      tiktok: 'text-reels',     facebook: 'text-reels',
-  direct: 'text-text-secondary', generic: 'text-text-secondary', unknown: 'text-text-secondary',
-  ...(Object.fromEntries(Object.keys(MORE_SOURCE_LABELS).map(k => [k, 'text-text-secondary'])) as Record<keyof typeof MORE_SOURCE_LABELS, string>),
-};
-
 // ── shared constants ──────────────────────────────────────────────────────────
 
 // ponytail: Set for O(1) membership tests across filters + row render
@@ -168,6 +150,12 @@ const FILTERS: { key: Filter; label: string }[] = [
   { key: 'done',   label: 'Done' },
   { key: 'failed', label: 'Failed' },
 ];
+
+const SUMMARY_ORDER = ['downloading', 'retrying', 'queued', 'paused', 'done', 'failed', 'cancelled'] as const;
+const SUMMARY_WORD: Record<DownloadStatus, (typeof SUMMARY_ORDER)[number]> = {
+  queued: 'queued', fetching_info: 'downloading', downloading: 'downloading', converting: 'downloading',
+  embedding: 'downloading', paused: 'paused', retrying: 'retrying', done: 'done', failed: 'failed', cancelled: 'cancelled',
+};
 
 function passes(task: DownloadTask, f: Filter): boolean {
   const s = task.progress.status;
@@ -232,8 +220,15 @@ export const QueueCard = memo(function QueueCard({
   // click away ("Copy details"). Rows saved before errorCode existed fall back
   // to the raw text, which is all they have.
   const isFailedRow = status === 'failed';
-  const reason = isFailedRow && task.errorCode ? describeError(task.errorCode) : progress.error;
-  const label = title || baseName(progress.filename) || 'Untitled';
+  const reason = isFailedRow && task.errorCode ? describeError(task.errorCode, source) : progress.error;
+  const label = title || baseName(progress.filename) || linkLabel(task.url);
+  // A failed or untitled row must say WHICH link it is: a batch of seven
+  // "Untitled · failed" rows was indistinguishable. Full URL on hover and in the name.
+  const showLink = isFailedRow || label !== title;
+  const rowName = showLink ? `${label}, ${task.url}` : undefined;
+  // Done rows name the folder the file landed in, next to a visible "Show in folder".
+  const savedIn = !isDone ? ''
+    : /[\\/]/.test(progress.filename) ? progress.filename.replace(/[\\/][^\\/]*$/, '') : task.outputDir;
 
   // The look-up facts, one line, one order, every state. Empty parts drop out
   // rather than render a placeholder — an unknown size shouldn't cost ink.
@@ -312,7 +307,7 @@ export const QueueCard = memo(function QueueCard({
           the row's height, and the full string is in the tooltip. */}
       <div className="min-w-0 flex-1">
         <p
-          title={label}
+          title={showLink ? task.url : label}
           className={`text-[13px] truncate leading-snug ${
             isDone || status === 'cancelled'
               ? 'font-normal text-text-secondary'
@@ -320,13 +315,16 @@ export const QueueCard = memo(function QueueCard({
           }`}
         >
           {label}
+          {showLink && label === title && (
+            <span className="font-normal text-text-muted">{` · ${linkLabel(task.url)}`}</span>
+          )}
         </p>
 
         <p
           title={isFailed && progress.error ? progress.error : undefined}
           className={`text-[11px] mt-0.5 leading-snug ${isFailedRow ? 'line-clamp-2' : 'truncate'}`}
         >
-          <span className={`font-medium ${PLAT_TEXT[source]}`}>{PLAT_LABEL[source]}</span>
+          <span className={`font-medium ${SOURCE_META[source].text}`}>{SOURCE_META[source].label}</span>
           {/* Muted, matching every other surface's subtitle. It measures 5.9:1 on
               light surface / 4.9:1 on the tertiary — comfortably past the bar. */}
           {isFailed && reason ? (
@@ -339,6 +337,7 @@ export const QueueCard = memo(function QueueCard({
             <>
               {uploader && <span className="text-text-muted">{` · ${uploader}`}</span>}
               {specs && <span className="text-text-muted font-mono tabular-nums">{` · ${specs}`}</span>}
+              {savedIn && <span className="text-text-muted" title={savedIn}>{` · ${savedIn}`}</span>}
             </>
           )}
         </p>
@@ -360,7 +359,7 @@ export const QueueCard = memo(function QueueCard({
             <span className="font-mono tabular-nums text-[14px] font-semibold text-text-primary">
               {Math.round(pct)}%
             </span>
-            <span className="font-mono tabular-nums text-[10.5px] text-text-muted mt-0.5">{rate}</span>
+            <span className="font-mono tabular-nums text-2xs text-text-muted mt-0.5">{rate}</span>
           </>
         ) : state && (
           <span className={`inline-flex items-center gap-1.5 text-[11.5px] ${state.tone} ${isDone || isFailedRow ? 'badge-pop' : ''}`}>
@@ -396,14 +395,11 @@ export const QueueCard = memo(function QueueCard({
             className="w-7 h-7 rounded"
           />
         )}
-        {isFailed && (
+        {isFailed && !isPermanentError(task.errorCode) && (
           <IconButton icon={Retry} label="Retry" size={14} onClick={onRetry} className="w-7 h-7 rounded text-error hover:bg-error/10" />
         )}
         {isDone && (
-          <IconButton
-            icon={OpenFolder} label="Show in folder" size={14} onClick={onOpen}
-            className="w-7 h-7 rounded opacity-0 focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-150 motion-reduce:transition-none"
-          />
+          <IconButton icon={OpenFolder} label="Show in folder" size={14} onClick={onOpen} className="w-7 h-7 rounded" />
         )}
         {TERMINAL.has(status) && (
           <IconButton
@@ -440,7 +436,7 @@ export const QueueCard = memo(function QueueCard({
           className="absolute inset-0 pointer-events-none bg-accent-soft"
           initial={{ opacity: 1 }}
           animate={{ opacity: reduced ? 1 : 0 }}
-          transition={{ duration: reduced ? 0 : 0.6, ease: [0.22, 1, 0.36, 1] }}
+          transition={{ duration: reduced ? 0 : 0.6, ease: EASE_OUT_QUINT }}
         />
       )}
     </>
@@ -462,6 +458,7 @@ export const QueueCard = memo(function QueueCard({
         // siblings; reduced motion swaps them with no spring at all.
         transition={reduced ? { duration: 0 } : { type: 'spring', stiffness: 480, damping: 34 }}
         className={rowClass}
+        aria-label={rowName}
       >
         {body}
       </Reorder.Item>
@@ -476,6 +473,7 @@ export const QueueCard = memo(function QueueCard({
       exit={{ opacity: 0, y: reduced ? 0 : 2 }}
       transition={{ duration: reduced ? 0 : 0.2, ease: [0.25, 0.46, 0.45, 0.94] }}
       className={rowClass}
+      aria-label={rowName}
     >
       {body}
     </motion.li>
@@ -535,27 +533,6 @@ function useInlineConfirm() {
 
 // ── empty states ──────────────────────────────────────────────────────────────
 
-/** A placeholder row: the exact geometry of a real one, drawn as bars. Two of
- *  these under the message keep the empty surface reading as a list waiting to
- *  fill, not as a paragraph floating in a box. */
-function GhostRow({ fade }: { fade: string }) {
-  return (
-    <li aria-hidden className={`flex items-center ${ROW} ${fade}`}>
-      <span className={COL_HANDLE} />
-      <span className={COL_CHECK} />
-      <span className={`rounded-md bg-bg-tertiary ${COL_ART}`} />
-      <span className="min-w-0 flex-1 flex flex-col gap-1.5">
-        <span className="h-2 w-2/5 rounded-full bg-bg-tertiary" />
-        <span className="h-2 w-1/4 rounded-full bg-bg-tertiary" />
-      </span>
-      <span className={`flex justify-end ${COL_STATE}`}>
-        <span className="h-2 w-12 rounded-full bg-bg-tertiary" />
-      </span>
-      <span className={COL_ACTIONS} />
-    </li>
-  );
-}
-
 /** Empty/no-match states are rows, not centred paragraphs: same height, same
  *  columns, message where a title goes, the recovery action where a row's
  *  actions go. */
@@ -592,6 +569,7 @@ export function DownloadsTab() {
   const clearDownloadSelection  = useAppStore(s => s.clearDownloadSelection);
   const clearCompletedAndPersist = useAppStore(s => s.clearCompletedAndPersist);
   const removeDownload       = useAppStore(s => s.removeDownload);
+  const setActiveTab         = useAppStore(s => s.setActiveTab);
 
   const [filter, setFilter] = useState<Filter>('all');
   const [confirmCancelAll, setConfirmCancelAll] = useState(false);
@@ -639,7 +617,26 @@ export function DownloadsTab() {
     failed: tasks.filter(t => t.progress.status === 'failed' || t.progress.status === 'cancelled').length,
   }), [tasks]);
 
-  const filtered = useMemo(() => tasks.filter(t => passes(t, filter)), [tasks, filter]);
+  // Search matches title, uploader or the link itself (host and id live in it).
+  const [query, setQuery] = useState('');
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return tasks.filter(t => passes(t, filter)
+      && (!q || `${t.title} ${t.uploader} ${t.url}`.toLowerCase().includes(q)));
+  }, [tasks, filter, query]);
+
+  // "7 links: 1 downloading, 6 failed" — the batch at a glance.
+  const summary = useMemo(() => {
+    if (tasks.length < 2) return '';
+    const n = new Map<string, number>();
+    for (const t of tasks) {
+      const word = SUMMARY_WORD[t.progress.status];
+      n.set(word, (n.get(word) ?? 0) + 1);
+    }
+    const parts = SUMMARY_ORDER.filter(w => n.has(w)).map(w => `${n.get(w)} ${w}`);
+    return `${tasks.length} links: ${parts.join(', ')}`;
+  }, [tasks]);
+  const retryable = tasks.filter(t => t.progress.status === 'failed' && !isPermanentError(t.errorCode));
 
   // Status is the spine (no timestamps exist to group by day — see file header).
   // Empty groups are dropped, and headers only appear once there's more than one
@@ -717,6 +714,7 @@ export function DownloadsTab() {
         duration: task.duration,
         uploader: task.uploader,
         track: task.track,
+        playlistItems: task.playlistItems,
       });
       removeTask(task.taskId);
     } catch {
@@ -927,9 +925,25 @@ export function DownloadsTab() {
             {' · '}
             <span className="tabular-nums text-text-secondary">{counts.all}</span> total
           </p>
+          {summary && <p className="text-[12.5px] text-text-secondary mt-1 tabular-nums">{summary}</p>}
         </div>
 
         <div className="ml-auto flex items-center gap-2">
+          {tasks.length > 0 && (
+            <input
+              type="search"
+              aria-label="Search downloads"
+              placeholder="Search title, uploader or site"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="no-drag h-8 w-52 px-3 rounded-md border border-border bg-transparent text-[12.5px] text-text-primary placeholder:text-text-muted focus-visible:focus-ring"
+            />
+          )}
+          {retryable.length > 0 && (
+            <Button variant="ghost" size="sm" icon={Retry} onClick={() => { retryable.forEach((t) => { void handleRetry(t); }); }}>
+              Retry all failed
+            </Button>
+          )}
           {counts.done > 0 && (
             clearConfirm.armed ? (
               <div ref={clearConfirm.ref} role="group" aria-label="Confirm clear completed" className="flex items-center gap-1.5">
@@ -982,6 +996,8 @@ export function DownloadsTab() {
           The filters are one segmented track rather than four outlined chips:
           four bordered pills read as four separate controls competing with the
           header, a single inset track reads as one control with a state. */}
+      {/* An empty queue has nothing to select or filter: no strip at all. */}
+      {tasks.length > 0 && (
       <div className="flex flex-wrap items-center gap-2 min-h-9 pb-3 flex-none">
         <button
           onClick={() => allSelected ? clearDownloadSelection() : selectAllDownloads(filtered.map(t => t.taskId))}
@@ -1011,7 +1027,7 @@ export function DownloadsTab() {
               }`}
             >
               {label}
-              <span className={`font-mono text-[10px] tabular-nums ${filter === key ? 'text-accent' : 'text-text-muted'}`}>
+              <span className={`font-mono text-2xs tabular-nums ${filter === key ? 'text-accent' : 'text-text-muted'}`}>
                 {counts[key]}
               </span>
             </button>
@@ -1048,6 +1064,7 @@ export function DownloadsTab() {
           </div>
         )}
       </div>
+      )}
 
       {/* ── interrupted-downloads decision banner ── */}
       {interrupted.length > 0 && (
@@ -1076,18 +1093,15 @@ export function DownloadsTab() {
       {/* ── row list ── */}
       <div className="flex-1 overflow-y-auto min-h-0 pb-10">
         {tasks.length === 0 ? (
-          // Nothing has ever been queued — the only state that should teach.
-          // It teaches on the row grid, with two ghost rows showing what will
-          // land here, rather than as centred text floating in the void.
+          // Nothing has ever been queued: one message and one action, no ghosts.
           <div className={surface}>
             <ul className="divide-y divide-border-soft">
               <EmptyRow
                 icon={Download}
                 title="Your queue is empty"
-                body="Paste a link on any source tab and hit Download — it lands here with live progress."
+                body="Paste a link on the Home tab and it lands here with live progress."
+                action={<Button variant="ghost" size="sm" onClick={() => setActiveTab('home')}>Paste a link</Button>}
               />
-              <GhostRow fade="opacity-50" />
-              <GhostRow fade="opacity-25" />
             </ul>
           </div>
         ) : filtered.length === 0 ? (
@@ -1134,12 +1148,12 @@ export function DownloadsTab() {
                       {GROUP_LABEL[g.key]}
                       {isQueueLane && allPaused && <span className="text-warning"> · paused</span>}
                     </h3>
-                    <span className="font-mono text-[10.5px] tabular-nums text-text-muted">{g.tasks.length}</span>
+                    <span className="font-mono text-2xs tabular-nums text-text-muted">{g.tasks.length}</span>
                     {/* Total bandwidth in use — the one aggregate that is true
                         when several rows are moving at once. */}
                     {isQueueLane && lane.live.length > 0 && (
                       <span
-                        className="ml-auto font-mono text-[10.5px] tabular-nums text-text-secondary"
+                        className="ml-auto font-mono text-2xs tabular-nums text-text-secondary"
                         aria-label={`${lane.live.length} transferring${laneSpeed > 0 ? `, ${fmtSpeed(laneSpeed)} total` : ''}`}
                       >
                         {`↓ ${lane.live.length}`}{laneSpeed > 0 ? ` · ${fmtSpeed(laneSpeed)}` : ''}
@@ -1162,7 +1176,7 @@ export function DownloadsTab() {
                 {subBand && (
                   <div
                     id="queue-up-next"
-                    className="flex items-center h-7 pl-32 pr-4 border-t border-border-soft font-mono text-[10.5px] uppercase tracking-[0.08em] text-text-muted"
+                    className="flex items-center h-7 pl-32 pr-4 border-t border-border-soft font-mono text-2xs uppercase tracking-[0.08em] text-text-muted"
                   >
                     {`Up next · ${tail.length}`}
                   </div>

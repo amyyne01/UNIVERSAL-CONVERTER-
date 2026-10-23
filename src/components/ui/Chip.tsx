@@ -27,7 +27,7 @@ export function Chip({ selected = false, tag, icon: Icon, className = '', childr
       {Icon && <Icon size={12} className="shrink-0 text-text-muted" aria-hidden />}
       {children}
       {tag && (
-        <span className={`font-mono text-[10px] ${selected ? 'text-accent' : 'text-text-muted'}`}>
+        <span className={`font-mono text-2xs ${selected ? 'text-accent' : 'text-text-muted'}`}>
           {tag}
         </span>
       )}

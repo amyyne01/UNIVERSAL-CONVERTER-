@@ -45,4 +45,12 @@ describe('Toggle', () => {
     await userEvent.click(screen.getByRole('switch'));
     expect(onChange).not.toHaveBeenCalled();
   });
+
+  it('knob is on-accent when ON (contrast against the accent track), primary text when OFF', () => {
+    const { rerender } = render(<Toggle label="K" checked onChange={() => {}} />);
+    const knob = () => screen.getByRole('switch').firstElementChild;
+    expect(knob()).toHaveClass('bg-on-accent');
+    rerender(<Toggle label="K" checked={false} onChange={() => {}} />);
+    expect(knob()).toHaveClass('bg-text-primary');
+  });
 });

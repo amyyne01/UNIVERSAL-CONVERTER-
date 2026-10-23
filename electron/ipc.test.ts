@@ -98,7 +98,7 @@ describe('registerIpcHandlers', () => {
         };
         return defaults[key];
       }),
-      set: vi.fn(),
+      set: vi.fn(() => true),
       getAll: vi.fn().mockReturnValue({ outputDir: 'C:\\Downloads' }),
       update: vi.fn(),
       onChange: vi.fn(),
@@ -200,6 +200,11 @@ describe('registerIpcHandlers', () => {
       expect(handlers.get('config:get')!(evt(), bad)).toBeUndefined();
     }
     expect(config.get).not.toHaveBeenCalled();
+  });
+
+  it('config:set returns false when ConfigManager rejects the value', () => {
+    vi.mocked(config.set).mockReturnValueOnce(false as never);
+    expect(handlers.get('config:set')!(evt(), 'outputDir', 'C:\\Windows')).toBe(false);
   });
 
   it('config:set delegates and returns true', () => {

@@ -1,6 +1,6 @@
 {
   "name": "ahg-universal-converter",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "AHG Universal Converter — download media from YouTube, Spotify, SoundCloud and short-form video.",
   "author": "AHG",
   "private": true,
@@ -17,15 +17,12 @@
     "screenshots": "node scripts/screenshots.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
     "dist": "npm run build && electron-builder --win portable"
-  },
-  "dependencies": {
-    "@phosphor-icons/react": "^2.1.10"
   },
   "devDependencies": {
     "@fontsource/geist-mono": "^5.2.8",
     "@fontsource/geist-sans": "^5.2.5",
+    "@phosphor-icons/react": "^2.1.10",
     "@tailwindcss/vite": "^4.0.0",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.1.0",
@@ -55,10 +52,15 @@
     "directories": {
       "output": "release"
     },
+    "electronLanguages": [
+      "en-US"
+    ],
     "files": [
       "dist/**/*",
       "dist-electron/**/*",
-      "package.json"
+      "package.json",
+      "!**/*.map",
+      "!**/*.test.*"
     ],
     "extraResources": [
       {
@@ -71,7 +73,11 @@
       },
       {
         "from": "assets",
-        "to": "assets"
+        "to": "assets",
+        "filter": [
+          "**/*",
+          "!icon.png"
+        ]
       }
     ],
     "win": {

@@ -39,4 +39,10 @@ describe('Settings > Palette swatches', () => {
     fireEvent.keyDown(screen.getByRole('radio', { name: 'Aurora' }), { key: 'ArrowLeft' });
     expect(useAppStore.getState().config?.palette).toBe(PALETTES[PALETTES.length - 1].id);
   });
+
+  it('has no dead "Auto-paste from clipboard" toggle (the watcher covers it)', () => {
+    render(<SettingsTab />);
+    expect(screen.queryByRole('switch', { name: /auto-paste/i })).toBeNull();
+    expect(screen.getByRole('switch', { name: 'Clipboard watcher' })).toBeInTheDocument();
+  });
 });

@@ -4,8 +4,9 @@ import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { writeFileAtomic } from './atomic-write.js';
 import { getMainWindow } from './window.js';
+import { logLine } from './log.js';
 import { detectUrl } from './url-detector.js';
-import { confineToRoot, isNetscapeCookies, MAX_COOKIES_BYTES, playlistItemsArg, secure, urlArg } from './security.js';
+import { confineToRoot, isNetscapeCookies, MAX_COOKIES_BYTES, mediaUrlArg, playlistItemsArg, secure, urlArg } from './security.js';
 import {
   createTask, enqueueTask, cancelTask, cancelAllTasks,
   pauseTask, resumeTask, getAllTasks, removeTasks, setMaxSlots,
@@ -77,7 +78,7 @@ const RATE_DETECT = 1000;
 // url:fetchMetadata — one yt-dlp spawn per call. Sized like download:start and for
 // the same reason: a drag-and-drop of many links calls it once per link, and at 60
 // the 61st came back as a rejection the renderer showed as "that link can't be read"
-// — sending the user to inspect a URL that was fine. The single-slot queue, not this
+// — sending the user to inspect a URL that was fine. The queue's slot count, not this
 // budget, is what bounds the real work.
 const RATE_URL = 300;
 // download:start only ENQUEUES; the FIFO queue's slot count is what bounds the
@@ -111,7 +112,10 @@ export function registerIpcHandlers(config: ConfigManager, downloader: Downloade
     if (w.isMaximized()) w.unmaximize();
     else w.maximize();
   });
-  handle('window:close', RATE_DEFAULT, () => getMainWindow()?.close());
+  handle('window:close', RATE_DEFAULT, () => {
+    logLine('info', 'window:close requested by the renderer');
+    getMainWindow()?.close();
+  });
   handle('window:isMaximized', RATE_DEFAULT, () => getMainWindow()?.isMaximized() ?? false);
 
   // ── config:* ──────────────────────────────────────────────────────────────
@@ -122,10 +126,8 @@ export function registerIpcHandlers(config: ConfigManager, downloader: Downloade
     if (typeof key !== 'string' || !Object.prototype.hasOwnProperty.call(defaultConfig, key)) return undefined;
     return config.get(key as keyof AppConfig);
   });
-  handle('config:set', RATE_DEFAULT, (_e, key: keyof AppConfig, value: AppConfig[keyof AppConfig]) => {
-    config.set(key, value);
-    return true;
-  });
+  handle('config:set', RATE_DEFAULT, (_e, key: keyof AppConfig, value: AppConfig[keyof AppConfig]) =>
+    config.set(key, value));
   handle('config:getAll', RATE_DEFAULT, () => config.getAll());
   handle('config:update', RATE_DEFAULT, (_e, data: unknown) => {
     if (typeof data !== 'object' || data === null) throw new Error('Invalid input: expected a config object');
@@ -135,7 +137,7 @@ export function registerIpcHandlers(config: ConfigManager, downloader: Downloade
 
   // ── url:* ─────────────────────────────────────────────────────────────────
   handle('url:detect', RATE_DETECT, (_e, url: unknown) => detectUrl(urlArg(url)));
-  handle('url:fetchMetadata', RATE_URL, (_e, url: unknown) => downloader.fetchMetadata(urlArg(url)));
+  handle('url:fetchMetadata', RATE_URL, (_e, url: unknown) => downloader.fetchMetadata(mediaUrlArg(url)));
 
   // ── youtube:* / soundcloud:* (search via the engine, §3.1) ──────────────────
   handle('youtube:search', RATE_DEFAULT, (_e, query: unknown) => downloader.searchYouTube(queryStr(query)));
@@ -197,7 +199,7 @@ export function registerIpcHandlers(config: ConfigManager, downloader: Downloade
     // outputDir is NEVER taken from the renderer — always the dialog-chosen config
     // dir — so a compromised renderer can't redirect writes to an arbitrary path.
     const task = createTask({
-      url: urlArg(taskData.url ?? ''),
+      url: mediaUrlArg(taskData.url ?? ''),
       source: enumOf(taskData.source, SOURCE_PLATFORMS, 'source'),
       outputDir: config.get('outputDir'),
       format: clampFormat(format, plan),

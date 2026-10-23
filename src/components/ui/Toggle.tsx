@@ -24,7 +24,7 @@ export function Toggle({ checked, onChange, label, disabled, className = '' }: T
       <motion.span
         animate={{ x: checked ? 16 : 0 }}
         transition={{ type: 'spring', stiffness: 500, damping: 34 }}
-        className="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-text-primary shadow-sm"
+        className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full shadow-sm ${checked ? 'bg-on-accent' : 'bg-text-primary'}`}
       />
     </button>
   );

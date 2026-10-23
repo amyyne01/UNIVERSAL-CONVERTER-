@@ -13,13 +13,17 @@ import type {
 } from '../shared/types.js';
 import {
   LOSSLESS_FORMATS, defaultExtras, mergeExtras, SUBTITLE_MODES, SPONSORBLOCK_MODES,
-  SPONSORBLOCK_CATEGORIES, VIDEO_CONTAINERS, VIDEO_CODECS, COOKIE_BROWSERS,
+  SPONSORBLOCK_CATEGORIES, VIDEO_CONTAINERS, VIDEO_CODECS, COOKIE_BROWSERS, VIDEO_QUALITIES,
 } from '../shared/types.js';
 import { detectUrl } from './url-detector.js';
+import { logLine, hostOf } from './log.js';
 
 export type ErrorClass = 'retryable' | 'permanent' | 'auth' | 'geo';
 
 const LOSSLESS = new Set<string>(LOSSLESS_FORMATS);
+// Targets yt-dlp can embed cover art into (README, --embed-thumbnail): mp3, mkv/mka,
+// ogg/opus/flac, m4a/mp4. alac lands in .m4a; aac stays a raw .aac; wav and webm cannot.
+const THUMB_TARGETS = new Set<string>(['mp3', 'm4a', 'alac', 'ogg', 'opus', 'flac', 'mp4', 'mkv']);
 
 // ── The PO-token gate (§5) ────────────────────────────────────────────────────
 // YouTube now puts most videos' adaptive (720p+) streams behind a "PO token" we do
@@ -111,6 +115,7 @@ const clamp01 = (n: number): number => Math.max(0, Math.min(1, n));
 
 // Delimited progress template (§6): a marker + bytes|total|estimate|speed|eta.
 const PROGRESS_MARKER = '[PROGRESS]';
+const POST_PHASES = new Set<string>(['converting', 'embedding']);
 const FILEPATH_MARKER = '[FILEPATH]'; // prefixes the --print after_move line so it's never confused with chatter
 const PROGRESS_TEMPLATE =
   `download:${PROGRESS_MARKER}%(progress.downloaded_bytes)s|%(progress.total_bytes)s` +
@@ -120,7 +125,8 @@ type Proc = ReturnType<typeof spawn>;
 type ProgressCb = (progress: DownloadProgress) => void;
 // filepaths: every after_move:filepath line seen (§future split-chapters use);
 // filepath (2nd arg) stays the single primary path — same value as today.
-type DoneCb = (task: DownloadTask, filepath: string, filepaths?: string[]) => void;
+// filepaths excludes files yt-dlp found already on disk; alreadyOnDisk = it skipped every one.
+type DoneCb = (task: DownloadTask, filepath: string, filepaths?: string[], alreadyOnDisk?: boolean) => void;
 type ErrorCb = (task: DownloadTask, error: string) => void;
 
 /** Classify a yt-dlp error so the queue knows whether to retry (§8). Conservative.
@@ -132,6 +138,7 @@ export function classifyError(text: string): ErrorClass {
   const auth = [
     'sign in', 'login required', 'members-only', 'members only',
     'age-restricted', 'age restricted', 'private', 'confirm your age',
+    'logged-in', 'logged in', 'authentication is required',
   ];
   for (const a of auth) if (t.includes(a)) return 'auth';
   const geo = ['geo', 'region', 'not available in your country'];
@@ -140,6 +147,8 @@ export function classifyError(text: string): ErrorClass {
     'is unavailable', 'video unavailable', 'no longer available',
     'removed', 'deleted', 'does not exist', 'this video is not available',
     'copyright', 'drm', 'is not a valid url', 'unsupported url',
+    // A dead link answers the same on every attempt; it must outrank 'unable to download'.
+    'http error 404', 'http error 410',
     // A premiere or a scheduled stream is not a failure and not a retry — the file
     // does not exist yet. Three backoffs would only make the user wait to be told
     // the same thing, so terminate immediately and say what is actually happening.
@@ -185,11 +194,11 @@ const ERROR_CODE_NEEDLES: [ErrorCode, string[]][] = [
   ['drm', ['drm']],
   ['age_restricted', ['age-restricted', 'age restricted', 'confirm your age']],
   ['private', ['private']],
-  ['login_required', ['sign in', 'login required', 'members-only', 'members only']],
+  ['login_required', ['sign in', 'login required', 'members-only', 'members only', 'logged-in', 'logged in', 'authentication is required']],
   ['geo_blocked', ['geo', 'region', 'not available in your country']],
   ['rate_limited', ['too many requests', 'http error 429', 'rate-limit', 'rate limit']],
   ['unsupported', ['unsupported url', 'is not a valid url']],
-  ['removed', ['removed', 'deleted', 'does not exist', 'no longer available', 'video unavailable', 'is unavailable', 'this video is not available', 'copyright']],
+  ['removed', ['http error 404', 'http error 410', 'removed', 'deleted', 'does not exist', 'no longer available', 'video unavailable', 'is unavailable', 'this video is not available', 'copyright', 'not found']],
 ];
 
 /** The typed twin of classifyError: WHY a download failed, for the UI to branch on.
@@ -209,8 +218,9 @@ export function explainError(text: string): string {
   if (!raw) return 'That link could not be read.';
   if (raw.startsWith(TIMEOUT_MESSAGE)) return TIMEOUT_MESSAGE;
   const t = raw.toLowerCase();
+  // Not YouTube-specific: the same 403 comes from Rumble, Vimeo and every CDN.
   if (needsClientFallback(t)) {
-    return 'YouTube is gating this video’s streams — the download will retry at the quality it will actually serve.';
+    return 'The site refused to serve this file — try again later, or import cookies in Settings.';
   }
   switch (classifyError(t)) {
     case 'auth':
@@ -222,6 +232,11 @@ export function explainError(text: string): string {
     default:
       if (t.includes('live event will begin') || t.includes('premieres in')) {
         return 'That video has not premiered yet — try again once it is live.';
+      }
+      if (errorCodeOf(t) === 'removed') return 'Nothing was found at that link — it may have been removed, or the address is wrong.';
+      if (errorCodeOf(t) === 'unknown') {
+        const last = raw.split('\n').filter((l) => l.trim()).pop() ?? raw;
+        return `The download stopped with an error: ${last.replace(/^\s*ERROR:\s*/, '').trim().slice(0, 200)}`;
       }
       return 'That post could not be read — it may be private, removed, or need a sign-in.';
   }
@@ -298,7 +313,10 @@ export class Downloader {
     }
 
     if (task.embedMetadata) args.push('--embed-metadata');
-    if (task.embedThumbnail) args.push('--embed-thumbnail');
+    // yt-dlp aborts the whole job when the target cannot carry cover art (wav, raw aac, webm).
+    if (task.embedThumbnail && THUMB_TARGETS.has(task.isAudioOnly ? task.format : container)) {
+      args.push('--embed-thumbnail');
+    }
     if (task.skipExisting) args.push('--no-overwrites');
 
     // Subtitles. --embed-subs alone fetches them without keeping a file;
@@ -329,10 +347,18 @@ export class Downloader {
     // A user template replaces the name part only — outputDir stays the anchor.
     const sub = task.isPlaylist ? this.sanitize(task.playlistName) : '';
     const template = this.safeTemplate(x.outputTemplate);
+    // Default selections (mp3, best video) keep the v1.4 name so Skip existing still
+    // recognises files users already own; any other selection gets its own name.
+    // ponytail: mp3 at another bitrate shares the mp3 name by design.
+    const tag = task.isAudioOnly
+      ? (task.format !== 'mp3' && /^[a-z0-9]+$/.test(task.format) ? ` [${task.format}]` : '')
+      : (task.videoQuality !== 'best' && VIDEO_QUALITIES.includes(task.videoQuality) ? ` [${task.videoQuality}]` : '');
     const name = template
       ? `${template}.%(ext)s`
-      : task.isPlaylist ? '%(title)s.%(ext)s' : `${this.sanitize(task.title) || '%(title)s'}.%(ext)s`;
+      : `${task.isPlaylist ? '%(title)s' : this.sanitize(task.title) || '%(title)s'}${tag}.%(ext)s`;
     args.push('-o', path.join(task.outputDir, sub, name));
+    // yt-dlp writes chapter files relative to ITS working directory unless told otherwise.
+    if (x.splitChapters) args.push('-o', 'chapter:' + path.join(task.outputDir, sub, '%(title)s - %(section_number)03d %(section_title)s.%(ext)s'));
     if (task.isPlaylist) {
       args.push('--download-archive', path.join(task.outputDir, sub, '.download-archive.txt'));
       // Tier cap (set by the boundary, not read from the renderer) — yt-dlp stops
@@ -487,11 +513,14 @@ export class Downloader {
     let lastPercent = 0;
     let finalPath = '';
     const filepaths: string[] = [];
+    const skipped = new Set<string>(); // "[download] <path> has already been downloaded"
     let errorOut = '';
     let stderrBuf = '';
     let stdoutBuf = '';
 
     const flush = (line: string) => {
+      const had = /^\[download\] (.+) has already been downloaded/.exec(line);
+      if (had) skipped.add(had[1].trim());
       lastPercent = this.parseLine(line, progress, lastPercent, onProgress);
       // Only yt-dlp's own ERROR: lines — substring 'error' also hits titles/notices.
       if (/^\s*ERROR:/.test(line)) errorOut += line + '\n';
@@ -548,11 +577,11 @@ export class Downloader {
         progress.status = 'done';
         progress.percent = 100;
         onProgress?.(progress);
-        onDone?.(task, finalPath, filepaths);
+        const fresh = filepaths.filter((p) => !skipped.has(p));
+        onDone?.(task, finalPath, fresh, filepaths.length > 0 && !fresh.length);
       } else {
-        progress.status = 'failed';
+        // onError alone: the queue decides failed vs retrying, so no transient 'failed' tick.
         progress.error = errorOut.trim() || `yt-dlp exited with code ${code}`;
-        onProgress?.(progress);
         onError?.(task, progress.error);
       }
     });
@@ -593,6 +622,11 @@ export class Downloader {
 
   /** Parse one stderr line; updates progress + emits. Returns the carried percent. */
   private parseLine(line: string, progress: DownloadProgress, lastPercent: number, onProgress?: ProgressCb): number {
+    // Status only moves forward within one item; the next collection item starts over.
+    if (/^\[download\] Downloading item \d+/.test(line)) {
+      progress.status = 'downloading';
+      return lastPercent;
+    }
     // Phase markers.
     if (line.startsWith('[ExtractAudio]') || line.startsWith('[Merger]')) {
       progress.status = 'converting';
@@ -611,7 +645,7 @@ export class Downloader {
       const downloaded = toNum(dl);
       const totalBytes = toNum(total) || toNum(est);
       if (totalBytes > 0) lastPercent = Math.min(100, (downloaded / totalBytes) * 100);
-      progress.status = 'downloading';
+      if (!POST_PHASES.has(progress.status)) progress.status = 'downloading';
       progress.downloaded = downloaded;
       progress.total = totalBytes;
       progress.speed = toNum(speed);
@@ -626,7 +660,7 @@ export class Downloader {
     if (m) {
       const parsed = parseFloat(m[1]);
       lastPercent = Math.min(100, Number.isNaN(parsed) ? lastPercent : parsed);
-      progress.status = 'downloading';
+      if (!POST_PHASES.has(progress.status)) progress.status = 'downloading';
       progress.percent = lastPercent;
       progress.total = this.parseSize(m[2]);
       progress.downloaded = Math.round((progress.total * lastPercent) / 100);
@@ -737,7 +771,11 @@ export class Downloader {
     // every failure used to reach the UI as the same "something went wrong", which
     // sent people to re-check a link that was never the problem.
     const items = await this.runJson(['--dump-json', '--no-warnings', '--flat-playlist', ...single, '--', url])
-      .catch((err: unknown) => { throw new Error(explainError(err instanceof Error ? err.message : String(err))); });
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        logLine('error', `fetch failed host=${hostOf(url)} code=${errorCodeOf(msg)}`);
+        throw new Error(explainError(msg));
+      });
     if (items.length === 0) throw new Error('That link returned nothing to download.');
     const head = items[0] ?? {};
     // Count is not the test — detectUrl is. A playlist holding exactly ONE track

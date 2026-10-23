@@ -7,6 +7,7 @@
 // shipping two near-identical toasts is how they drift apart.
 import { useEffect } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
+import { EASE_OUT_QUINT } from '@/components/ui/motion';
 import { Premium, Alert, Close } from '@/components/ui/icons';
 import { useAppStore } from '@/store';
 
@@ -40,7 +41,7 @@ export function Notice() {
           initial={reduced ? { opacity: 0 } : { opacity: 0, y: 14, scale: 0.97 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={reduced ? { opacity: 0 } : { opacity: 0, y: 8, scale: 0.98 }}
-          transition={{ duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
+          transition={{ duration: 0.26, ease: EASE_OUT_QUINT }}
           className="fixed bottom-5 right-5 z-(--z-palette) no-drag flex items-start gap-3 rounded-lg border max-w-[380px]"
           style={{
             padding: '14px 14px 14px 16px',

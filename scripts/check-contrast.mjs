@@ -1,5 +1,6 @@
-// Report-only WCAG check for every palette x theme. `node scripts/check-contrast.mjs`
-// Exits 1 on any failure: <4.5:1 for text, <3:1 for UI (accent edge, control border).
+// WCAG + distinctness check for every palette x theme. `node scripts/check-contrast.mjs`
+// Exits 1 on any failure: <4.5:1 for text, <3:1 for UI (accent edge, control border),
+// or an accent closer than DE_MIN (OKLab distance) to a status/platform colour or to another named accent (aurora/lagoon/moss, ember/paper).
 import { readFileSync } from 'node:fs';
 
 const css = readFileSync('src/index.css', 'utf8') + '\n' + readFileSync('src/palettes.css', 'utf8');
@@ -29,6 +30,13 @@ const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p);
 const REQUIRED = ['bg-secondary', 'bg-primary', 'bg-tertiary', 'bg-hover', 'bg-surface', 'bg-glass', 'scrim', 'text-primary', 'text-secondary', 'text-muted', 'accent', 'accent-hover', 'accent-deep', 'on-accent', 'border', 'border-soft', 'border-control'];
 const SURF = ['bg-primary', 'bg-secondary', 'bg-tertiary', 'bg-surface', 'bg-hover'];
 const failures = [];
+const DE_MIN = 0.08;
+const SRC_MIN = 0.05; // source tiles sit beside a letter label, so a lower floor than accents
+const lab = (s) => { const { l, c, h } = parse(s); return [l, c * Math.cos((h * Math.PI) / 180), c * Math.sin((h * Math.PI) / 180)]; };
+const dE = (a, b) => Math.hypot(...lab(a).map((x, i) => x - lab(b)[i]));
+const NEAR = ['success', 'warning', 'error', 'info', 'youtube', 'spotify', 'soundcloud', 'reels'];
+const accents = {};
+const deRows = [];
 let checked = 0;
 const check = (name, tok, a, b, min) => {
   checked++;
@@ -46,6 +54,16 @@ for (const id of ['aurora', ...ids]) for (const mode of ['dark', 'light']) {
     for (const x of ['text-primary', 'text-secondary', 'text-muted', 'accent', 'success', 'warning', 'error', 'youtube', 'spotify', 'soundcloud', 'reels'])
       check(name, `${x} on ${s}`, t[x], t[s], 4.5);
   }
+  accents[name] = t.accent;
+  const src = Object.keys(t).filter((k) => k.startsWith('src-'));
+  for (const x of src) {
+    for (const sf of SURF) check(name, `${x} on ${sf}`, t[sf], t[x], 4.5);
+    for (const y of [...NEAR, ...src, 'accent']) if (t[y] && y !== x && (!y.startsWith('src-') || y > x)) {
+      const d = dE(t[x], t[y]); deRows.push(`${name} ${x}~${y} ${d.toFixed(3)}`);
+      if (d < SRC_MIN && !(id !== 'aurora' && y === 'accent')) failures.push(`${name}: ${x} too close to ${y} (dE ${d.toFixed(3)} < ${SRC_MIN})`);
+    }
+  }
+  for (const x of NEAR) if (t[x]) { const d = dE(t.accent, t[x]); deRows.push(`${name} accent~${x} ${d.toFixed(3)}`); if (d < DE_MIN) failures.push(`${name}: accent too close to ${x} (dE ${d.toFixed(3)} < ${DE_MIN})`); }
   check(name, 'on-accent on accent', t['on-accent'], t.accent, 4.5);
   check(name, 'on-accent on accent-hover', t['on-accent'], t['accent-hover'], 4.5);
   for (const s of ['bg-primary', 'bg-tertiary', 'bg-surface']) {
@@ -53,6 +71,12 @@ for (const id of ['aurora', ...ids]) for (const mode of ['dark', 'light']) {
     if (t['border-control']) check(name, `border-control on ${s}`, t['border-control'], t[s], 3);
   }
 }
+for (const mode of ['dark', 'light']) for (const [a, b] of [['aurora', 'lagoon'], ['aurora', 'moss'], ['lagoon', 'moss'], ['ember', 'paper']]) {
+  const d = dE(accents[`${a}/${mode}`], accents[`${b}/${mode}`]);
+  deRows.push(`${mode} accent ${a}~${b} ${d.toFixed(3)}`);
+  if (d < DE_MIN) failures.push(`${mode}: accent ${a} too close to ${b} (dE ${d.toFixed(3)} < ${DE_MIN})`);
+}
+if (process.env.DE_TABLE) console.log(deRows.join('\n'));
 console.log(`${checked} pairs checked across ${ids.length + 1} palettes x 2 themes`);
-console.log(failures.length ? 'FAILURES:\n' + failures.join('\n') : 'zero failures');
+console.log(failures.length ? 'FAILURES:\n' + failures.join('\n') : `0 failures (${deRows.length} dE pairs)`);
 process.exit(failures.length ? 1 : 0);

@@ -226,6 +226,82 @@ describe('DownloadsTab', () => {
   });
 });
 
+describe('queue header: batch summary, retry all, search', () => {
+  beforeEach(() => {
+    useAppStore.setState({ downloads: {}, selectedDownloadIds: new Set() });
+    vi.clearAllMocks();
+  });
+
+  const failed = (taskId: string, errorCode: 'network' | 'removed', url = `https://youtube.com/watch?v=${taskId}`) =>
+    task({ taskId, url, errorCode, progress: progress({ status: 'failed', error: 'x' }) });
+
+  it('summarises the batch once there are two or more links', () => {
+    useAppStore.getState().setDownloads([
+      task({ taskId: 'live', progress: progress({ status: 'downloading' }) }),
+      failed('a', 'network'), failed('b', 'removed'),
+    ]);
+    render(<DownloadsTab />);
+    expect(screen.getByText('3 links: 1 downloading, 2 failed')).toBeInTheDocument();
+  });
+
+  it('shows no summary for a single link', () => {
+    useAppStore.getState().setDownloads([failed('a', 'network')]);
+    render(<DownloadsTab />);
+    expect(screen.queryByText(/^1 link/)).toBeNull();
+  });
+
+  it('"Retry all failed" retries only the failures a retry can fix', async () => {
+    useAppStore.getState().setDownloads([failed('a', 'network'), failed('b', 'removed'), failed('c', 'network')]);
+    render(<DownloadsTab />);
+    await userEvent.setup().click(screen.getByRole('button', { name: /Retry all failed/ }));
+    const urls = vi.mocked(window.electronAPI.download.start).mock.calls.map(([r]) => r.url);
+    expect(urls.sort()).toEqual(['https://youtube.com/watch?v=a', 'https://youtube.com/watch?v=c']);
+  });
+
+  it('search filters rows by title, uploader or host', async () => {
+    useAppStore.getState().setDownloads([
+      task({ taskId: 'a', title: 'Alpha song', uploader: 'Ann', progress: progress({ status: 'done', percent: 100 }) }),
+      task({ taskId: 'b', title: 'Beta clip', uploader: 'Bob', url: 'https://vimeo.com/1', source: 'vimeo', progress: progress({ status: 'done', percent: 100 }) }),
+    ]);
+    render(<DownloadsTab />);
+    const user = userEvent.setup();
+    const box = screen.getByRole('searchbox', { name: /search/i });
+    await user.type(box, 'vimeo');
+    expect(screen.queryByText('Alpha song')).toBeNull();
+    expect(screen.getByText('Beta clip')).toBeInTheDocument();
+    await user.clear(box);
+    await user.type(box, 'ann');
+    expect(screen.getByText('Alpha song')).toBeInTheDocument();
+    expect(screen.queryByText('Beta clip')).toBeNull();
+  });
+});
+
+describe('empty queue', () => {
+  it('shows one message and no select-all, filter chips or ghost rows', () => {
+    useAppStore.setState({ downloads: {}, selectedDownloadIds: new Set() });
+    render(<DownloadsTab />);
+    expect(screen.getByText('Your queue is empty')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /select all/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^All\b/ })).toBeNull();
+    expect(screen.getAllByRole('listitem')).toHaveLength(1);
+  });
+});
+
+describe('done rows say where the file went', () => {
+  beforeEach(() => {
+    useAppStore.setState({ downloads: {}, selectedDownloadIds: new Set() });
+  });
+
+  it('shows the saved folder and a visible "Show in folder"', () => {
+    useAppStore.getState().setDownloads([
+      task({ progress: progress({ status: 'done', percent: 100, filename: 'C:\\Music\\Mix\\Song One.mp3' }) }),
+    ]);
+    render(<DownloadsTab />);
+    expect(screen.getByText(/C:\\Music\\Mix/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Show in folder' }).className).not.toMatch(/(^|\s)opacity-0/);
+  });
+});
+
 describe('QueueCard memo comparator (B18)', () => {
   it('ignores fresh inline callback identities and only compares task + selected', () => {
     // Pre-fix, memo() had no custom comparator so `.compare` is null (React falls
@@ -267,6 +343,36 @@ describe('failed and retrying rows', () => {
     const writeText = vi.spyOn(navigator.clipboard, 'writeText');
     await user.click(screen.getByRole('button', { name: 'Copy details' }));
     expect(writeText).toHaveBeenCalledWith(raw);
+  });
+
+  it('tells apart a batch of failed, untitled rows by host and id', () => {
+    const urls = [
+      'https://www.youtube.com/watch?v=aaaaaaaaaaa',
+      'https://www.youtube.com/watch?v=bbbbbbbbbbb',
+      'https://vimeo.com/999999',
+      'https://x.com/a/status/1',
+      'https://a.bandcamp.com/track/b',
+      'https://www.dailymotion.com/video/x8',
+      'https://rumble.com/v4-clip.html',
+    ];
+    useAppStore.getState().setDownloads(urls.map((url, i) =>
+      task({ taskId: `f${i}`, url, title: '', errorCode: 'network', progress: progress({ status: 'failed', error: 'x' }) })));
+    render(<DownloadsTab />);
+    const rows = screen.getAllByRole('listitem');
+    const names = rows.map((r) => r.getAttribute('aria-label'));
+    expect(new Set(names).size).toBe(7);
+    urls.forEach((url) => expect(names.some((n) => n?.includes(url))).toBe(true));
+    expect(screen.getByText('youtube.com · aaaaaaaaaaa')).toHaveAttribute('title', urls[0]);
+    expect(screen.queryByText('Untitled')).toBeNull();
+  });
+
+  it('offers no Retry on a row that no retry can fix', () => {
+    useAppStore.getState().setDownloads([
+      task({ errorCode: 'removed', progress: progress({ status: 'failed', error: 'HTTP Error 404' }) }),
+    ]);
+    render(<DownloadsTab />);
+    expect(screen.getByText(/couldn.t find anything at this link/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
   });
 
   it('counts a retrying row down: "Retrying in Ns (n of 3)"', () => {

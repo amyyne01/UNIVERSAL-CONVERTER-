@@ -21,6 +21,7 @@ import { mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import type { BrowserWindow } from 'electron';
 import type { UpdateState } from '../shared/types.js';
+import { logLine } from './log.js';
 
 const RELEASE_API = 'https://api.github.com/repos/amyyne01/UNIVERSAL-CONVERTER-/releases/latest';
 /** Published beside the exe by scripts/release-assets.mjs; the update is refused without it. */
@@ -145,6 +146,7 @@ export class Updater {
     writeFileSync(script, swapScript(staged, exe), 'utf-8');
     const spawnFn = this.deps.spawnFn ?? spawn;
     spawnFn('cmd.exe', ['/c', script], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
+    logLine('info', 'quitting to apply an update');
     (this.deps.quit ?? (() => app.quit()))();
   }
 

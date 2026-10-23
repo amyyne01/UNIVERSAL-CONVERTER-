@@ -324,10 +324,10 @@ export type ThemeName = 'light' | 'dark' | 'system';
 export const PALETTES = [
   { id: 'aurora', label: 'Aurora', accent: { dark: 'oklch(0.800 0.135 195)', light: 'oklch(0.485 0.105 215)' } },
   { id: 'slate',  label: 'Slate',  accent: { dark: 'oklch(0.720 0.140 258)', light: 'oklch(0.500 0.170 262)' } },
-  { id: 'moss',   label: 'Moss',   accent: { dark: 'oklch(0.760 0.170 150)', light: 'oklch(0.480 0.140 150)' } },
-  { id: 'ember',  label: 'Ember',  accent: { dark: 'oklch(0.800 0.112 25)',  light: 'oklch(0.522 0.170 25)' } },
-  { id: 'paper',  label: 'Paper',  accent: { dark: 'oklch(0.800 0.130 55)',  light: 'oklch(0.514 0.136 50)' } },
-  { id: 'lagoon', label: 'Lagoon', accent: { dark: 'oklch(0.800 0.130 165)', light: 'oklch(0.492 0.091 175)' } },
+  { id: 'moss',   label: 'Moss',   accent: { dark: 'oklch(0.800 0.150 128)', light: 'oklch(0.420 0.140 118)' } },
+  { id: 'ember',  label: 'Ember',  accent: { dark: 'oklch(0.800 0.120 36)',  light: 'oklch(0.440 0.140 38)' } },
+  { id: 'paper',  label: 'Paper',  accent: { dark: 'oklch(0.720 0.100 65)',  light: 'oklch(0.370 0.080 65)' } },
+  { id: 'lagoon', label: 'Lagoon', accent: { dark: 'oklch(0.880 0.100 170)', light: 'oklch(0.400 0.090 175)' } },
   { id: 'orchid', label: 'Orchid', accent: { dark: 'oklch(0.800 0.170 335)', light: 'oklch(0.520 0.150 335)' } },
 ] as const;
 export type PaletteName = (typeof PALETTES)[number]['id'];
@@ -345,8 +345,6 @@ export interface AppConfig {
   skipExisting: boolean;
   theme: ThemeName;
   palette: PaletteName;
-  rememberLastDir: boolean;
-  autoPaste: boolean;
   /** Opt-in background clipboard watcher: offers a one-click download when a
    *  recognised link is copied anywhere, even outside the app (electron/clipboard-watch.ts). */
   clipboardWatch: boolean;
@@ -354,7 +352,6 @@ export interface AppConfig {
   /** Optional bandwidth cap, e.g. "2M"; empty = unlimited. */
   rateLimit: string;
   proxy: string;
-  ffmpegPath: string;
   globalHotkey: string;
   discordRichPresence: boolean;
   // Scheduler

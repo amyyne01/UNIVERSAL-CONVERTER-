@@ -42,12 +42,46 @@ beforeEach(() => {
       <div id="splash-status"></div>
     </div>`;
   stubGeometry(200);
+  localStorage.clear(); // every test starts as a first run unless it says otherwise
   __resetSplash();
 });
 
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
+});
+
+describe('splash floor: full reveal once, then quick', () => {
+  it('a warm launch leaves within 1000 ms', () => {
+    localStorage.setItem('ahg-splash-seen', '1');
+    startSplash();
+    dismissSplash();
+    vi.advanceTimersByTime(1000);
+    settle(1);
+    vi.advanceTimersByTime(300);
+    expect(leaving()).toBe('true');
+  });
+
+  it('the first run keeps the full floor, and marks the next launch warm', () => {
+    startSplash();
+    dismissSplash();
+    vi.advanceTimersByTime(1000);
+    settle(1);
+    vi.advanceTimersByTime(300);
+    expect(leaving()).toBeUndefined();
+    expect(localStorage.getItem('ahg-splash-seen')).toBe('1');
+  });
+
+  it('falls back to the warm cap when localStorage throws', () => {
+    const deny = () => { throw new Error('denied'); };
+    vi.stubGlobal('localStorage', { getItem: deny, setItem: deny });
+    startSplash();
+    dismissSplash();
+    vi.advanceTimersByTime(1000);
+    settle(1);
+    vi.advanceTimersByTime(300);
+    expect(leaving()).toBe('true');
+  });
 });
 
 describe('dismissSplash', () => {

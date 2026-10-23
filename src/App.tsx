@@ -223,19 +223,21 @@ function Shell() {
 function CarrierLine({ active }: { active: boolean }) {
   const reduce = useReducedMotion();
   const shimmer = active && !reduce;
+  // Transform-only sweep: a short phosphor slug slides across the line (compositor,
+  // no repaint). At rest the slug spans the full width, same as the old gradient.
   return (
-    <motion.div
+    <div
       aria-hidden
-      className="h-px shrink-0"
-      style={{
-        background: 'linear-gradient(90deg, transparent, var(--color-accent), transparent)',
-        backgroundSize: shimmer ? '250% 100%' : '100% 100%',
-        boxShadow: 'var(--shadow-glow)',
-        opacity: active ? 0.85 : 0.35,
-      }}
-      animate={shimmer ? { backgroundPositionX: ['-125%', '125%'] } : { backgroundPositionX: '0%' }}
-      transition={shimmer ? { duration: 2.4, ease: 'linear', repeat: Infinity } : { duration: 0 }}
-    />
+      className="h-px shrink-0 overflow-hidden"
+      style={{ boxShadow: 'var(--shadow-glow)', opacity: active ? 0.85 : 0.35 }}
+    >
+      <motion.div
+        className={`h-full ${shimmer ? 'w-2/5' : 'w-full'}`}
+        style={{ background: 'linear-gradient(90deg, transparent, var(--color-accent), transparent)' }}
+        animate={shimmer ? { x: ['-100%', '250%'] } : { x: '0%' }}
+        transition={shimmer ? { duration: 2.4, ease: 'linear', repeat: Infinity } : { duration: 0 }}
+      />
+    </div>
   );
 }
 
@@ -334,7 +336,7 @@ function RailItem({
         />
       )}
       {badge > 0 && (
-        <span className="absolute -top-0.5 -right-0.5 grid place-items-center min-w-[15px] h-[15px] px-1 rounded-full bg-accent text-on-accent font-mono text-[9px] leading-none tabular-nums">
+        <span className="absolute -top-0.5 -right-0.5 grid place-items-center min-w-[15px] h-[15px] px-1 rounded-full bg-accent text-on-accent font-mono text-2xs leading-none tabular-nums">
           {badge}
         </span>
       )}

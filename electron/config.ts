@@ -18,13 +18,10 @@ export const defaultConfig: AppConfig = {
   skipExisting: true,
   theme: 'system',
   palette: 'aurora',
-  rememberLastDir: true,
-  autoPaste: true,
   clipboardWatch: false,
   showNotifications: true,
   rateLimit: '',
   proxy: '',
-  ffmpegPath: '',
   globalHotkey: 'CommandOrControl+Shift+D',
   discordRichPresence: false,
   scheduleEnabled: false,
@@ -84,9 +81,27 @@ const isDir = (p: string): boolean => {
   try { return statSync(p).isDirectory(); } catch { return false; }
 };
 
+// Locations no download may be written into, read from the environment (not hard-coded
+// drive letters). SystemDrive is the bare system root; other drive roots stay allowed.
+const SYSTEM_DIR_VARS = ['SystemRoot', 'windir', 'ProgramFiles', 'ProgramFiles(x86)', 'ProgramData'];
+
+/** A download folder: a drive-letter path (no UNC, no relative), no '..' segment,
+ *  outside every system location, and an existing directory. */
+const isOutputDir = (p: string): boolean => {
+  if (!/^[a-zA-Z]:[\\/]/.test(p) || p.split(/[\\/]/).includes('..')) return false;
+  const abs = path.win32.resolve(p).toLowerCase();
+  const drive = process.env.SystemDrive;
+  if (drive && abs === path.win32.resolve(drive + '\\').toLowerCase()) return false;
+  for (const v of SYSTEM_DIR_VARS) {
+    const root = process.env[v] && path.win32.resolve(process.env[v]!).toLowerCase();
+    if (root && (abs === root || abs.startsWith(root + '\\'))) return false;
+  }
+  return isDir(p);
+};
+
 /** Shape rules for string settings that reach spawn() or the filesystem. */
 const STRING_RULES: Record<string, (v: string) => boolean> = {
-  outputDir: isDir,
+  outputDir: isOutputDir,
   proxy: (v) => /^(https?|socks5h?):\/\//.test(v),
   rateLimit: (v) => /^\d+[KMG]?$/.test(v),
   palette: isPaletteName,
@@ -130,11 +145,13 @@ export class ConfigManager {
     }
   }
 
-  set<K extends keyof AppConfig>(key: K, value: AppConfig[K]): void {
-    if (!this.isSafeKey(key as string) || !this.isValidValue(key as string, value)) return;
+  /** False when the key or value is refused (nothing changes). */
+  set<K extends keyof AppConfig>(key: K, value: AppConfig[K]): boolean {
+    if (!this.isSafeKey(key as string) || !this.isValidValue(key as string, value)) return false;
     this.config[key] = this.normalize(key as string, value) as AppConfig[K];
     this.scheduleSave();
     this.notifyChange();
+    return true;
   }
 
   update(partial: Partial<AppConfig>): void {

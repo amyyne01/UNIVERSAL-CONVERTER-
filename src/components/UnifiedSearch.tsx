@@ -9,6 +9,7 @@
 // still needs its own guard (see `reqId` below) since retrying doesn't remount.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
+import { EASE_OUT_EXPO as EASE } from '@/components/ui/motion';
 import { Search, Alert, Retry, Check, GoTo, ChevronDown, Download } from '@/components/ui/icons';
 import { Button, Spinner } from '@/components/ui';
 import { Artwork, artClass, EmptyPanel } from '@/components/tabs/PlatformTab';
@@ -27,7 +28,6 @@ type Phase =
   | { k: 'empty' }
   | { k: 'error' };
 
-const EASE: [number, number, number, number] = [0.25, 0.46, 0.45, 0.94];
 const ROW_CAP = 5;
 
 const SOURCE_LABEL: Record<Source, string> = { youtube: 'YouTube', soundcloud: 'SoundCloud', spotify: 'Spotify' };
@@ -239,10 +239,10 @@ function SourceGroup({
       <div className="h-8 flex items-center gap-2 px-4 bg-bg-secondary/60 border-b border-border-soft">
         <Icon size={14} className={`shrink-0 ${SOURCE_TEXT_CLASS[source]}`} />
         <h3 id={bandId} className="text-[11.5px] font-medium text-text-secondary">{def.label}</h3>
-        <span className="font-mono text-[10.5px] tabular-nums text-text-muted">{count}</span>
+        <span className="font-mono text-2xs tabular-nums text-text-muted">{count}</span>
         {phase.k === 'loading' && <Spinner size={12} className="text-text-muted" />}
         {source === 'spotify' && (
-          <span className="ml-auto font-mono text-[10px] tracking-[0.06em] uppercase text-text-muted">
+          <span className="ml-auto font-mono text-2xs tracking-[0.06em] uppercase text-text-muted">
             matched to best audio source
           </span>
         )}

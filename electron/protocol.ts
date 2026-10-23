@@ -1,6 +1,6 @@
 import { app } from 'electron';
 import path from 'node:path';
-import { urlArg } from './security.js';
+import { mediaUrlArg } from './security.js';
 import { detectUrl } from './url-detector.js';
 import type { UrlDetection } from '../shared/types.js';
 
@@ -40,7 +40,7 @@ export function resolveProtocolLink(raw: string): UrlDetection | null {
   if (typeof raw !== 'string' || !raw.startsWith(PREFIX)) return null;
   let target: string;
   try {
-    target = urlArg(raw.slice(PREFIX.length));
+    target = mediaUrlArg(raw.slice(PREFIX.length));
   } catch {
     return null;
   }

@@ -8,7 +8,7 @@ vi.mock('electron', () => ({
   session: {},
 }));
 
-import { confineToRoot, assertTrustedSender, rateLimit, secure, urlArg, playlistItemsArg, isNetscapeCookies } from './security';
+import { confineToRoot, assertTrustedSender, rateLimit, secure, urlArg, mediaUrlArg, CSP, playlistItemsArg, isNetscapeCookies } from './security';
 
 // A valid app main frame: dev origin, top === itself.
 const mainFrameEvent = (url = 'http://localhost:5173/') => {
@@ -141,6 +141,25 @@ describe('urlArg', () => {
 
   it('honors a custom max length', () => {
     expect(() => urlArg('https://x.com/abc', 10)).toThrow(/length limits/);
+  });
+});
+
+// A4: everything that spawns yt-dlp takes http(s) only, plus the Spotify bridge query.
+describe('mediaUrlArg', () => {
+  it.each(['file:///C:/Windows/win.ini', 'htp:/x', 'javascript:alert(1)', 'https://x.com/' + 'a'.repeat(5000), '', 'C:\\x.mp4'])(
+    'rejects %j', (u) => {
+      expect(() => mediaUrlArg(u)).toThrow(/Invalid input/);
+    });
+  it.each(['https://youtube.com/watch?v=abc', 'http://example.com/v.mp4', 'ytsearch:a - b'])('accepts %j', (u) => {
+    expect(mediaUrlArg(u)).toBe(u);
+  });
+});
+
+// A5: the packaged renderer talks to main over IPC only — it may open no connection.
+describe('CSP', () => {
+  it('allows the renderer no network connection at all', () => {
+    expect(CSP).toContain("connect-src 'none'");
+    expect(CSP).not.toContain("connect-src 'self'");
   });
 });
 

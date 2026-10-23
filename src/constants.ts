@@ -6,8 +6,8 @@ import {
   Home, Download, YouTube, Spotify, SoundCloud, ShortForm, Settings,
   Resolution, Batch, Collection, Audio, Scheduled,
 } from '@/components/ui/icons';
-import type { AudioFormat, VideoQuality, UiSource } from '@shared/types';
-import { BASIC_LIMITS, LOSSLESS_FORMATS, MAX_CONCURRENT_DOWNLOADS, VIDEO_QUALITIES as VIDEO_QUALITY_VALUES } from '@shared/types';
+import type { AudioFormat, VideoQuality, UiSource, SourcePlatform } from '@shared/types';
+import { BASIC_LIMITS, MORE_SOURCE_LABELS, LOSSLESS_FORMATS, MAX_CONCURRENT_DOWNLOADS, VIDEO_QUALITIES as VIDEO_QUALITY_VALUES } from '@shared/types';
 
 /** The renderer's navigable tabs (left rail + Ctrl+number order). */
 export type TabKey = 'home' | 'youtube' | 'spotify' | 'soundcloud' | 'reels' | 'queue' | 'settings';
@@ -193,3 +193,28 @@ export const PLAN_FEATURES: readonly PlanFeature[] = [
     premium: 'Run unattended, on your days',
   },
 ];
+
+// ── Source identity ──────────────────────────────────────────────────────────
+// ONE label / colour / monogram map for every SourcePlatform. The four core
+// sources reuse their platform tokens; the eight newer ones get --color-src-*.
+// Classes are written out in full so Tailwind can see them.
+export interface SourceMeta { label: string; color: string; text: string; mono: string }
+export const SOURCE_META: Record<SourcePlatform, SourceMeta> = {
+  youtube:     { label: PLATFORMS.find((p) => p.key === 'youtube')!.label,    color: 'var(--color-youtube)',    text: 'text-youtube',    mono: 'YT' },
+  spotify:     { label: PLATFORMS.find((p) => p.key === 'spotify')!.label,    color: 'var(--color-spotify)',    text: 'text-spotify',    mono: 'SP' },
+  soundcloud:  { label: PLATFORMS.find((p) => p.key === 'soundcloud')!.label, color: 'var(--color-soundcloud)', text: 'text-soundcloud', mono: 'SC' },
+  instagram:   { label: 'Reels',    color: 'var(--color-reels)', text: 'text-reels', mono: 'IG' },
+  tiktok:      { label: 'TikTok',   color: 'var(--color-reels)', text: 'text-reels', mono: 'TT' },
+  facebook:    { label: 'Facebook', color: 'var(--color-reels)', text: 'text-reels', mono: 'FB' },
+  twitter:     { label: MORE_SOURCE_LABELS.twitter,     color: 'var(--color-src-twitter)',     text: 'text-src-twitter',     mono: 'X' },
+  vimeo:       { label: MORE_SOURCE_LABELS.vimeo,       color: 'var(--color-src-vimeo)',       text: 'text-src-vimeo',       mono: 'VM' },
+  twitch:      { label: MORE_SOURCE_LABELS.twitch,      color: 'var(--color-src-twitch)',      text: 'text-src-twitch',      mono: 'TV' },
+  bandcamp:    { label: MORE_SOURCE_LABELS.bandcamp,    color: 'var(--color-src-bandcamp)',    text: 'text-src-bandcamp',    mono: 'BC' },
+  reddit:      { label: MORE_SOURCE_LABELS.reddit,      color: 'var(--color-src-reddit)',      text: 'text-src-reddit',      mono: 'RD' },
+  dailymotion: { label: MORE_SOURCE_LABELS.dailymotion, color: 'var(--color-src-dailymotion)', text: 'text-src-dailymotion', mono: 'DM' },
+  mixcloud:    { label: MORE_SOURCE_LABELS.mixcloud,    color: 'var(--color-src-mixcloud)',    text: 'text-src-mixcloud',    mono: 'MX' },
+  rumble:      { label: MORE_SOURCE_LABELS.rumble,      color: 'var(--color-src-rumble)',      text: 'text-src-rumble',      mono: 'RB' },
+  direct:      { label: 'Direct',  color: 'var(--color-accent)', text: 'text-text-secondary', mono: 'DL' },
+  generic:     { label: 'Link',    color: 'var(--color-accent)', text: 'text-text-secondary', mono: 'LK' },
+  unknown:     { label: 'Unknown', color: 'var(--color-accent)', text: 'text-text-secondary', mono: '?' },
+};

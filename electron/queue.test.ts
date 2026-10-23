@@ -16,6 +16,9 @@ vi.mock('./downloader.js', () => ({
   explainError: vi.fn((t: string) => t),
 }));
 
+// Real tail/redact, spied logLine — the A7 cases read the exact failure line.
+vi.mock('./log.js', async (orig) => ({ ...(await orig<typeof import('./log.js')>()), logLine: vi.fn() }));
+
 vi.mock('node:fs', () => {
   const existsSync = vi.fn(() => false);
   const readFileSync = vi.fn();
@@ -324,6 +327,53 @@ describe('handleDone', () => {
     const done = Q.getAllTasks().find((t) => t.taskId === a.taskId)!;
     expect(done.progress.status).toBe('done');
     expect(done.progress.downloaded).toBe(0);            // counters untouched
+  });
+});
+
+describe('v1.5.0: skip-existing stats and failure log (A2, A3, A7)', () => {
+  const url = 'https://www.youtube.com/watch?v=abc&token=secret';
+  const logged = async () => {
+    const { logLine } = await import('./log.js');
+    return vi.mocked(logLine).mock.calls.map((c) => c[1]);
+  };
+
+  it('does not count a completion yt-dlp skipped because the file was already there', () => {
+    const counted = vi.fn();
+    Q.onDownloadCompleted(counted);
+    const a = Q.createTask({ url: 'a' });
+    Q.enqueueTask(a);
+    (lastCall()[3] as (...x: unknown[]) => void)(a, 'C:\\Music\\song.mp3', [], true);
+    const b = Q.createTask({ url: 'a' });
+    Q.enqueueTask(b);
+    vi.advanceTimersByTime(5000);
+    (lastCall()[3] as (...x: unknown[]) => void)(b, 'C:\\Music\\song.mp3', ['C:\\Music\\song.mp3'], false);
+    expect(counted).toHaveBeenCalledTimes(1);
+    expect(statusOf(a.taskId)).toBe('done');
+  });
+
+  it('logs a failure with taskId, host and code, never the URL or its query', async () => {
+    const a = Q.createTask({ url, title: 'A' });
+    Q.enqueueTask(a);
+    const active = lastCall()[0];
+    active.errorCode = 'removed';
+    onErrorOf()(active, `ERROR: [generic] HTTP Error 404 for ${url}`);
+    const line = (await logged()).find((l) => l.includes(a.taskId))!;
+    expect(line).toMatch(/failed/);
+    expect(line).toContain('host=www.youtube.com');
+    expect(line).toContain('code=removed');
+    expect(line).not.toContain('?');
+    expect(line).not.toContain('https://');
+  });
+
+  it('logs a retryable failure as retrying, not as a failed download', async () => {
+    classify.mockReturnValue('retryable');
+    const a = Q.createTask({ url, title: 'A' });
+    Q.enqueueTask(a);
+    onErrorOf()(lastCall()[0], 'network timeout');
+    const lines = (await logged()).filter((l) => l.includes(a.taskId));
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatch(/retrying/);
+    expect(lines[0]).not.toMatch(/failed/);
   });
 });
 

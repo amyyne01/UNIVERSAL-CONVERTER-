@@ -1,10 +1,11 @@
 import { useState, useCallback, useMemo, useRef, memo } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { EASE_OUT_EXPO } from '@/components/ui/motion';
 import { OpenFolder, Download, Track, Lock, Premium } from '@/components/ui/icons';
 import { useAppStore } from '@/store';
 import { Button, Select } from '@/components/ui';
 import { AUDIO_FORMATS, AUDIO_QUALITIES } from '@/constants';
-import { buildDownloadRequest, spotifyDownloadUrl } from '@/lib/download';
+import { buildDownloadRequest, spotifyDownloadUrl, toPlaylistItems } from '@/lib/download';
 import { useTierLocks, premiumCopy, basicCopy } from '@/lib/tier';
 import type { AudioFormat, Track as TrackType } from '@shared/types';
 
@@ -15,6 +16,9 @@ import type { AudioFormat, Track as TrackType } from '@shared/types';
 // children straight to the grid, so a 200-track list renders the same nodes.
 const TRACK_COLUMNS =
   'grid grid-cols-[26px_30px_minmax(0,1fr)_auto] @4xl:grid-cols-[26px_34px_minmax(0,1.7fr)_minmax(0,1fr)_auto]';
+
+const YOUTUBE_LIST = /^https?:\/\/([\w-]+\.)?(youtube\.com|youtu\.be)\//i;
+const PICK_LOCKED = 'Choosing videos from a playlist is part of Plus. Free downloads the playlist from the top.';
 
 /** ms → m:ss with tabular digits */
 function fmtDur(ms: number): string {
@@ -59,7 +63,13 @@ export function PlaylistPreview() {
     if (dir) updateConfig({ outputDir: dir });
   }, [updateConfig]);
 
+  // A YouTube playlist is ONE engine job (`--playlist-items`), not a track list.
+  // Picking items is Plus: main drops playlistItems on basic, so the rows lock.
+  const isEngineList = !!playlist && YOUTUBE_LIST.test(playlist.url);
+  const pickLocked = isEngineList && !locks.isPremium;
+
   const selectRow = useCallback((index: number, shift: boolean) => {
+    if (pickLocked) return locks.nudge(PICK_LOCKED);
     const tracks = tracksRef.current;
     const anchor = anchorRef.current;
     if (shift && anchor !== null && anchor !== index && tracks[anchor]) {
@@ -75,7 +85,7 @@ export function PlaylistPreview() {
       toggleTrack(tracks[index].id);
     }
     anchorRef.current = index;
-  }, [toggleTrack]);
+  }, [toggleTrack, pickLocked, locks]);
 
   // One pass over the list per selection change: how many are picked, how long
   // they run, and which ones fall past the tier's collection ceiling.
@@ -103,6 +113,28 @@ export function PlaylistPreview() {
     setEnqueueing(true);
     setEnqueueError('');
     try {
+      if (isEngineList) {
+        const picked = playlist.tracks.flatMap((t, i) => (selectedTracks.has(t.id) ? [i + 1] : []));
+        const task = await window.electronAPI.download.start(
+          buildDownloadRequest(config, {
+            url: playlist.url,
+            source: 'youtube',
+            format,
+            quality,
+            isAudioOnly: true,
+            isPlaylist: true,
+            playlistName: playlist.name,
+            title: playlist.name,
+            thumbnailUrl: playlist.thumbnailUrl,
+            uploader: playlist.owner,
+            ...(pickLocked ? {} : { playlistItems: toPlaylistItems(picked) }),
+          }),
+        );
+        addDownload(task);
+        clearTracks();
+        anchorRef.current = null;
+        return;
+      }
       const chosen = playlist.tracks.filter((t) => selectedTracks.has(t.id));
       // Basic takes the first N of a collection — same ceiling the main process
       // applies to engine-expanded playlists (--playlist-end).
@@ -145,7 +177,7 @@ export function PlaylistPreview() {
     } finally {
       setEnqueueing(false);
     }
-  }, [playlist, selectedTracks, format, quality, config, addDownload, clearTracks, locks]);
+  }, [playlist, selectedTracks, format, quality, config, addDownload, clearTracks, locks, isEngineList, pickLocked]);
 
   if (!playlist) return null;
 
@@ -190,13 +222,13 @@ export function PlaylistPreview() {
             {/* Name + mono meta — below ~220px the name is unreadable, so the
                 readout and select-all wrap under instead of crushing it. */}
             <div className="min-w-0 flex-1 basis-[220px]">
-              <div className="font-mono text-[10.5px] tracking-[0.08em] uppercase text-spotify mb-1">
+              <div className="font-mono text-2xs tracking-[0.08em] uppercase text-spotify mb-1">
                 {playlist.url.includes('/album/') ? 'Spotify Album' : 'Spotify Playlist'}
               </div>
               <h2 className="text-h2 text-text-primary truncate">
                 {playlist.name}
               </h2>
-              <div className="font-mono text-[10.5px] tracking-[0.08em] uppercase text-text-muted mt-1 tabular-nums">
+              <div className="font-mono text-2xs tracking-[0.08em] uppercase text-text-muted mt-1 tabular-nums">
                 {playlist.trackCount} tracks · {runtime} · by {playlist.owner}
               </div>
             </div>
@@ -208,7 +240,7 @@ export function PlaylistPreview() {
                 {selectedCount}
                 <span className="text-text-muted text-[15px]">/{playlist.tracks.length}</span>
               </div>
-              <div className="font-mono text-[10.5px] tracking-[0.08em] uppercase text-text-muted mt-1.5 tabular-nums">
+              <div className="font-mono text-2xs tracking-[0.08em] uppercase text-text-muted mt-1.5 tabular-nums">
                 {selectedCount === 0 ? 'none selected' : `selected · ${fmtSpan(selectedMs)}`}
               </div>
               {/* What free gives you here — shown before you hit the ceiling, so
@@ -222,7 +254,11 @@ export function PlaylistPreview() {
             {/* Select-all chip */}
             <button
               type="button"
-              onClick={() => { anchorRef.current = null; allSelected ? clearTracks() : selectAllTracks(); }}
+              onClick={() => {
+                if (pickLocked) return locks.nudge(PICK_LOCKED);
+                anchorRef.current = null;
+                if (allSelected) clearTracks(); else selectAllTracks();
+              }}
               className="no-drag flex items-center gap-2 h-8 px-3 rounded-md border border-border text-[12.5px] text-text-secondary hover:bg-bg-hover transition-colors select-none shrink-0"
             >
               <Checkbox checked={allSelected} accent="spotify" />
@@ -238,7 +274,7 @@ export function PlaylistPreview() {
                 initial={reduce ? false : { opacity: 0, y: -4 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={reduce ? { opacity: 0 } : { opacity: 0, y: -4 }}
-                transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+                transition={{ duration: 0.16, ease: EASE_OUT_EXPO }}
                 className="mt-3 flex items-center gap-2.5 rounded-md px-3 py-2"
                 style={{
                   background: 'color-mix(in oklch, var(--color-warning) 12%, transparent)',
@@ -272,19 +308,19 @@ export function PlaylistPreview() {
         {/* Column header — same template as the rows (see TRACK_COLUMNS). */}
         <div className={`${TRACK_COLUMNS} gap-4 px-[18px] py-2.5 bg-bg-secondary border-b border-border-soft`}>
           <span />
-          <span className="font-mono text-[10.5px] tracking-[0.08em] text-text-muted uppercase text-center">
+          <span className="font-mono text-2xs tracking-[0.08em] text-text-muted uppercase text-center">
             #
           </span>
           <span className="flex items-baseline gap-2.5 min-w-0">
-            <span className="font-mono text-[10.5px] tracking-[0.08em] text-text-muted uppercase">
+            <span className="font-mono text-2xs tracking-[0.08em] text-text-muted uppercase">
               Title
             </span>
             <span className="text-[11px] text-text-muted truncate">shift-click to pick a range</span>
           </span>
-          <span className="hidden @4xl:block font-mono text-[10.5px] tracking-[0.08em] text-text-muted uppercase">
+          <span className="hidden @4xl:block font-mono text-2xs tracking-[0.08em] text-text-muted uppercase">
             Artist
           </span>
-          <span className="font-mono text-[10.5px] tracking-[0.08em] text-text-muted uppercase text-right">
+          <span className="font-mono text-2xs tracking-[0.08em] text-text-muted uppercase text-right">
             Time
           </span>
         </div>
@@ -317,7 +353,7 @@ export function PlaylistPreview() {
       >
         {/* Format */}
         <div className="flex flex-col gap-1">
-          <span className="font-mono text-[10.5px] tracking-[0.08em] uppercase text-text-muted">
+          <span className="font-mono text-2xs tracking-[0.08em] uppercase text-text-muted">
             Format
           </span>
           <Select
@@ -332,7 +368,7 @@ export function PlaylistPreview() {
 
         {/* Quality */}
         <div className="flex flex-col gap-1">
-          <span className="font-mono text-[10.5px] tracking-[0.08em] uppercase text-text-muted">
+          <span className="font-mono text-2xs tracking-[0.08em] uppercase text-text-muted">
             Quality
           </span>
           <Select
@@ -349,7 +385,7 @@ export function PlaylistPreview() {
             into the slack so more of the path is legible, and shrinks to 180px
             before anything else on the bar is forced to wrap. */}
         <div className="flex flex-col gap-1 min-w-0 flex-1 basis-[180px] max-w-[260px] @4xl:max-w-[420px]">
-          <span className="font-mono text-[10.5px] tracking-[0.08em] uppercase text-text-muted">
+          <span className="font-mono text-2xs tracking-[0.08em] uppercase text-text-muted">
             Folder
           </span>
           <button
@@ -376,7 +412,7 @@ export function PlaylistPreview() {
 
         {/* What you'll get, spelled out next to the button that does it */}
         <div className="flex flex-col items-end gap-1 min-w-0">
-          <span className="font-mono text-[10.5px] tracking-[0.08em] uppercase text-text-muted tabular-nums whitespace-nowrap">
+          <span className="font-mono text-2xs tracking-[0.08em] uppercase text-text-muted tabular-nums whitespace-nowrap">
             {queuedCount === 0
               ? 'nothing selected'
               : `${queuedCount} × ${locks.effectiveFormat(format).toUpperCase()} · ${

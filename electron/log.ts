@@ -38,4 +38,8 @@ export function logLine(level: 'info' | 'error', msg: string): void {
 /** Last chunk of a long error (e.g. yt-dlp stderr) — the failure reason sits at the end. */
 export const tail = (s: string): string => (s.length > TAIL_CHARS ? `...${s.slice(-TAIL_CHARS)}` : s);
 
-export const errText = (e: unknown): string => (e instanceof Error ? e.stack || e.message : String(e));
+/** Host only — a log line never carries a full URL, its path or its query. */
+export const hostOf = (u: string): string => { try { return new URL(u).host; } catch { return ''; } };
+export const scrubUrls = (s: string): string => s.replace(/\b[a-z][a-z0-9+.-]*:\/\/[^\s"'<>]+/gi, hostOf);
+
+export const errText =(e: unknown): string => (e instanceof Error ? e.stack || e.message : String(e));

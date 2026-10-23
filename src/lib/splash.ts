@@ -30,6 +30,21 @@ const REMOVE_FLOOR_MS = 400;
  * being waited on is the user's eye.
  */
 const MIN_VISIBLE_MS = 3400;
+/** Every launch after the first: the reveal has been seen, so stop waiting on it. */
+const WARM_VISIBLE_MS = 1000;
+const SEEN_KEY = 'ahg-splash-seen';
+let floorMs = MIN_VISIBLE_MS;
+
+/** Full floor once, then the warm cap. Unreadable storage counts as warm. */
+function pickFloor(): number {
+  try {
+    if (localStorage.getItem(SEEN_KEY)) return WARM_VISIBLE_MS;
+    localStorage.setItem(SEEN_KEY, '1');
+    return MIN_VISIBLE_MS;
+  } catch {
+    return WARM_VISIBLE_MS;
+  }
+}
 
 /** Set by public/splash-boot.js, which runs before this bundle exists. */
 declare global {
@@ -57,7 +72,7 @@ function currentPct(fill: HTMLElement): number {
 
 /** Start the visibility clock. The CSS ramp is already running by now. */
 export function startSplash(): void {
-  if (!bootAt) bootAt = Date.now();
+  if (!bootAt) { bootAt = Date.now(); floorMs = pickFloor(); }
 }
 
 /**
@@ -70,13 +85,13 @@ export function dismissSplash(): void {
   if (!splash || finishing) return;
 
   // Ready too soon: let the bar be seen before finishing it.
-  const waited = bootAt ? Date.now() - bootAt : MIN_VISIBLE_MS;
-  if (waited < MIN_VISIBLE_MS) {
+  const waited = bootAt ? Date.now() - bootAt : floorMs;
+  if (waited < floorMs) {
     finishing = true;
     setTimeout(() => {
       finishing = false;
       dismissSplash();
-    }, MIN_VISIBLE_MS - waited);
+    }, floorMs - waited);
     return;
   }
 
@@ -137,5 +152,6 @@ export function __resetSplash(): void {
   if (raf) cancelAnimationFrame(raf);
   raf = 0;
   bootAt = 0;
+  floorMs = MIN_VISIBLE_MS;
   finishing = false;
 }

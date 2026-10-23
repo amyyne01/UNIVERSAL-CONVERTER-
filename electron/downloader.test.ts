@@ -25,6 +25,8 @@ vi.mock('fs', async () => {
   return { ...actual, existsSync: vi.fn().mockReturnValue(true) };
 });
 
+vi.mock('./log.js', async (orig) => ({ ...(await orig<typeof import('./log.js')>()), logLine: vi.fn() }));
+
 import { Downloader, classifyError, errorCodeOf, explainError, needsClientFallback, scoreCandidates } from './downloader';
 import type { DownloadTask, Track, SearchResult, DownloadExtras } from '../shared/types';
 import { mergeExtras } from '../shared/types';
@@ -181,7 +183,7 @@ describe('Downloader', () => {
     proc.stdout.emit('data', Buffer.from('[FILEPATH]C:\\Downloads\\Test Song.mp3\n'));
     proc.emit('close', 0);
 
-    expect(onDone).toHaveBeenCalledWith(task, expect.any(String), expect.any(Array));
+    expect(onDone).toHaveBeenCalledWith(task, expect.any(String), expect.any(Array), false);
     expect(onProgress).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'done', percent: 100 })
     );
@@ -376,7 +378,8 @@ describe('Downloader', () => {
     expect(onDone).toHaveBeenCalledWith(
       task,
       'C:\\Downloads\\Song - Part2.mp3',
-      ['C:\\Downloads\\Song - Part1.mp3', 'C:\\Downloads\\Song - Part2.mp3']
+      ['C:\\Downloads\\Song - Part1.mp3', 'C:\\Downloads\\Song - Part2.mp3'],
+      false,
     );
   });
 
@@ -415,7 +418,7 @@ describe('Downloader', () => {
       const { onDone, proc } = start();
       proc.stdout.emit('data', Buffer.from('[youtube] Extracting URL\n[download] Destination: C:/x.webm\nC:/bare/path.mp3\n'));
       proc.emit('close', 0);
-      expect(onDone).toHaveBeenCalledWith(expect.anything(), '', []);
+      expect(onDone).toHaveBeenCalledWith(expect.anything(), '', [], false);
     });
 
     it('stitches a [FILEPATH] prefix split across two chunks', () => {
@@ -423,14 +426,14 @@ describe('Downloader', () => {
       proc.stdout.emit('data', Buffer.from('[FILE'));
       proc.stdout.emit('data', Buffer.from('PATH]C:/Downloads/Split.mp3\r\n'));
       proc.emit('close', 0);
-      expect(onDone).toHaveBeenCalledWith(task, 'C:/Downloads/Split.mp3', ['C:/Downloads/Split.mp3']);
+      expect(onDone).toHaveBeenCalledWith(task, 'C:/Downloads/Split.mp3', ['C:/Downloads/Split.mp3'], false);
     });
 
     it('ignores an indented or embedded [FILEPATH] echo and a marker inside a title', () => {
       const { onProgress, onDone, proc } = start();
       proc.stdout.emit('data', Buffer.from('   [FILEPATH]C:/spoof/lead.mp3\nDeleting original file C:/o/[PROGRESS]1|2.mp4\n'));
       proc.emit('close', 0);
-      expect(onDone).toHaveBeenCalledWith(expect.anything(), '', []);
+      expect(onDone).toHaveBeenCalledWith(expect.anything(), '', [], false);
       expect(onProgress.mock.calls.every((c) => c[0].status !== 'downloading' || c[0].percent === 100)).toBe(true);
     });
 
@@ -438,7 +441,14 @@ describe('Downloader', () => {
       const { onDone, proc } = start();
       proc.stdout.emit('data', Buffer.from('[FILEPATH]\\\\attacker\\share\\x.mp3\n[FILEPATH]\\\\?\\C:\\x.mp3\n'));
       proc.emit('close', 0);
-      expect(onDone).toHaveBeenCalledWith(expect.anything(), '', []);
+      expect(onDone).toHaveBeenCalledWith(expect.anything(), '', [], false);
+    });
+
+    it('classifies login walls and "not found" in plain codes, not raw text', () => {
+      expect(errorCodeOf('ERROR: [vimeo] 1: The web client only works when logged-in. Use --cookies')).toBe('login_required');
+      expect(errorCodeOf('ERROR: [reddit] x: Account authentication is required')).toBe('login_required');
+      expect(errorCodeOf('ERROR: [dailymotion] x0: Not found.')).toBe('removed');
+      expect(errorCodeOf('ERROR: [mixcloud] Track not found')).toBe('removed');
     });
 
     it('moves status to embedding on an [EmbedSubtitle] marker', () => {
@@ -460,14 +470,14 @@ describe('Downloader', () => {
       proc.stdout.emit('data', Buffer.from('[download] C:/Downloads/a.mp3 has already been downloaded\n[FILEPATH]C:/Downloads/a.mp3\n'));
       proc.emit('close', 0);
       expect(last(onProgress)).toMatchObject({ status: 'done', percent: 100 });
-      expect(onDone).toHaveBeenCalledWith(task, 'C:/Downloads/a.mp3', ['C:/Downloads/a.mp3']);
+      expect(onDone).toHaveBeenCalledWith(task, 'C:/Downloads/a.mp3', [], true);
     });
 
     it('collects several [FILEPATH] lines in order', () => {
       const { task, onDone, proc } = start();
       proc.stdout.emit('data', Buffer.from('[FILEPATH]C:/d/1.mp3\n[download] x\n[FILEPATH]C:/d/2.mp3\n[FILEPATH]C:/d/3.mp3\n'));
       proc.emit('close', 0);
-      expect(onDone).toHaveBeenCalledWith(task, 'C:/d/3.mp3', ['C:/d/1.mp3', 'C:/d/2.mp3', 'C:/d/3.mp3']);
+      expect(onDone).toHaveBeenCalledWith(task, 'C:/d/3.mp3', ['C:/d/1.mp3', 'C:/d/2.mp3', 'C:/d/3.mp3'], false);
     });
   });
 
@@ -653,7 +663,7 @@ describe('PO-token gate: 403 recovery', () => {
 describe('explainError', () => {
   it('replaces raw stderr with something the user can act on', () => {
     expect(explainError('ERROR: unable to download video data: HTTP Error 403: Forbidden'))
-      .toMatch(/gating/i);
+      .toMatch(/refused/i);
     expect(explainError('ERROR: Private video. Sign in if you have been granted access'))
       .toMatch(/sign-in/i);
     // Note the narrow string: classifyError checks its permanent list BEFORE geo,
@@ -690,6 +700,14 @@ describe('buildYtDlpArgs — extras', () => {
   };
   const withExtras = (extras: Partial<DownloadExtras>, task: Partial<DownloadTask> = {}) =>
     d.buildYtDlpArgs(makeTask({ ...task, extras: mergeExtras(extras) }), null);
+
+  it('anchors split-chapter files to the output folder, not the process cwd', () => {
+    const on = withExtras({ splitChapters: true }, { outputDir: 'C:\\Out' });
+    const chapterOut = on.find((a) => a.startsWith('chapter:'));
+    expect(chapterOut).toContain('C:\\Out');
+    expect(chapterOut).toContain('%(section_number)03d');
+    expect(withExtras({ splitChapters: false }).some((a) => a.startsWith('chapter:'))).toBe(false);
+  });
 
   it('omits every extra when the task carries none (pre-extras history rows)', () => {
     const args = d.buildYtDlpArgs(makeTask(), null);
@@ -856,5 +874,181 @@ describe('buildYtDlpArgs — playlist items, cookies file, politeness', () => {
   it('refuses a relative cookies path', () => {
     const args = d.buildYtDlpArgs(makeTask({ extras: mergeExtras({ cookiesFile: '--exec=evil' }) }), null);
     expect(args).not.toContain('--cookies');
+  });
+});
+
+// ── v1.5.0 engine fixes (A1–A3, A9) ───────────────────────────────────────────
+describe('buildYtDlpArgs — thumbnail embedding by container (A1)', () => {
+  const d = new Downloader();
+  const audio = (format: string) => d.buildYtDlpArgs(makeTask({ isAudioOnly: true, format: format as DownloadTask['format'] }), null);
+  const video = (videoContainer: string) =>
+    d.buildYtDlpArgs(makeTask({ isAudioOnly: false, extras: mergeExtras({ videoContainer } as Partial<DownloadExtras>) }), null);
+
+  it.each(['wav', 'aac'])('never asks yt-dlp to embed a thumbnail into %s', (f) => {
+    expect(audio(f)).not.toContain('--embed-thumbnail');
+  });
+  it('never asks yt-dlp to embed a thumbnail into webm', () => {
+    expect(video('webm')).not.toContain('--embed-thumbnail');
+  });
+  it.each(['mp3', 'flac', 'm4a', 'alac', 'opus', 'ogg'])('embeds the thumbnail into %s', (f) => {
+    expect(audio(f)).toContain('--embed-thumbnail');
+  });
+  it.each(['mp4', 'mkv'])('embeds the thumbnail into a %s video', (c) => {
+    expect(video(c)).toContain('--embed-thumbnail');
+  });
+  it('still honours embedThumbnail=false', () => {
+    expect(d.buildYtDlpArgs(makeTask({ embedThumbnail: false }), null)).not.toContain('--embed-thumbnail');
+  });
+});
+
+describe('buildYtDlpArgs — output name per selection (A2)', () => {
+  const d = new Downloader();
+  const out = (o: Partial<DownloadTask>) => {
+    const args = d.buildYtDlpArgs(makeTask(o), null);
+    return args[args.indexOf('-o') + 1];
+  };
+
+  it('keeps the exact v1.4 name for the default selections', () => {
+    expect(out({ isAudioOnly: true, format: 'mp3' })).toBe('C:\\Downloads\\Test Song.%(ext)s');
+    expect(out({ isAudioOnly: false, videoQuality: 'best' })).toBe('C:\\Downloads\\Test Song.%(ext)s');
+  });
+  it('suffixes a specific video height and a non-mp3 audio format', () => {
+    expect(out({ isAudioOnly: false, videoQuality: '360p' })).toBe('C:\\Downloads\\Test Song [360p].%(ext)s');
+    expect(out({ isAudioOnly: true, format: 'flac' })).toBe('C:\\Downloads\\Test Song [flac].%(ext)s');
+    expect(out({ isAudioOnly: true, format: 'wav' })).toBe('C:\\Downloads\\Test Song [wav].%(ext)s');
+  });
+  it('gives two selections of one video two names, and one selection one name', () => {
+    expect(out({ isAudioOnly: false, videoQuality: '360p' })).not.toBe(out({ isAudioOnly: false, videoQuality: 'best' }));
+    expect(out({ isAudioOnly: true, format: 'flac' })).not.toBe(out({ isAudioOnly: true, format: 'wav' }));
+    expect(out({ isAudioOnly: true, format: 'flac' })).toBe(out({ isAudioOnly: true, format: 'flac' }));
+  });
+  it('suffixes the playlist %(title)s name too', () => {
+    expect(out({ isPlaylist: true, playlistName: 'L', isAudioOnly: true, format: 'opus' }))
+      .toBe('C:\\Downloads\\L\\%(title)s [opus].%(ext)s');
+  });
+  it('leaves a user output template untouched', () => {
+    expect(out({ isAudioOnly: true, format: 'flac', extras: mergeExtras({ outputTemplate: '%(uploader)s - %(title)s' }) }))
+      .toBe('C:\\Downloads\\%(uploader)s - %(title)s.%(ext)s');
+  });
+  it('never lets an unknown quality or format into the path', () => {
+    expect(out({ isAudioOnly: false, videoQuality: '..\\..\\x' as DownloadTask['videoQuality'] })).toBe('C:\\Downloads\\Test Song.%(ext)s');
+    expect(out({ isAudioOnly: true, format: '..\\x' as DownloadTask['format'] })).not.toContain('..');
+  });
+});
+
+describe('download — a file already on disk (A2 stats)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(execSync).mockReturnValue(Buffer.from('2024.01.01\n'));
+  });
+
+  it('flags a completion where yt-dlp skipped every file', () => {
+    const d = new Downloader();
+    const onDone = vi.fn();
+    d.download(makeTask(), undefined, vi.fn(), onDone);
+    const proc = (spawn as any).mock.results[0].value;
+    proc.stdout.emit('data', Buffer.from('[download] C:\\Downloads\\Test Song.mp3 has already been downloaded\n[FILEPATH]C:\\Downloads\\Test Song.mp3\n'));
+    proc.emit('close', 0);
+    expect(onDone).toHaveBeenCalledWith(expect.anything(), 'C:\\Downloads\\Test Song.mp3', [], true);
+  });
+
+  it('counts only the fresh files of a partly-skipped collection', () => {
+    const d = new Downloader();
+    const onDone = vi.fn();
+    d.download(makeTask({ isPlaylist: true }), undefined, vi.fn(), onDone);
+    const proc = (spawn as any).mock.results[0].value;
+    proc.stdout.emit('data', Buffer.from('[download] C:\\d\\1.mp3 has already been downloaded\n[FILEPATH]C:\\d\\1.mp3\n[FILEPATH]C:\\d\\2.mp3\n'));
+    proc.emit('close', 0);
+    expect(onDone).toHaveBeenCalledWith(expect.anything(), 'C:\\d\\2.mp3', ['C:\\d\\2.mp3'], false);
+  });
+});
+
+describe('download — a failure emits no transient failed progress (A3)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(execSync).mockReturnValue(Buffer.from('2024.01.01\n'));
+  });
+
+  it('reports a non-zero exit through onError only', () => {
+    const d = new Downloader();
+    const onProgress = vi.fn();
+    const onError = vi.fn();
+    d.download(makeTask(), undefined, onProgress, vi.fn(), onError);
+    const proc = (spawn as any).mock.results[0].value;
+    proc.stderr.emit('data', Buffer.from('ERROR: unable to download video data: HTTP Error 503\n'));
+    proc.emit('close', 1);
+    expect(onError).toHaveBeenCalled();
+    expect(onProgress.mock.calls.some(([p]) => p.status === 'failed')).toBe(false);
+  });
+});
+
+// Real stderr captured from bin/yt-dlp.exe (council3 work/cn-3/raw-stderr.txt).
+describe('classifier — real stderr (A3)', () => {
+  const NOT_FOUND = 'ERROR: [generic] nothing: Unable to download webpage: HTTP Error 404: Not Found (caused by <HTTPError 404: Not Found>)';
+  const SC_404 = 'ERROR: [soundcloud] zz/no-such: Unable to download JSON metadata: HTTP Error 404: Not Found (caused by <HTTPError 404: Not Found>)';
+  const GONE = 'ERROR: [vimeo] 1: Unable to download webpage: HTTP Error 410: Gone';
+  const RUMBLE = 'ERROR: [Rumble] vzzzzzz-nothing.html: Unable to download webpage: HTTP Error 403: Forbidden (caused by <HTTPError 403: Forbidden>)';
+  const SCHEME = 'ERROR: Unable to handle request: Unsupported url scheme: "htp" (requests, urllib, websockets, curl_cffi)';
+  const POSTPROC = 'ERROR: Postprocessing: Conversion failed!';
+
+  it.each([NOT_FOUND, SC_404, GONE])('treats an HTTP 404/410 as permanent and removed: %s', (t) => {
+    expect(classifyError(t)).toBe('permanent');
+    expect(errorCodeOf(t)).toBe('removed');
+  });
+  it('treats an unsupported url scheme as permanent', () => {
+    expect(classifyError(SCHEME)).toBe('permanent');
+    expect(errorCodeOf(SCHEME)).toBe('unsupported');
+  });
+  it('never blames YouTube for another site 403', () => {
+    expect(explainError(RUMBLE)).not.toMatch(/youtube/i);
+  });
+  it('gives unknown text neutral copy plus the raw tail', () => {
+    const s = explainError(POSTPROC);
+    expect(s).not.toMatch(/private|sign-in/i);
+    expect(s).toContain('Conversion failed!');
+  });
+});
+
+describe('fetchMetadata — failure log (A7)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(execSync).mockReturnValue(Buffer.from('2024.01.01\n'));
+  });
+
+  it('logs host and code, never the URL or its query', async () => {
+    const { logLine } = await import('./log.js');
+    const url = 'https://example.com/nothing?sig=abc';
+    const p = new Downloader().fetchMetadata(url).catch((e: Error) => e);
+    const proc = (spawn as any).mock.results[0].value;
+    proc.stderr.emit('data', Buffer.from(`ERROR: [generic] nothing: Unable to download webpage: HTTP Error 404: Not Found ${url}\n`));
+    proc.emit('close', 1);
+    await p;
+    const line = vi.mocked(logLine).mock.calls.map((c) => c[1]).find((l) => l.startsWith('fetch failed'))!;
+    expect(line).toContain('host=example.com');
+    expect(line).toContain('code=removed');
+    expect(line).not.toContain('?');
+    expect(line).not.toContain('https://');
+  });
+});
+
+describe('progress parser — monotonic status (A9)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(execSync).mockReturnValue(Buffer.from('2024.01.01\n'));
+  });
+
+  it('never falls back from embedding to downloading within one item, but does for the next item', () => {
+    const onProgress = vi.fn();
+    new Downloader().download(makeTask({ isPlaylist: true }), undefined, onProgress);
+    const proc = (spawn as any).mock.results[0].value;
+    const status = () => onProgress.mock.calls.at(-1)![0].status;
+    proc.stdout.emit('data', Buffer.from('[PROGRESS]10|100|NA|1|1\n[Merger] Merging\n[Metadata] Adding\n[PROGRESS]100|100|NA|1|0\n'));
+    expect(status()).toBe('embedding');
+    proc.stdout.emit('data', Buffer.from('[download] Downloading item 2 of 3\n[PROGRESS]5|100|NA|1|9\n'));
+    expect(status()).toBe('downloading');
   });
 });

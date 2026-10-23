@@ -7,6 +7,7 @@
 // back to the same path every other tab uses, honouring the format and quality
 // controls above it. Nothing here starts a download itself.
 import { motion, useReducedMotion } from 'framer-motion';
+import { EASE_OUT_EXPO } from '@/components/ui/motion';
 import type { MediaMetadata } from '@shared/types';
 import { formatDuration } from '@/lib/format';
 import { Button } from '@/components/ui/Button';
@@ -53,7 +54,7 @@ export function ShortFormPreview({ meta, eyebrow, accent, onGet }: ShortFormPrev
     <motion.div
       initial={reduce ? { opacity: 0 } : { opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: reduce ? 0.14 : 0.28, ease: [0.16, 1, 0.3, 1] }}
+      transition={{ duration: reduce ? 0.14 : 0.28, ease: EASE_OUT_EXPO }}
       className="rounded-lg border border-border-soft bg-bg-surface shadow-sm p-4 @min-[640px]:p-5"
     >
       <div className="flex flex-col @min-[560px]:flex-row gap-4 @min-[560px]:gap-5">

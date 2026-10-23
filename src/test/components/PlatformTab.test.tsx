@@ -13,13 +13,10 @@ const baseConfig: AppConfig = {
   embedMetadata: true,
   skipExisting: true,
   theme: 'dark',
-  rememberLastDir: true,
-  autoPaste: true,
   clipboardWatch: false,
   showNotifications: true,
   rateLimit: '',
   proxy: '',
-  ffmpegPath: '',
   globalHotkey: '',
   discordRichPresence: false,
   scheduleEnabled: false,
@@ -37,6 +34,26 @@ describe('PlatformTab', () => {
       downloads: {},
     });
     vi.clearAllMocks();
+  });
+
+  it('a YouTube playlist link opens the picker with every video selected', async () => {
+    (window.electronAPI.url.detect as any).mockResolvedValue({
+      url: 'https://www.youtube.com/playlist?list=PL1', platform: 'youtube', contentType: 'playlist',
+      isCollection: true, label: 'YouTube playlist', id: 'PL1',
+    });
+    (window.electronAPI.url.fetchMetadata as any).mockResolvedValue({
+      title: 'Mix', uploader: 'Chan', thumbnailUrl: '', duration: 0,
+      entries: [
+        { id: 'a', title: 'One', uploader: 'Chan', duration: 60, thumbnailUrl: '', url: 'https://youtube.com/watch?v=a' },
+        { id: 'b', title: 'Two', uploader: 'Chan', duration: 60, thumbnailUrl: '', url: 'https://youtube.com/watch?v=b' },
+      ],
+    });
+    render(<PlatformTab platform="youtube" />);
+    act(() => { useAppStore.getState().setPendingInput('https://www.youtube.com/playlist?list=PL1'); });
+    await waitFor(() => expect(useAppStore.getState().currentPlaylist?.url).toBe('https://www.youtube.com/playlist?list=PL1'));
+    expect(useAppStore.getState().currentPlaylist?.tracks.map((t) => t.name)).toEqual(['One', 'Two']);
+    expect(useAppStore.getState().selectedTracks.size).toBe(2);
+    act(() => { useAppStore.getState().setCurrentPlaylist(null); });
   });
 
   it('pendingInput from the dashboard seeds the field and auto-fetches', async () => {

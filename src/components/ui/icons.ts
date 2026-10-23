@@ -20,7 +20,6 @@ import {
 export {
   // Navigation & chrome
   House as Home,
-  Queue as QueueIcon,
   GearSix as Settings,
   MagnifyingGlass as Search,
   CaretDown as ChevronDown,
@@ -64,7 +63,6 @@ export {
 
   // State & feedback
   Check,
-  CheckCircle as Success,
   XCircle as Cancel,
   WarningCircle as Alert,
   SpinnerGap as Loading,

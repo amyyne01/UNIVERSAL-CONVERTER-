@@ -42,7 +42,7 @@ export function SpeedSparkline() {
         <div data-testid="spark-now" className="font-mono tabular-nums text-[22px] font-semibold text-text-primary">
           {formatBytes(now)}/s
         </div>
-        <div data-testid="spark-ceil" className="font-mono tabular-nums text-[10.5px] text-text-muted">
+        <div data-testid="spark-ceil" className="font-mono tabular-nums text-2xs text-text-muted">
           scale {formatBytes(Math.round(ceil))}/s
         </div>
       </div>

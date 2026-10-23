@@ -15,14 +15,18 @@ export default function WindowTitleBar() {
   const ctrl =
     'grid place-items-center w-11 h-11 text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors';
   const kbd =
-    'font-mono text-[9.5px] leading-none tracking-[0.08em] px-1 py-0.5 rounded bg-bg-secondary border border-border-soft text-text-muted';
+    'font-mono text-2xs leading-none tracking-[0.08em] px-1 py-0.5 rounded bg-bg-secondary border border-border-soft text-text-muted';
 
   return (
     <header className="drag-region relative flex items-center h-11 pl-4 pr-1 bg-bg-secondary border-b border-border-soft select-none">
       {/* Left — rack-unit wordmark (Micro-mono, instrument label not window caption) */}
       <div className="flex items-center gap-2.5">
-        <img src={iconUrl} alt="" className="w-4 h-4 rounded-[5px]" draggable={false} />
-        <span className="font-mono text-[10.5px] tracking-[0.08em] uppercase text-text-muted">
+        {/* The icon art is violet; luminosity-blending it over the accent keeps the waveform
+            and takes the hue from the active palette (cyan by default). */}
+        <span className="isolate w-4 h-4 rounded-[5px] overflow-hidden bg-accent shrink-0">
+          <img src={iconUrl} alt="" className="w-full h-full mix-blend-luminosity" draggable={false} />
+        </span>
+        <span className="font-mono text-2xs tracking-[0.08em] uppercase text-text-muted">
           <b className="text-text-primary font-semibold">AHG</b> Universal Converter
         </span>
       </div>

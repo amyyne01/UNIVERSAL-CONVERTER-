@@ -3,7 +3,7 @@
 // (retries with exponential backoff, cancellation grace period).
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { writeFileAtomic } from './atomic-write.js';
-import { logLine, tail } from './log.js';
+import { logLine, tail, hostOf, scrubUrls } from './log.js';
 import { isAbsolute } from 'node:path';
 import type { DownloadTask, DownloadProgress, DownloadStatus } from '../shared/types.js';
 import { RETRY_BACKOFF_MS } from '../shared/types.js';
@@ -477,7 +477,7 @@ function processNextQueueItem(): void {
         task,
         task.track,
         (p) => handleProgress(task, p),
-        (t, filepath, filepaths) => handleDone(t, filepath, filepaths),
+        (t, filepath, filepaths, alreadyOnDisk) => handleDone(t, filepath, filepaths, alreadyOnDisk),
         (t, error) => handleError(t, error),
       );
     } catch (e) {
@@ -527,7 +527,7 @@ function clearTick(taskId: string): void {
   tickAt.set(taskId, Date.now());
 }
 
-function handleDone(task: DownloadTask, filepath: string, filepaths: string[] = []): void {
+function handleDone(task: DownloadTask, filepath: string, filepaths: string[] = [], alreadyOnDisk = false): void {
   if (active.get(task.taskId) !== task) return;
   // ponytail: process exit 0 is authoritative completion — force `done` even if the
   // last seen status was `downloading` (no post-processing markers were emitted).
@@ -547,7 +547,8 @@ function handleDone(task: DownloadTask, filepath: string, filepaths: string[] = 
   // the count is files rather than tasks. Failed/cancelled never reach this line,
   // and a retry only arrives once — on the attempt that actually completed.
   const written = filepaths.length ? filepaths : (task.progress.filename ? [task.progress.filename] : []);
-  onCompleted?.(task, written);
+  // A skip-existing hit wrote nothing: counting it would count one file twice.
+  if (!alreadyOnDisk) onCompleted?.(task, written);
   emit('download:done', task.taskId, task.progress);
   schedulePersist(); // forced 'done' bypasses transition() — persist explicitly
   finishTask(task.taskId);
@@ -557,9 +558,11 @@ function handleError(task: DownloadTask, error: string): void {
   if (active.get(task.taskId) !== task) return;
   if (recentlyCancelled.has(task.taskId)) { finishTask(task.taskId); return; } // expected dying-process error
   for (const cb of failureListeners) cb(error);
-  logLine('error', `download failed: ${tail(error)}`);
   const retryCount = task.retryCount ?? 0;
-  if (classifyError(error) === 'retryable' && retryCount < MAX_RETRIES) {
+  const retry = classifyError(error) === 'retryable' && retryCount < MAX_RETRIES;
+  logLine('error', `download ${retry ? 'retrying' : 'failed'} ${task.taskId} host=${hostOf(task.url)} ` +
+    `code=${task.errorCode ?? 'unknown'}: ${scrubUrls(tail(error))}`);
+  if (retry) {
     scheduleRetry(task, error);
   } else {
     transition(task, 'failed');

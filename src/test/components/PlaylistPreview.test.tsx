@@ -122,3 +122,53 @@ describe('PlaylistPreview', () => {
     expect(useAppStore.getState().notice?.message).toMatch(/Free limit reached — 20 tracks per playlist/);
   });
 });
+
+describe('YouTube playlist picker', () => {
+  const vid = (id: string, name: string): Track => ({
+    id, name, artist: 'Chan', artists: ['Chan'], album: '', trackNumber: 1, durationMs: 60_000, thumbnailUrl: '',
+  });
+  const yt: Playlist = {
+    id: 'PL1', name: 'Mix', description: '', owner: 'Chan', thumbnailUrl: '', trackCount: 5,
+    url: 'https://www.youtube.com/playlist?list=PL1',
+    tracks: [vid('a', 'One'), vid('b', 'Two'), vid('c', 'Three'), vid('d', 'Four'), vid('e', 'Five')],
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useAppStore.setState({ currentPlaylist: yt, selectedTracks: new Set(), downloads: {}, plan: 'premium', notice: null });
+    startMock().mockImplementation(async (t) => ({ ...t, taskId: 'yt' }) as never);
+  });
+
+  it('rows 1-3 queue ONE task with playlistItems "1-3"', async () => {
+    const user = userEvent.setup();
+    render(<PlaylistPreview />);
+    for (const n of ['One', 'Two', 'Three']) await user.click(screen.getByRole('checkbox', { name: new RegExp(`^${n}\\b`) }));
+    await user.click(screen.getByRole('button', { name: /^download/i }));
+    await waitFor(() => expect(startMock()).toHaveBeenCalledTimes(1));
+    expect(startMock()).toHaveBeenCalledWith(expect.objectContaining({
+      url: yt.url, source: 'youtube', isPlaylist: true, playlistItems: '1-3',
+    }));
+  });
+
+  it('select all / none toggles every row and the count follows', async () => {
+    const user = userEvent.setup();
+    render(<PlaylistPreview />);
+    await user.click(screen.getByRole('button', { name: 'Select all' }));
+    expect(screen.getAllByRole('checkbox', { checked: true })).toHaveLength(5);
+    await user.click(screen.getByRole('button', { name: 'Deselect all' }));
+    expect(screen.queryAllByRole('checkbox', { checked: true })).toHaveLength(0);
+    expect(screen.getByText('none selected')).toBeInTheDocument();
+  });
+
+  it('on the basic plan the picker is locked and the whole playlist queues as one task', async () => {
+    const user = userEvent.setup();
+    useAppStore.setState({ plan: 'basic', selectedTracks: new Set(yt.tracks.map((t) => t.id)) });
+    render(<PlaylistPreview />);
+    await user.click(screen.getByRole('checkbox', { name: /^Two\b/ }));
+    expect(useAppStore.getState().selectedTracks.size).toBe(5); // unchanged
+    expect(useAppStore.getState().notice).not.toBeNull();
+    await user.click(screen.getByRole('button', { name: /^download/i }));
+    await waitFor(() => expect(startMock()).toHaveBeenCalledTimes(1));
+    expect(startMock().mock.calls[0][0]).not.toHaveProperty('playlistItems');
+  });
+});

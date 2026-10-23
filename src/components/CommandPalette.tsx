@@ -13,6 +13,7 @@ import type { AppIcon } from '@/components/ui/icons';
 import { useAppStore } from '@/store';
 import { NAV, TAB_ORDER } from '@/constants';
 import { buildDownloadRequest } from '@/lib/download';
+import { EASE_OUT_EXPO as EASE } from '@/components/ui/motion';
 
 // ─── types ───────────────────────────────────────────────────────────────────
 
@@ -29,7 +30,7 @@ interface Cmd {
 
 function Kbd({ children }: { children: string }) {
   return (
-    <span className="font-mono text-[10px] text-text-muted border border-border rounded px-1.5 py-0.5 leading-none shrink-0">
+    <span className="font-mono text-2xs text-text-muted border border-border rounded px-1.5 py-0.5 leading-none shrink-0">
       {children}
     </span>
   );
@@ -37,8 +38,6 @@ function Kbd({ children }: { children: string }) {
 
 // ─── animation ───────────────────────────────────────────────────────────────
 
-// ease-out-expo from index.css
-const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
 
 // ─── component ───────────────────────────────────────────────────────────────
 
@@ -276,7 +275,7 @@ export function CommandPalette() {
             <div className="overflow-hidden rounded-xl border border-border bg-bg-glass backdrop-blur-xl shadow-lg">
 
               {/* ── search row ── */}
-              <div className="flex items-center gap-3 border-b border-border px-[18px] py-4">
+              <div className="field-shell flex items-center gap-3 border-b border-border px-[18px] py-4">
                 <span
                   className="font-mono text-[15px] text-accent leading-none select-none"
                   aria-hidden
@@ -314,7 +313,7 @@ export function CommandPalette() {
                       {/* section label mirrors concept-c // SECTION style */}
                       <p
                         aria-hidden
-                        className="px-[18px] pb-1.5 pt-3 font-mono text-[9.5px] uppercase tracking-[0.14em] text-text-muted select-none"
+                        className="px-[18px] pb-1.5 pt-3 font-mono text-2xs uppercase tracking-[0.14em] text-text-muted select-none"
                       >
                         // {group}
                       </p>
@@ -364,13 +363,13 @@ export function CommandPalette() {
 
               {/* ── footer ── */}
               <div className="flex items-center gap-4 border-t border-border bg-bg-tertiary px-[18px] py-2.5">
-                <span className="flex items-center gap-1.5 font-mono text-[10px] text-text-muted">
+                <span className="flex items-center gap-1.5 font-mono text-2xs text-text-muted">
                   <Kbd>↑↓</Kbd> navigate
                 </span>
-                <span className="flex items-center gap-1.5 font-mono text-[10px] text-text-muted">
+                <span className="flex items-center gap-1.5 font-mono text-2xs text-text-muted">
                   <Kbd>↵</Kbd> select
                 </span>
-                <span className="flex items-center gap-1.5 font-mono text-[10px] text-text-muted">
+                <span className="flex items-center gap-1.5 font-mono text-2xs text-text-muted">
                   <Kbd>esc</Kbd> close
                 </span>
               </div>
