@@ -504,7 +504,8 @@ export class Downloader {
       const t = line.replace(/\r$/, '');
       if (t.startsWith(FILEPATH_MARKER)) {
         const p = t.slice(FILEPATH_MARKER.length).trim();
-        if (p) { filepaths.push(p); finalPath = p; }
+        // Drive-letter paths only: a spoofed UNC/device path would make the later stat leak NTLM credentials.
+        if (/^[a-zA-Z]:[\\/]/.test(p)) { filepaths.push(p); finalPath = p; }
       } else flush(t);
     };
 

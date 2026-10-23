@@ -434,6 +434,13 @@ describe('Downloader', () => {
       expect(onProgress.mock.calls.every((c) => c[0].status !== 'downloading' || c[0].percent === 100)).toBe(true);
     });
 
+    it('refuses a UNC or device path reported on a [FILEPATH] line', () => {
+      const { onDone, proc } = start();
+      proc.stdout.emit('data', Buffer.from('[FILEPATH]\\\\attacker\\share\\x.mp3\n[FILEPATH]\\\\?\\C:\\x.mp3\n'));
+      proc.emit('close', 0);
+      expect(onDone).toHaveBeenCalledWith(expect.anything(), '', []);
+    });
+
     it('moves status to embedding on an [EmbedSubtitle] marker', () => {
       const { onProgress, proc } = start();
       proc.stdout.emit('data', Buffer.from('[EmbedSubtitle] Embedding subtitles in "a.mkv"\n'));
