@@ -30,53 +30,51 @@ tags already written into the file. No account, no API keys, nothing to install.
 
 Get the portable `.exe` from the [latest release](https://github.com/amyyne01/UNIVERSAL-CONVERTER-/releases/latest).
 
-It is a single file. Double-click it and the app opens — no installer, no setup
+It is a single file. Double-click it and the app opens. No installer, no setup
 wizard, and nothing written outside its own folder and the downloads directory you
 choose. Windows 10 and 11, 64-bit.
 
 You only ever download it once: from then on it updates itself.
 
-![Starting up](screenshots/00-loading.gif)
-
 ---
 
-## Free, and genuinely usable
+## Free
 
-The app works without paying for it. Everything below is included:
+Everything below is included without paying:
 
-- **Every source in one field** — paste a YouTube, Spotify, SoundCloud, TikTok,
+- **Every source in one field.** Paste a YouTube, Spotify, SoundCloud, TikTok,
   Instagram Reels or Facebook link and the right options appear on their own.
-- **Search without leaving the app** — type words instead of a link to search
+- **Search without leaving the app.** Type words instead of a link to search
   YouTube or SoundCloud, then download straight from the results.
 - **Video up to 1080p**, audio in MP3, AAC, M4A, OGG or Opus at up to 320 kbps.
-- **Playlists and albums** — preview the tracklist, tick what you want, take the
+- **Playlists and albums.** Preview the tracklist, tick what you want, take the
   first 20 tracks of any collection.
-- **Batch of 5** — paste or drop up to five links at once and they queue together.
-- **Artwork and tags written in** — title, artist, album and cover art, embedded.
+- **Batch of 5.** Paste or drop up to five links at once and they queue together.
+- **Artwork and tags written in.** Title, artist, album and cover art, embedded.
 - **Short-form video without the watermark.**
-- **A queue that survives** — pause, resume, cancel, retry; close the app
+- **A queue that survives.** Pause, resume, cancel, retry; close the app
   mid-download and it offers to finish the job next time you open it.
-- **Your own numbers** — what you pulled this month, how it compares to last, and
+- **Your own numbers.** What you pulled this month, how it compares to last, and
   which sources it came from.
 - **Light and dark**, following your system by default.
-- **Fully keyboard-operable** — every control shows where the focus is, and every
+- **Fully keyboard-operable.** Every control shows where the focus is, and every
   row action is reachable without a mouse.
-- **It keeps itself current** — the app tells you when a new version is out,
+- **It keeps itself current.** The app tells you when a new version is out,
   downloads it for you, and swaps itself over on restart. Your settings, your
   download history and your licence all carry across.
 - **Ctrl+K** for anything, and a global paste-and-download shortcut you can set.
 
-Every free ceiling is stated up front, on the screen where it applies — you never
-find out you hit one only after a download fails.
+Every free ceiling is stated up front, on the screen where it applies, so a limit never
+surprises you after a download fails.
 
 ![Reaching the free batch limit](screenshots/02-batch-limit.png)
 
 ---
 
-## Premium — $3.99, once
+## Premium: $3.99, once
 
 Not a subscription. One payment, one machine, moveable to a new PC when you
-replace it — release it on the old machine and activate on the new one.
+replace it: release it on the old machine and activate on the new one.
 
 | | Free | Premium |
 |---|---|---|
@@ -84,7 +82,7 @@ replace it — release it on the old machine and activate on the new one.
 | Audio formats | MP3, AAC, M4A, OGG, Opus | **+ FLAC, WAV and ALAC, lossless** |
 | Playlists & albums | first 20 tracks | **every track** |
 | Batch paste | 5 links at a time | **as many as you paste** |
-| Scheduled downloads | — | **run unattended, on your days** |
+| Scheduled downloads | none | **run unattended, on your days** |
 
 Everything in the free list stays free. Premium only lifts the ceilings.
 
@@ -101,7 +99,7 @@ audio before it starts.
 
 ![The YouTube tab](screenshots/04-youtube.png)
 
-Search results come back in the app, ready to download — no browser round trip.
+Search results come back in the app, ready to download. No browser round trip.
 
 ![Searching YouTube from inside the app](screenshots/05-youtube-results.png)
 
@@ -113,7 +111,7 @@ marked, so you always know what you are getting.
 
 ![The Spotify tab](screenshots/06-spotify.png)
 
-Albums and playlists open as a tracklist you choose from — nothing is queued until
+Albums and playlists open as a tracklist you choose from. Nothing is queued until
 you say so.
 
 ![Choosing tracks from a playlist](screenshots/11-playlist.png)
@@ -149,8 +147,8 @@ disk, and tells you plainly if it has since been moved or deleted.
 ## Everything else
 
 Settings keep the parts you tune often within reach: where files land, your default
-format and quality, theme, and the extras — bandwidth cap, proxy, a global hotkey,
-Discord presence — for when you want them. Nothing needs saving; changes apply as
+format and quality, theme, and the extras (bandwidth cap, proxy, a global hotkey,
+Discord presence) for when you want them. Nothing needs saving; changes apply as
 you make them.
 
 ![Settings](screenshots/07-settings.png)
@@ -176,4 +174,4 @@ Questions, keys and problems: [Discord](https://discord.gg/NMRgaSQVNx).
 ## License
 
 This is paid software, not an open-source project. No license file is included and
-no rights are granted beyond personal use of a purchased copy — all rights reserved.
+no rights are granted beyond personal use of a purchased copy. All rights reserved.
