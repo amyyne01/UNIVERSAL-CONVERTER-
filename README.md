@@ -1,11 +1,28 @@
-# AHG Universal Converter
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/planet-spin-dark.gif">
+    <img src="assets/planet-spin-light.gif" width="160" alt="">
+  </picture>
+</p>
 
-Paste a link. Get the file.
+<h1 align="center">AHG Universal Converter</h1>
 
-One window for YouTube, Spotify, SoundCloud and short-form video — with artwork and
+<p align="center">Paste a link. Get the file.</p>
+
+<p align="center">
+  <a href="https://github.com/amyyne01/UNIVERSAL-CONVERTER-/releases/latest">Download</a> ·
+  <a href="https://discord.gg/NMRgaSQVNx">Discord</a>
+</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: light)" srcset="screenshots/10-light-dashboard.png">
+    <img src="screenshots/01-dashboard.png" alt="The home screen">
+  </picture>
+</p>
+
+One window for YouTube, Spotify, SoundCloud and short-form video, with artwork and
 tags already written into the file. No account, no API keys, nothing to install.
-
-![The home screen](screenshots/01-dashboard.png)
 
 ---
 
