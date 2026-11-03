@@ -14,7 +14,9 @@ const RAIL = { home: 'Home', queue: 'Downloads', youtube: 'YouTube', spotify: 'S
 const done = [], skipped = [];
 
 const app = await electron.launch({
-  args: ['.', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows'],
+  args: ['.', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows',
+    // Optional throwaway profile: a running copy of the app holds the single-instance lock otherwise.
+    ...(process.env.AHG_SHOTS_PROFILE ? [`--user-data-dir=${process.env.AHG_SHOTS_PROFILE}`] : [])],
   cwd: process.cwd(),
   env: { ...process.env, AHG_DEV_PLAN: 'basic', NODE_ENV: 'development' },
 });
