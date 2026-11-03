@@ -38,18 +38,18 @@ export function SegmentedCapsule<T extends string>({
             role="radio"
             aria-checked={active}
             onClick={() => onChange(o.value)}
-            className={`relative focus-visible:focus-ring inline-flex items-center gap-1.5 px-3.5 h-8 rounded-xs text-sm font-medium transition-colors ${
+            className={`relative focus-visible:focus-ring inline-flex items-center gap-2 px-4 h-8 rounded-[8px] text-sm font-medium transition-colors ${
               active ? 'text-text-primary' : 'text-text-secondary hover:text-text-primary'
             }`}
           >
             {active && (
               <motion.span
                 layoutId={`seg-${id}`}
-                className="absolute inset-0 rounded-xs bg-bg-surface shadow-sm"
+                className="absolute inset-0 rounded-[8px] bg-bg-surface shadow-sm"
                 transition={{ type: 'spring', stiffness: 480, damping: 34 }}
               />
             )}
-            {Icon && <Icon size={15} className="relative z-10" />}
+            {Icon && <Icon size={16} className="relative z-10" />}
             <span className="relative z-10">{o.label}</span>
           </button>
         );

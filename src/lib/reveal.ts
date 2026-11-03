@@ -10,21 +10,21 @@
 import { useAppStore } from '@/store';
 
 /** Reveal a finished download in the file manager. Names the file when it's gone. */
-export async function revealFile(filePath: string | undefined, title?: string): Promise<void> {
+export async function revealFile(filePath: string | undefined, title?: string, open = false): Promise<void> {
   const { showError } = useAppStore.getState();
   const name = title?.trim() ? `“${title.trim()}”` : 'That file';
 
   if (!filePath?.trim()) {
-    showError(`${name} has no file on this PC — the download never finished.`);
+    showError(`${name} has no file on this PC. The download never finished.`);
     return;
   }
 
   try {
-    const result = await window.electronAPI.shell.showItemInFolder(filePath);
+    const result = await (open ? window.electronAPI.shell.openItem(filePath) : window.electronAPI.shell.showItemInFolder(filePath));
     if (result?.ok) return;
     showError(
       result?.reason === 'no-path'
-        ? `${name} has no file on this PC — the download never finished.`
+        ? `${name} has no file on this PC. The download never finished.`
         : `${name} isn’t where it was saved. It was moved, renamed or deleted outside the app.`,
     );
   } catch {
@@ -33,3 +33,6 @@ export async function revealFile(filePath: string | undefined, title?: string): 
     showError(`${name} couldn’t be opened. It may no longer be in your downloads folder.`);
   }
 }
+
+/** Open a finished download in its default app. Same outcomes and messages as revealFile. */
+export const openFile = (filePath: string | undefined, title?: string) => revealFile(filePath, title, true);

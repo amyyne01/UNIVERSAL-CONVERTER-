@@ -12,13 +12,23 @@ const task = (status: string, speed: number) => ({
 
 afterEach(() => useAppStore.setState({ downloads: {} }));
 
-describe('Dashboard empty Recent', () => {
-  it('is one message and one action that focuses the link field, no ghost tiles', () => {
+describe('Dashboard when empty', () => {
+  it('is the field plus one line of supported sites, with no stat or recent cards', () => {
     render(<Dashboard />);
-    expect(screen.getByText(/Finished downloads land here/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Paste a link' }));
-    expect(screen.getByRole('textbox', { name: /link/i })).toHaveFocus();
-    expect(document.querySelectorAll('[aria-hidden] .aspect-\\[16\\/9\\]')).toHaveLength(0);
+    expect(screen.getByText(/Works with/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Spotify' }));
+    expect(useAppStore.getState().activeTab).toBe('spotify');
+    for (const t of ['This month', 'Where it came from', 'Recent downloads', 'Sources to start from']) {
+      expect(screen.queryByText(t)).not.toBeInTheDocument();
+    }
+  });
+
+  it('brings the cards back once a download has finished', () => {
+    const done = task('done', 0);
+    useAppStore.setState({ downloads: { t1: { ...done, progress: { ...done.progress, filename: 'a.mp3' } } } });
+    render(<Dashboard />);
+    expect(screen.getByText('Recent downloads')).toBeInTheDocument();
+    expect(screen.queryByText(/Works with/)).not.toBeInTheDocument();
   });
 });
 

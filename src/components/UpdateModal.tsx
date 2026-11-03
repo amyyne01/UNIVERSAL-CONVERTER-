@@ -10,10 +10,11 @@
 // so declining 1.2.2 stays declined across launches, while 1.2.3 asks once more.
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
-import { Close, Download, Power, Premium, Alert } from '@/components/ui/icons';
-import { Button } from '@/components/ui/Button';
+import { Close, Download, Power, Alert } from '@/components/ui/icons';
+import { Button, IconButton } from '@/components/ui';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import type { UpdateState } from '@shared/types';
+import { EASE_OUT_QUINT } from '@/components/ui/motion';
 
 // One key, holding the last version the user waved off. localStorage is the right
 // home: it is a UI preference, it must survive a restart, and it is worthless to
@@ -126,7 +127,7 @@ export function UpdateModal() {
             initial={reduced ? { opacity: 0 } : { opacity: 0, y: 16, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={reduced ? { opacity: 0 } : { opacity: 0, y: 8, scale: 0.99 }}
-            transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
+            transition={{ duration: 0.26, ease: EASE_OUT_QUINT }}
             className="relative w-full max-w-[460px] rounded-xl border border-border"
             style={{
               background: 'var(--color-bg-secondary)',
@@ -142,22 +143,13 @@ export function UpdateModal() {
               outline: 'none',
             }}
           >
-            <button
-              type="button"
-              onClick={close}
-              aria-label="Close"
-              disabled={downloading}
-              className="absolute right-4 top-4 grid place-items-center rounded-md text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors disabled:opacity-40"
-              style={{ width: 32, height: 32 }}
-            >
-              <Close size={16} />
-            </button>
+            <IconButton icon={Close} label="Close" onClick={close} disabled={downloading} className="absolute right-4 top-4 disabled:opacity-40" />
 
             <div
               className="grid place-items-center rounded-lg mb-4"
               style={{ width: 40, height: 40, background: 'var(--color-bg-hover)' }}
             >
-              <Premium size={20} className="text-accent" />
+              <Download size={20} className="text-accent" />
             </div>
 
             <h2 id="update-modal-title" className="text-h3 text-text-primary text-balance pr-8">
@@ -179,15 +171,15 @@ export function UpdateModal() {
                   label="Update download"
                   className="flex-1"
                 />
-                <span className="font-mono text-[11px] text-text-secondary w-9 text-right">
-                  {(state.percent ?? 0).toFixed(0)}%
+                <span className="font-mono text-2xs text-text-secondary w-9 text-right">
+                  {Math.round(state.percent ?? 0)}%
                 </span>
               </div>
             )}
 
             {state.message && (
               <p className="mt-4 flex items-start gap-2 text-body-sm text-text-muted">
-                <Alert size={15} className="mt-0.5 shrink-0" />
+                <Alert size={16} className="mt-0.5 shrink-0" />
                 <span>{state.message}</span>
               </p>
             )}

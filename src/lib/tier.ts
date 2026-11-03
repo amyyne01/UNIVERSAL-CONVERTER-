@@ -57,9 +57,9 @@ export const premiumCopy = {
     `More than ${BASIC_LIMITS.maxConcurrent} downloads at once is a Premium feature.`,
   cookies: () => 'Signing in with your browser is a Premium feature.',
   batch: () =>
-    `Free limit reached — ${BASIC_LIMITS.maxBatchLinks} links at a time. Upgrade for unlimited.`,
+    `Basic limit reached: ${BASIC_LIMITS.maxBatchLinks} links at a time. Premium removes the limit.`,
   collection: () =>
-    `Free limit reached — ${BASIC_LIMITS.maxCollectionTracks} tracks per playlist. Upgrade for unlimited.`,
+    `Basic limit reached: ${BASIC_LIMITS.maxCollectionTracks} tracks per playlist. Premium removes the limit.`,
 } as const;
 
 // What Basic GIVES you, stated where the work happens.
@@ -76,13 +76,13 @@ export const premiumCopy = {
 // Numbers come from BASIC_LIMITS, so these can never promise a ceiling the engine
 // does not actually apply.
 export const basicCopy = {
-  video: `Free: video up to ${BASIC_LIMITS.maxVideoQuality}`,
-  audio: 'Free: MP3, AAC, M4A, OGG and Opus, up to 320 kbps',
-  batch: `Free: ${BASIC_LIMITS.maxBatchLinks} links at a time`,
-  concurrency: `Free: ${BASIC_LIMITS.maxConcurrent} downloads at once`,
-  collection: `Free: the first ${BASIC_LIMITS.maxCollectionTracks} tracks of any playlist`,
+  video: `Basic: video up to ${BASIC_LIMITS.maxVideoQuality}`,
+  audio: 'Basic: MP3, AAC, M4A, OGG and Opus, up to 320 kbps',
+  batch: `Basic: ${BASIC_LIMITS.maxBatchLinks} links at a time`,
+  concurrency: `Basic: ${BASIC_LIMITS.maxConcurrent} downloads at once`,
+  collection: `Basic: the first ${BASIC_LIMITS.maxCollectionTracks} tracks of any playlist`,
   /** The full one-line summary, for the plan card in Settings. */
-  summary: `Included free: ${BASIC_LIMITS.maxVideoQuality} video · 320 kbps audio · ${BASIC_LIMITS.maxBatchLinks}-link batches · ${BASIC_LIMITS.maxCollectionTracks} tracks per playlist`,
+  summary: `Included in Basic: ${BASIC_LIMITS.maxVideoQuality} video · 320 kbps audio · ${BASIC_LIMITS.maxBatchLinks}-link batches · ${BASIC_LIMITS.maxCollectionTracks} tracks per playlist`,
 } as const;
 
 export interface TierLocks {

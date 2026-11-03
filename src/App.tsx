@@ -4,12 +4,14 @@ import { useAppStore } from '@/store';
 import { initTheme } from '@/lib/theme';
 import { dismissSplash } from '@/lib/splash';
 import { buildDownloadRequest } from '@/lib/download';
+import { openFile } from '@/lib/reveal';
 import { NAV, PLATFORMS, TAB_ORDER, type NavItem, type TabKey } from '@/constants';
 import { IconContext } from '@/components/ui/icons';
 import WindowTitleBar from '@/components/WindowTitleBar';
 import { CommandPalette } from '@/components/CommandPalette';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { UpgradeSheet } from '@/components/UpgradeSheet';
+import { ShortcutsSheet } from '@/components/ShortcutsSheet';
 import { UpdateModal } from '@/components/UpdateModal';
 import { Notice } from '@/components/Notice';
 import { ClipboardOffer } from '@/components/ClipboardOffer';
@@ -84,7 +86,14 @@ function Shell() {
     const unsubs = [
       window.electronAPI.onDownloadQueued((_id, task) => get().addDownload(task)),
       window.electronAPI.onDownloadProgress((id, p) => get().updateDownloadProgress(id, p)),
-      window.electronAPI.onDownloadDone((id, p) => get().updateDownloadProgress(id, p)),
+      window.electronAPI.onDownloadDone((id, p) => {
+        get().updateDownloadProgress(id, p);
+        // Off the Queue tab nothing else says it finished: offer the file itself.
+        const title = get().downloads[id]?.title;
+        if (p.filename && get().activeTab !== 'queue') {
+          get().showInfo(`Saved ${title ? `“${title}”` : 'your download'}`, { label: 'Open file', run: () => void openFile(p.filename, title) });
+        }
+      }),
       window.electronAPI.onDownloadError((id, error) => {
         const t = get().downloads[id];
         if (t) get().updateDownloadProgress(id, { ...t.progress, status: 'failed', error });
@@ -152,6 +161,12 @@ function Shell() {
     const onKey = (e: KeyboardEvent) => {
       if (!e.ctrlKey) return;
       if (useAppStore.getState().commandPaletteOpen) return; // palette owns keys while open
+      if (e.key === '/') {
+        e.preventDefault();
+        const { shortcutsOpen, setShortcutsOpen } = useAppStore.getState();
+        setShortcutsOpen(!shortcutsOpen);
+        return;
+      }
       const n = Number(e.key);
       if (Number.isInteger(n) && n >= 1 && n <= TAB_ORDER.length) {
         e.preventDefault();
@@ -177,7 +192,7 @@ function Shell() {
         Skip to content
       </a>
       <WindowTitleBar />
-      <div className="flex-1 grid grid-cols-[68px_1fr] min-h-0">
+      <div className="flex-1 grid grid-cols-[76px_1fr] min-h-0">
         <Rail
           activeTab={activeTab}
           activeCount={activeCount}
@@ -191,7 +206,7 @@ function Shell() {
         <div className="flex flex-col min-h-0" style={contentStyle}>
           <CarrierLine active={activeCount > 0} />
           {/* `@container` makes this column — not the viewport — the unit every
-              tab measures against. The rail is a fixed 68px and the scrollbar
+              tab measures against. The rail is a fixed 76px and the scrollbar
               takes its own slice, so the viewport always over-reports the space
               a tab actually has; a tab that reflows on `md:` reflows a rail-width
               too early. Tabs cap and reflow with `@min-[…]:` off this element. */}
@@ -205,6 +220,7 @@ function Shell() {
         </div>
       </div>
       <CommandPalette />
+      <ShortcutsSheet />
       {/* Upgrade sheet — opened from Settings or any locked control. Nothing
           blocks launch any more: no key simply means the basic tier. */}
       {upgradeOpen && <UpgradeSheet onClose={() => setUpgradeOpen(false)} />}
@@ -229,7 +245,7 @@ function CarrierLine({ active }: { active: boolean }) {
     <div
       aria-hidden
       className="h-px shrink-0 overflow-hidden"
-      style={{ boxShadow: 'var(--shadow-glow)', opacity: active ? 0.85 : 0.35 }}
+      style={{ opacity: active ? 0.85 : 0.35 }}
     >
       <motion.div
         className={`h-full ${shimmer ? 'w-2/5' : 'w-full'}`}
@@ -259,7 +275,7 @@ function Screen({ tab }: { tab: TabKey }) {
   }
 }
 
-// 68px icon rail — replaces the 260px sidebar. The hairline divider + pinned
+// 76px labelled rail — replaces the 260px sidebar. The hairline divider + pinned
 // Settings carry the taxonomy, so the group headers are gone.
 function Rail({
   activeTab,
@@ -283,13 +299,13 @@ function Rail({
     />
   );
   return (
-    <aside className="flex flex-col items-center gap-1 py-3 bg-bg-secondary border-r border-border-soft overflow-y-auto">
+    <nav aria-label="Tabs" className="flex flex-col items-center gap-1 py-3 bg-bg-secondary border-r border-border-soft overflow-y-auto overflow-x-hidden">
       {lib.map(item)}
-      <div className="w-8 h-px my-1.5 shrink-0 bg-border-soft" />
+      <div className="w-8 h-px my-2 shrink-0 bg-border-soft" />
       {sources.map(item)}
       <div className="flex-1" />
       {system.map(item)}
-    </aside>
+    </nav>
   );
 }
 
@@ -308,14 +324,15 @@ function RailItem({
   // window height eight items would squash themselves flat rather than scroll.
   const Icon = nav.icon;
   const platform = PLATFORMS.find((p) => p.key === nav.key);
+  const shortcut = `Ctrl+${TAB_ORDER.indexOf(nav.key) + 1}`;
   const dot = platform ? `var(--color-${platform.accent})` : undefined;
   return (
     <button
       onClick={() => onSelect(nav.key)}
       aria-label={nav.label}
       aria-current={active ? 'page' : undefined}
-      title={nav.label}
-      className={`no-drag relative grid place-items-center w-11 h-11 shrink-0 rounded-lg transition-colors ${
+      title={`${nav.label} (${shortcut})`}
+      className={`no-drag relative flex flex-col items-center justify-center gap-1 w-17 h-14 shrink-0 rounded-lg transition-colors ${
         active
           ? 'bg-bg-surface text-text-primary'
           : 'text-text-muted hover:text-text-primary hover:bg-bg-hover'
@@ -324,19 +341,14 @@ function RailItem({
       {active && (
         <motion.span
           layoutId="rail-active"
-          className="absolute -left-3 top-2 bottom-2 w-[3px] rounded-r-full"
+          className="absolute -left-1 top-2 bottom-2 w-[3px] rounded-r-full"
           style={{ background: dot ?? 'var(--color-accent)' }}
         />
       )}
       <Icon size={20} />
-      {platform && (
-        <span
-          className="absolute bottom-1.5 right-1.5 w-1.5 h-1.5 rounded-full"
-          style={{ background: dot }}
-        />
-      )}
+      <span className="text-2xs leading-none">{nav.short ?? nav.label}</span>
       {badge > 0 && (
-        <span className="absolute -top-0.5 -right-0.5 grid place-items-center min-w-[15px] h-[15px] px-1 rounded-full bg-accent text-on-accent font-mono text-2xs leading-none tabular-nums">
+        <span className="absolute top-1 right-2 text-accent font-mono text-2xs leading-none tabular-nums">
           {badge}
         </span>
       )}

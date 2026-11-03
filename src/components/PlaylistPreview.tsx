@@ -3,10 +3,11 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { EASE_OUT_EXPO } from '@/components/ui/motion';
 import { OpenFolder, Download, Track, Lock, Premium } from '@/components/ui/icons';
 import { useAppStore } from '@/store';
-import { Button, Select } from '@/components/ui';
+import { Button, Select, Checkbox } from '@/components/ui';
 import { AUDIO_FORMATS, AUDIO_QUALITIES } from '@/constants';
 import { buildDownloadRequest, spotifyDownloadUrl, toPlaylistItems } from '@/lib/download';
 import { useTierLocks, premiumCopy, basicCopy } from '@/lib/tier';
+import { formatDuration } from '@/lib/format';
 import type { AudioFormat, Track as TrackType } from '@shared/types';
 
 // One template for the header and every row. Past ~896px of column the artist
@@ -18,13 +19,10 @@ const TRACK_COLUMNS =
   'grid grid-cols-[26px_30px_minmax(0,1fr)_auto] @4xl:grid-cols-[26px_34px_minmax(0,1.7fr)_minmax(0,1fr)_auto]';
 
 const YOUTUBE_LIST = /^https?:\/\/([\w-]+\.)?(youtube\.com|youtu\.be)\//i;
-const PICK_LOCKED = 'Choosing videos from a playlist is part of Plus. Free downloads the playlist from the top.';
+const PICK_LOCKED = 'Choosing videos from a playlist is part of Premium. Basic downloads the playlist from the top.';
 
-/** ms → m:ss with tabular digits */
-function fmtDur(ms: number): string {
-  const s = Math.floor(ms / 1000);
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-}
+/** ms → m:ss (h:mm:ss past an hour) via the shared formatter; 0 stays "0:00" so the column never blanks */
+const fmtDur = (ms: number): string => formatDuration(Math.floor(ms / 1000)) || '0:00';
 
 /** ms → "1h 42m" / "42m" for the runtime readouts */
 function fmtSpan(ms: number): string {
@@ -165,7 +163,7 @@ export function PlaylistPreview() {
       );
       const failed = results.filter((r) => r.status === 'rejected').length;
       if (failed > 0) {
-        setEnqueueError(`${failed} of ${tracks.length} track${tracks.length === 1 ? '' : 's'} failed to queue.`);
+        setEnqueueError(`${failed} of ${tracks.length} track${tracks.length === 1 ? '' : 's'} couldn’t be added.`);
       } else {
         // Queued cleanly → drop the selection. The button re-enables as soon as
         // the enqueue settles, and skipExisting only skips files already ON DISK,
@@ -197,7 +195,7 @@ export function PlaylistPreview() {
     // column's width. Capped at 1400 deliberately — a track table gains a real
     // artist column at that width and nothing after it, so the extra canvas on a
     // 2560 monitor is better left as margin than as a 2000px-wide title cell.
-    <div className="@container relative mx-auto w-full max-w-[1400px] px-6 lg:px-8 2xl:px-12 pt-8 lg:pt-10">
+    <div className="@container relative mx-auto w-full max-w-[1400px] [--page-px:2rem] @min-[1100px]:[--page-px:2.5rem] @min-[1600px]:[--page-px:3.5rem] px-(--page-px) pt-8 lg:pt-10">
       {/* ── Sticky header — cover · name · mono meta · live selection · select-all ── */}
       <div className="sticky top-0 z-20 mb-4">
         {/* Tighter at short viewports: a 640px-tall window has to spend its height
@@ -222,13 +220,13 @@ export function PlaylistPreview() {
             {/* Name + mono meta — below ~220px the name is unreadable, so the
                 readout and select-all wrap under instead of crushing it. */}
             <div className="min-w-0 flex-1 basis-[220px]">
-              <div className="font-mono text-2xs tracking-[0.08em] uppercase text-spotify mb-1">
+              <div className="font-mono text-2xs text-spotify mb-1">
                 {playlist.url.includes('/album/') ? 'Spotify Album' : 'Spotify Playlist'}
               </div>
               <h2 className="text-h2 text-text-primary truncate">
                 {playlist.name}
               </h2>
-              <div className="font-mono text-2xs tracking-[0.08em] uppercase text-text-muted mt-1 tabular-nums">
+              <div className="font-mono text-2xs text-text-muted mt-1 tabular-nums">
                 {playlist.trackCount} tracks · {runtime} · by {playlist.owner}
               </div>
             </div>
@@ -236,18 +234,18 @@ export function PlaylistPreview() {
             {/* Live selection readout — the answer to "how much have I picked?"
                 stays on screen while you scroll the list, not just at the bottom. */}
             <div className="text-right shrink-0 ml-auto" aria-live="polite">
-              <div className="font-mono text-[22px] leading-none tabular-nums text-text-primary">
+              <div className="font-mono text-xl leading-none tabular-nums text-text-primary">
                 {selectedCount}
-                <span className="text-text-muted text-[15px]">/{playlist.tracks.length}</span>
+                <span className="text-text-muted text-base">/{playlist.tracks.length}</span>
               </div>
-              <div className="font-mono text-2xs tracking-[0.08em] uppercase text-text-muted mt-1.5 tabular-nums">
+              <div className="font-mono text-2xs text-text-muted mt-2 tabular-nums">
                 {selectedCount === 0 ? 'none selected' : `selected · ${fmtSpan(selectedMs)}`}
               </div>
               {/* What free gives you here — shown before you hit the ceiling, so
                   the tier is not only ever heard saying no. Suppressed once the
                   cap warning is up: two messages about one limit is nagging. */}
               {!locks.isPremium && skipped === 0 && (
-                <div className="text-[11px] text-text-secondary mt-1.5">{basicCopy.collection}</div>
+                <div className="text-2xs text-text-secondary mt-2">{basicCopy.collection}</div>
               )}
             </div>
 
@@ -259,7 +257,7 @@ export function PlaylistPreview() {
                 anchorRef.current = null;
                 if (allSelected) clearTracks(); else selectAllTracks();
               }}
-              className="no-drag flex items-center gap-2 h-8 px-3 rounded-md border border-border text-[12.5px] text-text-secondary hover:bg-bg-hover transition-colors select-none shrink-0"
+              className="no-drag flex items-center gap-2 h-8 px-3 rounded-md border border-border text-xs text-text-secondary hover:bg-bg-hover transition-colors select-none shrink-0"
             >
               <Checkbox checked={allSelected} accent="spotify" />
               {allSelected ? 'Deselect all' : 'Select all'}
@@ -275,20 +273,20 @@ export function PlaylistPreview() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={reduce ? { opacity: 0 } : { opacity: 0, y: -4 }}
                 transition={{ duration: 0.16, ease: EASE_OUT_EXPO }}
-                className="mt-3 flex items-center gap-2.5 rounded-md px-3 py-2"
+                className="mt-3 flex items-center gap-3 rounded-md px-3 py-2"
                 style={{
-                  background: 'color-mix(in oklch, var(--color-warning) 12%, transparent)',
+                  background: 'var(--color-warning-soft)',
                   border: '1px solid color-mix(in oklch, var(--color-warning) 32%, transparent)',
                 }}
               >
-                <Lock size={14} className="text-warning shrink-0" />
+                <Lock size={16} className="text-warning shrink-0" />
                 {/* Same words as the toast — one ceiling should not have two
                     descriptions. The count of what will be skipped is the extra
                     this strip earns by being visible while you are still picking. */}
-                <p className="text-[12.5px] text-text-primary flex-1 min-w-0">
+                <p className="text-xs text-text-primary flex-1 min-w-0">
                   {premiumCopy.collection()}{' '}
                   <span className="text-text-secondary">
-                    The last <span className="font-mono tabular-nums">{skipped}</span> you picked won’t be queued.
+                    The last <span className="font-mono tabular-nums">{skipped}</span> you picked won’t be downloaded.
                   </span>
                 </p>
                 <Button variant="ghost" size="sm" icon={Premium} onClick={locks.openUpgrade} className="shrink-0">
@@ -306,21 +304,21 @@ export function PlaylistPreview() {
         style={{ marginBottom: 96 }}
       >
         {/* Column header — same template as the rows (see TRACK_COLUMNS). */}
-        <div className={`${TRACK_COLUMNS} gap-4 px-[18px] py-2.5 bg-bg-secondary border-b border-border-soft`}>
+        <div className={`${TRACK_COLUMNS} gap-4 px-4 py-3 bg-bg-secondary border-b border-border-soft`}>
           <span />
-          <span className="font-mono text-2xs tracking-[0.08em] text-text-muted uppercase text-center">
+          <span className="font-mono text-2xs text-text-muted text-center">
             #
           </span>
-          <span className="flex items-baseline gap-2.5 min-w-0">
-            <span className="font-mono text-2xs tracking-[0.08em] text-text-muted uppercase">
+          <span className="flex items-baseline gap-3 min-w-0">
+            <span className="font-mono text-2xs text-text-muted">
               Title
             </span>
-            <span className="text-[11px] text-text-muted truncate">shift-click to pick a range</span>
+            <span className="text-2xs text-text-muted truncate">Shift-click to pick a range</span>
           </span>
-          <span className="hidden @4xl:block font-mono text-2xs tracking-[0.08em] text-text-muted uppercase">
+          <span className="hidden @4xl:block font-mono text-2xs text-text-muted">
             Artist
           </span>
-          <span className="font-mono text-2xs tracking-[0.08em] text-text-muted uppercase text-right">
+          <span className="font-mono text-2xs text-text-muted text-right">
             Time
           </span>
         </div>
@@ -343,17 +341,16 @@ export function PlaylistPreview() {
           first; the readout + Download stay one item, so the primary action can
           never be orphaned from the sentence describing it. */}
       <div
-        className="sticky bottom-0 z-10 flex flex-wrap items-end gap-x-3.5 gap-y-3 border-t border-border -mx-6 lg:-mx-8 2xl:-mx-12 px-6 lg:px-8 2xl:px-12 py-4 [@media(max-height:720px)]:py-2.5"
+        className="sticky bottom-0 z-10 flex flex-wrap items-end gap-x-4 gap-y-3 border-t border-border -mx-(--page-px) px-(--page-px) py-4 [@media(max-height:720px)]:py-3"
         style={{
           background: 'var(--color-bg-glass)',
           backdropFilter: 'blur(24px) saturate(1.3)',
           WebkitBackdropFilter: 'blur(24px) saturate(1.3)',
-          boxShadow: '0 -10px 40px oklch(0 0 0 / 0.3)',
         }}
       >
         {/* Format */}
         <div className="flex flex-col gap-1">
-          <span className="font-mono text-2xs tracking-[0.08em] uppercase text-text-muted">
+          <span className="font-mono text-2xs text-text-muted">
             Format
           </span>
           <Select
@@ -368,7 +365,7 @@ export function PlaylistPreview() {
 
         {/* Quality */}
         <div className="flex flex-col gap-1">
-          <span className="font-mono text-2xs tracking-[0.08em] uppercase text-text-muted">
+          <span className="font-mono text-2xs text-text-muted">
             Quality
           </span>
           <Select
@@ -385,7 +382,7 @@ export function PlaylistPreview() {
             into the slack so more of the path is legible, and shrinks to 180px
             before anything else on the bar is forced to wrap. */}
         <div className="flex flex-col gap-1 min-w-0 flex-1 basis-[180px] max-w-[260px] @4xl:max-w-[420px]">
-          <span className="font-mono text-2xs tracking-[0.08em] uppercase text-text-muted">
+          <span className="font-mono text-2xs text-text-muted">
             Folder
           </span>
           <button
@@ -394,9 +391,9 @@ export function PlaylistPreview() {
             className="no-drag flex w-full items-center gap-2 h-10 px-3 rounded-md bg-bg-tertiary border border-transparent text-text-secondary text-sm hover:border-accent hover:text-text-primary transition-colors"
             title={config?.outputDir || undefined}
           >
-            <OpenFolder size={15} className="text-text-muted flex-none" />
+            <OpenFolder size={16} className="text-text-muted flex-none" />
             <span className="font-mono text-xs truncate">
-              {config?.outputDir || 'Choose folder…'}
+              {config?.outputDir || 'Choose folder'}
             </span>
           </button>
         </div>
@@ -412,7 +409,7 @@ export function PlaylistPreview() {
 
         {/* What you'll get, spelled out next to the button that does it */}
         <div className="flex flex-col items-end gap-1 min-w-0">
-          <span className="font-mono text-2xs tracking-[0.08em] uppercase text-text-muted tabular-nums whitespace-nowrap">
+          <span className="font-mono text-2xs text-text-muted tabular-nums whitespace-nowrap">
             {queuedCount === 0
               ? 'nothing selected'
               : `${queuedCount} × ${locks.effectiveFormat(format).toUpperCase()} · ${
@@ -453,8 +450,8 @@ const TrackRow = memo(function TrackRow({
     <div
       role="checkbox"
       aria-checked={selected}
-      aria-label={`${track.name} — ${track.artist}, ${fmtDur(track.durationMs)}${
-        capped ? ' — past the Basic collection limit, will be skipped' : ''
+      aria-label={`${track.name}, ${track.artist}, ${fmtDur(track.durationMs)}${
+        capped ? ', past the Basic collection limit, will be skipped' : ''
       }`}
       tabIndex={0}
       onClick={(e) => onSelect(index, e.shiftKey)}
@@ -464,7 +461,7 @@ const TrackRow = memo(function TrackRow({
           onSelect(index, e.shiftKey);
         }
       }}
-      className={`no-drag ${TRACK_COLUMNS} gap-4 h-12 items-center px-[18px] border-b border-border-soft last:border-b-0 cursor-pointer transition-colors ${
+      className={`no-drag ${TRACK_COLUMNS} gap-4 h-12 items-center px-4 border-b border-border-soft last:border-b-0 cursor-pointer transition-colors ${
         selected ? 'bg-accent-soft' : 'hover:bg-bg-hover'
       }`}
     >
@@ -476,9 +473,9 @@ const TrackRow = memo(function TrackRow({
       {/* Track # — swapped for a lock once a row falls past the tier ceiling */}
       <div className="flex items-center justify-center">
         {capped ? (
-          <Lock size={13} className="text-warning" />
+          <Lock size={16} className="text-warning" />
         ) : (
-          <span className="font-mono text-[11px] tabular-nums text-text-muted">{index + 1}</span>
+          <span className="font-mono text-2xs tabular-nums text-text-muted">{index + 1}</span>
         )}
       </div>
 
@@ -492,47 +489,17 @@ const TrackRow = memo(function TrackRow({
         </div>
         {/* secondary, not muted: the muted ramp at 12.5px misses 4.5:1 on the
             light theme's near-white surface. */}
-        <div className={`text-[12.5px] text-text-secondary truncate @4xl:text-sm ${capped ? 'opacity-55' : ''}`}>
+        <div className={`text-xs text-text-secondary truncate @4xl:text-sm ${capped ? 'opacity-55' : ''}`}>
           {track.artist}
         </div>
       </div>
 
       {/* Duration */}
       <div className={`flex items-center ${capped ? 'opacity-55' : ''}`}>
-        <span className="font-mono text-[11px] tabular-nums text-text-secondary">
+        <span className="font-mono text-2xs tabular-nums text-text-secondary">
           {fmtDur(track.durationMs)}
         </span>
       </div>
     </div>
   );
 });
-
-// ── inline visual checkbox — shared by header + rows, no extra file ────────
-function Checkbox({ checked, accent }: { checked: boolean; accent: 'accent' | 'spotify' }) {
-  const bg =
-    accent === 'spotify'
-      ? 'var(--color-spotify)'
-      : 'var(--color-accent)';
-  return (
-    <span
-      className="w-[19px] h-[19px] rounded-[6px] border flex items-center justify-center transition-colors flex-none"
-      style={
-        checked
-          ? { background: bg, borderColor: bg }
-          : { borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }
-      }
-    >
-      {checked && (
-        <svg viewBox="0 0 12 12" width="11" height="11" fill="none" aria-hidden>
-          <path
-            d="M2 6.5L4.5 9 10 3.5"
-            stroke="var(--color-bg-primary)"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      )}
-    </span>
-  );
-}

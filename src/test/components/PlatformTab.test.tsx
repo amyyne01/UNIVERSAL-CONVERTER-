@@ -81,6 +81,25 @@ describe('PlatformTab', () => {
     expect(useAppStore.getState().pendingInput).toBeNull();
   });
 
+  it('a slow single-link fetch shows one placeholder card and escalates its wording', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      (window.electronAPI.url.detect as any).mockResolvedValue({
+        url: 'https://youtube.com/watch?v=abc12345678', platform: 'youtube', contentType: 'video',
+        isCollection: false, label: 'YouTube video', id: 'abc12345678',
+      });
+      (window.electronAPI.url.fetchMetadata as any).mockReturnValueOnce(new Promise(() => {}));
+      render(<PlatformTab platform="youtube" />);
+      act(() => { useAppStore.getState().setPendingInput('https://youtube.com/watch?v=abc12345678'); });
+      const note = await screen.findByText(/Reading the link/);
+      expect(note.parentElement!.querySelectorAll('[aria-hidden]')).toHaveLength(1);
+      await act(async () => { vi.advanceTimersByTime(5000); });
+      expect(screen.getByText(/Reading the link… Still working/)).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('seeded config defaults do not clobber a quality the user already touched', async () => {
     render(<PlatformTab platform="youtube" />);
 
@@ -112,7 +131,7 @@ describe('PlatformTab', () => {
     render(<PlatformTab platform="spotify" />);
     const user = userEvent.setup();
     await user.type(screen.getByPlaceholderText(/paste a spotify link/i), 'https://open.spotify.com/track/t1');
-    await user.click(screen.getByRole('button', { name: /fetch/i }));
+    await user.click(screen.getByRole('button', { name: /look up/i }));
 
     await waitFor(() => expect(screen.getByText('Song Name')).toBeInTheDocument());
     await user.click(screen.getByRole('button', { name: /download/i }));
@@ -120,6 +139,11 @@ describe('PlatformTab', () => {
     await waitFor(() => expect(window.electronAPI.download.start).toHaveBeenCalled());
     const req = (window.electronAPI.download.start as any).mock.calls[0][0];
     expect(req.url).toBe('ytsearch:Artist Name - Song Name');
+    // Stays on the results; a quiet notice offers the queue instead of jumping there.
+    await waitFor(() => expect(useAppStore.getState().notice?.message).toBe('Added to downloads'));
+    expect(useAppStore.getState().activeTab).toBe('youtube');
+    useAppStore.getState().notice?.action?.run();
+    expect(useAppStore.getState().activeTab).toBe('queue');
   });
 
   // "Nothing matched" and "the fetch broke" are different outcomes: only the
@@ -130,13 +154,13 @@ describe('PlatformTab', () => {
 
     render(<PlatformTab platform="youtube" />);
     await user.type(screen.getByPlaceholderText(/paste a youtube link/i), 'nothing');
-    await user.click(screen.getByRole('button', { name: /fetch/i }));
+    await user.click(screen.getByRole('button', { name: /^search$/i }));
 
     expect(await screen.findByText(/no results for/i)).toBeInTheDocument();
     expect(screen.queryByRole('alert')).toBeNull();
 
     (window.electronAPI.youtube.search as any).mockRejectedValue(new Error('offline'));
-    await user.click(screen.getByRole('button', { name: /fetch/i }));
+    await user.click(screen.getByRole('button', { name: /^search$/i }));
 
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent(/something went wrong/i);
@@ -152,7 +176,7 @@ describe('PlatformTab', () => {
     const input = screen.getByPlaceholderText(/paste a youtube link/i);
 
     await user.type(input, 'https://youtube.com/watch?v=abc12345678');
-    await user.click(screen.getByRole('button', { name: /fetch/i }));
+    await user.click(screen.getByRole('button', { name: /look up/i }));
 
     // Pre-fix, the input had no `disabled` prop, so this failed: a user could
     // press Enter again mid-fetch and fire a second detect/fetch round-trip.
@@ -184,7 +208,7 @@ describe('PlatformTab', () => {
     const text = Array.from({ length: 6 }, (_, i) => `https://example.com/${i}`).join('\n');
     fireEvent.paste(input, { clipboardData: { getData: () => text } });
 
-    await waitFor(() => expect(useAppStore.getState().notice?.message).toMatch(/free limit reached/i));
+    await waitFor(() => expect(useAppStore.getState().notice?.message).toMatch(/basic limit reached/i));
     expect(window.electronAPI.download.start).not.toHaveBeenCalled();
   });
 
@@ -230,5 +254,35 @@ describe('PlatformTab', () => {
 
     expect(spy).not.toHaveBeenCalled();
     expect(window.electronAPI.download.start).not.toHaveBeenCalled();
+  });
+
+  it('ticking search results shows Download N and queues only the ticked ones', async () => {
+    const user = userEvent.setup();
+    const hit = (id: string) => ({ id, title: `Song ${id}`, uploader: 'Chan', duration: 60, thumbnailUrl: '', url: `https://youtube.com/watch?v=${id}` });
+    (window.electronAPI.youtube.search as any).mockResolvedValue([hit('a'), hit('b'), hit('c')]);
+    useAppStore.setState({ plan: 'premium' });
+
+    render(<PlatformTab platform="youtube" />);
+    await user.type(screen.getByPlaceholderText(/paste a youtube link/i), 'songs');
+    await user.click(screen.getByRole('button', { name: /^search$/i }));
+    await user.click(await screen.findByRole('checkbox', { name: /select song a/i }));
+    await user.click(screen.getByRole('checkbox', { name: /select song c/i }));
+    await user.click(screen.getByRole('button', { name: /^download 2$/i }));
+
+    await waitFor(() => expect(window.electronAPI.download.start).toHaveBeenCalledTimes(2));
+    expect(useAppStore.getState().notice?.message).toMatch(/added 2 to downloads/i);
+  });
+
+  it('Escape in the field clears the query and the results', async () => {
+    const user = userEvent.setup();
+    (window.electronAPI.youtube.search as any).mockResolvedValue([]);
+    render(<PlatformTab platform="youtube" />);
+    const input = screen.getByPlaceholderText(/paste a youtube link/i);
+    await user.type(input, 'nothing');
+    await user.click(screen.getByRole('button', { name: /^search$/i }));
+    await screen.findByText(/no results for/i);
+    await user.type(input, '{Escape}');
+    expect(input).toHaveValue('');
+    expect(screen.queryByText(/no results for/i)).toBeNull();
   });
 });

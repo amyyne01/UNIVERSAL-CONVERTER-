@@ -78,6 +78,7 @@ export interface ElectronAPI {
   };
   shell: {
     showItemInFolder: (path: string) => Promise<RevealResult>;
+    openItem: (path: string) => Promise<RevealResult>;
   };
   stats: {
     get: () => Promise<DownloadStats>;

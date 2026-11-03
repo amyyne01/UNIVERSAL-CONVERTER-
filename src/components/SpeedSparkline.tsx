@@ -39,7 +39,7 @@ export function SpeedSparkline() {
   return (
     <div className="flex items-end gap-4">
       <div className="shrink-0 w-28">
-        <div data-testid="spark-now" className="font-mono tabular-nums text-[22px] font-semibold text-text-primary">
+        <div data-testid="spark-now" className="font-mono tabular-nums text-xl font-medium text-text-primary">
           {formatBytes(now)}/s
         </div>
         <div data-testid="spark-ceil" className="font-mono tabular-nums text-2xs text-text-muted">
@@ -53,6 +53,9 @@ export function SpeedSparkline() {
         preserveAspectRatio="none"
         className="flex-1 min-w-0 h-12 overflow-hidden"
       >
+        {[0, H / 2, H].map((y) => (
+          <line key={y} x1="0" x2={SPARK_SAMPLES} y1={y} y2={y} stroke="var(--color-border-soft)" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+        ))}
         <g key={tick} className={reduce ? undefined : 'spark-scroll'}>
           <path d={d} fill="none" stroke="var(--color-accent)" strokeWidth="1.5" vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
         </g>

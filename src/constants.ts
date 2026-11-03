@@ -85,7 +85,7 @@ export const VIDEO_CONTAINER_OPTIONS: readonly Option[] = [
 ];
 
 export const VIDEO_CODEC_OPTIONS: readonly Option[] = [
-  { value: 'any',  label: 'Whatever is best' },
+  { value: 'any',  label: 'Best available' },
   { value: 'h264', label: 'H.264 (plays anywhere)' },
   { value: 'vp9',  label: 'VP9 (smaller)' },
   { value: 'av1',  label: 'AV1 (smallest)' },
@@ -127,6 +127,8 @@ export const PLATFORMS: readonly PlatformDef[] = [
 export interface NavItem {
   key: TabKey;
   label: string;
+  /** Rail caption when the full label would not fit under the icon. */
+  short?: string;
   icon: AppIcon;
   group: 'Library' | 'Sources' | 'System';
 }
@@ -137,7 +139,7 @@ export const NAV: readonly NavItem[] = [
   { key: 'youtube', label: 'YouTube', icon: YouTube, group: 'Sources' },
   { key: 'spotify', label: 'Spotify', icon: Spotify, group: 'Sources' },
   { key: 'soundcloud', label: 'SoundCloud', icon: SoundCloud, group: 'Sources' },
-  { key: 'reels', label: 'Reels & Shorts', icon: ShortForm, group: 'Sources' },
+  { key: 'reels', label: 'Reels & Shorts', short: 'Reels', icon: ShortForm, group: 'Sources' },
   { key: 'settings', label: 'Settings', icon: Settings, group: 'System' },
 ];
 

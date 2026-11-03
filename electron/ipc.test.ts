@@ -18,7 +18,7 @@ vi.mock('electron', () => ({
   app: { isPackaged: false, getAppPath: vi.fn(() => 'C:\\app'), getPath: vi.fn(() => TMP_UD) },
   ipcMain: { handle: vi.fn() },
   dialog: { showOpenDialog: vi.fn().mockResolvedValue({ canceled: false, filePaths: ['C:\\Picked'] }) },
-  shell: { openExternal: vi.fn().mockResolvedValue(undefined), showItemInFolder: vi.fn() },
+  shell: { openExternal: vi.fn().mockResolvedValue(undefined), showItemInFolder: vi.fn(), openPath: vi.fn().mockResolvedValue('') },
 }));
 
 // Every handler is now wrapped by secure(), which attests the sender frame first.
@@ -161,7 +161,7 @@ describe('registerIpcHandlers', () => {
       'download:pauseAll', 'download:resumeAll',
       'queue:reorder', 'queue:promote',
       'dialog:selectDir', 'cookies:import',
-      'shell:showItemInFolder',
+      'shell:showItemInFolder', 'shell:openItem',
       'license:check', 'license:activate', 'license:deactivate', 'license:release', 'app:openSupport',
       'update:check', 'update:download', 'update:install',
       'ytdlp:version', 'ytdlp:update',
@@ -543,6 +543,20 @@ describe('registerIpcHandlers', () => {
     expect(() => handlers.get('shell:showItemInFolder')!(evt(), 'C:\\Windows\\System32\\cmd.exe'))
       .toThrow(/output directory/);
     expect(shell.showItemInFolder).not.toHaveBeenCalled();
+  });
+
+  it('shell:openItem opens a media file confined to the output dir', async () => {
+    vi.mocked(existsSync).mockReturnValueOnce(true);
+    const result = await handlers.get('shell:openItem')!(evt(), 'C:\\Downloads\\song.mp3');
+    expect(shell.openPath).toHaveBeenCalledWith('C:\\Downloads\\song.mp3');
+    expect(result).toEqual({ ok: true });
+  });
+
+  it('shell:openItem refuses a path outside the output dir and any non-media file', async () => {
+    const open = handlers.get('shell:openItem')!;
+    await expect(open(evt(), 'C:\\Windows\\System32\\cmd.exe')).rejects.toThrow();
+    await expect(open(evt(), 'C:\\Downloads\\setup.exe')).rejects.toThrow();
+    expect(shell.openPath).not.toHaveBeenCalled();
   });
 
   it('app:openSupport opens the main-side https support link (no renderer input)', () => {

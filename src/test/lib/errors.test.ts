@@ -31,6 +31,13 @@ describe('error copy', () => {
     }
   });
 
+  it('explains a not-found generic link as an unsupported site and names supported ones', () => {
+    const copy = describeError('removed', 'generic');
+    expect(copy).toMatch(/may not be supported/i);
+    expect(copy).toMatch(/YouTube/);
+    expect(describeError('removed', 'youtube')).not.toMatch(/supported/i);
+  });
+
   it('says "video" for YouTube and "link" elsewhere, never "post" for YouTube', () => {
     expect(describeError('private', 'youtube')).toMatch(/video/);
     expect(describeError('private', 'youtube')).not.toMatch(/post/);

@@ -30,6 +30,9 @@ import {
 // args are validated at the boundary before the engine acts on them.
 const MAX_URL = 2048; // classic URL length ceiling — guards against oversized payloads.
 const MAX_PATH = 4096;
+/** Files the app itself produces; the only kinds shell:openItem will launch. */
+const OPENABLE_EXT = /\.(mp3|m4a|aac|opus|ogg|oga|flac|wav|alac|mp4|mkv|webm|mov|m4v|avi)$/i;
+
 // The one place an imported cookies.txt lives. Resolved through confineToRoot so the
 // destination is provably inside userData; it holds login cookies, so its content and
 // path are never logged.
@@ -318,6 +321,18 @@ export function registerIpcHandlers(config: ConfigManager, downloader: Downloade
     if (!existsSync(abs)) return { ok: false, reason: 'missing' };
     shell.showItemInFolder(abs);
     return { ok: true };
+  });
+
+  // Open a finished download in the default app. Same confinement as above, plus a
+  // media-extension allowlist: openPath RUNS what it is given, so a compromised
+  // renderer must not be able to launch an .exe that happens to sit in the folder.
+  handle('shell:openItem', RATE_DEFAULT, async (_e, p: unknown): Promise<RevealResult> => {
+    const raw = str(p, MAX_PATH);
+    if (!raw.trim()) return { ok: false, reason: 'no-path' };
+    const abs = confineToRoot(raw, config.get('outputDir'));
+    if (!abs || !OPENABLE_EXT.test(abs)) throw new Error('Invalid input: not an openable media file in the output directory');
+    if (!existsSync(abs)) return { ok: false, reason: 'missing' };
+    return (await shell.openPath(abs)) ? { ok: false, reason: 'missing' } : { ok: true };
   });
 
   // ── stats:* ─────────────────────────────────────────────────────────────────

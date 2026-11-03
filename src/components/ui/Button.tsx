@@ -10,7 +10,7 @@ const VARIANTS = {
 } as const;
 
 const SIZES = {
-  sm: 'h-9 px-3.5 text-sm',
+  sm: 'h-9 px-4 text-sm',
   md: 'h-10 px-4 text-sm',
 } as const;
 
@@ -37,7 +37,7 @@ export function Button({
       whileHover={{ y: -1 }}
       whileTap={{ scale: 0.97 }}
       disabled={disabled || loading}
-      className={`no-drag focus-visible:focus-ring inline-flex items-center justify-center gap-2 font-medium rounded-md transition-[background,filter] duration-150 disabled:opacity-50 disabled:pointer-events-none ${VARIANTS[variant]} ${SIZES[size]} ${className}`}
+      className={`no-drag focus-visible:focus-ring inline-flex items-center justify-center gap-2 whitespace-nowrap font-medium rounded-md transition-[background,filter] duration-150 disabled:opacity-50 disabled:pointer-events-none ${VARIANTS[variant]} ${SIZES[size]} ${className}`}
       {...rest}
     >
       {loading ? <Spinner size={16} /> : Icon ? <Icon size={16} /> : null}

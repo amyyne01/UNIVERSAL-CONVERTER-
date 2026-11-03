@@ -1,3 +1,42 @@
+# AHG Universal Converter 1.6.0
+
+**A calmer, clearer app: labelled navigation, undo for cancels, a next step for every failure, and a cleaner look throughout.**
+
+## What's new
+
+### Easier to find your way
+- The left rail now shows a label under every icon.
+- A first launch opens on just the paste box and the sites it works with. Your stats and charts appear once you have downloads.
+- The paste box tells you what will happen: where files are saved, which format you get, and when text isn't a link ("Not a link. Press Enter to search"). Buttons say **Look up**, **Search** or **Download**, each only when it does that.
+- A **keyboard shortcuts** sheet opens with Ctrl+/, from Ctrl+K, or from Settings.
+- Settings is shorter: the extra download options are folded away, schedule options appear only when the schedule is on, and a new Help section holds shortcuts and how to report a problem.
+- The app remembers your last audio format, audio quality and video quality.
+
+### Search results
+- Tick several results and download them together with **Download N**.
+- Downloading a result no longer jumps you to the Downloads tab. You stay on your results and get "Added to downloads" with a link to view them.
+- Spotify results show the track they were matched to, so you can check it before downloading.
+
+### Undo, and a next step for every failure
+- Cancelling a download, or all of them, happens at once and offers **Undo** for a few seconds, with no confirmation box.
+- Failed rows say what to do: **Can't download** for links that will never work, **Open settings** for login, age and disk-space problems, **Update engine** for unknown failures, and **Download again** for files that were skipped because you already had them.
+- Finished rows show the saved file name, with **Open file** and **Show in folder**. A notification offers **Open file** when a download finishes while you are on another tab.
+- Slow lookups show a single placeholder and tell you the app is still working. Links to unsupported sites now say so and name sites that are supported.
+
+### Cleaner and more consistent
+- One set of labels, verbs and icons everywhere: Downloads, Premium and Basic, Cancel and Retry.
+- No more all-caps labels. Type, spacing, colours and icons follow one scale, and the start-up screen matches.
+- Notifications with buttons stay on screen while you are pointing at them, and no longer sit on top of the Download N bar.
+- The Plans screen explains what Premium adds, why an option is locked, and what the offline grace period is.
+- Every tab lines up on the same left edge, from small windows to large monitors.
+
+### Easier for everyone to use
+- Keyboard navigation reaches every control with a visible focus ring, and the shortcuts sheet and Plans screen can be left with Esc.
+- Works in Windows high-contrast mode, and at 150% zoom nothing is cut off.
+- Buttons, switches and checkboxes have larger click targets, and the left rail is a labelled navigation region for screen readers.
+
+---
+
 # AHG Universal Converter 1.5.0
 
 **Pick what you download, see what failed, and get every format as its own file.**

@@ -14,20 +14,18 @@ export default function WindowTitleBar() {
 
   const ctrl =
     'grid place-items-center w-11 h-11 text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors';
-  const kbd =
-    'font-mono text-2xs leading-none tracking-[0.08em] px-1 py-0.5 rounded bg-bg-secondary border border-border-soft text-text-muted';
 
   return (
     <header className="drag-region relative flex items-center h-11 pl-4 pr-1 bg-bg-secondary border-b border-border-soft select-none">
       {/* Left — rack-unit wordmark (Micro-mono, instrument label not window caption) */}
-      <div className="flex items-center gap-2.5">
+      <div className="flex items-center gap-3">
         {/* The icon art is violet; luminosity-blending it over the accent keeps the waveform
             and takes the hue from the active palette (cyan by default). */}
         <span className="isolate w-4 h-4 rounded-[5px] overflow-hidden bg-accent shrink-0">
           <img src={iconUrl} alt="" className="w-full h-full mix-blend-luminosity" draggable={false} />
         </span>
-        <span className="font-mono text-2xs tracking-[0.08em] uppercase text-text-muted">
-          <b className="text-text-primary font-semibold">AHG</b> Universal Converter
+        <span className="font-mono text-2xs text-text-muted">
+          <b className="text-text-primary font-medium">AHG</b> Universal Converter
         </span>
       </div>
 
@@ -36,13 +34,13 @@ export default function WindowTitleBar() {
       <button
         onClick={toggleCommandPalette}
         aria-label="Search or run a command"
-        className="no-drag absolute left-1/2 -translate-x-1/2 flex items-center gap-2 w-[420px] max-w-[38vw] h-7 px-2.5 rounded-md bg-bg-tertiary border border-border-soft text-text-muted hover:border-accent transition-colors"
+        className="no-drag absolute left-1/2 -translate-x-1/2 flex items-center gap-2 w-[420px] max-w-[38vw] h-8 px-3 rounded-md bg-bg-tertiary border border-border-soft text-text-muted hover:border-accent transition-colors"
       >
-        <Search size={13} />
-        <span className="flex-1 text-left text-[12px] truncate">Search or run…</span>
+        <Search size={16} />
+        <span className="flex-1 text-left text-xs truncate">Search</span>
         <span className="flex items-center gap-1">
-          <kbd className={kbd}>Ctrl</kbd>
-          <kbd className={kbd}>K</kbd>
+          <kbd className="keycap">Ctrl</kbd>
+          <kbd className="keycap">K</kbd>
         </span>
       </button>
 
@@ -51,17 +49,17 @@ export default function WindowTitleBar() {
       {/* Right — window controls */}
       <div className="no-drag flex">
         <button onClick={() => window.electronAPI.window.minimize()} aria-label="Minimize" className={ctrl}>
-          <WindowMinimize size={15} />
+          <WindowMinimize size={16} />
         </button>
         <button onClick={onMaximize} aria-label={isMax ? 'Restore' : 'Maximize'} className={ctrl}>
-          {isMax ? <WindowRestore size={12} /> : <WindowMaximize size={12} />}
+          {isMax ? <WindowRestore size={16} /> : <WindowMaximize size={16} />}
         </button>
         <button
           onClick={() => window.electronAPI.window.close()}
           aria-label="Close"
           className="grid place-items-center w-11 h-11 text-text-muted hover:text-text-primary hover:bg-error transition-colors"
         >
-          <Close size={15} />
+          <Close size={16} />
         </button>
       </div>
     </header>

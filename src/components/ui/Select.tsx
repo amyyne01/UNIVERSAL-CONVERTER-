@@ -32,18 +32,19 @@ export function Select({ options, className = '', label, lockedValues, onLocked,
     <div className="relative no-drag inline-flex">
       <select
         aria-label={label}
+        title={lockedValues?.length ? 'Options marked Premium need the Premium plan. Select one to see what it adds.' : undefined}
         onChange={handleChange}
         className={`appearance-none focus-visible:focus-ring h-10 pl-3 pr-9 rounded-md bg-bg-tertiary border border-transparent text-text-primary text-sm hover:border-border cursor-pointer ${className}`}
         {...rest}
       >
         {options.map((o) => (
-          <option key={o.value} value={o.value}>
+          <option key={o.value} value={o.value} title={lockedValues?.includes(o.value) ? 'Needs Premium' : undefined}>
             {lockedValues?.includes(o.value) ? `${o.label} · Premium` : o.label}
           </option>
         ))}
       </select>
       <ChevronDown
-        size={14}
+        size={16}
         className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-text-muted"
       />
     </div>

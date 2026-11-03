@@ -9,7 +9,7 @@
 import { motion, useReducedMotion } from 'framer-motion';
 import { EASE_OUT_EXPO } from '@/components/ui/motion';
 import type { MediaMetadata } from '@shared/types';
-import { formatDuration } from '@/lib/format';
+import { formatCount, formatDuration } from '@/lib/format';
 import { Button } from '@/components/ui/Button';
 import { Download } from '@/components/ui/icons';
 
@@ -19,14 +19,6 @@ interface ShortFormPreviewProps {
   eyebrow: string;
   accent: string;
   onGet: () => void;
-}
-
-/** 12.4M rather than 12,400,000: at a glance, and it never widens the row. */
-function compact(n: number): string {
-  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1).replace(/\.0$/, '')}B`;
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1).replace(/\.0$/, '')}K`;
-  return String(n);
 }
 
 /** yt-dlp reports upload_date as YYYYMMDD; anything else is left alone. */
@@ -45,8 +37,8 @@ export function ShortFormPreview({ meta, eyebrow, accent, onGet }: ShortFormPrev
   const facts = [
     meta.duration ? formatDuration(meta.duration) : null,
     meta.width && meta.height ? `${meta.width}x${meta.height}` : null,
-    meta.viewCount ? `${compact(meta.viewCount)} views` : null,
-    meta.likeCount ? `${compact(meta.likeCount)} likes` : null,
+    meta.viewCount ? `${formatCount(meta.viewCount)} views` : null,
+    meta.likeCount ? `${formatCount(meta.likeCount)} likes` : null,
     formatUploadDate(meta.uploadDate),
   ].filter(Boolean) as string[];
 
@@ -61,8 +53,7 @@ export function ShortFormPreview({ meta, eyebrow, accent, onGet }: ShortFormPrev
         {/* The poster keeps the clip's own shape. Capped so a tall frame cannot
             push the actions off the bottom of a small window. */}
         <div
-          className="relative shrink-0 self-start w-[150px] @min-[560px]:w-[168px] aspect-[9/16] rounded-md overflow-hidden bg-bg-tertiary"
-          style={{ boxShadow: `0 0 0 1px ${accent}22` }}
+          className="relative shrink-0 self-start w-[152px] @min-[560px]:w-[168px] aspect-[9/16] rounded-md overflow-hidden bg-bg-tertiary"
         >
           <img
             src={meta.thumbnailUrl}
@@ -72,37 +63,37 @@ export function ShortFormPreview({ meta, eyebrow, accent, onGet }: ShortFormPrev
             draggable={false}
           />
           {meta.duration > 0 && (
-            <span className="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 rounded font-mono text-[11px] tabular-nums text-white bg-black/65">
+            <span className="absolute bottom-2 right-2 px-2 py-0.5 rounded font-mono text-2xs tabular-nums text-on-media bg-media-scrim">
               {formatDuration(meta.duration)}
             </span>
           )}
         </div>
 
         <div className="min-w-0 flex-1 flex flex-col">
-          <span className="font-mono text-[11px] uppercase tracking-[0.14em]" style={{ color: accent }}>
+          <span className="font-mono text-2xs" style={{ color: accent }}>
             {eyebrow}
           </span>
 
-          <h3 className="mt-2 text-[19px] @min-[640px]:text-[21px] font-semibold tracking-tight text-text-primary leading-snug line-clamp-2">
+          <h3 className="mt-2 text-xl font-medium text-text-primary leading-snug line-clamp-2">
             {meta.title}
           </h3>
 
           {meta.uploader && (
-            <p className="mt-1.5 text-[13px] text-text-secondary truncate">{meta.uploader}</p>
+            <p className="mt-2 text-sm text-text-secondary truncate">{meta.uploader}</p>
           )}
 
           {/* The caption is often the whole point of a short-form post, but it can
               also be forty hashtags — three lines, then it stops. */}
           {meta.description && meta.description !== meta.title && (
-            <p className="mt-3 text-[13px] text-text-secondary leading-relaxed line-clamp-3">
+            <p className="mt-3 text-sm text-text-secondary leading-relaxed line-clamp-3">
               {meta.description}
             </p>
           )}
 
           {facts.length > 0 && (
-            <ul className="mt-3 flex flex-wrap items-center gap-x-2.5 gap-y-1 font-mono text-[11.5px] tabular-nums text-text-secondary">
+            <ul className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-2xs tabular-nums text-text-secondary">
               {facts.map((f, i) => (
-                <li key={f} className="flex items-center gap-2.5">
+                <li key={f} className="flex items-center gap-3">
                   {i > 0 && <span aria-hidden className="text-text-muted">·</span>}
                   {f}
                 </li>

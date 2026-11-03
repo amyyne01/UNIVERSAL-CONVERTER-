@@ -48,10 +48,10 @@ describe('Dashboard unified search', () => {
       expect(screen.getByText('Sp Track')).toBeInTheDocument();
     }, { timeout: 3000 });
 
-    // Getting a row queues a download and swaps its pill to "Queued".
+    // Getting a row queues a download and swaps its pill to "Added".
     await user.click(screen.getByRole('button', { name: /Download YT Song/i }));
     await waitFor(() => expect(window.electronAPI.download.start).toHaveBeenCalled(), { timeout: 3000 });
-    await waitFor(() => expect(screen.getByText('Queued')).toBeInTheDocument(), { timeout: 3000 });
+    await waitFor(() => expect(screen.getByText('Added')).toBeInTheDocument(), { timeout: 3000 });
   });
 
   it('a real link clears any results on screen instead of searching', async () => {

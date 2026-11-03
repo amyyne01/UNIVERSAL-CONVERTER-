@@ -4,12 +4,12 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { EASE_OUT_EXPO as EASE } from '@/components/ui/motion';
 import {
-  Search, Link, Download, Video, Audio, Clock, Alert, Retry, Track as TrackIcon,
+  Search, Link, Download, Check, Forward, Video, Audio, Clock, Alert, Retry, Paste, Track as TrackIcon,
   type AppIcon,
 } from '@/components/ui/icons';
 import { useAppStore } from '@/store';
 import { PLATFORMS, AUDIO_QUALITIES, VIDEO_QUALITIES, type PlatformKey } from '@/constants';
-import { Button, Input, Select, FormatSelector, SegmentedCapsule } from '@/components/ui';
+import { Button, Input, Select, FormatSelector, SegmentedCapsule, Checkbox } from '@/components/ui';
 import { buildDownloadRequest, spotifyDownloadUrl } from '@/lib/download';
 import { useTierLocks, premiumCopy, basicCopy } from '@/lib/tier';
 import { formatDuration } from '@/lib/format';
@@ -28,7 +28,7 @@ interface PlatformTabProps {
 // explanation on screen.
 type Phase =
   | { k: 'idle' }
-  | { k: 'busy'; note: string }
+  | { k: 'busy'; note: string; rows: number }
   | { k: 'results' }
   | { k: 'empty'; msg: string }
   | { k: 'error'; msg: string };
@@ -37,17 +37,17 @@ type Phase =
 const PLATFORM_COPY: Record<PlatformKey, { capability: string; hint: string; empty: string }> = {
   youtube: {
     capability: 'Video + Audio · MP4/MP3 · Playlists',
-    hint: 'Paste a video or playlist link — or just type what you want and search YouTube.',
+    hint: 'Paste a video or playlist link, or type what you want to search YouTube',
     empty: 'Check the spelling, or paste the link straight from YouTube.',
   },
   spotify: {
     capability: 'Audio · MP3/FLAC · Playlists + Albums',
-    hint: 'Paste a track, album or playlist link — or search by song and artist. Tracks are matched to the best available audio source.',
+    hint: 'Paste a track, album or playlist link, or search by song and artist. Tracks are matched to the best available audio source.',
     empty: 'Try the artist and title together, or paste the Spotify link.',
   },
   soundcloud: {
     capability: 'Audio · MP3/FLAC · Artist sets',
-    hint: 'Paste a track or set link — or search SoundCloud by artist, title or set.',
+    hint: 'Paste a track or set link, or search SoundCloud by artist, title or set',
     empty: 'Try a shorter query, or paste the SoundCloud link.',
   },
   reels: {
@@ -61,6 +61,9 @@ const PLATFORM_COPY: Record<PlatformKey, { capability: string; hint: string; emp
 // Any scheme:// counts as a link (file://, ftp://…) so it reaches url.detect and is
 // refused as unsupported, instead of being searched for as text.
 export const looksLikeUrl = (s: string): boolean => /^([a-z][\w+.-]*:\/\/|spotify:|[\w-]+\.[a-z]{2,})/i.test(s.trim());
+
+/** The one verb for a lookup field's button: text is searched, a link is looked up. Downloading is only ever "Download". */
+export const lookupVerb = (s: string): 'Search' | 'Look up' => (s.trim() && !looksLikeUrl(s) ? 'Search' : 'Look up');
 
 /** A link-per-line list never needs more, and file.size is checked before the
  *  read so a stray drop of something huge can't be pulled into memory. */
@@ -98,6 +101,9 @@ export function PlatformTab({ platform }: PlatformTabProps) {
   const setCurrentPlaylist = useAppStore((s) => s.setCurrentPlaylist);
   const setActiveTab = useAppStore((s) => s.setActiveTab);
   const addDownload = useAppStore((s) => s.addDownload);
+  const showInfo = useAppStore((s) => s.showInfo);
+  const showError = useAppStore((s) => s.showError);
+  const updateConfig = useAppStore((s) => s.updateConfig);
   const pendingInput = useAppStore((s) => s.pendingInput);
   const setPendingInput = useAppStore((s) => s.setPendingInput);
   const locks = useTierLocks();
@@ -162,7 +168,7 @@ export function PlatformTab({ platform }: PlatformTabProps) {
       locks.nudge(premiumCopy.batch());
       return;
     }
-    setPhase({ k: 'busy', note: `Adding ${urls.length} link${urls.length === 1 ? '' : 's'}…` });
+    setPhase({ k: 'busy', note: `Adding ${urls.length} link${urls.length === 1 ? '' : 's'}…`, rows: Math.min(urls.length, 6) });
     setResults([]);
     setPreview(null);
     let started = 0;
@@ -196,7 +202,7 @@ export function PlatformTab({ platform }: PlatformTabProps) {
       setActiveTab('queue');
       setPhase({ k: 'idle' });
     } else {
-      setPhase({ k: 'error', msg: 'No downloadable links found.' });
+      setPhase({ k: 'error', msg: 'No downloadable links found. Check what you pasted and try again.' });
     }
   }, [locks, config, audioFormat, audioQuality, videoQuality, isAudio, addDownload, setActiveTab]);
 
@@ -226,17 +232,17 @@ export function PlatformTab({ platform }: PlatformTabProps) {
     // compromised renderer — the one thing the trust boundary exists to deny.
     // File.text() needs no fs access and no path ever crosses the bridge.
     if (file.size > MAX_LINK_FILE_BYTES) {
-      setPhase({ k: 'error', msg: 'That file is too large — keep link lists under 2MB.' });
+      setPhase({ k: 'error', msg: 'That file is too large. Keep link lists under 2MB.' });
       return;
     }
     void file
       .text()
       .then((text) => {
         const lines = text.split(/\r?\n|,/).map((l) => l.trim()).filter(looksLikeUrl);
-        if (lines.length === 0) return setPhase({ k: 'error', msg: 'That file had no links in it.' });
+        if (lines.length === 0) return setPhase({ k: 'error', msg: 'That file has no links. Check it and drop it again.' });
         return runBatch(lines);
       })
-      .catch(() => setPhase({ k: 'error', msg: 'Could not read that file.' }));
+      .catch(() => setPhase({ k: 'error', msg: 'Couldn’t read that file. Check it and drop it again.' }));
   }, [runBatch]);
 
   // Depth counter, not a bare boolean: dragleave fires every time the pointer
@@ -261,9 +267,10 @@ export function PlatformTab({ platform }: PlatformTabProps) {
     setDragOver(true);
   }, []);
 
-  const startDownload = useCallback(
-    (item: ResultItem, source: SourcePlatform) => {
-      void window.electronAPI.download
+  /** Queue one result; resolves once main has accepted it. */
+  const queueItem = useCallback(
+    (item: ResultItem, source: SourcePlatform) =>
+      window.electronAPI.download
         .start(
           buildDownloadRequest(config, {
             url: item.track ? spotifyDownloadUrl(item.track) : item.url,
@@ -280,17 +287,31 @@ export function PlatformTab({ platform }: PlatformTabProps) {
             track: item.track,
           }),
         )
-        .then((task) => addDownload(task))
-        .catch(() => setPhase({ k: 'error', msg: 'Could not start the download.' }));
-    },
+        .then(addDownload),
     [isAudio, audioFormat, audioQuality, videoQuality, config, addDownload],
+  );
+
+  const startDownload = useCallback(
+    (item: ResultItem, source: SourcePlatform) => {
+      queueItem(item, source)
+        // Stay on the results so a second one can be queued; the queue is one click away.
+        .then(() => showInfo('Added to downloads', { label: 'View downloads', run: () => setActiveTab('queue') }))
+        .catch(() => setPhase({ k: 'error', msg: 'Couldn’t start the download. Try again.' }));
+    },
+    [queueItem, showInfo, setActiveTab],
   );
 
   const handleSubmit = useCallback(async (override?: string) => {
     const input = (override ?? query).trim();
     if (!input) return;
     const isLink = looksLikeUrl(input);
-    setPhase({ k: 'busy', note: isLink ? 'Reading the link…' : `Searching ${def.label}…` });
+    if (!navigator.onLine) return setPhase({ k: 'error', msg: describeError('network') });
+    setPhase({
+      k: 'busy',
+      note: isLink ? 'Reading the link…' : `Searching ${def.label}…`,
+      // One pasted link yields one card; a search yields a page of them.
+      rows: isLink ? 1 : 6,
+    });
     setResults([]);
     setPreview(null);
     try {
@@ -306,12 +327,12 @@ export function PlatformTab({ platform }: PlatformTabProps) {
               type === 'playlist'
                 ? await window.electronAPI.spotify.fetchPlaylist(input)
                 : await window.electronAPI.spotify.fetchAlbum(input);
-            if (!pl) return setPhase({ k: 'error', msg: 'Could not read that Spotify collection.' });
+            if (!pl) return setPhase({ k: 'error', msg: 'Couldn’t read that Spotify collection. Check the link and try again.' });
             setCurrentPlaylist(pl);
             return;
           }
           const track = await window.electronAPI.spotify.fetchTrack(input);
-          if (!track) return setPhase({ k: 'error', msg: 'Could not read that Spotify track.' });
+          if (!track) return setPhase({ k: 'error', msg: 'Couldn’t read that Spotify track. Check the link and try again.' });
           // Show the fetched track as a big result card — the user confirms format/quality.
           setResults([{ ...trackToItem(track), direct: true }]);
           return setPhase({ k: 'results' });
@@ -330,7 +351,7 @@ export function PlatformTab({ platform }: PlatformTabProps) {
           .detect(input)
           .catch(() => { throw new ValidationError("That link couldn't be read. Check it and try again."); });
         if (detection.platform === 'unknown') {
-          return setPhase({ k: 'error', msg: `That link isn't one ${def.label} can handle.` });
+          return setPhase({ k: 'error', msg: describeError('unsupported') });
         }
         // detection.url, not `input`: detectUrl prepends https:// to a scheme-less
         // paste ("youtu.be/…"), and the engine must be handed the same normalized
@@ -374,7 +395,7 @@ export function PlatformTab({ platform }: PlatformTabProps) {
         if (platform === 'reels' && (!meta || !meta.thumbnailUrl)) {
           return setPhase({
             k: 'error',
-            msg: metaError || "That post couldn't be previewed — it may be private, removed, or need a sign-in.",
+            msg: metaError || "That post couldn't be previewed. It may be private, removed, or need a sign-in.",
           });
         }
         // Same reasoning for the long-form tabs. A null meta used to fall through and
@@ -416,14 +437,27 @@ export function PlatformTab({ platform }: PlatformTabProps) {
       // screen, so any still-busy phase falls back to idle.
       setPhase((p) => (p.k === 'busy' ? { k: 'idle' } : p));
     }
-  }, [platform, query, def.label, setCurrentPlaylist, setActiveTab, startDownload]);
+  }, [platform, query, def.label, setCurrentPlaylist, setActiveTab]);
 
   const resultSource: SourcePlatform = platform === 'reels' ? 'unknown' : platform;
 
   const get = useCallback((item: ResultItem) => {
     startDownload(item, item.track ? 'spotify' : (item.source ?? resultSource));
-    setActiveTab('queue');
-  }, [startDownload, resultSource, setActiveTab]);
+  }, [startDownload, resultSource]);
+
+  // "Download N" for ticked results. The same free-tier batch ceiling as a pasted
+  // list applies: over it, nothing is queued and the nudge says why.
+  const getMany = useCallback(async (items: ResultItem[]) => {
+    if (locks.batchLimit !== null && items.length > locks.batchLimit) {
+      locks.nudge(premiumCopy.batch());
+      return false;
+    }
+    const done = await Promise.allSettled(items.map((i) => queueItem(i, i.track ? 'spotify' : (i.source ?? resultSource))));
+    const failed = done.filter((r) => r.status === 'rejected').length;
+    if (failed) showError(`${failed} of ${items.length} couldn’t be added. Try those again.`);
+    else showInfo(`Added ${items.length} to downloads`, { label: 'View downloads', run: () => setActiveTab('queue') });
+    return failed === 0;
+  }, [locks, queueItem, resultSource, showError, showInfo, setActiveTab]);
 
   // Link handed over from the Dashboard / Ctrl+V: seed the field and fetch it
   // immediately so the user lands on a result card, not an empty form.
@@ -446,7 +480,7 @@ export function PlatformTab({ platform }: PlatformTabProps) {
     // max-w is a ceiling, not a column: past ~1600px a single search field and a
     // one-per-row result list stop being a layout and start being dead canvas.
     <div
-      className={`@container mx-auto w-full max-w-[1600px] px-6 lg:px-8 2xl:px-12 py-8 lg:py-10 rounded-lg border-2 border-dashed transition-colors ${
+      className={`@container mx-auto w-full max-w-[1600px] px-8 @min-[1100px]:px-10 @min-[1600px]:px-14 py-8 lg:py-10 rounded-lg border-2 border-dashed transition-colors ${
         dragOver ? 'border-accent bg-accent-soft' : 'border-transparent'
       }`}
       style={{ '--color-accent': accent } as React.CSSProperties}
@@ -462,12 +496,12 @@ export function PlatformTab({ platform }: PlatformTabProps) {
         </div>
         <div>
           <h1 className="text-h1 text-text-primary">{def.label}</h1>
-          <p className="font-mono text-2xs tracking-[0.08em] uppercase text-text-muted mt-1">{copy.capability}</p>
+          <p className="font-mono text-2xs text-text-muted mt-1">{copy.capability}</p>
           {/* What the free tier gives you, on the surface where you'd use it.
               Without this the tier only ever speaks when it says no, which is how
               a free version starts feeling like a demo instead of a product. */}
           {!locks.isPremium && (
-            <p className="text-[11.5px] text-text-secondary mt-1.5">
+            <p className="text-2xs text-text-secondary mt-2">
               {audioOnlyPlatform ? basicCopy.audio : basicCopy.video}
             </p>
           )}
@@ -479,17 +513,23 @@ export function PlatformTab({ platform }: PlatformTabProps) {
         <Input
           icon={canSearch ? Search : Link}
           wrapClassName="flex-1 h-14! rounded-lg!"
-          placeholder={canSearch ? `Paste a ${def.label} link or search…` : `Paste a ${def.label} link…`}
+          placeholder={canSearch ? `Paste a ${def.label} link or search` : `Paste a ${def.label} link`}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') void handleSubmit(); }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') void handleSubmit();
+            // Esc is "start over": empty field, no results, ready for the next paste.
+            if (e.key === 'Escape' && (query || phase.k !== 'idle')) {
+              setQuery(''); setResults([]); setPreview(null); setPhase({ k: 'idle' });
+            }
+          }}
           onPaste={handlePaste}
           spellCheck={false}
           autoComplete="off"
           disabled={busy}
         />
-        <Button size="md" loading={busy} icon={Download} onClick={() => void handleSubmit()}>
-          Fetch
+        <Button size="md" loading={busy} icon={Forward} onClick={() => void handleSubmit()}>
+          {lookupVerb(query)}
         </Button>
       </div>
 
@@ -497,7 +537,7 @@ export function PlatformTab({ platform }: PlatformTabProps) {
           Eight format chips + a quality select + the readout only share one line
           past ~1150px of column; below that (the 960px minimum window) the chips
           drop to their own row instead of shoving the readout off the edge. */}
-      <div className="mb-6 rounded-lg bg-bg-surface border border-border-soft shadow-sm p-4 flex flex-wrap items-center gap-x-3 gap-y-2.5">
+      <div className="mb-6 rounded-lg bg-bg-surface border border-border-soft shadow-sm p-4 flex flex-wrap items-center gap-x-3 gap-y-3">
         {!audioOnlyPlatform && (
           <SegmentedCapsule
             options={[
@@ -514,7 +554,7 @@ export function PlatformTab({ platform }: PlatformTabProps) {
             <FormatSelector
               className="order-last basis-full @6xl:order-none @6xl:basis-auto"
               value={audioFormat}
-              onChange={(f) => { touchedDefaults.current = true; setAudioFormat(f); }}
+              onChange={(f) => { touchedDefaults.current = true; setAudioFormat(f); updateConfig({ defaultFormat: f }); }}
             />
             <Select
               label="Audio quality"
@@ -522,7 +562,7 @@ export function PlatformTab({ platform }: PlatformTabProps) {
               value={locks.effectiveAudioQuality(audioQuality)}
               lockedValues={locks.lockedAudioQualities}
               onLocked={() => locks.nudge(premiumCopy.losslessQuality())}
-              onChange={(e) => { touchedDefaults.current = true; setAudioQuality(e.target.value); }}
+              onChange={(e) => { touchedDefaults.current = true; setAudioQuality(e.target.value); updateConfig({ defaultQuality: e.target.value }); }}
             />
           </>
         ) : (
@@ -532,10 +572,10 @@ export function PlatformTab({ platform }: PlatformTabProps) {
             value={locks.effectiveVideoQuality(videoQuality)}
             lockedValues={locks.lockedVideoQualities}
             onLocked={(v) => locks.nudge(premiumCopy.videoQuality(v))}
-            onChange={(e) => { touchedDefaults.current = true; setVideoQuality(e.target.value as VideoQuality); }}
+            onChange={(e) => { touchedDefaults.current = true; setVideoQuality(e.target.value as VideoQuality); updateConfig({ defaultVideoQuality: e.target.value as VideoQuality }); }}
           />
         )}
-        <p className="ml-auto text-[12.5px] text-text-muted">
+        <p className="ml-auto text-xs text-text-muted">
           You get <span className="font-mono text-text-secondary">{outcome}</span>
         </p>
       </div>
@@ -547,19 +587,27 @@ export function PlatformTab({ platform }: PlatformTabProps) {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.16, ease: EASE }}
       >
-        {phase.k === 'busy' && <FetchSkeleton note={phase.note} square={audioOnlyPlatform} />}
+        {phase.k === 'busy' && <FetchSkeleton note={phase.note} rows={phase.rows} square={audioOnlyPlatform} />}
 
         {phase.k === 'idle' && (
           <EmptyPanel icon={Icon} accentIcon={accent} title={copy.hint}>
-            <span className="font-mono text-2xs tracking-[0.08em] uppercase text-text-muted">
-              Enter to fetch · paste several links, or drop a .txt/.csv, to batch them
-            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={Paste}
+              onClick={() => void navigator.clipboard.readText().then((t) => setQuery(t.trim())).catch(() => {})}
+            >
+              Paste from clipboard
+            </Button>
+            <p className="mt-3 font-mono text-2xs text-text-muted">
+              Then Enter to look up. Several links, or a .txt/.csv, queue as a batch.
+            </p>
           </EmptyPanel>
         )}
 
         {phase.k === 'empty' && (
           <EmptyPanel icon={Search} title={phase.msg}>
-            <span className="text-[12.5px] text-text-secondary">{copy.empty}</span>
+            <span className="text-xs text-text-secondary">{copy.empty}</span>
           </EmptyPanel>
         )}
 
@@ -569,10 +617,10 @@ export function PlatformTab({ platform }: PlatformTabProps) {
             className="flex items-start gap-3 rounded-lg border p-4"
             style={{
               borderColor: 'color-mix(in oklch, var(--color-error) 38%, transparent)',
-              background: 'color-mix(in oklch, var(--color-error) 9%, transparent)',
+              background: 'var(--color-error-soft)',
             }}
           >
-            <Alert size={18} className="text-error shrink-0 mt-px" />
+            <Alert size={16} className="text-error shrink-0 mt-px" />
             <div className="min-w-0 flex-1">
               <p className="text-sm text-text-primary">{phase.msg}</p>
             </div>
@@ -605,6 +653,7 @@ export function PlatformTab({ platform }: PlatformTabProps) {
             square={audioOnlyPlatform}
             reduce={!!reduce}
             onGet={get}
+            onGetMany={getMany}
           />
         ))}
       </motion.div>
@@ -631,7 +680,7 @@ const RESULT_CELL =
   '@5xl:rounded-lg @5xl:border @5xl:border-border-soft @5xl:bg-bg-surface @5xl:shadow-sm @5xl:overflow-hidden';
 
 /** Artwork size classes: album art is square, video stills are 16:9. */
-export const artClass = (square: boolean) => (square ? 'w-14 h-14' : 'w-[92px] h-[52px]');
+export const artClass = (square: boolean) => (square ? 'w-14 h-14' : 'w-24 h-14');
 
 export function Artwork({ src, square, className = '' }: { src: string; square: boolean; className?: string }) {
   return (
@@ -654,18 +703,38 @@ function ResultList({
   square,
   reduce,
   onGet,
+  onGetMany,
 }: {
   items: ResultItem[];
   square: boolean;
   reduce: boolean;
   onGet: (item: ResultItem) => void;
+  onGetMany: (items: ResultItem[]) => Promise<boolean>;
 }) {
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [sending, setSending] = useState(false);
+  const toggle = (id: string) => setPicked((p) => { const n = new Set(p); if (!n.delete(id)) n.add(id); return n; });
+  const allPicked = items.length > 0 && picked.size === items.length;
+  const send = async () => {
+    setSending(true);
+    // Keep the ticks on a refusal (batch ceiling / failure) so the user can trim and retry.
+    if (await onGetMany(items.filter((i) => picked.has(i.id)))) setPicked(new Set());
+    setSending(false);
+  };
   // Roving focus without per-row state: the rows are the only [data-row] nodes
   // in this list, so one DOM read per keypress beats re-rendering 40 rows.
   // The list is 1, 2 or 3 columns depending on the column width, so up/down must
   // step a whole row — the live column count comes from the resolved grid
   // template rather than from a duplicated copy of the breakpoints.
   const onKeyDown = (e: React.KeyboardEvent<HTMLUListElement>) => {
+    if (e.key === 'Escape' && picked.size) { e.preventDefault(); setPicked(new Set()); return; }
+    if (e.key === ' ' || (e.key === 'a' && e.ctrlKey)) {
+      e.preventDefault();
+      if (e.key === 'a') return setPicked(new Set(items.map((i) => i.id)));
+      const at = Array.from(e.currentTarget.querySelectorAll('[data-row]')).indexOf(document.activeElement as Element);
+      if (at >= 0) toggle(items[at].id);
+      return;
+    }
     if (!['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
     e.preventDefault();
     const rows = Array.from(e.currentTarget.querySelectorAll<HTMLButtonElement>('[data-row]'));
@@ -687,11 +756,21 @@ function ResultList({
   return (
     <section aria-label="Results">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-1 mb-2">
-        <span className="font-mono text-2xs tracking-[0.08em] uppercase text-text-muted tabular-nums">
+        <span className="font-mono text-2xs text-text-muted tabular-nums">
           {items.length} result{items.length === 1 ? '' : 's'}
+          {items.some((i) => i.track) && ' · the audio is matched by searching artist and title'}
         </span>
-        <span className="font-mono text-2xs tracking-[0.08em] uppercase text-text-muted">
-          Arrows move · Enter downloads
+        <span className="flex items-center gap-4">
+          {items.length > 1 && (
+            <button
+              type="button"
+              onClick={() => setPicked(allPicked ? new Set() : new Set(items.map((i) => i.id)))}
+              className="no-drag h-8 px-2 -my-2 rounded text-xs text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors"
+            >
+              {allPicked ? 'Clear selection' : 'Select all'}
+            </button>
+          )}
+          <span className="font-mono text-2xs text-text-muted">Arrows move · Space selects · Enter downloads</span>
         </span>
       </div>
 
@@ -706,42 +785,85 @@ function ResultList({
             transition={{ duration: 0.18, delay: Math.min(i, 6) * 0.025, ease: EASE }}
             className={RESULT_CELL}
           >
-            <button
-              type="button"
-              data-row
-              tabIndex={i === 0 ? 0 : -1}
-              aria-label={`Download ${item.title}${item.subtitle ? ` — ${item.subtitle}` : ''}`}
-              onClick={() => onGet(item)}
-              className="group w-full h-full flex items-center gap-4 px-3.5 py-3 text-left transition-colors hover:bg-bg-hover focus-visible:bg-bg-hover"
-            >
-              <Artwork src={item.thumbnailUrl} square={square} className={artClass(square)} />
-
-              <span className="min-w-0 flex-1">
-                <span className="block text-[15px] font-medium text-text-primary truncate">{item.title}</span>
-                {/* text-secondary, not muted: at 12.5px the muted ramp lands under
-                    4.5:1 on the light theme's near-white surface. */}
-                <span className="mt-0.5 flex items-center gap-2 text-[12.5px] text-text-secondary">
-                  {item.subtitle && <span className="truncate">{item.subtitle}</span>}
-                  {item.subtitle && item.duration > 0 && <span aria-hidden>·</span>}
-                  {item.duration > 0 && (
-                    <span className="font-mono tabular-nums shrink-0">{formatDuration(item.duration)}</span>
-                  )}
-                </span>
-              </span>
-
-              {/* The row IS the button; this pill is the affordance, not a second target. */}
-              <span
-                aria-hidden
-                className="shrink-0 inline-flex items-center gap-1.5 h-8 px-3 rounded-md border border-border text-[12.5px] font-medium text-text-secondary transition-colors group-hover:border-accent group-hover:text-accent group-focus-visible:border-accent group-focus-visible:text-accent"
-              >
-                <Download size={14} />
-                Get
-              </span>
-            </button>
+            <ResultRow
+              item={item} square={square} isFirst={i === 0} onDownload={() => onGet(item)}
+              picked={picked.has(item.id)} onPick={items.length > 1 ? () => toggle(item.id) : undefined}
+            />
           </motion.li>
         ))}
       </ul>
+
+      {/* Appears under the pointer's last stop once something is ticked. */}
+      {picked.size > 0 && (
+        <div className="sticky bottom-4 z-10 mt-4 flex items-center gap-3 rounded-lg border border-border bg-bg-surface shadow-md px-4 py-3">
+          <span className="text-sm text-text-primary tabular-nums">{picked.size} selected</span>
+          <Button variant="ghost" size="sm" onClick={() => setPicked(new Set())}>Clear</Button>
+          <Button size="md" icon={Download} loading={sending} onClick={() => void send()} className="ml-auto">
+            Download {picked.size}
+          </Button>
+        </div>
+      )}
     </section>
+  );
+}
+
+/** One result line — shared by the platform tabs and the Home search. The row IS the button; the pill is the affordance. */
+export function ResultRow({
+  item, square, queued = false, isFirst, onDownload, picked = false, onPick,
+}: {
+  item: ResultItem; square: boolean; queued?: boolean; isFirst: boolean; onDownload: () => void;
+  /** Multi-select is opt-in: with no onPick the row is the plain one-click Download. */
+  picked?: boolean; onPick?: () => void;
+}) {
+  const row = (
+    <button
+      type="button"
+      data-row
+      tabIndex={isFirst ? 0 : -1}
+      aria-label={`Download ${item.title}${item.subtitle ? `, ${item.subtitle}` : ''}`}
+      onClick={onDownload}
+      className="group w-full h-full flex items-center gap-4 px-4 py-3 text-left transition-colors hover:bg-bg-hover focus-visible:bg-bg-hover"
+    >
+      <Artwork src={item.thumbnailUrl} square={square} className={artClass(square)} />
+      <span className="min-w-0 flex-1">
+        <span className="block text-base font-medium text-text-primary truncate">{item.title}</span>
+        {/* text-secondary, not muted: at 12.5px the muted ramp lands under
+            4.5:1 on the light theme's near-white surface. */}
+        <span className="mt-0.5 flex items-center gap-2 text-xs text-text-secondary">
+          {item.subtitle && <span className="truncate">{item.subtitle}</span>}
+          {item.subtitle && item.duration > 0 && <span aria-hidden>·</span>}
+          {item.duration > 0 && <span className="font-mono tabular-nums shrink-0">{formatDuration(item.duration)}</span>}
+        </span>
+      </span>
+      <span
+        aria-hidden
+        className={`shrink-0 inline-flex items-center gap-2 h-8 px-3 rounded-md border text-xs font-medium transition-colors ${
+          queued
+            ? 'border-success text-success'
+            : 'border-border text-text-secondary group-hover:border-accent group-hover:text-accent group-focus-visible:border-accent group-focus-visible:text-accent'
+        }`}
+      >
+        {queued ? <Check size={16} /> : <Download size={16} />}
+        {queued ? 'Added' : 'Download'}
+      </span>
+    </button>
+  );
+  if (!onPick) return row;
+  return (
+    <div className={`flex items-stretch ${picked ? 'bg-accent-soft' : ''}`}>
+      <button
+        type="button"
+        role="checkbox"
+        aria-checked={picked}
+        aria-label={`Select ${item.title}`}
+        tabIndex={-1}
+        onClick={onPick}
+        className="no-drag shrink-0 w-12 grid place-items-center hover:bg-bg-hover transition-colors"
+      >
+        <Checkbox checked={picked} accent="accent" />
+      </button>
+      <div className="min-w-0 flex-1">{row}</div>
+    </div>
   );
 }
 
@@ -774,13 +896,13 @@ function SingleResultCard({
       className="flex flex-wrap items-center gap-5 p-5 max-w-[880px] rounded-xl bg-bg-surface border border-border shadow-md"
     >
       {/* Art — square for audio platforms (album art), 16:9 for video */}
-      <Artwork src={item.thumbnailUrl} square={square} className={square ? 'w-28 h-28' : 'w-[198px] h-28'} />
+      <Artwork src={item.thumbnailUrl} square={square} className={square ? 'w-28 h-28' : 'w-[200px] h-28'} />
 
       {/* Name / artist / length — basis 240px is the point where the title stops
           being readable, so the Download button wraps under instead of squeezing it. */}
       <div className="min-w-0 flex-1 basis-[240px]">
         <div
-          className="font-mono text-2xs tracking-[0.08em] uppercase mb-1.5"
+          className="font-mono text-2xs mb-2"
           style={{ color: accent }}
         >
           {eyebrow}
@@ -791,15 +913,20 @@ function SingleResultCard({
         {item.subtitle && (
           <p className="text-sm text-text-secondary truncate">{item.subtitle}</p>
         )}
-        <div className="flex items-center gap-3 mt-2.5 font-mono text-2xs tracking-[0.08em] uppercase text-text-muted tabular-nums">
+        <div className="flex items-center gap-3 mt-3 font-mono text-2xs text-text-muted tabular-nums">
           {item.duration > 0 && (
-            <span className="flex items-center gap-1.5">
-              <Clock size={12} />
+            <span className="flex items-center gap-2">
+              <Clock size={16} />
               {formatDuration(item.duration)}
             </span>
           )}
           <span>{outcome}</span>
         </div>
+        {item.track && (
+          <p className="mt-2 text-xs text-text-secondary">
+            Matched by search: <span className="font-mono">{item.track.artist} - {item.track.name}</span>. Check the file name once it finishes.
+          </p>
+        )}
       </div>
 
       <Button size="md" icon={Download} onClick={onGet} className="shrink-0">
@@ -812,27 +939,37 @@ function SingleResultCard({
 // ── Waiting / nothing states ─────────────────────────────────────────────────
 
 /** Row-shaped placeholders: the answer lands where the wait was, so nothing jumps. */
-function FetchSkeleton({ note, square }: { note: string; square: boolean }) {
+function FetchSkeleton({ note, rows, square }: { note: string; rows: number; square: boolean }) {
+  // The first fetch of a link can take many seconds (the engine cold-starts), so
+  // a bare "Reading the link…" reads as a hang. Escalate the wording on a clock.
+  const [waited, setWaited] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setWaited((w) => w + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const line = waited >= 15 ? `${note} Still going. Slow sites can take a minute.`
+    : waited >= 4 ? `${note} Still working…`
+    : note;
   return (
     <section aria-busy="true" aria-live="polite">
-      <div className="px-1 mb-2 font-mono text-2xs tracking-[0.08em] uppercase text-text-muted">
-        {note}
+      <div className="px-1 mb-2 font-mono text-2xs text-text-muted">
+        {line}
       </div>
-      {/* Six, not four: six divides evenly by the 1/2/3 column counts the results
-          land in, so the placeholder block is the same shape as the answer. */}
+      {/* A search lands six cards (six divides evenly by the 1/2/3 column counts
+          the results use); a single link lands one, so it gets one placeholder. */}
       <div className={`${RESULT_GRID} ${RESULT_SURFACE} skeleton-shimmer`}>
-        {[0, 1, 2, 3, 4, 5].map((i) => (
+        {Array.from({ length: rows }, (_, i) => i).map((i) => (
           <div
             key={i}
             aria-hidden
-            className={`flex items-center gap-4 px-3.5 py-3 ${RESULT_CELL}`}
+            className={`flex items-center gap-4 px-4 py-3 ${RESULT_CELL}`}
           >
             <div className={`shrink-0 rounded-md bg-bg-tertiary ${artClass(square)}`} />
             <div className="min-w-0 flex-1 space-y-2">
-              <div className="h-3.5 rounded bg-bg-tertiary" style={{ width: `${72 - i * 9}%` }} />
-              <div className="h-2.5 rounded bg-bg-tertiary" style={{ width: `${38 - i * 4}%` }} />
+              <div className="h-4 rounded bg-bg-tertiary" style={{ width: `${72 - i * 9}%` }} />
+              <div className="h-3 rounded bg-bg-tertiary" style={{ width: `${38 - i * 4}%` }} />
             </div>
-            <div className="shrink-0 h-8 w-[74px] rounded-md bg-bg-tertiary" />
+            <div className="shrink-0 h-8 w-[72px] rounded-md bg-bg-tertiary" />
           </div>
         ))}
       </div>
@@ -855,8 +992,8 @@ export function EmptyPanel({
   return (
     <div className="rounded-lg border border-dashed border-border px-6 py-10 text-center">
       <PanelIcon size={26} className="mx-auto opacity-60" style={accentIcon ? { color: accentIcon } : undefined} />
-      <p className="mx-auto mt-3.5 max-w-[52ch] text-sm leading-relaxed text-text-secondary text-pretty">{title}</p>
-      {children && <div className="mt-2.5">{children}</div>}
+      <p className="mx-auto mt-4 max-w-[52ch] text-sm leading-relaxed text-text-secondary text-pretty">{title}</p>
+      {children && <div className="mt-3">{children}</div>}
     </div>
   );
 }

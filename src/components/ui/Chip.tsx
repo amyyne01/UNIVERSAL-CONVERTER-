@@ -17,14 +17,14 @@ export function Chip({ selected = false, tag, icon: Icon, className = '', childr
       type="button"
       whileTap={{ scale: 0.96 }}
       aria-pressed={selected}
-      className={`no-drag focus-visible:focus-ring inline-flex items-center gap-2 h-8 px-3 rounded-md border text-[12.5px] font-medium transition-colors disabled:opacity-50 ${
+      className={`no-drag focus-visible:focus-ring inline-flex items-center gap-2 h-8 px-3 rounded-md border text-xs font-medium transition-colors disabled:opacity-50 ${
         selected
           ? 'bg-accent-soft border-accent/40 text-accent'
           : 'border-border text-text-secondary hover:text-text-primary hover:bg-bg-hover'
       } ${className}`}
       {...rest}
     >
-      {Icon && <Icon size={12} className="shrink-0 text-text-muted" aria-hidden />}
+      {Icon && <Icon size={16} className="shrink-0 text-text-muted" aria-hidden />}
       {children}
       {tag && (
         <span className={`font-mono text-2xs ${selected ? 'text-accent' : 'text-text-muted'}`}>

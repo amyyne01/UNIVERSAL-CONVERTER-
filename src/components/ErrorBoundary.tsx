@@ -27,16 +27,16 @@ export class ErrorBoundary extends Component<Props, State> {
           className="rounded-lg border p-6"
           style={{
             borderColor: 'color-mix(in oklch, var(--color-error) 38%, transparent)',
-            background: 'color-mix(in oklch, var(--color-error) 9%, transparent)',
+            background: 'var(--color-error-soft)',
           }}
         >
           <Alert size={22} className="text-error" />
-          <h2 className="text-h2 text-text-primary mt-3">This tab couldn’t be drawn</h2>
+          <h2 className="text-h2 text-text-primary mt-3">This tab hit an error</h2>
           <p className="mt-2 text-sm text-text-secondary leading-relaxed">
-            The rest of the app is unaffected — your downloads are still running. Try again, or
+            The rest of the app is unaffected, and your downloads are still running. Try again, or
             switch to another tab.
           </p>
-          <p className="mt-3 font-mono text-[11px] text-text-muted break-all">{error.message}</p>
+          <p className="mt-3 font-mono text-2xs text-text-muted break-all">{error.message}</p>
           <Button
             className="mt-5"
             icon={Retry}

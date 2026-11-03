@@ -74,6 +74,6 @@ describe('ErrorBoundary', () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     render(<ErrorBoundary><Boom /></ErrorBoundary>);
     spy.mockRestore();
-    expect(screen.getByRole('alert')).toHaveTextContent('This tab couldn’t be drawn');
+    expect(screen.getByRole('alert')).toHaveTextContent('This tab hit an error');
   });
 });

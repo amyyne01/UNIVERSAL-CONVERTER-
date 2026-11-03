@@ -44,6 +44,9 @@ export interface AppState {
   commandPaletteOpen: boolean;
   setCommandPaletteOpen: (v: boolean) => void;
   toggleCommandPalette: () => void;
+  /** The keyboard cheat sheet. */
+  shortcutsOpen: boolean;
+  setShortcutsOpen: (v: boolean) => void;
 
   // ── tier ───────────────────────────────────────────────────
   /** Free by default; 'premium' only after a key is verified. */
@@ -56,9 +59,11 @@ export interface AppState {
   setUpgradeOpen: (v: boolean) => void;
   /** The one transient popup. Two tones, because "you found a ceiling" and
    *  "that didn't work" need different colour and urgency but identical mechanics. */
-  notice: { message: string; tone: 'premium' | 'error' } | null;
+  notice: { message: string; tone: 'premium' | 'error' | 'info'; action?: { label: string; run: () => void } } | null;
   showPremiumNudge: (reason: string) => void;
   showError: (message: string) => void;
+  /** A calm confirmation, optionally with one follow-up ("View queue", "Undo"). */
+  showInfo: (message: string, action?: { label: string; run: () => void }) => void;
   dismissNotice: () => void;
 
   // ── clipboard watcher ──────────────────────────────────────
@@ -158,6 +163,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
   commandPaletteOpen: false,
   setCommandPaletteOpen: (v) => set({ commandPaletteOpen: v }),
   toggleCommandPalette: () => set((s) => ({ commandPaletteOpen: !s.commandPaletteOpen })),
+  shortcutsOpen: false,
+  setShortcutsOpen: (v) => set({ shortcutsOpen: v }),
 
   // ── tier ──
   plan: 'basic',
@@ -169,6 +176,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   notice: null,
   showPremiumNudge: (message) => set({ notice: { message, tone: 'premium' } }),
   showError: (message) => set({ notice: { message, tone: 'error' } }),
+  showInfo: (message, action) => set({ notice: { message, tone: 'info', action } }),
   dismissNotice: () => set({ notice: null }),
 
   // ── clipboard watcher ──

@@ -17,7 +17,7 @@ describe('Settings > Palette swatches', () => {
 
   it('is a radiogroup with every palette, one tab stop on the active one', () => {
     render(<SettingsTab />);
-    const group = screen.getByRole('radiogroup', { name: 'Colour palette' });
+    const group = screen.getByRole('radiogroup', { name: 'Color palette' });
     const radios = Array.from(group.querySelectorAll('[role="radio"]'));
     expect(radios).toHaveLength(PALETTES.length);
     expect(screen.getByRole('radio', { name: 'Aurora' })).toHaveAttribute('aria-checked', 'true');

@@ -10,14 +10,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { EASE_OUT_EXPO as EASE } from '@/components/ui/motion';
-import { Search, Alert, Retry, Check, GoTo, ChevronDown, Download } from '@/components/ui/icons';
+import { Search, Alert, Retry, GoTo, ChevronDown } from '@/components/ui/icons';
 import { Button, Spinner } from '@/components/ui';
-import { Artwork, artClass, EmptyPanel } from '@/components/tabs/PlatformTab';
+import { artClass, EmptyPanel, ResultRow } from '@/components/tabs/PlatformTab';
 import { PLATFORMS } from '@/constants';
 import { useAppStore } from '@/store';
 import { buildDownloadRequest, spotifyDownloadUrl } from '@/lib/download';
 import { searchToItem, trackToItem, type ResultItem } from '@/lib/results';
-import { formatDuration } from '@/lib/format';
 
 type Source = 'youtube' | 'soundcloud' | 'spotify';
 const SOURCES: readonly Source[] = ['youtube', 'soundcloud', 'spotify']; // fixed nav order, never arrival order
@@ -134,7 +133,7 @@ export function UnifiedSearch({ query, onBusyChange, onEscapeToField }: UnifiedS
         addDownload(task);
         setQueuedCount((c) => c + 1);
         setQueuedIds((prev) => new Set(prev).add(item.id));
-        setQueuedAnnouncement(`Queued: ${item.title}`);
+        setQueuedAnnouncement(`Added: ${item.title}`);
         setTimeout(() => {
           setQueuedIds((prev) => { const next = new Set(prev); next.delete(item.id); return next; });
         }, 1200);
@@ -159,14 +158,14 @@ export function UnifiedSearch({ query, onBusyChange, onEscapeToField }: UnifiedS
 
   if (allSettled && allEmpty) {
     return (
-      <EmptyPanel icon={Search} title={`Nothing matched “${query}” on YouTube, SoundCloud or Spotify.`}>
-        <span className="text-[12.5px] text-text-secondary">Check the spelling — or paste a link directly.</span>
+      <EmptyPanel icon={Search} title={`Nothing matched “${query}” on YouTube, SoundCloud or Spotify`}>
+        <span className="text-xs text-text-secondary">Check the spelling, or paste a link directly</span>
       </EmptyPanel>
     );
   }
   if (allSettled && allError) {
     return (
-      <EmptyPanel icon={Alert} title="The search couldn’t reach YouTube, SoundCloud or Spotify.">
+      <EmptyPanel icon={Alert} title="The search couldn’t reach YouTube, SoundCloud or Spotify">
         <Button variant="ghost" size="sm" icon={Retry} onClick={() => SOURCES.forEach(run)}>
           Try again
         </Button>
@@ -188,9 +187,9 @@ export function UnifiedSearch({ query, onBusyChange, onEscapeToField }: UnifiedS
           <button
             type="button"
             onClick={() => setActiveTab('queue')}
-            className="no-drag inline-flex items-center gap-1.5 text-[12.5px] text-accent hover:text-accent-hover focus-visible:text-accent-hover transition-colors"
+            className="no-drag inline-flex items-center gap-2 text-xs text-accent hover:text-accent-hover focus-visible:text-accent-hover transition-colors"
           >
-            View queue <GoTo size={13} />
+            View queue <GoTo size={16} />
           </button>
         </div>
       )}
@@ -237,12 +236,12 @@ function SourceGroup({
   return (
     <section aria-labelledby={bandId} aria-busy={phase.k === 'loading'} role={phase.k === 'error' ? 'status' : undefined}>
       <div className="h-8 flex items-center gap-2 px-4 bg-bg-secondary/60 border-b border-border-soft">
-        <Icon size={14} className={`shrink-0 ${SOURCE_TEXT_CLASS[source]}`} />
-        <h3 id={bandId} className="text-[11.5px] font-medium text-text-secondary">{def.label}</h3>
+        <Icon size={16} className={`shrink-0 ${SOURCE_TEXT_CLASS[source]}`} />
+        <h3 id={bandId} className="text-2xs font-medium text-text-secondary">{def.label}</h3>
         <span className="font-mono text-2xs tabular-nums text-text-muted">{count}</span>
-        {phase.k === 'loading' && <Spinner size={12} className="text-text-muted" />}
+        {phase.k === 'loading' && <Spinner size={16} className="text-text-muted" />}
         {source === 'spotify' && (
-          <span className="ml-auto font-mono text-2xs tracking-[0.06em] uppercase text-text-muted">
+          <span className="ml-auto font-mono text-2xs text-text-muted">
             matched to best audio source
           </span>
         )}
@@ -259,8 +258,8 @@ function SourceGroup({
                 transition={{ duration: 1.4, repeat: Infinity, delay: i * 0.12, ease: 'easeInOut' }}
               />
               <div className="min-w-0 flex-1 space-y-2">
-                <div className="h-3.5 rounded bg-bg-tertiary" style={{ width: `${72 - i * 9}%` }} />
-                <div className="h-2.5 rounded bg-bg-tertiary" style={{ width: `${38 - i * 4}%` }} />
+                <div className="h-4 rounded bg-bg-tertiary" style={{ width: `${72 - i * 9}%` }} />
+                <div className="h-3 rounded bg-bg-tertiary" style={{ width: `${38 - i * 4}%` }} />
               </div>
             </div>
           ))}
@@ -268,13 +267,13 @@ function SourceGroup({
       )}
 
       {phase.k === 'empty' && (
-        <p className="h-12 flex items-center px-4 text-[12.5px] text-text-muted">No matches on {def.label}.</p>
+        <p className="h-12 flex items-center px-4 text-xs text-text-muted">No matches on {def.label}.</p>
       )}
 
       {phase.k === 'error' && (
         <div className="flex items-center gap-3 px-4 py-3">
           <Alert size={16} className="text-error shrink-0" />
-          <p className="flex-1 text-[12.5px] text-text-primary">{def.label} search failed</p>
+          <p className="flex-1 text-xs text-text-primary">{def.label} search failed</p>
           <Button variant="ghost" size="sm" icon={Retry} onClick={onRetry}>Retry</Button>
         </div>
       )}
@@ -304,50 +303,14 @@ function SourceGroup({
                 data-row
                 tabIndex={-1}
                 onClick={onExpand}
-                className="w-full flex items-center gap-2 px-4 h-10 text-[12.5px] text-text-secondary hover:bg-bg-hover focus-visible:bg-bg-hover transition-colors"
+                className="w-full flex items-center gap-2 px-4 h-10 text-xs text-text-secondary hover:bg-bg-hover focus-visible:bg-bg-hover transition-colors"
               >
-                Show {phase.items.length - ROW_CAP} more <ChevronDown size={14} />
+                Show {phase.items.length - ROW_CAP} more <ChevronDown size={16} />
               </button>
             </li>
           )}
         </ul>
       )}
     </section>
-  );
-}
-
-function ResultRow({
-  item, square, queued, isFirst, onDownload,
-}: { item: ResultItem; square: boolean; queued: boolean; isFirst: boolean; onDownload: () => void }) {
-  return (
-    <button
-      type="button"
-      data-row
-      tabIndex={isFirst ? 0 : -1}
-      aria-label={`Download ${item.title}${item.subtitle ? ` — ${item.subtitle}` : ''}`}
-      onClick={onDownload}
-      className="group w-full flex items-center gap-4 px-4 py-3 text-left transition-colors hover:bg-bg-hover focus-visible:bg-bg-hover"
-    >
-      <Artwork src={item.thumbnailUrl} square={square} className={artClass(square)} />
-      <span className="min-w-0 flex-1">
-        <span className="block text-[15px] font-medium text-text-primary truncate">{item.title}</span>
-        <span className="mt-0.5 flex items-center gap-2 text-[12.5px] text-text-secondary">
-          {item.subtitle && <span className="truncate">{item.subtitle}</span>}
-          {item.subtitle && item.duration > 0 && <span aria-hidden>·</span>}
-          {item.duration > 0 && <span className="font-mono tabular-nums shrink-0">{formatDuration(item.duration)}</span>}
-        </span>
-      </span>
-      <span
-        aria-hidden
-        className={`shrink-0 inline-flex items-center gap-1.5 h-8 px-3 rounded-md border text-[12.5px] font-medium transition-colors ${
-          queued
-            ? 'border-success text-success'
-            : 'border-border text-text-secondary group-hover:border-accent group-hover:text-accent group-focus-visible:border-accent group-focus-visible:text-accent'
-        }`}
-      >
-        {queued ? <Check size={14} /> : <Download size={14} />}
-        {queued ? 'Queued' : 'Get'}
-      </span>
-    </button>
   );
 }

@@ -17,7 +17,7 @@ export function Toggle({ checked, onChange, label, disabled, className = '' }: T
       aria-label={label}
       disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={`no-drag relative w-9 h-5 rounded-full transition-colors disabled:opacity-50 ${
+      className={`no-drag relative w-9 h-5 rounded-full after:absolute after:-inset-x-1 after:-inset-y-1.5 after:content-[''] transition-colors disabled:opacity-50 ${
         checked ? 'bg-accent' : 'bg-bg-hover'
       } ${className}`}
     >

@@ -1,11 +1,9 @@
 // Home / Dashboard tab.
 //
-// Two parts, in this order and no other: the paste field — the product — spans
-// the full content column at the top and keeps its own state model, and a bento
-// of four cells sits underneath it. There is deliberately ONE layout: no
-// first-run / returning split, because a screen that rearranges itself as you
-// use it is a screen you have to re-learn. Each cell carries its own empty
-// state instead, so the same four boxes read correctly on a fresh install.
+// Two parts: the paste field — the product — spans the full content column at
+// the top and keeps its own state model; underneath it, a bento of counters and
+// recent files that appears only once there is something to report. On a fresh
+// install the field is the whole screen plus one line of supported sites.
 //
 // The month figures come from `stats.get()` — real monthly counters kept in the
 // main process. They are NOT derived from the `downloads` store: that store is
@@ -17,13 +15,13 @@
 import { useState, useCallback, useEffect, useRef, type ReactNode } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { EASE_OUT_EXPO } from '@/components/ui/motion';
-import { Link, GoTo, Forward, OpenFolder, Alert } from '@/components/ui/icons';
+import { Link, Forward, OpenFolder, Alert, Premium } from '@/components/ui/icons';
 import { useAppStore } from '@/store';
-import { looksLikeUrl } from '@/components/tabs/PlatformTab';
+import { looksLikeUrl, lookupVerb } from '@/components/tabs/PlatformTab';
 import { UnifiedSearch } from '@/components/UnifiedSearch';
 import { SpeedSparkline } from '@/components/SpeedSparkline';
 import { PLATFORMS, SOURCE_META } from '@/constants';
-import type { PlatformKey, TabKey } from '@/constants';
+import type { TabKey } from '@/constants';
 import { Button } from '@/components/ui';
 import { formatBytes, formatDuration } from '@/lib/format';
 import { useTierLocks, premiumCopy } from '@/lib/tier';
@@ -54,25 +52,6 @@ const PLATFORM_COLOR: Record<string, string> = {
   spotify: 'var(--color-spotify)',
   soundcloud: 'var(--color-soundcloud)',
   reels: 'var(--color-reels)',
-};
-
-// The four sources do genuinely different jobs, so they don't get one repeated
-// card template. YouTube leads: it's the only source that yields both video and
-// audio, and it's where plain-text input is routed to be searched — so it gets
-// the feature block and its capability list. The other three are compact rows,
-// each carrying the one fact that distinguishes it (Spotify's search bridge is
-// stated outright rather than hidden — it's why a Spotify grab is best-effort).
-// `specs` are label/value pairs rather than a bulleted list: the labels line up
-// into a column the eye can scan, and the values stop repeating the word the
-// label already said ("Video to 4K" → Video · Up to 4K).
-const SOURCE_COPY: Record<PlatformKey, { blurb: string; specs?: [string, string][]; note?: string }> = {
-  youtube: {
-    blurb: 'The only source that gives you both the video and the audio, and where a plain search lands.',
-    specs: [['Video', 'Up to 4K · MP4'], ['Audio', 'Up to 320 kbps · FLAC'], ['Batch', 'Playlists & channels']],
-  },
-  spotify: { blurb: 'Tracks, albums and playlists, tagged from Spotify’s own metadata.', note: 'matched via search' },
-  soundcloud: { blurb: 'Audio only: full-quality streams, including long artist sets.' },
-  reels: { blurb: 'TikTok, Reels and Shorts at original resolution, no watermark.' },
 };
 
 // Terminal statuses: not counted as "active"
@@ -123,7 +102,7 @@ function Cell({ title, aside, className = '', index, children }: CellProps) {
             (the month figure is 44px), so it stays small and fixed. Scaling it
             with the window would also change every cell's height at each
             breakpoint, which is exactly what the grid must not do. */}
-        <h2 className="text-[15px] font-semibold tracking-tight text-text-primary">{title}</h2>
+        <h2 className="text-base font-medium text-text-primary">{title}</h2>
         {aside}
       </div>
       {/* The body owns the leftover height rather than sitting at the top of it:
@@ -160,16 +139,16 @@ function MonthBar({ label, value, max, lead }: { label: string; value: number; m
   const ink = lead ? 'text-text-primary' : 'text-text-secondary';
   return (
     <div className="min-w-0">
-      <div className="flex items-baseline justify-between gap-3 mb-1.5">
-        <span className={`truncate text-[11.5px] ${ink}`}>{label}</span>
-        <span className={`shrink-0 font-mono text-[11.5px] tabular-nums ${ink}`}>{value}</span>
+      <div className="flex items-baseline justify-between gap-3 mb-2">
+        <span className={`truncate text-2xs ${ink}`}>{label}</span>
+        <span className={`shrink-0 font-mono text-2xs tabular-nums ${ink}`}>{value}</span>
       </div>
       <span className="block h-2 rounded-full bg-bg-hover overflow-hidden">
         <motion.span
           className="block h-full rounded-full origin-left"
           // Width is static; only scaleX animates — a growing bar must not be a
           // layout animation.
-          style={{ width: `${pct}%`, background: lead ? 'var(--color-accent)' : alpha('var(--color-accent)', 32) }}
+          style={{ width: `${pct}%`, background: lead ? 'var(--color-accent)' : 'var(--color-border-control)' }}
           initial={{ scaleX: reduce ? 1 : 0 }}
           animate={{ scaleX: 1 }}
           transition={{ duration: reduce ? 0 : 0.36, delay: reduce ? 0 : 0.12, ease: EASE_OUT_EXPO }}
@@ -202,10 +181,10 @@ function MonthCell({ stats, index }: StatsCellProps) {
       // two buckets (DownloadStats = current + previous), so a period control
       // would be a control with nothing behind it. The window is stated instead,
       // and both months it has are drawn at once.
-      aside={cur ? <span className="text-[11.5px] text-text-secondary">{monthName(cur.month)}</span> : undefined}
+      aside={cur ? <span className="text-2xs text-text-secondary">{monthName(cur.month)}</span> : undefined}
     >
       {stats.state === 'failed' ? (
-        <p className="text-[13px] text-text-secondary leading-relaxed max-w-[52ch]">
+        <p className="text-sm text-text-secondary leading-relaxed max-w-[52ch]">
           This month’s count couldn’t be read. Your downloads are unaffected.
         </p>
       ) : !cur ? (
@@ -213,18 +192,18 @@ function MonthCell({ stats, index }: StatsCellProps) {
         <div className="flex flex-col gap-5 @min-[1500px]:flex-row @min-[1500px]:items-center @min-[1500px]:justify-between @min-[1500px]:gap-10">
           <span className="sr-only" role="status">Counting this month’s files…</span>
           <div className="min-w-0">
-            <Ghost className="h-[38px] w-24" />
+            <Ghost className="h-10 w-24" />
             <Ghost className="mt-3 h-3 w-44" />
           </div>
-          <div className="flex flex-col gap-3.5 w-full max-w-[520px] @min-[1500px]:flex-1 @min-[1500px]:max-w-[46%] @min-[1500px]:min-w-[260px]">
+          <div className="flex flex-col gap-4 w-full max-w-[520px] @min-[1500px]:flex-1 @min-[1500px]:max-w-[46%] @min-[1500px]:min-w-[260px]">
             <Ghost className="h-2 w-full" />
             <Ghost className="h-2 w-full" />
           </div>
         </div>
       ) : cur.files === 0 ? (
-        <div className="flex flex-col gap-1.5">
-          <p className="text-[15px] text-text-primary">Nothing downloaded yet this month.</p>
-          <p className="text-[13px] text-text-secondary leading-relaxed max-w-[52ch]">
+        <div className="flex flex-col gap-2">
+          <p className="text-base text-text-primary">Nothing downloaded yet this month</p>
+          <p className="text-sm text-text-secondary leading-relaxed max-w-[52ch]">
             {prev
               ? `Last month you kept ${prev.files} ${prev.files === 1 ? 'file' : 'files'} (${formatBytes(prev.bytes)}).`
               : 'Paste a link above; the count starts with your first file.'}
@@ -239,22 +218,22 @@ function MonthCell({ stats, index }: StatsCellProps) {
             {/* One figure leads the cell. The size and the volume are the same
                 fact at two scales, so they sit on one baseline with a 3:1 size
                 step between them rather than competing at 40 and 15. */}
-            <p className="flex items-baseline gap-2.5">
+            <p className="flex items-baseline gap-3">
               <span className="text-[44px] font-semibold leading-none tracking-[-0.02em] tabular-nums text-text-primary">
                 {cur.files}
               </span>
-              <span className="text-[14px] text-text-secondary">{cur.files === 1 ? 'file' : 'files'}</span>
+              <span className="text-sm text-text-secondary">{cur.files === 1 ? 'file' : 'files'}</span>
             </p>
             {/* The comparison is a sentence, not a badge. An absolute count beats
                 a percentage at these magnitudes — "12 more" is a number you can
                 picture; "+35%" of 34 is arithmetic. Neutral either way:
                 downloading less than last month isn't a failure. */}
-            <p className="mt-2.5 text-[12.5px] leading-relaxed text-text-secondary max-w-[44ch]">
+            <p className="mt-3 text-xs leading-relaxed text-text-secondary max-w-[44ch]">
               <span className="font-mono tabular-nums">{formatBytes(cur.bytes)}</span>
               {prev && diff !== null
                 ? diff === 0
-                  ? ` on disk — the same count as ${monthName(prev.month)}.`
-                  : ` on disk — ${Math.abs(diff)} ${diff > 0 ? 'more' : 'fewer'} than ${monthName(prev.month)}.`
+                  ? ` on disk, the same count as ${monthName(prev.month)}.`
+                  : ` on disk, ${Math.abs(diff)} ${diff > 0 ? 'more' : 'fewer'} than ${monthName(prev.month)}.`
                 : ' on disk. First month on record, so there is nothing to compare against yet.'}
             </p>
           </div>
@@ -265,7 +244,7 @@ function MonthCell({ stats, index }: StatsCellProps) {
               // Capped, because at the one-column tier this cell is ~800px wide
               // and an 8px bar drawn across all of it is a hairline, not a
               // length you can compare. A bar has a legible measure like text.
-              className="flex flex-col gap-3.5 max-w-[520px] @min-[1500px]:flex-1 @min-[1500px]:max-w-[46%] @min-[1500px]:min-w-[260px]"
+              className="flex flex-col gap-4 max-w-[520px] @min-[1500px]:flex-1 @min-[1500px]:max-w-[46%] @min-[1500px]:min-w-[260px]"
             >
               <MonthBar label={monthName(cur.month)} value={cur.files} max={max} lead />
               <MonthBar label={monthName(prev.month)} value={prev.files} max={max} />
@@ -321,30 +300,30 @@ function SplitCell({ stats, index }: StatsCellProps) {
       // proportion that doesn't name its unit or its denominator is a number you
       // have to guess at.
       aside={total > 0 ? (
-        <span className="text-[11.5px] text-text-secondary">
+        <span className="text-2xs text-text-secondary">
           of <span className="font-mono tabular-nums">{total}</span> files
         </span>
       ) : undefined}
     >
       {stats.state === 'failed' ? (
-        <p className="text-[13px] text-text-secondary leading-relaxed max-w-[52ch]">
-          The platform split isn’t available right now.
+        <p className="text-sm text-text-secondary leading-relaxed max-w-[52ch]">
+          The source split isn’t available right now
         </p>
       ) : stats.state === 'loading' ? (
         // Same three-row shape the real chart takes, so nothing jumps on arrival.
-        <div className="flex flex-col gap-3.5 max-w-[560px]">
+        <div className="flex flex-col gap-4 max-w-[560px]">
           <span className="sr-only" role="status">Counting where this month’s files came from…</span>
           {[0, 1, 2].map((i) => (
             <div key={i}>
-              <Ghost className="h-3 w-24 mb-1.5" />
+              <Ghost className="h-3 w-24 mb-2" />
               <Ghost className="h-1.5 w-full" />
             </div>
           ))}
         </div>
       ) : rows.length === 0 ? (
-        <div className="flex flex-col gap-3.5 max-w-[560px]">
-          <p className="mt-0.5 text-[13px] text-text-secondary leading-relaxed max-w-[52ch]">
-            Once files start landing, this splits them across YouTube, Spotify, SoundCloud and short-form.
+        <div className="flex flex-col gap-4 max-w-[560px]">
+          <p className="mt-0.5 text-sm text-text-secondary leading-relaxed max-w-[52ch]">
+            Once you have downloads, this shows which sources they came from.
           </p>
         </div>
       ) : (
@@ -360,18 +339,18 @@ function SplitCell({ stats, index }: StatsCellProps) {
           // Same cap as the month bars: at the one-column tier the cell is ~800px
           // wide, which strands the percentage a screen away from the name it
           // belongs to and flattens every bar into a rule.
-          className="flex flex-col gap-3.5 max-w-[560px]"
+          className="flex flex-col gap-4 max-w-[560px]"
           role="img"
           aria-label={`Share of ${total} files by source: ${rows.map((r) => `${r.label} ${Math.round(r.pct)} percent, ${r.count}`).join('; ')}`}
         >
           {rows.map((r, i) => (
             <li key={r.key} className="min-w-0">
-              <div className="flex items-baseline justify-between gap-3 mb-1.5">
-                <span className={`flex items-center gap-2 min-w-0 text-[12.5px] ${i === 0 ? 'text-text-primary' : 'text-text-secondary'}`}>
+              <div className="flex items-baseline justify-between gap-3 mb-2">
+                <span className={`flex items-center gap-2 min-w-0 text-xs ${i === 0 ? 'text-text-primary' : 'text-text-secondary'}`}>
                   <span aria-hidden className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: r.color }} />
                   <span className="truncate">{r.label}</span>
                 </span>
-                <span className="shrink-0 font-mono text-[11.5px] tabular-nums">
+                <span className="shrink-0 font-mono text-2xs tabular-nums">
                   <span className={i === 0 ? 'text-text-primary' : 'text-text-secondary'}>{Math.round(r.pct)}%</span>
                   <span className="text-text-muted"> · {r.count}</span>
                 </span>
@@ -391,88 +370,6 @@ function SplitCell({ stats, index }: StatsCellProps) {
         </ul>
       )}
     </Cell>
-  );
-}
-
-// ── Source entries ────────────────────────────────────────────────────────────
-// Inside a cell these are flat rows, not cards: a bordered card inside a
-// bordered cell is a nested box, and the frame is already doing that job.
-// Affordance comes from the hover wash and the arrow, not from a second border.
-
-interface SourceProps {
-  def: (typeof PLATFORMS)[number];
-  onOpen: () => void;
-}
-
-function SourceFeature({ def, onOpen }: SourceProps) {
-  const color = PLATFORM_COLOR[def.key] ?? 'var(--color-accent)';
-  const copy = SOURCE_COPY[def.key];
-  const Icon = def.icon;
-  return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className="no-drag group relative flex flex-col rounded-md p-3 -m-1 text-left hover:bg-bg-hover focus-visible:bg-bg-hover transition-colors duration-150 cursor-pointer"
-    >
-      <GoTo
-        size={16}
-        className="absolute top-3 right-3 text-text-muted transition-transform duration-200 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-focus-visible:translate-x-0.5 group-focus-visible:-translate-y-0.5"
-      />
-      <span className="flex items-center gap-2.5 mb-2">
-        <Icon size={22} style={{ color }} />
-        <span className="text-[17px] font-semibold text-text-primary">{def.label}</span>
-      </span>
-      <span className="block text-[13px] text-text-secondary leading-relaxed max-w-[42ch]">{copy.blurb}</span>
-      {/* A spec table, not a bulleted list. The three coloured dots that used to
-          lead these lines were decoration — the block's identity is already the
-          logo above — so the leading column carries a tracked label instead,
-          which is a thing the eye can scan down. Past ~1500px the pairs lie down
-          in three columns, so the extra width buys shape rather than emptiness. */}
-      <span className="mt-4 pt-3.5 border-t border-border-soft grid gap-2 @min-[1500px]:grid-cols-3 @min-[1500px]:gap-x-6">
-        {copy.specs?.map(([k, v]) => (
-          <span key={k} className="flex items-baseline gap-3 min-w-0 @min-[1500px]:flex-col @min-[1500px]:gap-1">
-            <span className="w-11 shrink-0 text-[11px] uppercase tracking-[0.1em] text-text-muted @min-[1500px]:w-auto">
-              {k}
-            </span>
-            <span className="min-w-0 truncate text-[12px] text-text-secondary">{v}</span>
-          </span>
-        ))}
-      </span>
-    </button>
-  );
-}
-
-// min-w-0 on the button: as a grid item its automatic minimum is min-content
-// (icon + label + note + arrow ≈ 473px), which outvotes w-full and pushes the
-// track past the content column at 960. The truncates inside do the rest.
-function SourceRow({ def, onOpen }: SourceProps) {
-  const color = PLATFORM_COLOR[def.key] ?? 'var(--color-accent)';
-  const copy = SOURCE_COPY[def.key];
-  const Icon = def.icon;
-  return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className="no-drag group flex items-center gap-3 w-full min-w-0 rounded-md px-3 py-2.5 text-left hover:bg-bg-hover focus-visible:bg-bg-hover transition-colors duration-150 cursor-pointer"
-    >
-      {/* The logo alone, not a logo inside a tinted plate. Three filled colour
-          plates in a cell that already carries four brand hues is colour spent
-          on chrome; the mark itself is what says "Spotify". */}
-      <Icon size={20} style={{ color }} className="shrink-0" />
-      <span className="min-w-0 flex-1">
-        <span className="flex items-baseline gap-2 min-w-0">
-          <span className="text-[14px] font-semibold text-text-primary">{def.label}</span>
-          {copy.note && (
-            <span className="text-[11px] text-text-muted truncate">{copy.note}</span>
-          )}
-        </span>
-        <span className="block text-[12px] text-text-secondary leading-snug truncate">{copy.blurb}</span>
-      </span>
-      <GoTo
-        size={15}
-        className="text-text-muted shrink-0 transition-transform duration-200 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-focus-visible:translate-x-0.5 group-focus-visible:-translate-y-0.5"
-      />
-    </button>
   );
 }
 
@@ -533,18 +430,13 @@ function RecentTile({ task, onQueue, lead = false, className = '' }: RecentTileP
         ) : (
           <div
             className="absolute inset-0"
-            style={{ background: `linear-gradient(135deg, ${alpha(color, 55)}, var(--color-bg-tertiary))` }}
+            style={{ background: `color-mix(in oklch, ${color} 22%, var(--color-bg-tertiary))` }}
           />
         )}
 
         {/* Resting chips — they step aside for the actions. */}
-        <span
-          aria-hidden
-          className="absolute top-2 left-2 w-2 h-2 rounded-full transition-opacity duration-150 group-hover:opacity-0 group-focus-within:opacity-0"
-          style={{ background: color, boxShadow: `0 0 7px ${color}` }}
-        />
         {task.duration > 0 && (
-          <span className="absolute top-2 right-2 font-mono text-2xs tabular-nums text-text-primary bg-bg-primary/[0.78] rounded px-1.5 py-0.5 transition-opacity duration-150 group-hover:opacity-0 group-focus-within:opacity-0">
+          <span className="absolute top-2 right-2 font-mono text-2xs tabular-nums text-text-primary bg-bg-primary/[0.78] rounded px-2 py-0.5 transition-opacity duration-150 group-hover:opacity-0 group-focus-within:opacity-0">
             {formatDuration(task.duration)}
           </span>
         )}
@@ -556,7 +448,7 @@ function RecentTile({ task, onQueue, lead = false, className = '' }: RecentTileP
             className="absolute inset-x-0 bottom-0 p-3 pt-8 transition-opacity duration-150 group-hover:opacity-0 group-focus-within:opacity-0"
             style={{ background: `linear-gradient(to top, var(--color-media-scrim), transparent)` }}
           >
-            <p className="text-[13px] font-medium leading-snug line-clamp-2" style={{ color: overlayInk }}>
+            <p className="text-sm font-medium leading-snug line-clamp-2" style={{ color: overlayInk }}>
               {title}
             </p>
             <p
@@ -577,11 +469,11 @@ function RecentTile({ task, onQueue, lead = false, className = '' }: RecentTileP
           style={{ background: 'var(--color-media-scrim)' }}
         >
           {lead && (
-            <p className="text-[13px] font-medium leading-snug line-clamp-2" style={{ color: overlayInk }}>
+            <p className="text-sm font-medium leading-snug line-clamp-2" style={{ color: overlayInk }}>
               {title}
             </p>
           )}
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-2">
             {/* Deliberately not disabled when the path is missing: a dead button
                 explains nothing, and a file can vanish after the button renders.
                 Clicking always answers — with the folder, or with the reason. */}
@@ -589,16 +481,16 @@ function RecentTile({ task, onQueue, lead = false, className = '' }: RecentTileP
               type="button"
               onClick={() => void revealFile(filePath, task.title)}
               aria-label={`Open the folder holding “${title}”`}
-              className="no-drag inline-flex items-center gap-1.5 h-7 px-2 rounded text-[11px] font-medium bg-accent text-on-accent hover:bg-accent-hover focus-visible:bg-accent-hover transition-colors duration-150"
+              className="no-drag inline-flex items-center gap-2 h-7 px-2 rounded text-2xs font-medium bg-accent text-on-accent hover:bg-accent-hover focus-visible:bg-accent-hover transition-colors duration-150"
             >
-              <OpenFolder size={13} />
+              <OpenFolder size={16} />
               Open
             </button>
             <button
               type="button"
               onClick={onQueue}
               aria-label={`Show “${title}” in Downloads`}
-              className="no-drag inline-flex items-center justify-center h-7 px-2 rounded border text-[11px] transition-colors duration-150"
+              className="no-drag inline-flex items-center justify-center h-7 px-2 rounded border text-2xs transition-colors duration-150"
               style={{ color: overlayInk, borderColor: alpha(overlayInk, 30) }}
             >
               Details
@@ -611,8 +503,8 @@ function RecentTile({ task, onQueue, lead = false, className = '' }: RecentTileP
           own colour, which made four hues of body text out of a field the dot on
           the artwork already encodes; it is neutral now. */}
       {!lead && (
-        <div className="mt-2.5 px-0.5">
-          <p className="text-[12.5px] font-medium text-text-primary leading-snug truncate">{title}</p>
+        <div className="mt-3 px-0.5">
+          <p className="text-xs font-medium text-text-primary leading-snug truncate">{title}</p>
           <div className="flex justify-between gap-2 mt-1 font-mono text-2xs tabular-nums text-text-secondary">
             <span className="truncate">{task.format.toUpperCase()}</span>
             <span className="shrink-0">{formatBytes(task.progress.downloaded)}</span>
@@ -676,7 +568,12 @@ export function Dashboard() {
   // Most recent first. Seven is the widest row the 3-column grid shows once the
   // newest file takes two of the eight tracks; the narrower tiers hide the tail
   // rather than wrap it into a ragged second row.
+  // Home stays quiet until there is something to report: no counters, no
+  // finished file, nothing in flight. Loading counts as quiet so ghosts never flash.
+  const hasStats = stats.state === 'ready' && (stats.current.files > 0 || !!stats.previous?.files);
   const recentTiles = [...allTasks].filter((t) => t.progress.status === 'done').reverse().slice(0, 7);
+
+  const quiet = !hasStats && recentTiles.length === 0 && activeCount === 0;
 
   // What the field is holding, read locally — no detection call is made until
   // the user commits, so this stays a pure render of the typed text.
@@ -685,7 +582,6 @@ export function Dashboard() {
   const linkCount = tokens.length > 1 && tokens.every(looksLikeUrl) ? tokens.length : 0;
   const overBatchLimit = locks.batchLimit !== null && linkCount > locks.batchLimit;
   // One tone drives the link-count chip: caution once the batch is over the ceiling.
-  const batchTone = overBatchLimit ? 'var(--color-warning)' : 'var(--color-accent)';
 
   // Batch: several links at once (drop / multi-line paste) download straight
   // to the queue with saved defaults — batching is the express lane.
@@ -730,7 +626,7 @@ export function Dashboard() {
       } catch { /* skip the bad link, keep batching */ }
     }
     if (started > 0) setActiveTab('queue');
-    else setError('No downloadable links found.');
+    else setError('No downloadable links found. Check what you pasted and try again.');
   }, [setActiveTab, locks]);
 
   const handleFetch = useCallback(async (override?: string) => {
@@ -811,15 +707,15 @@ export function Dashboard() {
   const status = (() => {
     if (error) {
       return (
-        <span className="inline-flex items-start gap-1.5 text-error">
-          <Alert size={14} className="shrink-0 mt-px" />
+        <span className="inline-flex items-start gap-2 text-error">
+          <Alert size={16} className="shrink-0 mt-px" />
           {error}
         </span>
       );
     }
-    if (dragging) return <span className="text-accent">Drop to queue every link you’re holding</span>;
+    if (dragging) return <span className="text-accent">Drop to add every link</span>;
     if (detecting) {
-      return <span className="text-text-secondary">{linkCount > 1 ? `Queueing ${linkCount} links…` : 'Reading the link…'}</span>;
+      return <span className="text-text-secondary">{linkCount > 1 ? `Adding ${linkCount} links…` : 'Reading the link…'}</span>;
     }
     if (searchBusy) {
       return <span className="text-text-secondary">Searching YouTube, SoundCloud and Spotify…</span>;
@@ -832,41 +728,44 @@ export function Dashboard() {
       return (
         <span className="inline-flex items-center gap-2 flex-wrap text-warning">
           {premiumCopy.batch()}
-          <button
-            type="button"
-            onClick={locks.openUpgrade}
-            className="no-drag underline underline-offset-2 text-accent hover:text-accent-hover focus-visible:text-accent-hover transition-colors"
-          >
+          <Button variant="ghost" size="sm" icon={Premium} onClick={locks.openUpgrade}>
             See plans
-          </button>
+          </Button>
         </span>
       );
     }
     if (linkCount > 1) {
-      return <span className="text-text-secondary">{linkCount} links ready. Enter queues them all.</span>;
+      return <span className="text-text-secondary">{linkCount} links ready. Press Enter to download them all</span>;
     }
     if (trimmed && !looksLikeUrl(trimmed)) {
-      return <span className="text-text-secondary">Enter searches YouTube, SoundCloud and Spotify</span>;
+      return <span className="text-text-secondary">Not a link. Press Enter to search YouTube, SoundCloud and Spotify for it</span>;
     }
+    // Rest state: what will happen (format, folder) on the left, how to start on the right.
+    const folder = outputDir?.split(/[\/]/).filter(Boolean).pop() ?? outputDir;
     return (
-      <span className="text-text-secondary">
-        <kbd className="font-mono text-2xs bg-bg-surface border border-border rounded px-1.5 py-0.5 text-text-secondary">Ctrl</kbd>
-        {' + '}
-        <kbd className="font-mono text-2xs bg-bg-surface border border-border rounded px-1.5 py-0.5 text-text-secondary">V</kbd>
-        {' pastes and fetches. '}
-        {/* Where the file goes and in what, stated before the first download. */}
+      <span className="flex flex-wrap items-center justify-between gap-x-6 gap-y-1 text-text-secondary">
         {outputDir && (
-          <>
-            {`Saves ${(defaultFormat ?? 'mp3').toUpperCase()} audio to `}
-            <span className="font-mono text-text-primary" title={outputDir}>{outputDir}</span>
+          <span>
+            {`Audio saves as ${(defaultFormat ?? 'mp3').toUpperCase()}, video as MP4, in `}
+            <span className="text-text-primary" title={outputDir}>{folder}</span>
             {' '}
-            <button type="button" aria-label="Change output folder" onClick={() => setActiveTab('settings')} className="no-drag text-accent hover:underline focus-visible:focus-ring rounded">
+            <button type="button" aria-label="Change output folder and format" onClick={() => setActiveTab('settings')} className="no-drag text-accent hover:underline focus-visible:focus-ring rounded">
               Change
             </button>
-            {'. '}
-          </>
+          </span>
         )}
-        {hotkey && `${hotkey} grabs a copied link from any app.`}
+        <span>
+          <kbd className="keycap">Ctrl</kbd>{' + '}<kbd className="keycap">V</kbd>{' pastes a link'}
+          {hotkey && (
+            <>
+              {'. '}
+              {hotkey.replace('CommandOrControl', 'Ctrl').split('+').map((k, i) => (
+                <span key={k}>{i > 0 && '+'}<kbd className="keycap">{k}</kbd></span>
+              ))}
+              {' grabs one from any app'}
+            </>
+          )}
+        </span>
       </span>
     );
   })();
@@ -883,7 +782,7 @@ export function Dashboard() {
     //     padding there is 13% of the viewport, so it is trimmed and the grid starts
     //     peeking above the fold instead of being invisible.
     <div
-      className="w-full max-w-[1720px] mx-auto px-8 @min-[1100px]:px-10 @min-[1600px]:px-14 py-10 [@media(max-height:720px)]:py-7"
+      className="w-full max-w-[1600px] mx-auto px-8 @min-[1100px]:px-10 @min-[1600px]:px-14 py-10 [@media(max-height:720px)]:py-7"
       onDragEnter={() => { dragDepth.current += 1; setDragging(true); }}
       onDragLeave={() => { dragDepth.current -= 1; if (dragDepth.current <= 0) endDrag(); }}
       onDragOver={(e) => e.preventDefault()}
@@ -901,19 +800,19 @@ export function Dashboard() {
           month cell, where each number has exactly one home. */}
       <div className="flex flex-wrap items-center justify-between gap-x-8 gap-y-3 mb-6">
         <h1 className="text-h1 font-semibold leading-[1.05] tracking-tight text-text-primary">
-          Paste a link. Get the <em className="not-italic text-accent">file.</em>
+          Paste a link. Get the file.
         </h1>
         {activeCount > 0 && (
           <button
             type="button"
             onClick={() => setActiveTab('queue')}
-            className="no-drag inline-flex items-center gap-2.5 h-9 pl-3 pr-3.5 rounded-md border border-border-soft bg-bg-secondary shadow-sm hover:bg-bg-hover focus-visible:bg-bg-hover transition-colors duration-150"
+            className="no-drag inline-flex items-center gap-3 h-9 pl-3 pr-4 rounded-md border border-border-soft bg-bg-secondary shadow-sm hover:bg-bg-hover focus-visible:bg-bg-hover transition-colors duration-150"
           >
             <span aria-hidden className="pulse-dot w-1.5 h-1.5 rounded-full shrink-0 bg-accent" />
-            <span className="text-[13px] text-text-primary">
+            <span className="text-sm text-text-primary">
               <span className="font-mono tabular-nums">{activeCount}</span> in flight
             </span>
-            <Forward size={13} className="text-text-muted" />
+            <Forward size={16} className="text-text-muted" />
           </button>
         )}
       </div>
@@ -925,7 +824,7 @@ export function Dashboard() {
           rule on error. That keeps focus (the ring), state (the strip) and
           explanation (the status line) on three separate channels. */}
       <div
-        className={`field-shell relative overflow-hidden flex items-center gap-3 h-[62px] pl-5 pr-2.5 rounded-lg border transition-[border-color,box-shadow,background-color] duration-150 ${
+        className={`field-shell relative overflow-hidden flex items-center gap-3 h-16 pl-5 pr-3 rounded-lg border transition-[border-color,box-shadow,background-color] duration-150 ${
           dragging ? 'border-accent bg-accent-soft' : 'border-border bg-bg-tertiary'
         }`}
       >
@@ -939,8 +838,8 @@ export function Dashboard() {
             suppression is scoped to focus-visible, not blanket `outline-none`. */}
         <input
           ref={fieldRef}
-          className="no-drag flex-1 min-w-0 bg-transparent focus-visible:outline-none text-text-primary placeholder:text-text-muted text-[16px]"
-          placeholder="Paste a link from YouTube, Spotify, SoundCloud, Vimeo and more…"
+          className="no-drag flex-1 min-w-0 bg-transparent focus-visible:outline-none text-text-primary placeholder:text-text-muted text-base"
+          placeholder="Paste a link or search"
           aria-label="Paste a link"
           aria-invalid={!!error}
           aria-describedby="paste-status"
@@ -977,12 +876,11 @@ export function Dashboard() {
         {/* A multi-link paste is an object, not a hint — it gets a count in the field. */}
         {linkCount > 1 && (
           <span
-            className={`shrink-0 font-mono text-2xs tracking-[0.06em] rounded px-2 py-1 ${
-              overBatchLimit ? 'text-warning' : 'text-accent'
+            className={`shrink-0 font-mono text-2xs tabular-nums ${
+              overBatchLimit ? 'text-warning' : 'text-text-secondary'
             }`}
-            style={{ background: alpha(batchTone, 14) }}
           >
-            {linkCount} LINKS
+            {linkCount} links
           </span>
         )}
 
@@ -999,7 +897,7 @@ export function Dashboard() {
           icon={Forward}
           className="shrink-0"
         >
-          Fetch
+          {linkCount > 1 ? 'Download' : lookupVerb(trimmed)}
         </Button>
 
         <span aria-hidden className="absolute inset-x-0 bottom-0 h-[2px] overflow-hidden">
@@ -1024,7 +922,7 @@ export function Dashboard() {
 
       {/* ── The bento ─────────────────────────────────────────────────────────
           One grid for everyone; the cells carry their own empty states.
-          Column counts are keyed to `<main>`, not the viewport: the fixed 68px
+          Column counts are keyed to `<main>`, not the viewport: the fixed 76px
           rail makes viewport breakpoints fire a rail's width early.
             ·  <1000px (960px window ⇒ ~875px column): ONE column, everything
                stacked. Chosen over pairing tiles: at that width a pair puts two
@@ -1054,6 +952,24 @@ export function Dashboard() {
             onEscapeToField={() => fieldRef.current?.focus()}
           />
         </div>
+      ) : quiet ? (
+        // Nothing to report yet: the field is the whole screen. One line says
+        // what it takes; the rest of the dashboard arrives with the first file.
+        <div className="mt-8 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-text-secondary">
+          <span>Works with</span>
+          {PLATFORMS.map((p) => (
+            <button
+              key={p.key}
+              type="button"
+              onClick={() => setActiveTab(p.key)}
+              className="no-drag inline-flex items-center gap-2 h-8 px-2 rounded-md text-text-secondary hover:text-text-primary hover:bg-bg-hover focus-visible:bg-bg-hover transition-colors duration-150"
+            >
+              <p.icon size={16} style={{ color: PLATFORM_COLOR[p.key] }} />
+              {p.label}
+            </button>
+          ))}
+          <span>and most other video and music sites.</span>
+        </div>
       ) : (
       <div className="mt-8 grid gap-4 @min-[1000px]:grid-cols-2 @min-[1500px]:grid-cols-3">
         {activeCount > 0 && (
@@ -1064,34 +980,24 @@ export function Dashboard() {
         <MonthCell stats={stats} index={0} />
         <SplitCell stats={stats} index={1} />
 
-        <Cell
-          index={2}
-          title="Recent downloads"
-          className="@min-[1000px]:col-span-2 @min-[1500px]:col-span-3"
-          aside={recentTiles.length > 0 ? (
-            <button
-              type="button"
-              className="no-drag text-[12.5px] text-text-secondary hover:text-text-primary focus-visible:text-text-primary inline-flex items-center gap-1 transition-colors duration-150"
-              onClick={() => setActiveTab('queue')}
-            >
-              View all <Forward size={13} />
-            </button>
-          ) : undefined}
-        >
-          {recentTiles.length === 0 ? (
-            // Empty: one message, one action. No ghost tiles that read as loading.
-            <div className="flex flex-wrap items-center gap-3">
-              <p className="text-[13px] text-text-secondary leading-relaxed max-w-[62ch]">
-                Finished downloads land here, newest first. Each one is a click away from the file on disk.
-              </p>
-              <Button variant="ghost" size="sm" onClick={() => fieldRef.current?.focus()}>Paste a link</Button>
-            </div>
-          ) : (
-            // A fitted grid, never a horizontal scroller: the tile track is what
-            // used to run past the right edge of the window. The tail is hidden
-            // rather than wrapped, so every tier shows one full row — 4 items at
-            // the minimum width, 4 once the poster takes two of five tracks, 7
-            // across eight tracks.
+        {recentTiles.length > 0 && (
+          <Cell
+            index={2}
+            title="Recent downloads"
+            className="@min-[1000px]:col-span-2 @min-[1500px]:col-span-3"
+            aside={(
+              <button
+                type="button"
+                className="no-drag text-xs text-text-secondary hover:text-text-primary focus-visible:text-text-primary inline-flex items-center gap-1 min-h-6 transition-colors duration-150"
+                onClick={() => setActiveTab('queue')}
+              >
+                View all <Forward size={16} />
+              </button>
+            )}
+          >
+            {/* A fitted grid, never a horizontal scroller: the tile track is what
+                used to run past the right edge of the window. The tail is hidden
+                rather than wrapped, so every tier shows one full row. */}
             <div className="grid gap-3 grid-cols-4 @min-[1000px]:grid-cols-5 @min-[1500px]:grid-cols-8">
               {recentTiles.map((task, i) => (
                 <RecentTile
@@ -1105,29 +1011,8 @@ export function Dashboard() {
                 />
               ))}
             </div>
-          )}
-        </Cell>
-
-        <Cell
-          index={3}
-          title="Sources to start from"
-          className="@min-[1000px]:col-span-2 @min-[1500px]:col-span-3"
-        >
-          {/* Not four identical cards: YouTube is the only source that yields
-              both video and audio and the one that absorbs a plain search, so it
-              gets the feature block; the other three are rows carrying the one
-              fact that separates them. Below ~860px they stack; the pair holds
-              at the minimum window because stacking costs ~190px of scroll on a
-              640px-tall screen, and the rows already truncate. */}
-          <div className="grid gap-3 @min-[860px]:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] @min-[1500px]:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
-            <SourceFeature def={PLATFORMS[0]} onOpen={() => setActiveTab(PLATFORMS[0].key)} />
-            <div className="grid gap-1 content-between @min-[860px]:border-l @min-[860px]:border-border-soft @min-[860px]:pl-4">
-              {PLATFORMS.slice(1).map((p) => (
-                <SourceRow key={p.key} def={p} onOpen={() => setActiveTab(p.key)} />
-              ))}
-            </div>
-          </div>
-        </Cell>
+          </Cell>
+        )}
       </div>
       )}
     </div>

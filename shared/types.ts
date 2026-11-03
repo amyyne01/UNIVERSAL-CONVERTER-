@@ -88,6 +88,8 @@ export interface DownloadProgress {
   error: string;
   playlistIndex: number;
   playlistTotal: number;
+  /** Done because the file was already on disk (skip existing): nothing was written. */
+  alreadyOnDisk?: boolean;
 }
 
 export type AudioFormat = 'mp3' | 'aac' | 'm4a' | 'ogg' | 'opus' | 'flac' | 'wav' | 'alac';

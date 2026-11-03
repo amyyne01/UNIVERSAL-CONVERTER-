@@ -5,14 +5,20 @@ import {
   Moon,
   Refresh,
   Search,
+  ChevronRight,
   Sun,
   Remove,
   Cancel,
+  Pause,
+  Play,
+  OpenFolder,
+  Keyboard,
 } from '@/components/ui/icons';
 import type { AppIcon } from '@/components/ui/icons';
 import { useAppStore } from '@/store';
 import { NAV, TAB_ORDER } from '@/constants';
 import { buildDownloadRequest } from '@/lib/download';
+import { describeError } from '@/lib/errors';
 import { EASE_OUT_EXPO as EASE } from '@/components/ui/motion';
 
 // ─── types ───────────────────────────────────────────────────────────────────
@@ -30,9 +36,7 @@ interface Cmd {
 
 function Kbd({ children }: { children: string }) {
   return (
-    <span className="font-mono text-2xs text-text-muted border border-border rounded px-1.5 py-0.5 leading-none shrink-0">
-      {children}
-    </span>
+    <kbd className="keycap">{children}</kbd>
   );
 }
 
@@ -85,9 +89,10 @@ export function CommandPalette() {
           setOpen(false);
           const text = await navigator.clipboard.readText().catch(() => '');
           const url = text.trim();
-          if (!url) return;
+          const { showError } = useAppStore.getState();
+          if (!url) return showError('Your clipboard is empty. Copy a link first.');
           const detection = await window.electronAPI.url.detect(url);
-          if (detection.platform === 'unknown') return;
+          if (detection.platform === 'unknown') return showError(describeError('unsupported'));
           const cfg = useAppStore.getState().config;
           // Audio only for music platforms — a video link stays a video download.
           const audioOnly = detection.platform === 'spotify' || detection.platform === 'soundcloud';
@@ -134,6 +139,52 @@ export function CommandPalette() {
         action: () => {
           clearCompletedAndPersist();
           setOpen(false);
+        },
+      },
+
+      {
+        id: 'pause-all',
+        label: 'Pause all downloads',
+        icon: Pause,
+        group: 'Actions',
+        action: () => {
+          setOpen(false);
+          void window.electronAPI.download.pauseAll();
+        },
+      },
+
+      {
+        id: 'resume-all',
+        label: 'Resume all downloads',
+        icon: Play,
+        group: 'Actions',
+        action: () => {
+          setOpen(false);
+          void window.electronAPI.download.resumeAll();
+        },
+      },
+
+      {
+        id: 'change-folder',
+        label: 'Change download folder',
+        icon: OpenFolder,
+        group: 'Actions',
+        action: async () => {
+          setOpen(false);
+          const dir = await window.electronAPI.dialog.selectDir();
+          if (dir) updateConfig({ outputDir: dir });
+        },
+      },
+
+      {
+        id: 'shortcuts',
+        label: 'Keyboard shortcuts',
+        icon: Keyboard,
+        group: 'Actions',
+        hint: 'Ctrl+/',
+        action: () => {
+          setOpen(false);
+          useAppStore.getState().setShortcutsOpen(true);
         },
       },
 
@@ -267,26 +318,21 @@ export function CommandPalette() {
             aria-label="Command palette"
             className="no-drag fixed left-1/2 top-24 z-(--z-palette) -translate-x-1/2"
             style={{ width: 'min(560px, 92vw)' }}
-            initial={{ opacity: 0, y: -10, scale: 0.97 }}
+            initial={{ opacity: 0, y: -6, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -10, scale: 0.97 }}
+            exit={{ opacity: 0, y: -6, scale: 0.97 }}
             transition={{ duration: 0.18, ease: EASE }}
           >
             <div className="overflow-hidden rounded-xl border border-border bg-bg-glass backdrop-blur-xl shadow-lg">
 
               {/* ── search row ── */}
-              <div className="field-shell flex items-center gap-3 border-b border-border px-[18px] py-4">
-                <span
-                  className="font-mono text-[15px] text-accent leading-none select-none"
-                  aria-hidden
-                >
-                  ›
-                </span>
+              <div className="field-shell flex items-center gap-3 border-b border-border px-4 py-4">
+                <ChevronRight size={16} className="text-text-muted shrink-0" aria-hidden />
                 <input
                   ref={inputRef}
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Type a command or paste a link…"
+                  placeholder="Command or link"
                   spellCheck={false}
                   aria-label="Command palette search"
                   role="combobox"
@@ -296,15 +342,15 @@ export function CommandPalette() {
                   className="flex-1 min-w-0 bg-transparent text-sm text-text-primary placeholder:text-text-muted outline-none font-mono"
                 />
                 {!query && (
-                  <Search size={14} className="text-text-muted shrink-0" aria-hidden />
+                  <Search size={16} className="text-text-muted shrink-0" aria-hidden />
                 )}
                 <Kbd>ESC</Kbd>
               </div>
 
               {/* ── command list ── */}
-              <div ref={listRef} id="palette-listbox" role="listbox" className="max-h-[320px] overflow-y-auto py-1.5">
+              <div ref={listRef} id="palette-listbox" role="listbox" className="max-h-[320px] overflow-y-auto py-2">
                 {visibleCmds.length === 0 ? (
-                  <p className="px-[18px] py-7 text-center text-sm text-text-muted">
+                  <p className="px-4 py-7 text-center text-sm text-text-muted">
                     No commands match
                   </p>
                 ) : (
@@ -313,7 +359,7 @@ export function CommandPalette() {
                       {/* section label mirrors concept-c // SECTION style */}
                       <p
                         aria-hidden
-                        className="px-[18px] pb-1.5 pt-3 font-mono text-2xs uppercase tracking-[0.14em] text-text-muted select-none"
+                        className="px-4 pb-2 pt-3 font-mono text-2xs text-text-muted select-none"
                       >
                         // {group}
                       </p>
@@ -333,14 +379,14 @@ export function CommandPalette() {
                             onClick={() => void cmd.action()}
                             onMouseEnter={() => setActiveIndex(flatIdx)}
                             className={[
-                              'relative flex w-full items-center gap-3 px-[18px] py-[9px] text-[12.5px] transition-colors duration-75 text-left',
+                              'relative flex w-full items-center gap-3 px-4 py-2 text-xs transition-colors duration-75 text-left',
                               active
                                 ? 'bg-accent-soft text-text-primary before:absolute before:left-0 before:inset-y-1.5 before:w-0.5 before:rounded-r before:bg-accent'
                                 : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary',
                             ].join(' ')}
                           >
                             <Icon
-                              size={15}
+                              size={16}
                               className={[
                                 'shrink-0 transition-colors duration-75',
                                 active ? 'text-accent' : 'text-text-muted',
@@ -362,14 +408,14 @@ export function CommandPalette() {
               </div>
 
               {/* ── footer ── */}
-              <div className="flex items-center gap-4 border-t border-border bg-bg-tertiary px-[18px] py-2.5">
-                <span className="flex items-center gap-1.5 font-mono text-2xs text-text-muted">
+              <div className="flex items-center gap-4 border-t border-border bg-bg-tertiary px-4 py-3">
+                <span className="flex items-center gap-2 font-mono text-2xs text-text-muted">
                   <Kbd>↑↓</Kbd> navigate
                 </span>
-                <span className="flex items-center gap-1.5 font-mono text-2xs text-text-muted">
+                <span className="flex items-center gap-2 font-mono text-2xs text-text-muted">
                   <Kbd>↵</Kbd> select
                 </span>
-                <span className="flex items-center gap-1.5 font-mono text-2xs text-text-muted">
+                <span className="flex items-center gap-2 font-mono text-2xs text-text-muted">
                   <Kbd>esc</Kbd> close
                 </span>
               </div>

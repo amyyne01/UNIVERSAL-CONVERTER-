@@ -15,3 +15,4 @@ export {
 } from './SegmentedCapsule';
 export { Spinner, type SpinnerProps } from './Spinner';
 export { SourceMonogram, type SourceMonogramProps } from './SourceMonogram';
+export { Checkbox } from './Checkbox';

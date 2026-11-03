@@ -25,7 +25,8 @@ export function FormatSelector({ value, onChange, className = '' }: FormatSelect
             selected={value === f.value}
             tag={f.lossless ? 'lossless' : undefined}
             icon={locked ? Lock : undefined}
-            aria-label={locked ? `${f.label} — Premium` : undefined}
+            aria-label={locked ? `${f.label}, Premium` : undefined}
+            title={locked ? `${f.label} needs Premium. Select it to see what the plan adds.` : undefined}
             onClick={() =>
               locked ? nudge(premiumCopy.losslessFormat(f.label)) : onChange(f.value)
             }

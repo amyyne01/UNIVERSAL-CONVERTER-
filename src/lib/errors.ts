@@ -26,12 +26,23 @@ export const ERROR_COPY: Record<ErrorCode, ErrorCopy> = {
 const PERMANENT = new Set<ErrorCode>(['removed', 'unsupported', 'drm', 'geo_blocked']);
 export const isPermanentError = (code?: ErrorCode): boolean => !!code && PERMANENT.has(code);
 
+/** The one-click way out of a failure that is not about the link itself. */
+const FIX: Partial<Record<ErrorCode, 'settings' | 'engine'>> = {
+  private: 'settings', age_restricted: 'settings', login_required: 'settings', disk_full: 'settings', unknown: 'engine',
+};
+export const fixFor = (code?: ErrorCode): 'settings' | 'engine' | undefined => (code ? FIX[code] : undefined);
+
 const VIDEO_SOURCES = new Set<SourcePlatform>(['youtube', 'vimeo', 'dailymotion', 'rumble', 'twitch']);
 // Spotify audio is matched by name, so a dead end there has one more way out.
 const SPOTIFY_REMEDY = 'We find Spotify songs by name. Search for it in the Spotify tab, or paste a different link.';
 
+// A link on a site we have no tab for that "wasn't found" is most often a site the
+// engine doesn't support at all, not a removed page: say so, and name real ones.
+const GENERIC_DEAD_END = 'We couldn’t find anything at this link. The site may not be supported, or the address is wrong. Supported sites include YouTube, Vimeo, X, TikTok, Twitch, SoundCloud, Bandcamp and Reddit.';
+
 /** One readable sentence pair. Unknown or missing codes fall back to `unknown`. */
 export function describeError(code?: ErrorCode, source?: SourcePlatform): string {
+  if (source === 'generic' && code === 'removed') return GENERIC_DEAD_END;
   const { cause, remedy } = ERROR_COPY[code ?? 'unknown'] ?? ERROR_COPY.unknown;
   const thing = source && VIDEO_SOURCES.has(source) ? 'video' : 'link';
   const spotifyDeadEnd = source === 'spotify' && (!code || code === 'unknown' || code === 'removed' || code === 'unsupported');

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, type KeyboardEvent, type ReactNode } 
 import { motion, useReducedMotion } from 'framer-motion';
 import {
   Sun, Moon, SystemTheme, OpenFolder, Refresh, ChevronRight,
-  ExternalLink, Deactivate, Power, Download, Transfer, Premium,
+  ExternalLink, Deactivate, Power, Download, Transfer, Premium, Keyboard,
   type AppIcon,
 } from '@/components/ui/icons';
 import { useAppStore } from '@/store';
@@ -22,6 +22,7 @@ import {
   VIDEO_CODEC_OPTIONS, COOKIE_BROWSER_OPTIONS, CONCURRENCY_OPTIONS,
 } from '@/constants';
 import { useTierLocks, premiumCopy, basicCopy } from '@/lib/tier';
+import { EASE_OUT_EXPO } from '@/components/ui/motion';
 
 // ── constants ────────────────────────────────────────────────────────────────
 
@@ -45,7 +46,7 @@ function PaletteSwatches({ value, mode, onChange }: {
     (e.currentTarget.parentElement?.children[PALETTES.indexOf(next)] as HTMLElement | undefined)?.focus();
   };
   return (
-    <div role="radiogroup" aria-label="Colour palette" className="no-drag flex gap-2">
+    <div role="radiogroup" aria-label="Color palette" className="no-drag flex gap-2">
       {PALETTES.map((p, i) => {
         const active = p.id === value;
         return (
@@ -59,7 +60,7 @@ function PaletteSwatches({ value, mode, onChange }: {
             tabIndex={active ? 0 : -1}
             onClick={() => onChange(p.id)}
             onKeyDown={(e) => move(e, i)}
-            className={`focus-visible:focus-ring size-6 rounded-full transition-shadow ${
+            className={`focus-visible:focus-ring size-7 rounded-full transition-shadow ${
               active ? 'ring-2 ring-offset-2 ring-text-primary ring-offset-bg-surface' : 'hover:ring-2 hover:ring-border'
             }`}
             style={{ background: p.accent[mode] }}
@@ -95,7 +96,7 @@ function Row({ label, desc, children, className = '' }: {
   label: ReactNode; desc?: ReactNode; children: ReactNode; className?: string;
 }) {
   return (
-    <div className={`flex items-center justify-between gap-8 py-3.5 transition-colors duration-200 ${className}`}>
+    <div className={`flex items-center justify-between gap-8 py-4 transition-colors duration-200 ${className}`}>
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium text-text-primary leading-snug">{label}</p>
         {/* text-secondary, not muted: muted fails 4.5:1 on the light theme's near-white surface. */}
@@ -116,7 +117,7 @@ function Section({ title, hint, children, className = 'mb-4' }: {
     <section className={className}>
       {title && (
         <div className="px-1 mb-2">
-          <h2 className="text-[13px] font-semibold text-text-primary tracking-[-0.01em]">{title}</h2>
+          <h2 className="text-sm font-medium text-text-primary">{title}</h2>
           {hint && <p className="text-xs text-text-secondary mt-0.5 max-w-[62ch] leading-relaxed">{hint}</p>}
         </div>
       )}
@@ -125,11 +126,29 @@ function Section({ title, hint, children, className = 'mb-4' }: {
   );
 }
 
+/** A group that stays closed until asked for. Native <details>: keyboard- and
+ *  AT-correct for free, and opening it changes no height that needs animating. */
+function Disclosure({ title, hint, children }: { title: string; hint: string; children: ReactNode }) {
+  return (
+    <details className="group mb-4">
+      <summary className="list-none [&::-webkit-details-marker]:hidden cursor-pointer flex items-center gap-2 px-1 py-2 rounded-md text-sm font-medium text-text-secondary hover:text-text-primary">
+        <ChevronRight
+          size={16}
+          className="shrink-0 transition-transform duration-200 ease-out-quart group-open:rotate-90"
+        />
+        {title}
+        <span className="font-normal text-xs text-text-secondary">{hint}</span>
+      </summary>
+      <Card className="divide-y divide-border-soft px-5 mt-2">{children}</Card>
+    </details>
+  );
+}
+
 /** A labelled control that sits in a row of controls rather than in a Row.
  *  The <label> wrapper is the accessible name, so no aria-label is needed. */
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <label className="flex flex-col gap-1.5">
+    <label className="flex flex-col gap-2">
       <span className="text-xs font-medium text-text-secondary">{label}</span>
       {children}
     </label>
@@ -147,7 +166,7 @@ function StatusObject({ name, tone, version, desc, footer, children }: {
   return (
     <div className="flex items-start justify-between gap-6 py-4">
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-3">
           <motion.span
             aria-hidden
             className={`w-1.5 h-1.5 rounded-full shrink-0 transition-colors duration-200 ${DOT[tone]}`}
@@ -155,10 +174,10 @@ function StatusObject({ name, tone, version, desc, footer, children }: {
             transition={pulse ? { repeat: Infinity, duration: 1.4, ease: 'easeInOut' } : { duration: 0 }}
           />
           <p className="text-sm font-medium text-text-primary leading-snug">{name}</p>
-          {version && <span className="font-mono text-[11px] text-text-secondary">{version}</span>}
+          {version && <span className="font-mono text-2xs text-text-secondary">{version}</span>}
         </div>
         <p className="text-xs text-text-muted mt-1 ml-4 leading-relaxed max-w-[54ch]">{desc}</p>
-        {footer && <div className="mt-2.5 ml-4 max-w-[280px]">{footer}</div>}
+        {footer && <div className="mt-3 ml-4 max-w-[280px]">{footer}</div>}
       </div>
       {children && <div className="shrink-0">{children}</div>}
     </div>
@@ -183,7 +202,7 @@ function DangerAction({ icon, label, desc, armedDesc, confirmLabel, onConfirm }:
         key={armed ? 'confirm' : 'idle'}
         initial={reduced ? false : { opacity: 0, x: 6 }}
         animate={{ opacity: 1, x: 0 }}
-        transition={{ duration: reduced ? 0 : 0.15, ease: [0.25, 0.46, 0.45, 0.94] }}
+        transition={{ duration: reduced ? 0 : 0.15, ease: EASE_OUT_EXPO }}
         className="flex items-center gap-2"
       >
         {armed ? (
@@ -314,7 +333,7 @@ export function SettingsTab() {
           Loading your settings…
         </p>
         <p className="mt-2 text-xs text-text-muted max-w-[54ch] leading-relaxed">
-          If this doesn’t clear, your settings file couldn’t be read. Restart the app — your
+          If this doesn’t clear, your settings file couldn’t be read. Restart the app. Your
           downloads and license are unaffected.
         </p>
       </div>
@@ -343,7 +362,7 @@ export function SettingsTab() {
     : engine.state === 'downloading' ? 'Downloading and verifying the engine…'
     : engine.state === 'updated'   ? `Engine updated to ${engine.current || engine.latest}`
     : engine.state === 'uptodate'  ? 'yt-dlp is up to date'
-    : engine.state === 'error'     ? (engine.message || 'Engine check failed — try again')
+    : engine.state === 'error'     ? (engine.message || 'Engine check failed. Try again')
     : 'yt-dlp powers every download';
 
   const engineTone: Tone =
@@ -357,9 +376,9 @@ export function SettingsTab() {
     updatePhase === 'checking'    ? 'Checking for updates…'
     : updatePhase === 'available' ? `v${updateVersion} is available`
     : updatePhase === 'downloading' ? 'Downloading update…'
-    : updatePhase === 'ready'     ? `v${updateVersion} ready — restart to install`
+    : updatePhase === 'ready'     ? `v${updateVersion} ready, restart to install`
     : updatePhase === 'uptodate'  ? "You're on the latest version"
-    : updatePhase === 'error'     ? 'Update check failed — try again'
+    : updatePhase === 'error'     ? 'Update check failed. Try again'
     : 'Check for a new version of AHG Universal Converter';
 
   const updateTone: Tone =
@@ -370,7 +389,7 @@ export function SettingsTab() {
     : 'idle';
 
   return (
-    // The pane (viewport minus the 68px rail, minus whatever outer container
+    // The pane (viewport minus the 76px rail, minus whatever outer container
     // App installs) is what changes width here, so the rules below are
     // @container rules rather than viewport breakpoints.
     <div className="@container h-full overflow-y-auto">
@@ -381,14 +400,14 @@ export function SettingsTab() {
           away from its control. @7xl (a 1280px pane ≈ a 1350px window) is the
           first point where the second column clears ~560px, below which the
           label/control pair starts to collide. */}
-      <div className="mx-auto w-full max-w-[820px] @7xl:max-w-[1600px] px-6 @4xl:px-10 py-10 pb-16">
+      <div className="w-full max-w-[820px] @7xl:mx-auto @7xl:max-w-[1600px] px-8 @min-[1100px]:px-10 @min-[1600px]:px-14 py-10 pb-16">
 
         <header className="mb-7">
           <h1 className="text-h1 text-text-primary">
             Settings
           </h1>
-          <p className="text-sm text-text-secondary mt-1.5">
-            Changes save themselves — there's no save button.
+          <p className="text-sm text-text-secondary mt-2">
+            Changes save automatically
           </p>
         </header>
 
@@ -408,7 +427,7 @@ export function SettingsTab() {
             <div className="min-w-0">
               <p className="text-xs font-medium text-text-secondary">Saving to</p>
               <p
-                className="mt-1.5 font-mono text-[13px] leading-relaxed break-all"
+                className="mt-2 font-mono text-sm leading-relaxed break-all"
                 title={config.outputDir}
               >
                 {dirHead && <span className="text-text-secondary">{dirHead}</span>}
@@ -530,9 +549,9 @@ export function SettingsTab() {
             Everything the engine can do beyond format and quality. Grouped
             apart from "defaults" on purpose: these change what is IN the file
             (captions, chapter marks, sponsor cuts), not how good it sounds. */}
-        <Section
-          title="Download extras"
-          hint="Subtitles, chapters and sponsor segments. These apply to every download."
+        <Disclosure
+          title="More download options"
+          hint="Subtitles, chapters, sponsor segments, container and file naming"
         >
           <div className="grid grid-cols-3 gap-x-6 gap-y-5 py-5">
             <Field label="Subtitles">
@@ -664,10 +683,10 @@ export function SettingsTab() {
               />
             </Row>
           </div>
-        </Section>
+        </Disclosure>
 
         {/* ── Appearance & behaviour (two former sections, one card) ────────── */}
-        <Section title="Appearance & behaviour">
+        <Section title="Appearance & behavior">
           <Row label="Theme" desc="Light, dark, or follow the system preference">
             <SegmentedCapsule
               options={THEME_OPTIONS}
@@ -676,7 +695,7 @@ export function SettingsTab() {
             />
           </Row>
 
-          <Row label="Palette" desc="Accent and surface colours">
+          <Row label="Palette" desc="Accent and surface colors">
             <PaletteSwatches
               value={config.palette}
               mode={resolveTheme(config.theme)}
@@ -723,13 +742,13 @@ export function SettingsTab() {
         <Section className="mb-4">
           <div className="flex items-center justify-between gap-8 py-4">
             <div className="min-w-0">
-              <h2 className="text-[13px] font-semibold text-text-primary tracking-[-0.01em]">
+              <h2 className="text-sm font-medium text-text-primary">
                 Scheduled downloads
               </h2>
               <p className="text-xs text-text-secondary mt-0.5 max-w-[54ch] leading-relaxed">
                 {locks.isPremium
-                  ? 'Start the download queue automatically at a set time'
-                  : 'Premium — unattended runs at a set time on chosen days'}
+                  ? 'Start downloads automatically at a set time'
+                  : 'Premium: runs unattended at a set time on chosen days'}
               </p>
             </div>
             {/* Toggling stays possible so the tap can explain itself; the switch
@@ -745,12 +764,9 @@ export function SettingsTab() {
             />
           </div>
 
-          <div
-            className={`divide-y divide-border-soft transition-opacity duration-200 ${
-              config.scheduleEnabled ? '' : 'opacity-55'
-            }`}
-          >
-            <Row label="Start time" desc="Local time to trigger the queue">
+          {config.scheduleEnabled && (
+          <div className="divide-y divide-border-soft">
+            <Row label="Start time" desc="Local time the schedule starts">
               <Input
                 aria-label="Start time"
                 type="time"
@@ -763,7 +779,7 @@ export function SettingsTab() {
             </Row>
 
             <Row label="Active days" desc="Days of the week the schedule is active">
-              <div className="flex gap-1.5">
+              <div className="flex gap-2">
                 {DAYS.map((day, i) => (
                   <Chip
                     key={day}
@@ -771,7 +787,7 @@ export function SettingsTab() {
                     onClick={() => toggleDay(i)}
                     disabled={!config.scheduleEnabled}
                     aria-label={DAY_NAMES[i]}
-                    className="w-10 justify-center px-0 py-1.5 text-[11px] font-mono"
+                    className="w-10 justify-center px-0 py-2 text-2xs font-mono"
                   >
                     {day}
                   </Chip>
@@ -785,13 +801,13 @@ export function SettingsTab() {
               className={config.scheduleShutdown ? '-mx-5 px-5 bg-warning/10' : ''}
               label={
                 <span className="inline-flex items-center gap-2">
-                  {config.scheduleShutdown && <Power size={14} className="text-warning shrink-0" />}
+                  {config.scheduleShutdown && <Power size={16} className="text-warning shrink-0" />}
                   Shutdown after queue
                 </span>
               }
               desc={
                 config.scheduleShutdown
-                  ? 'This PC will power off when the scheduled queue finishes'
+                  ? 'This PC will power off when scheduled downloads finish'
                   : 'Power off the PC when scheduled downloads finish'
               }
             >
@@ -803,6 +819,7 @@ export function SettingsTab() {
               />
             </Row>
           </div>
+          )}
         </Section>
 
         {/* ── Software (app updater + yt-dlp engine) ────────────────────────── */}
@@ -824,8 +841,8 @@ export function SettingsTab() {
                     label="Update download"
                     className="flex-1"
                   />
-                  <span className="font-mono text-[11px] text-text-secondary w-9 text-right">
-                    {updatePercent.toFixed(0)}%
+                  <span className="font-mono text-2xs text-text-secondary w-9 text-right">
+                    {Math.round(updatePercent)}%
                   </span>
                 </div>
               ) : undefined
@@ -888,7 +905,7 @@ export function SettingsTab() {
 
           <Row
             label="Auto-update engine"
-            desc="Keep yt-dlp current automatically — and repair it when a site changes and downloads start failing"
+            desc="Keep yt-dlp current, and repair it when a site change breaks downloads"
           >
             <Toggle
               label="Auto-update engine"
@@ -901,22 +918,10 @@ export function SettingsTab() {
         {/* ── Advanced — present, not prominent ─────────────────────────────────
             Native <details>: the disclosure is keyboard- and AT-correct for free,
             and opening it changes no height that needs animating. */}
-        <details className="group mb-4">
-          <summary className="list-none [&::-webkit-details-marker]:hidden cursor-pointer flex items-center gap-2 px-1 py-2 rounded-md text-[13px] font-semibold text-text-secondary hover:text-text-primary">
-            <ChevronRight
-              size={14}
-              className="shrink-0 transition-transform duration-200 ease-out-quart group-open:rotate-90"
-            />
-            Advanced
-            <span className="font-normal text-xs text-text-secondary">
-              Network and shortcut settings most people never touch
-            </span>
-          </summary>
-
-          <Card className="divide-y divide-border-soft px-5 mt-2">
+        <Disclosure title="Advanced" hint="Network and shortcut settings most people never touch">
             <Row
               label="Rate limit"
-              desc="Bandwidth cap per download (e.g. 2M, 500K) — empty = unlimited"
+              desc="Bandwidth cap per download, such as 2M or 500K. Leave empty for no limit"
             >
               <Input
                 aria-label="Rate limit"
@@ -939,7 +944,7 @@ export function SettingsTab() {
               />
             </Row>
 
-            <Row label="Global hotkey" desc="Shortcut to bring this window to focus from anywhere">
+            <Row label="Global hotkey" desc="Shortcut that brings this window to the front from anywhere">
               <Input
                 aria-label="Global hotkey"
                 value={config.globalHotkey}
@@ -949,8 +954,7 @@ export function SettingsTab() {
                 className="font-mono text-xs"
               />
             </Row>
-          </Card>
-        </details>
+        </Disclosure>
 
         {/* ── Plan & license ───────────────────────────────────────────────── */}
         <Section title="Plan & license" className="mb-3">
@@ -960,14 +964,27 @@ export function SettingsTab() {
             version={plan === 'premium' ? 'Premium' : 'Basic'}
             // Basic states what it INCLUDES, not what it withholds. The same
             // facts, read as a capability rather than a list of confiscations.
-            desc={plan === 'premium' ? 'Every feature is unlocked on this machine' : basicCopy.summary}
+            desc={plan === 'premium' ? 'Every feature is included on this machine' : `${basicCopy.summary}. Premium lifts these limits with a one-time purchase.`}
           >
             {plan !== 'premium' && (
               <Button variant="primary" size="sm" icon={Premium} onClick={locks.openUpgrade}>
-                Upgrade
+                See plans
               </Button>
             )}
           </StatusObject>
+        </Section>
+
+        <Section title="Help" className="mb-3">
+          <Row label="Keyboard shortcuts" desc="Ctrl+K opens the command palette; the full list is one click away">
+            <Button variant="ghost" size="sm" icon={Keyboard} onClick={() => useAppStore.getState().setShortcutsOpen(true)}>
+              Show shortcuts
+            </Button>
+          </Row>
+          <Row label="Report a problem" desc="Say what you pasted and the message you saw. If asked, attach ahg.log, found in the app's folder under %APPDATA%.">
+            <Button variant="ghost" size="sm" icon={ExternalLink} onClick={() => void openSupport()}>
+              Get support
+            </Button>
+          </Row>
         </Section>
 
         {/* Its own framed surface: these two actions end this machine's access, and
@@ -996,7 +1013,7 @@ export function SettingsTab() {
         {cooldownUntil && (
           <p
             role="status"
-            className="text-xs rounded-lg border border-warning/30 bg-warning/10 text-text-primary px-3.5 py-2.5 leading-relaxed mb-4"
+            className="text-xs rounded-lg border border-warning/30 bg-warning/10 text-text-primary px-4 py-3 leading-relaxed mb-4"
           >
             Transfer unavailable until {new Date(cooldownUntil).toLocaleDateString()} — a license
             can be moved to another PC once every 7 days.
@@ -1009,15 +1026,12 @@ export function SettingsTab() {
         {/* Footer: the two things that are neither settings nor status. */}
         <div className="flex flex-wrap items-center justify-between gap-3 px-1 pt-2">
           {lic.machineId ? (
-            <p className="font-mono text-[11px] text-text-secondary" title="What a key binds to on this computer">
+            <p className="font-mono text-2xs text-text-secondary" title="What a key binds to on this computer">
               Machine ID <span className="text-text-primary">{lic.machineId}</span>
             </p>
           ) : (
             <span />
           )}
-          <Button variant="ghost" size="sm" icon={ExternalLink} onClick={() => void openSupport()}>
-            Get support
-          </Button>
         </div>
 
       </div>

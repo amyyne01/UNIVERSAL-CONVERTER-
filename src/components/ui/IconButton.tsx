@@ -10,7 +10,7 @@ export interface IconButtonProps extends HTMLMotionProps<'button'> {
 export function IconButton({
   icon: Icon,
   label,
-  size = 18,
+  size = 16,
   className = '',
   ...rest
 }: IconButtonProps) {

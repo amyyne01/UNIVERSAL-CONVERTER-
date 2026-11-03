@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { DownloadsTab, QueueCard } from '@/components/tabs/DownloadsTab';
 import { useAppStore } from '@/store';
@@ -109,22 +109,40 @@ describe('DownloadsTab', () => {
     expect(remaining).toEqual(['c']);
   });
 
-  it('cancel-all requires two clicks to confirm once more than two are active', async () => {
+  it('cancel-all acts at once and offers Undo, which re-enqueues the cancelled downloads', async () => {
     useAppStore.getState().setDownloads([
       task({ taskId: 'a', progress: progress({ status: 'downloading' }) }),
       task({ taskId: 'b', progress: progress({ status: 'downloading' }) }),
       task({ taskId: 'c', progress: progress({ status: 'downloading' }) }),
     ]);
+    (window.electronAPI.download.start as any).mockResolvedValue(task({ taskId: 'new' }));
     render(<DownloadsTab />);
     const user = userEvent.setup();
 
-    const cancelAllBtn = screen.getByRole('button', { name: /cancel all/i });
-    await user.click(cancelAllBtn);
-    expect(window.electronAPI.download.cancelAll).not.toHaveBeenCalled();
-    expect(screen.getByText(/really cancel 3/i)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /cancel all/i }));
+    expect(window.electronAPI.download.cancelAll).toHaveBeenCalledTimes(1);
+    const notice = useAppStore.getState().notice;
+    expect(notice?.message).toBe('3 downloads canceled');
+    expect(notice?.action?.label).toBe('Undo');
 
-    await user.click(screen.getByRole('button', { name: /really cancel 3/i }));
-    expect(window.electronAPI.download.cancelAll).toHaveBeenCalled();
+    notice!.action!.run();
+    await waitFor(() => expect(window.electronAPI.download.start).toHaveBeenCalledTimes(3));
+  });
+
+  it('cancelling one row offers Undo that restarts only that download', async () => {
+    useAppStore.getState().setDownloads([
+      task({ taskId: 'a', progress: progress({ status: 'downloading' }) }),
+    ]);
+    (window.electronAPI.download.start as any).mockResolvedValue(task({ taskId: 'new' }));
+    render(<DownloadsTab />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(window.electronAPI.download.cancel).toHaveBeenCalledWith('a');
+    expect(useAppStore.getState().notice?.message).toBe('Download canceled');
+
+    useAppStore.getState().notice!.action!.run();
+    await waitFor(() => expect(window.electronAPI.download.start).toHaveBeenCalledTimes(1));
   });
 
   it('"Do this next" promotes a queued row and is absent on the row already at the front', async () => {
@@ -201,7 +219,7 @@ describe('DownloadsTab', () => {
     await user.keyboard('{ }{ArrowUp}{Escape}');
 
     expect(window.electronAPI.queue.reorder).not.toHaveBeenCalled();
-    expect(screen.getByText('Reorder cancelled')).toBeInTheDocument();
+    expect(screen.getByText('Reorder canceled')).toBeInTheDocument();
   });
 
   it('pause all / resume all swap by aggregate state and fire without a confirm step', async () => {
@@ -241,7 +259,7 @@ describe('queue header: batch summary, retry all, search', () => {
       failed('a', 'network'), failed('b', 'removed'),
     ]);
     render(<DownloadsTab />);
-    expect(screen.getByText('3 links: 1 downloading, 2 failed')).toBeInTheDocument();
+    expect(screen.getByText('3 downloads: 1 downloading, 2 failed')).toBeInTheDocument();
   });
 
   it('shows no summary for a single link', () => {
@@ -280,7 +298,7 @@ describe('empty queue', () => {
   it('shows one message and no select-all, filter chips or ghost rows', () => {
     useAppStore.setState({ downloads: {}, selectedDownloadIds: new Set() });
     render(<DownloadsTab />);
-    expect(screen.getByText('Your queue is empty')).toBeInTheDocument();
+    expect(screen.getByText('No downloads yet')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /select all/i })).toBeNull();
     expect(screen.queryByRole('button', { name: /^All\b/ })).toBeNull();
     expect(screen.getAllByRole('listitem')).toHaveLength(1);
@@ -292,12 +310,12 @@ describe('done rows say where the file went', () => {
     useAppStore.setState({ downloads: {}, selectedDownloadIds: new Set() });
   });
 
-  it('shows the saved folder and a visible "Show in folder"', () => {
+  it('shows the saved file name (full path on hover) and a visible "Show in folder"', () => {
     useAppStore.getState().setDownloads([
       task({ progress: progress({ status: 'done', percent: 100, filename: 'C:\\Music\\Mix\\Song One.mp3' }) }),
     ]);
     render(<DownloadsTab />);
-    expect(screen.getByText(/C:\\Music\\Mix/)).toBeInTheDocument();
+    expect(screen.getByText(/Song One\.mp3/)).toHaveAttribute('title', 'C:\\Music\\Mix\\Song One.mp3');
     expect(screen.getByRole('button', { name: 'Show in folder' }).className).not.toMatch(/(^|\s)opacity-0/);
   });
 });
@@ -373,6 +391,25 @@ describe('failed and retrying rows', () => {
     render(<DownloadsTab />);
     expect(screen.getByText(/couldn.t find anything at this link/i)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+  });
+
+  it('labels a permanent failure "Can’t download" and offers Open settings for a sign-in failure', () => {
+    useAppStore.getState().setDownloads([
+      task({ taskId: 'p', errorCode: 'drm', progress: progress({ status: 'failed', error: 'DRM' }) }),
+      task({ taskId: 'q', errorCode: 'private', progress: progress({ status: 'failed', error: 'Private' }) }),
+    ]);
+    render(<DownloadsTab />);
+    expect(screen.getByText('Can’t download')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Open settings' })).toHaveLength(1);
+  });
+
+  it('says a skipped row was already downloaded and offers Download again', () => {
+    useAppStore.getState().setDownloads([
+      task({ progress: progress({ status: 'done', alreadyOnDisk: true, filename: 'C:\Music\a.mp3' }) }),
+    ]);
+    render(<DownloadsTab />);
+    expect(screen.getByText(/Already downloaded, skipped/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Download again' })).toBeInTheDocument();
   });
 
   it('counts a retrying row down: "Retrying in Ns (n of 3)"', () => {

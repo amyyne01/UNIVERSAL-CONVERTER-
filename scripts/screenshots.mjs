@@ -10,7 +10,7 @@ import { mkdirSync } from 'node:fs';
 mkdirSync('screenshots', { recursive: true });
 
 const W = 1240, H = 820;
-const RAIL = { home: 78, queue: 126, youtube: 190, spotify: 238, settings: -30 };
+const RAIL = { home: 'Home', queue: 'Downloads', youtube: 'YouTube', spotify: 'Spotify', settings: 'Settings' };
 const done = [], skipped = [];
 
 const app = await electron.launch({
@@ -37,9 +37,9 @@ const shot = async (name, ms = 450) => {
   await win.screenshot({ path: `screenshots/${name}.png`, animations: 'disabled' });
   done.push(name);
 };
-const go = async (y) => {
-  const h = await win.evaluate(() => window.innerHeight);
-  await win.mouse.click(34, y < 0 ? h + y : y);
+// The rail is labelled (aria-label from NAV in src/constants.ts): click by name, not pixels.
+const go = async (name) => {
+  await win.getByRole('button', { name, exact: true }).click();
   await win.waitForTimeout(650);
 };
 const theme = (t) => win.evaluate((v) => document.documentElement.setAttribute('data-theme', v), t);
@@ -59,7 +59,7 @@ await theme('dark');
 await go(RAIL.home);
 await shot('01-dashboard');
 
-// ── 02 free batch limit: a 6th link dims Fetch and names the ceiling ─────────
+// ── 02 free batch limit: a 6th link dims the field button and names the ceiling ─────────
 const field = win.getByLabel('Paste a link');
 const SIX = [
   'https://youtu.be/aaaaaaaaaaa', 'https://youtu.be/bbbbbbbbbbb',
@@ -98,9 +98,9 @@ await shot('06-spotify');
 await go(RAIL.settings);
 await shot('07-settings');
 
-// ── 08 plans — opened from the Upgrade button in Settings ───────────────────
+// ── 08 plans — opened from the See plans button in Settings ───────────────────
 try {
-  await win.getByRole('button', { name: /^Upgrade$/ }).click();
+  await win.getByRole('button', { name: /^See plans$/ }).click();
   await shot('08-plans', 900);
   await esc();
 } catch (e) { skipped.push(`08-plans (${String(e).slice(0, 60)})`); }

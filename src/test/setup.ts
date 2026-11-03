@@ -127,6 +127,7 @@ const mockElectronAPI = {
   dialog: { selectDir: vi.fn().mockResolvedValue(null) },
   shell: {
     showItemInFolder: vi.fn().mockResolvedValue(undefined),
+    openItem: vi.fn().mockResolvedValue({ ok: true }),
   },
   license: {
     check: vi.fn().mockResolvedValue({ activated: false, plan: 'basic' }),

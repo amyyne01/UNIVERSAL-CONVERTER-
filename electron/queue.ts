@@ -531,7 +531,7 @@ function handleDone(task: DownloadTask, filepath: string, filepaths: string[] = 
   if (active.get(task.taskId) !== task) return;
   // ponytail: process exit 0 is authoritative completion — force `done` even if the
   // last seen status was `downloading` (no post-processing markers were emitted).
-  task.progress = { ...task.progress, status: 'done', percent: 100, filename: filepath || task.progress.filename };
+  task.progress = { ...task.progress, status: 'done', percent: 100, filename: filepath || task.progress.filename, ...(alreadyOnDisk && { alreadyOnDisk: true }) };
   // Final size from disk — instant finishes (skip-existing) emit no progress lines.
   // Only a real absolute path is statable / usable for "show in folder"; a bare display
   // title (when yt-dlp emits no filepath) must not be statSync'd or offered to the shell.

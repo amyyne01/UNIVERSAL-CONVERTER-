@@ -34,7 +34,7 @@ describe('UpgradeSheet', () => {
     render(<UpgradeSheet onClose={onClose} />);
     await user.click(screen.getByRole('button', { name: /already have a key/i }));
     await user.type(screen.getByLabelText('License key'), 'KEY-123');
-    await user.click(screen.getByRole('button', { name: /unlock premium/i }));
+    await user.click(screen.getByRole('button', { name: /activate premium/i }));
 
     await waitFor(() => expect(useAppStore.getState().plan).toBe('premium'));
     expect(useAppStore.getState().isActivated).toBe(true);
@@ -52,7 +52,7 @@ describe('UpgradeSheet', () => {
     render(<UpgradeSheet onClose={vi.fn()} />);
     await user.click(screen.getByRole('button', { name: /already have a key/i }));
     await user.type(screen.getByLabelText('License key'), 'NOPE');
-    await user.click(screen.getByRole('button', { name: /unlock premium/i }));
+    await user.click(screen.getByRole('button', { name: /activate premium/i }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Invalid License Key');
     expect(useAppStore.getState().plan).toBe('basic');

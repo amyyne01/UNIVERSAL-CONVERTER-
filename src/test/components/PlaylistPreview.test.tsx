@@ -71,7 +71,7 @@ describe('PlaylistPreview', () => {
     render(<PlaylistPreview />);
     await clickDownload(user);
 
-    expect(await screen.findByText(/failed to queue/i)).toBeInTheDocument();
+    expect(await screen.findByText(/couldn.t be added/i)).toBeInTheDocument();
     expect(useAppStore.getState().selectedTracks.size).toBe(2);
   });
 
@@ -82,9 +82,9 @@ describe('PlaylistPreview', () => {
     useAppStore.setState({ selectedTracks: new Set() });
     render(<PlaylistPreview />);
 
-    await user.click(screen.getByRole('checkbox', { name: /^One —/ }));
+    await user.click(screen.getByRole('checkbox', { name: /^One,/ }));
     await user.keyboard('{Shift>}');
-    await user.click(screen.getByRole('checkbox', { name: /^Three —/ }));
+    await user.click(screen.getByRole('checkbox', { name: /^Three,/ }));
     await user.keyboard('{/Shift}');
 
     expect([...useAppStore.getState().selectedTracks].sort()).toEqual(['t1', 't2', 't3']);
@@ -100,7 +100,7 @@ describe('PlaylistPreview', () => {
     });
 
     render(<PlaylistPreview />);
-    expect(screen.getByText(/Free limit reached — 20 tracks per playlist/)).toBeInTheDocument();
+    expect(screen.getByText(/Basic limit reached: 20 tracks per playlist/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /download 20 of 25/i })).toBeInTheDocument();
   });
 
@@ -119,7 +119,7 @@ describe('PlaylistPreview', () => {
     await clickDownload(user);
 
     await waitFor(() => expect(startMock()).toHaveBeenCalledTimes(20));
-    expect(useAppStore.getState().notice?.message).toMatch(/Free limit reached — 20 tracks per playlist/);
+    expect(useAppStore.getState().notice?.message).toMatch(/Basic limit reached: 20 tracks per playlist/);
   });
 });
 

@@ -36,3 +36,11 @@ export function formatBytes(n: number): string {
   while (v >= 1024 && i < U.length - 1) { v /= 1024; i++; }
   return `${i === 0 ? v : v.toFixed(1)} ${U[i]}`;
 }
+
+/** 12.4M rather than 12,400,000: at a glance, and it never widens the row. */
+export function formatCount(n: number): string {
+  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1).replace(/\.0$/, '')}B`;
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1).replace(/\.0$/, '')}K`;
+  return String(n);
+}
