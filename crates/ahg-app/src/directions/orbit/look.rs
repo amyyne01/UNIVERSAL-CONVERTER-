@@ -114,20 +114,20 @@ impl Pal {
     }
 }
 
-// Type: Space Grotesk for the interface, Space Mono for every figure.
-pub const DISPLAY: TextStyle = TextStyle::new(40.0, 500.0).lh(46.0).tracking(-0.8);
-pub const PAGE_TITLE: TextStyle = TextStyle::new(30.0, 500.0).lh(36.0).tracking(-0.5);
-pub const CELL_TITLE: TextStyle = TextStyle::new(16.0, 500.0).lh(22.0);
+// Type: Space Grotesk for the interface (400 and 500), Space Mono for every figure (its one
+// weight, tabular by design). One scale: 12, 14, 16, 20, 32, 40; line heights on the 4 pt grid.
+pub const DISPLAY: TextStyle = TextStyle::new(40.0, 500.0).lh(48.0).tracking(-0.8);
+pub const PAGE_TITLE: TextStyle = TextStyle::new(32.0, 500.0).lh(40.0).tracking(-0.5);
+pub const CELL_TITLE: TextStyle = TextStyle::new(16.0, 500.0).lh(24.0);
 pub const BODY: TextStyle = TextStyle::new(14.0, 400.0).lh(20.0);
 pub const BODY_M: TextStyle = TextStyle::new(14.0, 500.0).lh(20.0);
-pub const SMALL: TextStyle = TextStyle::new(13.0, 400.0).lh(18.0);
-pub const SMALL_M: TextStyle = TextStyle::new(13.0, 500.0).lh(18.0);
-pub const CAPTION: TextStyle = TextStyle::new(11.0, 500.0).lh(14.0);
+pub const SMALL: TextStyle = TextStyle::new(12.0, 400.0).lh(16.0);
+pub const SMALL_M: TextStyle = TextStyle::new(12.0, 500.0).lh(16.0);
 pub const FIG: TextStyle = TextStyle::new(12.0, 400.0).lh(16.0).mono();
-pub const FIG_S: TextStyle = TextStyle::new(11.0, 400.0).lh(14.0).mono();
-pub const FIG_M: TextStyle = TextStyle::new(15.0, 400.0).lh(20.0).mono();
-pub const FIG_L: TextStyle = TextStyle::new(20.0, 400.0).lh(26.0).mono();
-pub const FIG_XL: TextStyle = TextStyle::new(44.0, 400.0).lh(48.0).mono().tracking(-1.0);
+pub const FIG_S: TextStyle = FIG;
+pub const FIG_M: TextStyle = TextStyle::new(16.0, 400.0).lh(20.0).mono();
+pub const FIG_L: TextStyle = TextStyle::new(20.0, 400.0).lh(28.0).mono();
+pub const FIG_XL: TextStyle = TextStyle::new(40.0, 400.0).lh(48.0).mono().tracking(-1.0);
 
 pub fn txt(s: impl Into<String>, style: TextStyle, color: Color) -> El {
     text(s).font(style).color(color)
