@@ -237,3 +237,40 @@ console.log('separation on held-out candidates (1 = perfect, 0.5 = chance):', {
 });
 console.log('single-layer weights:', Object.fromEntries(FEATURES.map((f, i) => [f, +logistic.w[i].toFixed(2)])));
 fs.writeFileSync(path.join(DATA, 'models.json'), JSON.stringify({ features: FEATURES, logistic: logistic.w, network: { w1: network.w1, w2: network.w2 }, tracks: tracks.length }, null, 1));
+
+// ── The fallback job: ranking plain videos only ─────────────────────────────
+// When no song is confirmed the app falls back to ordinary videos. Compare the
+// models with the hand-set scorer on held-out plain candidates that have a verdict.
+{
+  const hand = new Map();
+  for (const t of testSet) {
+    const track = { ...t.ex.track, thumbnailUrl: '', trackNumber: 0 };
+    const cands = t.ex.plain.map((c) => ({ id: c.id, title: c.title, uploader: c.uploader, duration: c.duration ?? 0, thumbnailUrl: '', url: c.url, source: 'youtube' }));
+    for (const s of scoreCandidates(track, cands)) hand.set(`${t.ex.track.id} ${s.candidate.id}`, s.score);
+  }
+  const rows = testSet.flatMap((t) => t.rows.filter((r) => !r.fromSongs && r.y !== null).map((r) => ({ ...r, hand: hand.get(`${t.ex.track.id} ${r.id}`) ?? -1 })));
+  const handModel = { score: (x) => x };
+  const asHand = rows.map((r) => ({ y: r.y, x: r.hand }));
+  console.log('plain videos only, held-out:', count(rows), 'separation:', {
+    handSet: separation(handModel, asHand), singleLayer: separation(logistic, rows), network: separation(network, rows),
+  });
+}
+
+// ── How far apart in length are confirmed same-song, same-artist videos? ────
+{
+  const gaps = { 'up to 3s': 0, '3 to 5s': 0, '5 to 12s': 0, 'over 12s': 0 };
+  const near = [];
+  for (const ex of examples) {
+    for (const look of Object.values(ex.lookups)) {
+      if (!look?.track || look.duration == null || !(look.artist || look.creator)) continue;
+      const name = overlap(baseName(ex.track.name), look.track) >= 0.99;
+      const artist = ex.track.artists.some((a) => overlap(a, `${look.artist ?? ''} ${look.creator ?? ''}`) >= 0.99);
+      if (!name || !artist) continue;
+      const diff = Math.abs(look.duration - ex.track.durationMs / 1000);
+      gaps[diff <= 3 ? 'up to 3s' : diff <= 5 ? '3 to 5s' : diff <= 12 ? '5 to 12s' : 'over 12s']++;
+      if (diff > 3 && diff <= 12 && near.length < 14) near.push(`${diff.toFixed(1)}s | ${ex.track.name} [${ex.track.album}] -> ${look.track} [${look.album}]`);
+    }
+  }
+  console.log('length gap where name and artist agree:', gaps);
+  console.log(near.join('\n'));
+}
