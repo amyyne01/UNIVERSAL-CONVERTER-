@@ -275,3 +275,55 @@ fn the_preview_can_ask_for_one_tracks_match() {
     assert!(core.match_track(&other).is_none());
     core.shutdown();
 }
+
+/// The whole Spotify journey on the real services: the track is read from
+/// Spotify, matched on YouTube Music, and downloaded as an MP3 by the real
+/// yt-dlp. A few megabytes of audio. Network; run with --ignored.
+#[test]
+#[ignore = "downloads one real song"]
+fn a_real_spotify_track_is_matched_and_downloaded() {
+    use ahg_engine::spotify::{Spotify, system_now_ms};
+    use ahg_runtime::http::{Http, SpotifyHttp};
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
+    let (bin, ffmpeg) = (root.join("bin").join("yt-dlp.exe"), root.join("bin").join("ffmpeg.exe"));
+    assert!(bin.exists() && ffmpeg.exists(), "bin/yt-dlp.exe and bin/ffmpeg.exe are needed");
+    let dir = scratch("realspotify");
+    let (tx, rx) = channel();
+    let paths = Paths { user_data: dir.join("userData"), downloads: dir.join("Downloads").to_string_lossy().into_owned() };
+    let core = Core::start(paths, Arc::new(YtDlp::new(bin, Some(ffmpeg.to_string_lossy().into_owned()))), Box::new(|| Plan::Premium), tx);
+
+    // Fleetwood Mac, "Dreams".
+    let mut spotify = Spotify::new(SpotifyHttp::new(Http::new(None)), Box::new(system_now_ms));
+    let track = spotify.fetch_track("https://open.spotify.com/track/0ofHAoxe9vBkTCp2UQIavz").ok().flatten().expect("the track should load");
+    println!("spotify: {} - {} ({} s, explicit {:?})", track.artist, track.name, track.duration_ms / 1000.0, track.explicit);
+    let found = core.match_track(&track).expect("YouTube Music should have this song");
+    println!("match: {} / {} / {} ({:?} s), confidence {}, {}", found.title, found.artist, found.album, found.duration, found.confidence, found.url);
+    assert_eq!(found.confidence, 1.0);
+
+    let request = json!({ "url": track.spotify_url, "source": "spotify", "isAudioOnly": true, "format": "mp3", "quality": "128",
+        "track": track, "matchedUrl": found.url, "matchConfidence": found.confidence });
+    let task = core.start_download(&request).unwrap();
+    let seen = wait_for_long(&rx, |e| matches!(e, CoreEvent::Download(Event::Done { .. }) | CoreEvent::DownloadFailed(_)));
+    assert!(matches!(seen.last(), Some(CoreEvent::Download(Event::Done { .. }))), "the download failed: {:?}", seen.last());
+    let done = core.tasks().into_iter().find(|t| t.task_id == task.task_id).unwrap();
+    let file = PathBuf::from(&done.progress.filename);
+    println!("file: {} ({} bytes)", done.progress.filename, fs::metadata(&file).unwrap().len());
+    assert_eq!(file.extension().and_then(|e| e.to_str()), Some("mp3"));
+    assert!(fs::metadata(&file).unwrap().len() > 1_000_000, "about four minutes of audio");
+    assert_eq!(done.matched_url.as_deref(), Some(found.url.as_str()));
+    core.shutdown();
+    let _ = fs::remove_dir_all(&dir);
+}
+
+fn wait_for_long(rx: &Receiver<CoreEvent>, mut want: impl FnMut(&CoreEvent) -> bool) -> Vec<CoreEvent> {
+    let mut seen = Vec::new();
+    let deadline = Instant::now() + Duration::from_secs(240);
+    while let Ok(event) = rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+        let hit = want(&event);
+        seen.push(event);
+        if hit {
+            break;
+        }
+    }
+    seen
+}
