@@ -2,7 +2,7 @@
 // electron/downloader.ts run over a corpus of yt-dlp stderr shapes.
 import { readFileSync, writeFileSync } from 'node:fs';
 
-export default async function ({ OUT, literals }) {
+export default async function ({ OUT, literals, ELECTRON }) {
   const d = await import('../../dist-electron/electron/downloader.js');
 
   // The needle tables are private to downloader.ts, so they are copied here by
@@ -31,7 +31,7 @@ export default async function ({ OUT, literals }) {
   ];
   const needles = [...new Set([...AUTH, ...GEO, ...PERM, ...RETRY, ...CODES.flatMap(([, n]) => n)])];
 
-  const src = readFileSync('electron/downloader.ts', 'utf8');
+  const src = readFileSync(`${ELECTRON}/electron/downloader.ts`, 'utf8');
   const body = src.slice(src.indexOf('export function classifyError'), src.indexOf('export class Downloader'));
   const harvested = [...body.matchAll(/'((?:[^'\\\n]|\\.)*)'/g)].map((m) => m[1]).filter((s) => s.length > 1);
 

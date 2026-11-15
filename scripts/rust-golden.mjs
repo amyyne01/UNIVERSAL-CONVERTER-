@@ -1,20 +1,43 @@
 // Writes golden files for the Rust port: the real TypeScript functions are run
 // over a corpus and their outputs saved, so the Rust tests compare against what
-// the Electron app actually does. Run `npm run build:electron` first, then run
-// this under ELECTRON'S OWN Node, because that is the runtime the app ships on
-// and Node's behaviour differs between versions (path.win32 does, for one):
+// the Electron app actually does.
 //
-//   ELECTRON_RUN_AS_NODE=1 node_modules/electron/dist/electron.exe scripts/rust-golden.mjs
-import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
+// The Electron source is not on this branch. It is read from a checkout of the
+// `prod` branch, by default the folder `../converter-electron` beside this one
+// (set AHG_ELECTRON to use another). Set that checkout up once:
+//
+//   git worktree add ../converter-electron prod
+//   cd ../converter-electron && npm ci && npm run build:electron
+//
+// Then run this from the root of this checkout, under ELECTRON'S OWN Node,
+// because that is the runtime the app ships on and Node's behaviour differs
+// between versions (path.win32 does, for one):
+//
+//   ELECTRON_RUN_AS_NODE=1 ../converter-electron/node_modules/electron/dist/electron.exe scripts/rust-golden.mjs
+//
+// Sections import the compiled app as `../dist-electron/...`; those imports are
+// redirected to the Electron checkout.
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 
 import { register } from 'node:module';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 if (!process.versions.electron) {
   console.error('Run this with Electron\'s Node, not system Node (see the comment at the top of this file).');
   process.exit(1);
 }
 
+/** The Electron checkout the reference behaviour is read from. */
+const ELECTRON = path.resolve(process.env.AHG_ELECTRON ?? '../converter-electron');
+if (!existsSync(path.join(ELECTRON, 'dist-electron', 'electron', 'queue.js'))) {
+  console.error(`No built Electron app at ${ELECTRON} (see the comment at the top of this file).`);
+  process.exit(1);
+}
+
 const OUT = 'crates/ahg-engine/tests/golden';
+const DIST_HERE = pathToFileURL(path.resolve('dist-electron')).href + '/';
+const DIST_THERE = pathToFileURL(path.join(ELECTRON, 'dist-electron')).href + '/';
 
 // Some modules import 'electron'. Plain Node cannot load it, so it resolves to
 // a stand-in whose only working part is app.getPath(), answered from
@@ -42,19 +65,28 @@ register(`data:text/javascript,${encodeURIComponent(`
   // globalThis.__ahgWindow, so its messages can be recorded.
   const WINDOW = 'data:text/javascript,' + encodeURIComponent(
     'export const getMainWindow = () => globalThis.__ahgWindow ?? null;');
+  let here = '';
+  let there = '';
+  export function initialize(data) { here = data.here; there = data.there; }
   export async function resolve(specifier, context, next) {
     if (specifier === 'electron') return { url: STUB, shortCircuit: true };
+    // The compiled app lives in the Electron checkout, not beside these scripts.
+    if (/^\\.{1,2}\\//.test(specifier) && context.parentURL) {
+      const wanted = new URL(specifier, context.parentURL).href;
+      if (wanted.startsWith(here)) return next(there + wanted.slice(here.length), context);
+    }
     if (MACHINE[specifier] && /\\/license\\.js(\\?|$)/.test(context.parentURL ?? '')) {
       return { url: 'data:text/javascript,' + encodeURIComponent(MACHINE[specifier]), shortCircuit: true };
     }
     if (specifier === './window.js' && /\\/queue\\.js(\\?|$)/.test(context.parentURL ?? '')) return { url: WINDOW, shortCircuit: true };
     return next(specifier, context);
   }
-`)}`);
+`)}`, { data: { here: DIST_HERE, there: DIST_THERE } });
 
-/** Every plain string literal in a test file: the inputs the suite already cares about. */
+/** Every plain string literal in one of the Electron app's test files (a path
+ *  inside the Electron checkout): the inputs its suite already cares about. */
 function literals(file) {
-  const src = readFileSync(file, 'utf8');
+  const src = readFileSync(path.join(ELECTRON, file), 'utf8');
   const found = [];
   // Anchored on what surrounds a literal in code, so an apostrophe inside a
   // test name or comment cannot shift the pairing.
@@ -305,5 +337,5 @@ console.log(`url_detector.json: ${cases.length} cases`);
 // Further sections, one file each under scripts/rust-golden/. A section
 // default-exports `async ({ OUT, literals }) => void` and writes its own file.
 for (const name of readdirSync(new URL('./rust-golden/', import.meta.url)).filter((n) => n.endsWith('.mjs')).sort()) {
-  await (await import(`./rust-golden/${name}`)).default({ OUT, literals });
+  await (await import(`./rust-golden/${name}`)).default({ OUT, literals, ELECTRON });
 }

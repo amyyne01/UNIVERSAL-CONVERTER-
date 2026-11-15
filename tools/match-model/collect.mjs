@@ -5,14 +5,15 @@
 // candidates. Metadata only: nothing is downloaded. Output is one JSON line per
 // track in data/examples.jsonl, and a rerun skips tracks already there.
 //
-// Run under Electron's Node (it uses the app's own credential-free Spotify reader):
-//   npm run build:electron
-//   ELECTRON_RUN_AS_NODE=1 node_modules/electron/dist/electron.exe tools/match-model/collect.mjs
+// It uses the Electron app's own credential-free Spotify reader, from the
+// Electron checkout (`../converter-electron` by default, or AHG_ELECTRON; see
+// scripts/rust-golden.mjs for how to set that up). Run from this checkout's root:
+//   ELECTRON_RUN_AS_NODE=1 ../converter-electron/node_modules/electron/dist/electron.exe tools/match-model/collect.mjs
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import { register } from 'node:module';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '..', '..');
@@ -35,7 +36,8 @@ const PLAYLISTS = [
 
 register('data:text/javascript,' + encodeURIComponent(
   `export async function resolve(s, c, n) { return s === 'electron' ? { url: 'data:text/javascript,export const app={};export default {};', shortCircuit: true } : n(s, c); }`));
-const { SpotifyHandler } = await import(new URL('../../dist-electron/electron/spotify.js', import.meta.url).href);
+const ELECTRON = path.resolve(process.env.AHG_ELECTRON ?? path.join(ROOT, '..', 'converter-electron'));
+const { SpotifyHandler } = await import(pathToFileURL(path.join(ELECTRON, 'dist-electron', 'electron', 'spotify.js')).href);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
