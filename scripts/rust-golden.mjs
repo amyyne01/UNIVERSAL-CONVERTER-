@@ -21,14 +21,29 @@ const OUT = 'crates/ahg-engine/tests/golden';
 // AHG_GOLDEN_<NAME> environment variables set by the sections below.
 register(`data:text/javascript,${encodeURIComponent(`
   const STUB = 'data:text/javascript,' + encodeURIComponent(
-    'export const app = { getPath: (name) => process.env["AHG_GOLDEN_" + name.toUpperCase()] };' +
+    'export const app = { getPath: (name) => process.env["AHG_GOLDEN_" + name.toUpperCase()],' +
+    '  getVersion: () => process.env.AHG_GOLDEN_VERSION ?? "0.0.0",' +
+    '  get isPackaged() { return process.env.AHG_GOLDEN_PACKAGED === "1"; } };' +
+    'export const BrowserWindow = { getAllWindows: () => globalThis.__ahgWindows ?? [] };' +
     'export const session = {}; export default {};');
+  // A section may script what a module sees of the machine: these stand-ins
+  // answer from globalThis.__ahgMachine when a section has set it.
+  const MACHINE = {
+    'node:child_process': 'export const execSync = (cmd, opts) => globalThis.__ahgMachine.exec(cmd, opts);',
+    'node:os': 'const m = () => globalThis.__ahgMachine.os; export default { hostname: () => m().hostname(), cpus: () => m().cpus(),' +
+      ' totalmem: () => m().totalmem(), platform: () => m().platform(), arch: () => m().arch() };',
+    'node:crypto': 'import real from "node:crypto"; export default { createHash: (a) => real.createHash(a),' +
+      ' randomBytes: (n) => globalThis.__ahgMachine.randomBytes(n) };',
+  };
   // The queue sends to the main window; here that is whatever a section put in
   // globalThis.__ahgWindow, so its messages can be recorded.
   const WINDOW = 'data:text/javascript,' + encodeURIComponent(
     'export const getMainWindow = () => globalThis.__ahgWindow ?? null;');
   export async function resolve(specifier, context, next) {
     if (specifier === 'electron') return { url: STUB, shortCircuit: true };
+    if (MACHINE[specifier] && /\\/license\\.js(\\?|$)/.test(context.parentURL ?? '')) {
+      return { url: 'data:text/javascript,' + encodeURIComponent(MACHINE[specifier]), shortCircuit: true };
+    }
     if (specifier === './window.js' && /\\/queue\\.js(\\?|$)/.test(context.parentURL ?? '')) return { url: WINDOW, shortCircuit: true };
     return next(specifier, context);
   }
