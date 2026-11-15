@@ -168,6 +168,8 @@ export default async ({ OUT, literals }) => {
     { steps: [hs('stdout', '[download] C:\\d\\1.mp3 has already been downloaded\n[FILEPATH]C:\\d\\1.mp3\n[FILEPATH]C:\\d\\2.mp3\n')], code: 0 },
     { steps: [hs('stdout', '[download] C:\\d\\1.mp3 has already been downloaded\n[FILEPATH]C:\\d\\1.mp3\n[FILEPATH]C:\\d\\1.mp3\n')], code: 0 },
     { steps: [hs('stdout', '[download]  C:\\d\\1.mp3  has already been downloaded\n[FILEPATH]C:\\d\\1.mp3\n')], code: 0 },
+    // An indented marker, and a marker inside other text (a title can hold one): neither is a report.
+    { steps: [hs('stdout', '   [FILEPATH]C:/spoof/lead.mp3\nDeleting original file C:/o/[PROGRESS]1|2.mp4\n')], code: 0 },
     { steps: [hs('stdout', '[PROGRESS]10|100|NA|1|1\n[Merger] Merging\n[Metadata] Adding\n[PROGRESS]100|100|NA|1|0\n[download] Downloading item 2 of 3\n[PROGRESS]5|100|NA|1|9\n')], code: 0 },
     { steps: [hs('stderr', 'ERROR: [youtube] x: Video unavailable\n'), hs('stderr', 'ERROR: second\n')], code: 1 },
     { steps: [hs('stderr', 'WARNING: only a warning\n')], code: 1 },
