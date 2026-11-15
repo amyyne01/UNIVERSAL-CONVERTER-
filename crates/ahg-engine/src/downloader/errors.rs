@@ -41,11 +41,14 @@ const AUTH: &[&str] = &[
     "logged in",
     "authentication is required",
 ];
-const PRIVATE: &[&str] = &["private video. ", "playlist is private", "account is private", "either private or"];
+// "video is private" is YouTube's own reason text, relayed by yt-dlp; it is not in yt-dlp's source.
+const PRIVATE: &[&str] = &["private video. ", "video is private", "playlist is private", "account is private", "either private or"];
 const GEO: &[&str] = &[
     "geo restriction",
     "geo restricted",
     "not available from your location",
+    // YouTube's own reason text for a rights block, relayed by yt-dlp.
+    "blocked it in your country",
     "not available in your country",
     "made this video available in your country",
     "not available in your region",

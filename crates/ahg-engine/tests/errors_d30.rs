@@ -107,3 +107,17 @@ fn stray_words_no_longer_flip_the_verdict() {
         assert!(explain_error(line).starts_with("The download stopped with an error:"), "{line}");
     }
 }
+
+/// Wording that is YouTube's own, relayed by yt-dlp as the reason text, so it
+/// is not in yt-dlp's source. Both are multi-word and cannot be a stray word.
+#[test]
+fn youtubes_own_relayed_wordings_are_recognised() {
+    use ahg_engine::downloader::errors::{ErrorClass, classify_error, error_code_of};
+    use ahg_engine::types::ErrorCode;
+    let private = "ERROR: [youtube] abc: Video unavailable. This video is private";
+    assert_eq!(classify_error(private), ErrorClass::Auth);
+    assert_eq!(error_code_of(private), ErrorCode::Private);
+    let blocked = "ERROR: [youtube] abc: Video unavailable. This video contains content from UMG, who has blocked it in your country on copyright grounds";
+    assert_eq!(classify_error(blocked), ErrorClass::Geo);
+    assert_eq!(error_code_of(blocked), ErrorCode::GeoBlocked);
+}
