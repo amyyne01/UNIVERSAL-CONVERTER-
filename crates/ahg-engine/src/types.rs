@@ -470,4 +470,8 @@ pub struct DownloadTask {
     /// on rows saved before extras existed, which means "no extras".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub extras: Option<PartialExtras>,
+    /// Keys this version does not know. They are kept and written back, so a
+    /// history row never loses data by passing through this app.
+    #[serde(flatten)]
+    pub other: serde_json::Map<String, serde_json::Value>,
 }

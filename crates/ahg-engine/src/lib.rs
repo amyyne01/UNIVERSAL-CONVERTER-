@@ -5,6 +5,7 @@ pub mod clock;
 pub mod config;
 pub mod downloader;
 pub mod log;
+pub mod queue;
 pub mod scheduler;
 pub mod state_machine;
 pub mod stats;

@@ -8,6 +8,7 @@ version = "2.0.0"
 dependencies = [
  "chrono",
  "fancy-regex",
+ "indexmap",
  "regex",
  "serde",
  "serde_json",

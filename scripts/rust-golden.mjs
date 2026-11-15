@@ -23,8 +23,14 @@ register(`data:text/javascript,${encodeURIComponent(`
   const STUB = 'data:text/javascript,' + encodeURIComponent(
     'export const app = { getPath: (name) => process.env["AHG_GOLDEN_" + name.toUpperCase()] };' +
     'export const session = {}; export default {};');
+  // The queue sends to the main window; here that is whatever a section put in
+  // globalThis.__ahgWindow, so its messages can be recorded.
+  const WINDOW = 'data:text/javascript,' + encodeURIComponent(
+    'export const getMainWindow = () => globalThis.__ahgWindow ?? null;');
   export async function resolve(specifier, context, next) {
-    return specifier === 'electron' ? { url: STUB, shortCircuit: true } : next(specifier, context);
+    if (specifier === 'electron') return { url: STUB, shortCircuit: true };
+    if (specifier === './window.js' && /\\/queue\\.js(\\?|$)/.test(context.parentURL ?? '')) return { url: WINDOW, shortCircuit: true };
+    return next(specifier, context);
   }
 `)}`);
 
