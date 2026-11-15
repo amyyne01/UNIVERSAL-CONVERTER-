@@ -10,6 +10,9 @@ use ureq::{Agent, Proxy, ResponseExt};
 
 pub struct Http {
     proxy: Option<Proxy>,
+    /// A proxy was asked for but its address could not be used. Requests are
+    /// then refused: going direct would expose the traffic the proxy was for.
+    proxy_broken: bool,
 }
 
 pub struct Response {
@@ -41,17 +44,27 @@ impl Response {
 
 impl Http {
     /// `proxy` is the address from Settings (`http://`, `https://`,
-    /// `socks5://`), or `None` for a direct connection. An address that cannot
-    /// be used is ignored.
+    /// `socks5://`, `socks5h://`), or `None` or empty for a direct connection.
+    /// The address is used exactly as written.
     pub fn new(proxy: Option<&str>) -> Self {
-        // `socks5h` asks the proxy to resolve names; this client knows it as `socks5`.
-        let proxy = proxy.filter(|p| !p.is_empty()).and_then(|p| Proxy::new(&p.replacen("socks5h://", "socks5://", 1)).ok());
-        Self { proxy }
+        match proxy.filter(|p| !p.is_empty()).map(Proxy::new) {
+            None => Self { proxy: None, proxy_broken: false },
+            Some(Ok(proxy)) => Self { proxy: Some(proxy), proxy_broken: false },
+            Some(Err(_)) => Self { proxy: None, proxy_broken: true },
+        }
+    }
+
+    /// False when a proxy was asked for and its address could not be used.
+    pub fn proxy_usable(&self) -> bool {
+        !self.proxy_broken
     }
 
     /// Send one request. `None` means it failed outright: no connection, a
     /// timeout, a broken reply.
     pub fn send(&self, method: &str, url: &str, headers: &[(String, String)], body: Option<&str>, timeout: Duration) -> Option<Response> {
+        if self.proxy_broken {
+            return None;
+        }
         let agent: Agent = Agent::config_builder()
             .http_status_as_error(false)
             .timeout_global(Some(timeout))

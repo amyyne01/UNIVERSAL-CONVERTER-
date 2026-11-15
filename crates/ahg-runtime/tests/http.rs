@@ -181,3 +181,33 @@ fn the_real_spotify_is_read_without_credentials() {
     // Electron app either (QUIRKS.md, Q6). It must at least not fail.
     let _ = spotify.search(&format!("{} {}", first.artist, first.name));
 }
+
+#[test]
+fn a_proxy_that_cannot_be_used_stops_requests_instead_of_going_direct() {
+    let (base, _seen) = server();
+    // The setting asks for a proxy. If it cannot be understood, connecting
+    // directly would expose the traffic the proxy was meant to carry.
+    let http = Http::new(Some("not a proxy address"));
+    assert!(!http.proxy_usable());
+    assert!(http.send("GET", &format!("{base}/ok"), &[], None, T).is_none());
+    // No proxy asked for, or an empty setting, is a direct connection.
+    assert!(Http::new(None).proxy_usable());
+    assert!(Http::new(Some("")).send("GET", &format!("{base}/ok"), &[], None, T).is_some());
+}
+
+#[test]
+fn every_proxy_scheme_settings_accept_is_understood_as_written() {
+    // `socks5h` means the proxy resolves host names. It must reach the client
+    // unchanged: turning it into `socks5` would resolve names on this machine.
+    for address in ["http://127.0.0.1:9", "https://127.0.0.1:9", "socks5://127.0.0.1:9", "socks5h://127.0.0.1:9"] {
+        assert!(Http::new(Some(address)).proxy_usable(), "{address}");
+    }
+}
+
+#[test]
+fn requests_go_through_the_proxy_when_one_is_set() {
+    // Nothing listens on port 9, so a request can only fail if it really went to the proxy.
+    let (base, _seen) = server();
+    let http = Http::new(Some("http://127.0.0.1:9"));
+    assert!(http.send("GET", &format!("{base}/ok"), &[], None, Duration::from_secs(3)).is_none());
+}
