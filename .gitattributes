@@ -1,0 +1,2 @@
+# Golden files are compared byte for byte and written by Node with LF endings.
+crates/**/tests/golden/*.json text eol=lf
