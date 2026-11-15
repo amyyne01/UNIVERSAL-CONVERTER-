@@ -353,6 +353,10 @@ pub struct Track {
     pub thumbnail_url: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spotify_url: Option<String>,
+    /// D34: Spotify's explicit flag, when it stated one. The bridge prefers
+    /// the YouTube Music song carrying the same flag. Electron has no such field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub explicit: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

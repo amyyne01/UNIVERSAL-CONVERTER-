@@ -165,8 +165,7 @@ fn spotify_bridge(ytdlp: &YtDlp, track: &Track, args: &mut [String], song_search
 
     if let Some(search) = song_search {
         let song = match search(&query).map(|response| song_rows(&response)).filter(|rows| !rows.is_empty()) {
-            // ponytail: Spotify's own explicit flag is not read yet, so only the labels are compared.
-            Some(rows) => pick_row(track, &rows, None).map(|pick| (rows[pick.index].url(), if pick.explicit_agrees { 1.0 } else { EXPLICIT_DIFFERS })),
+            Some(rows) => pick_row(track, &rows, track.explicit).map(|pick| (rows[pick.index].url(), if pick.explicit_agrees { 1.0 } else { EXPLICIT_DIFFERS })),
             None => confirmed_by_lookup(ytdlp, track, &query).map(|url| (url, 1.0)),
         };
         if let Some((url, confidence)) = song {

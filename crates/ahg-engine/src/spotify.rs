@@ -399,6 +399,8 @@ pub fn track_from_graphql(d: Option<&Value>, album: Option<&Value>) -> Res<Optio
         duration_ms: number_of(first(&[path(d, &["trackDuration", "totalMilliseconds"]), path(d, &["duration", "totalMilliseconds"])])),
         thumbnail_url: cover_url(g(album, "coverArt")),
         spotify_url: spotify_url(id),
+        // D34: "EXPLICIT" or "NONE"; anything else is unknown.
+        explicit: path(d, &["contentRating", "label"]).and_then(Value::as_str).map(|label| label == "EXPLICIT"),
     }))
 }
 
@@ -435,6 +437,7 @@ pub fn track_from_embed(e: Option<&Value>, fallback_cover: &str, fallback_id: &s
         duration_ms: if duration.is_nan() { 0.0 } else { duration },
         thumbnail_url: if cover.is_empty() { fallback_cover.to_owned() } else { cover },
         spotify_url: spotify_url(&id),
+        explicit: g(e, "isExplicit").and_then(Value::as_bool),
         id,
     }))
 }

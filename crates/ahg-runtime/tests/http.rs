@@ -224,3 +224,27 @@ fn the_real_song_search_returns_rows_with_artist_and_length() {
     let first = &rows[0];
     assert!(first.title.contains("Dreams") && first.artist.contains("Fleetwood Mac") && first.duration.is_some(), "{first:?}");
 }
+
+/// D34 against the real Spotify: playlist rows and single tracks both state
+/// their explicit flag. Network; run with --ignored.
+#[test]
+#[ignore = "talks to the real Spotify"]
+fn the_real_spotify_states_which_tracks_are_explicit() {
+    use ahg_engine::spotify::{Spotify, system_now_ms};
+    let mut spotify = Spotify::new(SpotifyHttp::new(Http::new(None)), Box::new(system_now_ms));
+    // A rap playlist: it holds explicit tracks and clean ones.
+    let playlist = spotify.fetch_playlist("37i9dQZF1DX0XUsuxWHRQd").ok().flatten().expect("the playlist should load");
+    let stated = playlist.tracks.iter().filter(|t| t.explicit.is_some()).count();
+    let explicit: Vec<_> = playlist.tracks.iter().filter(|t| t.explicit == Some(true)).collect();
+    println!("{} tracks, {stated} state the flag, {} explicit", playlist.tracks.len(), explicit.len());
+    assert!(stated * 10 >= playlist.tracks.len() * 9, "most rows should state the flag: {stated} of {}", playlist.tracks.len());
+    assert!(!explicit.is_empty(), "a rap playlist has explicit tracks");
+    // A piano playlist: the flag is stated there too, and says no.
+    let calm = spotify.fetch_playlist("37i9dQZF1DX4sWSpwq3LiO").ok().flatten().expect("the playlist should load");
+    let clean = calm.tracks.iter().filter(|t| t.explicit == Some(false)).count();
+    println!("{} calm tracks, {clean} stated as not explicit", calm.tracks.len());
+    assert!(clean * 10 >= calm.tracks.len() * 9, "{clean} of {}", calm.tracks.len());
+    // The same track read on its own says the same.
+    let alone = spotify.fetch_track(&format!("https://open.spotify.com/track/{}", explicit[0].id)).ok().flatten().expect("the track should load");
+    assert_eq!(alone.explicit, Some(true), "{} read alone", alone.name);
+}

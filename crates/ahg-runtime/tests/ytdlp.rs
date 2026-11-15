@@ -185,6 +185,7 @@ fn spotify_task() -> ahg_engine::types::DownloadTask {
         duration_ms: 200_000.0,
         thumbnail_url: String::new(),
         spotify_url: None,
+        explicit: None,
     };
     let init = TaskInit {
         url: Some("https://open.spotify.com/track/t1".into()),
@@ -378,4 +379,50 @@ fn a_song_the_lookup_contradicts_is_not_downloaded_as_a_match() {
     let song = "out {\"id\":\"long0000001\",\"title\":\"The Song\",\"track\":\"The Song\",\"artist\":\"Artist\",\"duration\":440,\"uploader\":\"Fan\",\"url\":\"https://www.youtube.com/watch?v=long0000001\"}\nexit 0\n";
     let (reports, _) = run_song_bridge(ytdlp(&dir, song, DOWNLOADS), None);
     assert!(the_match(&reports).is_none_or(|(url, _)| !url.contains("long0000001")), "{reports:?}");
+}
+
+/// A song row carrying YouTube Music's explicit badge.
+fn with_badge(response: &str, id: &str) -> String {
+    let mut v: serde_json::Value = serde_json::from_str(response).unwrap();
+    for item in v["contents"]["musicShelfRenderer"]["contents"].as_array_mut().unwrap() {
+        if item["musicResponsiveListItemRenderer"]["playlistItemData"]["videoId"] == id {
+            item["musicResponsiveListItemRenderer"]["badges"] = serde_json::json!([{ "musicInlineBadgeRenderer": { "icon": { "iconType": "MUSIC_EXPLICIT_BADGE" } } }]);
+        }
+    }
+    v.to_string()
+}
+
+fn run_explicit_bridge(dir: &Path, search: String) -> Vec<Report> {
+    let mut d = Downloader::with(Arc::new(ytdlp(dir, "exit 1\n", DOWNLOADS)));
+    d.set_song_search(Arc::new(move |_: &str| Some(search.clone())));
+    let mut task = spotify_task();
+    task.track.as_mut().unwrap().explicit = Some(true);
+    let (tx, rx) = channel();
+    d.start(task, 3, tx);
+    let mut reports = Vec::new();
+    while let Ok(report) = rx.recv_timeout(Duration::from_secs(20)) {
+        let ended = matches!(report, Report::Done { .. } | Report::Error { .. });
+        reports.push(report);
+        if ended {
+            break;
+        }
+    }
+    reports
+}
+
+#[test]
+fn an_explicit_track_takes_the_explicit_song_over_a_clean_one_listed_first() {
+    let dir = scratch("explicit");
+    let rows = song_search(&[("clean000001", "The Song", "Artist • Album • 3:20"), ("dirty000001", "The Song", "Artist • Album • 3:20")]);
+    let reports = run_explicit_bridge(&dir, with_badge(&rows, "dirty000001"));
+    assert_eq!(the_match(&reports), Some(("https://music.youtube.com/watch?v=dirty000001".to_owned(), 1.0)));
+}
+
+#[test]
+fn an_explicit_track_with_only_a_clean_song_is_a_best_guess_not_a_confirmed_match() {
+    let dir = scratch("explicitonly");
+    let reports = run_explicit_bridge(&dir, song_search(&[("clean000001", "The Song", "Artist • Album • 3:20")]));
+    let (url, confidence) = the_match(&reports).unwrap();
+    assert_eq!(url, "https://music.youtube.com/watch?v=clean000001");
+    assert!(confidence < 1.0, "a different explicit flag is not a confirmed match: {confidence}");
 }

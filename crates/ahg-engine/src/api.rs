@@ -82,6 +82,8 @@ fn validate_track(v: &Value) -> Result<Track, String> {
         duration_ms: number(t.get("durationMs")).unwrap_or(0.0),
         thumbnail_url: opt_text(t.get("thumbnailUrl"), MAX_URL)?.unwrap_or_default(),
         spotify_url: opt_text(t.get("spotifyUrl"), MAX_URL)?,
+        // D34: kept only when it is a plain yes or no.
+        explicit: t.get("explicit").and_then(Value::as_bool),
     })
 }
 
