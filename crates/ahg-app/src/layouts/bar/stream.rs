@@ -1,23 +1,27 @@
-//! The stream under the bar: what is in flight sits in one recessed well,
+//! The stream of downloads: what is in flight sits in one recessed well,
 //! like the channels of a desk; what needs a hand and what is finished run
-//! under it as plain lines. Each section's header carries its own action.
+//! under it as plain lines. Home shows the well, the problems and the latest
+//! three that landed; Downloads shows everything.
 use ahg_engine::types::{DownloadStatus as St, DownloadTask, ErrorCode as E};
 use rune::{Align, Color, El, Icon, ScrollSpec, col, el, icon, row, spacer};
 
+use super::cover;
 use crate::copy;
 use crate::directions::signal::icons;
 use crate::directions::signal::model::{self, Group};
-use crate::directions::signal::parts::{Line, art, ghost, icon_button, label, meter_held, mono, sans, stack};
+use crate::directions::signal::parts::{Line, ghost, icon_button, label, meter_held, mono, sans, stack};
 use crate::directions::signal::theme::{Pal, source_color};
-use crate::gate::State;
+use crate::gate::{Nav, State};
 
 const COUNTER: f32 = 72.0;
 const METER: f32 = 168.0;
 const STATE: f32 = 112.0;
 const ACTIONS: f32 = 64.0;
 const OWNED: f32 = 272.0;
+/// How many landed downloads Home shows.
+const RECENT: usize = 3;
 
-pub fn view(s: &State, p: &Pal) -> El {
+pub fn view(s: &State, p: &Pal, home: bool) -> El {
     let tasks = &s.tasks;
     let mut out = col().w_full().pb(32.0).gap(24.0);
     if tasks.is_empty() {
@@ -36,7 +40,7 @@ pub fn view(s: &State, p: &Pal) -> El {
                 _ => 0,
             });
         }
-        out = out.child(section(s, g, &rows, p));
+        out = out.child(section(s, g, &rows, home, p));
     }
     col().w_full().scroll(ScrollSpec { stick_bottom: false }).child(out)
 }
@@ -45,11 +49,16 @@ fn nothing_yet(p: &Pal) -> El {
     row().w_full().h(56.0).px(16.0).gap(12.0).center_y().radius(8.0).border(1.0, p.line).child(icon(&icons::DOWNLOAD, 16.0).color(p.muted)).child(label(copy::EMPTY_NONE_TITLE, sans(13.0, 400.0), p.text2))
 }
 
-fn section(s: &State, g: Group, rows: &[&DownloadTask], p: &Pal) -> El {
+fn view_all(p: &Pal) -> El {
+    ghost(Some(&icons::FORWARD), copy::CELL_RECENT_VIEW_ALL, p.text2, p).on_press(|s: &mut State| s.nav = Nav::Downloads)
+}
+
+fn section(s: &State, g: Group, rows: &[&DownloadTask], home: bool, p: &Pal) -> El {
     let tasks = &s.tasks;
     let name = match g {
         Group::InProgress => copy::GROUP_IN_PROGRESS,
         Group::Attention => copy::GROUP_NEEDS_ATTENTION,
+        Group::Completed if home => copy::CELL_RECENT,
         Group::Completed => copy::GROUP_COMPLETED,
     };
     let mut title = Line::new().strong(name, p.text2);
@@ -57,27 +66,24 @@ fn section(s: &State, g: Group, rows: &[&DownloadTask], p: &Pal) -> El {
         title = title.add(copy::DL_PAUSED_SUFFIX, p.warning);
     }
     let mut head = row().w_full().h(32.0).px(4.0).gap(8.0).center_y().child(title.one(sans(13.0, 400.0))).child(label(rows.len().to_string(), mono(12.0, 400.0), p.muted)).child(spacer());
-    match g {
-        Group::InProgress => {
-            if model::all_paused(tasks) {
-                head = head.child(ghost(Some(&icons::PLAY), copy::DL_RESUME_ALL, p.accent_ink, p));
-            } else {
-                head = head.child(ghost(Some(&icons::PAUSE), copy::DL_PAUSE_ALL, p.text2, p));
-            }
-            head = head.child(ghost(Some(&icons::CANCEL), copy::DL_CANCEL_ALL, p.text2, p));
+    // Home's headers carry their section's own action; on Downloads the toolbar has them all.
+    if home {
+        match g {
+            Group::InProgress if model::all_paused(tasks) => head = head.child(ghost(Some(&icons::PLAY), copy::DL_RESUME_ALL, p.accent_ink, p)),
+            Group::InProgress => head = head.child(ghost(Some(&icons::PAUSE), copy::DL_PAUSE_ALL, p.text2, p)),
+            Group::Attention if rows.iter().any(|t| t.progress.status == St::Failed && !model::is_permanent(t.error_code)) => head = head.child(ghost(Some(&icons::RETRY), copy::DL_RETRY_ALL_FAILED, p.text2, p)),
+            _ => {}
         }
-        Group::Attention => {
-            if rows.iter().any(|t| t.progress.status == St::Failed && !model::is_permanent(t.error_code)) {
-                head = head.child(ghost(Some(&icons::RETRY), copy::DL_RETRY_ALL_FAILED, p.text2, p));
-            }
+        if g != Group::InProgress && rows.len() > RECENT || g == Group::Completed {
+            head = head.child(view_all(p));
         }
-        Group::Completed => head = head.child(ghost(Some(&icons::REMOVE), copy::DL_CLEAR_COMPLETED, p.text2, p)),
     }
+    let shown = if home && g != Group::InProgress { &rows[..rows.len().min(RECENT)] } else { rows };
     let body = match g {
-        Group::InProgress => well(s, rows, p),
+        Group::InProgress => well(s, shown, p),
         _ => {
             let mut list = col().w_full();
-            for (i, t) in rows.iter().enumerate() {
+            for (i, t) in shown.iter().enumerate() {
                 let r = if g == Group::Attention { trouble_row(s, t, p) } else { owned_row(s, t, p) };
                 list = list.child(if i > 0 { r.border_sides([1.0, 0.0, 0.0, 0.0], p.line) } else { r });
             }
@@ -102,7 +108,7 @@ fn well(s: &State, rows: &[&DownloadTask], p: &Pal) -> El {
         if t.progress.status == St::Queued && !seam {
             seam = true;
             if !first {
-                w = w.child(row().w_full().h(32.0).px(16.0).center_y().border_sides([1.0, 0.0, 0.0, 0.0], p.line).child(label(copy::up_next(queued), mono(12.0, 400.0), p.muted)));
+                w = w.child(row().w_full().h(32.0).px(12.0).center_y().border_sides([1.0, 0.0, 0.0, 0.0], p.line).child(label(copy::up_next(queued), mono(12.0, 400.0), p.muted)));
                 first = true;
             }
         }
@@ -117,7 +123,7 @@ fn banner(n: usize, p: &Pal) -> El {
     row()
         .w_full()
         .h(48.0)
-        .pl(16.0)
+        .pl(12.0)
         .pr(8.0)
         .gap(12.0)
         .center_y()
@@ -150,7 +156,7 @@ fn live_row(s: &State, t: &DownloadTask, p: &Pal) -> El {
         .gap(12.0)
         .center_y()
         .hover(p.hover)
-        .child(art(s, t, Some(32.0), 32.0, 4.0, p))
+        .child(cover(s, t, 32.0, p))
         .child(title_block(t, true, p))
         .child(counter)
         .child(el().w(METER).child(meter_held(frac, 28, None, 8.0, 2.0, lit, p.unlit, held)))
@@ -241,8 +247,8 @@ fn trouble_row(s: &State, t: &DownloadTask, p: &Pal) -> El {
         a = a.child(icon_button(&icons::COPY, copy::ACT_COPY_DETAILS, p.text2, p));
     }
     if matches!(t.error_code, Some(E::Private | E::AgeRestricted | E::LoginRequired | E::DiskFull)) {
-        // Opens the sheet it names, out of the bar.
-        a = a.child(icon_button(&icons::SETTINGS, copy::ACT_OPEN_SETTINGS, p.text2, p));
+        // Goes to the Settings place, at the section it names.
+        a = a.child(icon_button(&icons::SETTINGS, copy::ACT_OPEN_SETTINGS, p.text2, p).on_press(|s: &mut State| s.nav = Nav::Settings));
     }
     if t.error_code == Some(E::Unknown) && failed {
         a = a.child(icon_button(&icons::REFRESH, copy::ACT_UPDATE_ENGINE, p.text2, p));
@@ -250,19 +256,19 @@ fn trouble_row(s: &State, t: &DownloadTask, p: &Pal) -> El {
     if !model::is_permanent(t.error_code) || !failed {
         a = a.child(icon_button(&icons::RETRY, copy::ACT_RETRY, if failed { p.error } else { p.text2 }, p));
     }
-    // A failed line carries one lit segment in the error colour at its edge.
-    let edge = el().w(2.0).h(32.0).radius(1.0).fill(if failed { p.error } else { p.line_strong });
+    // A failed line carries one lit segment in the error colour on its edge, outside the grid.
+    let edge = el().w(2.0).radius(1.0).fill(if failed { p.error } else { p.line_strong }).pin(Some(0.0), Some(12.0), None, Some(12.0));
     row()
         .key(t.task_id.as_str())
         .w_full()
         .py(12.0)
-        .pr(12.0)
+        .px(12.0)
         .gap(12.0)
         .items_center()
         .hover_group()
         .hover(p.hover)
         .child(edge)
-        .child(art(s, t, Some(32.0), 32.0, 4.0, p))
+        .child(cover(s, t, 32.0, p))
         .child(text)
         .child(col().w(STATE).items_end().child(state_word(i, word, tone)))
         .child(a)
@@ -281,7 +287,7 @@ fn owned_row(s: &State, t: &DownloadTask, p: &Pal) -> El {
         .child(tag)
         .child(stack(4.0).grow(1.0).child(label(file, mono(12.0, 500.0), p.text).single_line().truncate_middle().min_w(0.0)).child(label(model::folder(&pr.filename), mono(12.0, 400.0), p.muted).single_line().truncate_middle().min_w(0.0)))
         .help(pr.filename.clone());
-    let (word, tone) = if skipped { (copy::STATE_SKIPPED, p.success) } else { (copy::STATE_DONE, p.success) };
+    let word = if skipped { copy::STATE_SKIPPED } else { copy::STATE_DONE };
     let mut a = row().w(ACTIONS + 32.0).gap(4.0).justify_end().center_y();
     if skipped {
         a = a.child(icon_button(&icons::DOWNLOAD, copy::ACT_DOWNLOAD_AGAIN, p.text2, p));
@@ -294,15 +300,14 @@ fn owned_row(s: &State, t: &DownloadTask, p: &Pal) -> El {
         .key(t.task_id.as_str())
         .w_full()
         .h(56.0)
-        .pl(14.0)
-        .pr(12.0)
+        .px(12.0)
         .gap(12.0)
         .center_y()
         .hover_group()
         .hover(p.hover)
-        .child(art(s, t, Some(32.0), 32.0, 4.0, p))
+        .child(cover(s, t, 32.0, p))
         .child(title_block(t, false, p))
         .child(owned)
-        .child(col().w(STATE).items_end().child(state_word(&icons::CHECK, word, tone)))
+        .child(col().w(STATE).items_end().child(state_word(&icons::CHECK, word, p.success)))
         .child(a)
 }

@@ -1,57 +1,55 @@
-//! Layout "One bar", wearing the Signal look. There are no pages and no
-//! sidebar: the window is one paste-and-command bar, and every download
-//! streams under it. The bar has two decks. The upper one takes a link, a
-//! search or a command; the lower one is the desk's readout: the stream's
-//! sections on the left, the master instrument (a tape counter of the media
-//! carried across today, over a level meter of everything in flight) on the
-//! right. Whatever is not a download opens as a panel that drops out of the
-//! bar over the stream: a list of what matches on the left, the chosen
-//! sheet on the right.
+//! Layout "One bar", wearing the Signal look. Three places (Home, Downloads,
+//! Settings) sit as tabs in the title bar, always visible; Ctrl+1/2/3 go to
+//! them. Home is the bar: a paste-and-command field over a readout deck
+//! (this month's count on the left; on the right the master instrument, a
+//! tape counter of the media carried across today over a level meter of
+//! everything in flight), and under it what is in flight and what just
+//! landed. Downloads is the full history; Settings lists its sections on the
+//! left and shows the chosen one on the right. Ctrl+K still turns the bar
+//! into a command line that reaches any section from anywhere.
 //!
 //! Where the old app's screens and features live now:
 //!
-//! | Old (Electron 1.x)                         | One bar                                                             |
-//! |--------------------------------------------|---------------------------------------------------------------------|
-//! | Home: paste field, Look up, status line    | The bar's upper deck; the status line is the caption under the bar  |
-//! | Home: rest caption (folder, format, Ctrl+V)| The caption under the bar; `Change` opens the Destination sheet     |
-//! | Home: search results                       | A panel dropped from the bar, bands per source                      |
-//! | Home: Speed cell                           | The master instrument's speed figure, and the In progress header    |
-//! | Home: This month, Where it came from       | `This month` sheet in the bar (its row shows the file count)        |
-//! | Home: Recent downloads                     | The stream's Completed section                                      |
-//! | Home: Works with (first launch)            | Under the bar on first launch                                       |
-//! | Downloads: header counts and summary       | The deck's section tabs (count per section)                         |
-//! | Downloads: filters All/Active/Done/Failed  | The deck's section tabs, Ctrl+1..4                                  |
-//! | Downloads: search                          | Typing a non-link in the bar also matches downloads                 |
-//! | Downloads: Pause/Resume/Cancel all, Retry  | Each section header carries its own; all are bar commands too       |
-//! |   all failed, Clear completed              |                                                                     |
-//! | Downloads: interrupted banner              | The first line of the In progress well                              |
-//! | Downloads: rows, row actions, reorder      | The stream (live rows sit in the recessed well)                     |
-//! | Downloads: selection (checkboxes)          | Ctrl/Shift-click a row; the selection's actions show in the deck    |
-//! | YouTube / Spotify / SoundCloud / Reels tabs| Search scopes in the bar (Navigate group); a playlist preview drops |
-//! |                                            |   from the bar like a sheet                                         |
-//! | Settings: every section                    | One sheet each, from the bar (`Settings` group)                     |
-//! | Settings: Scheduled downloads              | `Scheduled downloads` sheet                                         |
-//! | Settings: Software (app update, engine)    | `Software` sheet; `Check for updates` is also a bar command         |
-//! | Settings: Plan & license, deactivate/move  | `Plan & license` sheet                                              |
-//! | Settings: cookies import, sign in with     | `More download options` sheet                                       |
-//! | Settings: theme and palette                | `Appearance & behavior` sheet; `Switch to dark mode` command        |
-//! | Command palette (Ctrl+K)                   | The bar itself: Ctrl+K focuses it, typing filters                   |
-//! | Keyboard shortcuts sheet (Ctrl+/)          | A sheet from the bar                                                |
-//! | Notices / toasts                           | A line in the bar's lower deck, where the sections sit              |
-//! | Rail shortcuts Ctrl+1..7                   | Ctrl+1..4 pick a section; Ctrl+7 still opens Settings in the bar    |
-//! | Badge on Downloads, carrier line           | The titlebar's lower edge lights while anything is in flight        |
+//! | Old (Electron 1.x)                          | One bar                                                              |
+//! |---------------------------------------------|----------------------------------------------------------------------|
+//! | Rail: Home / Downloads / Settings           | Title-bar tabs Home / Downloads / Settings, Ctrl+1/2/3               |
+//! | Rail badge on Downloads, carrier line       | Active count beside the Downloads tab; the title bar's edge lights    |
+//! | Home: paste field, Look up, status line     | Home: the bar's upper deck; the status line is the caption under it  |
+//! | Home: rest caption (folder, format, Ctrl+V) | Home: the caption; `Change` opens Settings › Destination             |
+//! | Home: search results                        | Home: a panel dropped from the bar, one band per source              |
+//! | Home: Speed cell                            | Home: the master instrument's speed figure                           |
+//! | Home: This month                            | Home: the deck's left readout; Settings › This month for the split   |
+//! | Home: Where it came from                    | Settings › This month                                                |
+//! | Home: Recent downloads, View all            | Home: Recent downloads (latest three), View all goes to Downloads    |
+//! | Home: Works with (first launch)             | Home, first launch: in the empty desk                                |
+//! | Downloads: header counts, summary           | Downloads: the summary line under the toolbar                        |
+//! | Downloads: filters All/Active/Done/Failed   | Downloads: segmented filter (by click; Ctrl+1..4 now go to places)   |
+//! | Downloads: search, bulk actions             | Downloads: toolbar                                                   |
+//! | Downloads: interrupted banner               | First line of the In progress well (Home and Downloads)              |
+//! | Downloads: rows, row actions, reorder       | Downloads: the full list; Home shows in flight, problems, latest     |
+//! | Downloads: selection (checkboxes)           | Ctrl/Shift-click a row; the toolbar swaps to the selection's actions |
+//! | YouTube / Spotify / SoundCloud / Reels tabs | Search scopes of the bar (Ctrl+K, Navigate); playlist preview drops  |
+//! |                                             |   from the bar like the search results                               |
+//! | Settings: every section                     | Settings place: section list left, the section right                 |
+//! | Settings: Software (updates, engine)        | Settings › Software; `Check for updates` is also a bar command       |
+//! | Settings: Plan & license                    | Settings › Plan & license                                            |
+//! | Settings: cookies import, Sign in with      | Settings › More download options                                     |
+//! | Command palette (Ctrl+K)                    | The bar in command mode, from any place (jumps to Home's bar)        |
+//! | Keyboard shortcuts sheet (Ctrl+/)           | Settings › Help, and a sheet from the bar                            |
+//! | Notices / toasts                            | A line in the bar's lower deck                                       |
+mod places;
 mod reach;
 mod stream;
 
 use ahg_engine::types::{DownloadStatus as St, DownloadTask, SourcePlatform};
-use rune::{Color, Cursor, Cx, El, col, el, icon, row, spacer};
+use rune::{Color, Cursor, Cx, El, SurfaceFit, col, el, icon, row, spacer};
 
 use crate::copy;
 use crate::directions::signal::icons;
 use crate::directions::signal::model;
 use crate::directions::signal::parts::{Line, label, meter, meter_held, mono, platform_icon, sans};
 use crate::directions::signal::theme::{self, Pal, source_color};
-use crate::gate::State;
+use crate::gate::{Nav, State};
 
 /// The bar's measure, and the stream's.
 pub(crate) const MEASURE: f32 = 960.0;
@@ -65,19 +63,51 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> El {
     let p = theme::pal(s.palette, cx.system_dark());
     cx.caption_color(if p.dark { Color::WHITE } else { Color::BLACK });
     let trailing = cx.chrome_insets().trailing;
-    let first = s.tasks.is_empty() && s.stats.is_none() && !s.reach;
-    let body = if first { first_launch(&p) } else { desk(s, &p) };
+    let body = match s.nav {
+        Nav::Home if s.tasks.is_empty() && s.stats.is_none() => first_launch(s, &p),
+        Nav::Home => home(s, &p),
+        Nav::Downloads => places::downloads(s, &p),
+        Nav::Settings => places::settings(s, &p),
+    };
     col().w_full().h_full().fill(p.bg).child(titlebar(s, &p, trailing)).child(body)
 }
 
+/// The title bar: wordmark, then the three places as tabs. The current one is
+/// a single lit segment under its name.
 fn titlebar(s: &State, p: &Pal, trailing: f32) -> El {
     let logo = match &s.logo {
         Some(img) if img.is_ready() => el().size(16.0, 16.0).pixels(img.pixels()),
         _ => el().size(16.0, 16.0),
     };
-    let mark = row().gap(8.0).center_y().child(logo).child(Line::new().strong(copy::BRAND, p.text).add(copy::BRAND_REST, p.muted).one(mono(12.0, 400.0)));
+    let mark = row().w(240.0).pl(16.0).gap(8.0).center_y().child(logo).child(Line::new().strong(copy::BRAND, p.text).add(copy::BRAND_REST, p.muted).one(mono(12.0, 400.0)));
+    let active = model::active_count(&s.tasks);
+    let mut tabs = row().h_full().gap(4.0).center_y().role("tablist").label(copy::RAIL_ARIA).no_window_drag();
+    for (i, (place, name)) in [(Nav::Home, copy::NAV_HOME), (Nav::Downloads, copy::NAV_DOWNLOADS), (Nav::Settings, copy::NAV_SETTINGS)].into_iter().enumerate() {
+        let on = s.nav == place;
+        let mut tab = row()
+            .h(32.0)
+            .px(12.0)
+            .gap(8.0)
+            .center_y()
+            .radius(6.0)
+            .hover(p.hover)
+            .press(p.press)
+            .cursor(Cursor::Pointer)
+            .focusable(true)
+            .role("tab")
+            .help(copy::nav_tooltip(name, i + 1))
+            .on_press(move |s: &mut State| s.nav = place)
+            .child(label(name, sans(13.0, 500.0), if on { p.text } else { p.muted }));
+        if place == Nav::Downloads && active > 0 {
+            tab = tab.child(label(active.to_string(), mono(12.0, 400.0), p.accent_ink));
+        }
+        if on {
+            tab = tab.child(el().size(16.0, 2.0).radius(1.0).fill(p.accent).absolute(12.0, 36.0));
+        }
+        tabs = tabs.child(tab);
+    }
     // While anything is in flight the band's lower edge carries the accent: the desk is live.
-    let edge = if model::active_count(&s.tasks) > 0 { p.accent.alpha(0.5) } else { p.line };
+    let edge = if active > 0 { p.accent.alpha(0.5) } else { p.line };
     row()
         .key("titlebar")
         .w_full()
@@ -86,46 +116,74 @@ fn titlebar(s: &State, p: &Pal, trailing: f32) -> El {
         .border_sides([0.0, 0.0, 1.0, 0.0], edge)
         .center_y()
         .window_drag()
-        .child(row().pl(16.0).child(mark))
+        .child(mark)
         .child(spacer())
-        .child(el().w(trailing + 12.0))
+        .child(tabs)
+        .child(spacer())
+        .child(el().w(240.0f32.max(trailing + 12.0)))
 }
 
-/// The window with history: the bar, its caption, the stream.
-fn desk(s: &State, p: &Pal) -> El {
-    let mut top = col().w_full().child(bar(p, s.reach, s.reach, deck(s, p)));
-    if s.reach {
+/// Home with history: the bar, its caption, what is in flight and what landed.
+/// In the `nav` scene the bar is in command mode with its panel dropped.
+fn home(s: &State, p: &Pal) -> El {
+    let command = s.nav_open;
+    let mut top = col().w_full().child(bar(p, command, command, deck(s, p)));
+    if command {
         top = top.child(reach::panel(s, p).pin(Some(0.0), Some(INPUT_H + DECK_H + 8.0), Some(0.0), None).raise());
     }
-    let mut stream = stream::view(s, p).grow(1.0).min_h(0.0).mt(24.0);
-    if s.reach {
+    let mut stream = stream::view(s, p, true).grow(1.0).min_h(0.0).mt(24.0);
+    if command {
         stream = stream.opacity(0.4);
     }
     let column = col().w_full().max_w(MEASURE).h_full().min_h(0.0).pt(32.0).child(top).child(caption(p).mt(12.0)).child(stream);
     col().w_full().grow(1.0).min_h(0.0).px(32.0).items_center().child(column)
 }
 
-/// First launch: nothing downloaded, nothing counted. The bar stands alone
-/// with the desk at rest under it; the line says what goes in.
-fn first_launch(p: &Pal) -> El {
-    let headline = label(copy::HOME_HEADLINE, sans(32.0, 500.0).tracking(-0.6), p.text);
-    let column = col()
+/// First launch: the same frame as Home, the desk switched on with nothing
+/// in it. The empty well takes the whole stream: the promise, where it works,
+/// and five channels at zero waiting for a link.
+fn first_launch(s: &State, p: &Pal) -> El {
+    let mut channels = col().w_full();
+    for i in 0..5 {
+        let fade = [1.0, 0.8, 0.6, 0.4, 0.2][i];
+        let ch = row()
+            .w_full()
+            .h(48.0)
+            .px(24.0)
+            .gap(16.0)
+            .center_y()
+            .border_sides([1.0, 0.0, 0.0, 0.0], p.line)
+            .opacity(fade)
+            .child(label(format!("{:02}", i + 1), mono(12.0, 400.0), p.muted).w(20.0))
+            .child(el().size(32.0, 32.0).radius(4.0).border(1.0, p.line))
+            .child(label(model::timecode(0.0), mono(13.0, 500.0), p.muted).w(72.0))
+            .child(el().grow(1.0).child(meter(0.0, 64, None, 8.0, 2.0, p.accent, p.unlit)));
+        channels = channels.child(ch);
+    }
+    let promise = col()
         .w_full()
-        .max_w(MEASURE)
-        .child(headline.mb(24.0))
-        .child(bar(p, false, true, rest_deck(p)))
-        .child(caption(p).mt(12.0))
-        .child(works_with(p).mt(40.0));
-    col()
+        .px(24.0)
+        .pt(32.0)
+        .pb(32.0)
+        .gap(16.0)
+        .child(label(copy::HOME_HEADLINE, sans(32.0, 500.0), p.text))
+        .child(works_with(p));
+    let well = col()
         .w_full()
         .grow(1.0)
         .min_h(0.0)
-        .px(32.0)
-        .pb(48.0)
-        .items_center()
-        .justify_center()
-        .child(column)
-        .child(legend(p).absolute(0.0, 0.0).pin(Some(32.0), None, Some(32.0), Some(24.0)))
+        .mt(24.0)
+        .mb(32.0)
+        .radius(8.0)
+        .fill(p.deep)
+        .border(1.0, p.line)
+        .clip_rounded(8.0)
+        .child(promise)
+        .child(channels)
+        .child(spacer())
+        .child(legend(p).h(48.0).border_sides([1.0, 0.0, 0.0, 0.0], p.line));
+    let column = col().w_full().max_w(MEASURE).h_full().min_h(0.0).pt(32.0).child(bar(p, false, true, deck(s, p))).child(caption(p).mt(12.0)).child(well);
+    col().w_full().grow(1.0).min_h(0.0).px(32.0).items_center().child(column)
 }
 
 /// The bar: the input deck over the readout deck, one surface.
@@ -186,7 +244,19 @@ pub(crate) fn keycap(key: &str, p: &Pal) -> El {
     el().h(20.0).px(4.0).min_w(20.0).center().radius(4.0).fill(p.raised).border(1.0, p.line_strong).child(label(key, mono(12.0, 400.0), p.text2))
 }
 
-/// The four sections of the stream, Ctrl+1..4.
+/// A task's cover, or a flat tint of its source with its mark at the one icon size.
+pub(crate) fn cover(s: &State, t: &DownloadTask, size: f32, p: &Pal) -> El {
+    let base = el().size(size, size).radius(4.0);
+    match s.cover(&t.task_id) {
+        Some(img) => base.fill(p.raised).pixels_fit(img.pixels(), SurfaceFit::Fill),
+        None => {
+            let c = source_color(p, t.source);
+            base.fill(c.alpha(0.14)).center().child(icon(platform_icon(t.source), 16.0).color(c))
+        }
+    }
+}
+
+/// The four filters of the Downloads list.
 pub(crate) const SECTIONS: [&str; 4] = [copy::DL_FILTER_ALL, copy::DL_FILTER_ACTIVE, copy::DL_FILTER_DONE, copy::DL_FILTER_FAILED];
 
 pub(crate) fn section_count(tasks: &[DownloadTask], i: usize) -> usize {
@@ -201,32 +271,32 @@ pub(crate) fn section_count(tasks: &[DownloadTask], i: usize) -> usize {
         .count()
 }
 
-/// The readout deck: sections on the left, the master instrument on the right.
+/// The readout deck: this month on the left, the master instrument on the right.
 fn deck(s: &State, p: &Pal) -> El {
-    let mut tabs = row().gap(4.0).center_y().role("radiogroup").label(copy::DL_FILTER_ARIA);
-    for (i, name) in SECTIONS.into_iter().enumerate() {
-        let on = i == 0;
-        let mut tab = row()
-            .h(32.0)
-            .px(12.0)
-            .gap(8.0)
-            .center_y()
-            .radius(6.0)
-            .hover(p.hover)
-            .press(p.press)
-            .cursor(Cursor::Pointer)
-            .focusable(true)
-            .role("radio")
-            .help(copy::nav_tooltip(name, i + 1))
-            .child(label(name, sans(13.0, if on { 500.0 } else { 400.0 }), if on { p.text } else { p.text2 }))
-            .child(label(section_count(&s.tasks, i).to_string(), mono(12.0, 400.0), p.muted));
-        if on {
-            // The chosen section is one lit segment, like the meter's head.
-            tab = tab.fill(p.raised).child(el().size(12.0, 2.0).radius(1.0).fill(p.accent).absolute(12.0, 28.0));
+    let month = match &s.stats {
+        Some(st) if st.current.files > 0.0 => {
+            let files = st.current.files as u64;
+            Line::new()
+                .add(&model::month_name(&st.current.month), p.text2)
+                .add("  ", p.muted)
+                .fig(&files.to_string(), p.text)
+                .add(&format!(" {}", copy::file_word(files)), p.text2)
+                .add(&copy::row_dot_part(""), p.muted)
+                .fig(&copy::format_bytes(st.current.bytes), p.text)
+                .one(sans(13.0, 400.0))
         }
-        tabs = tabs.child(tab);
-    }
-    row().w_full().h(DECK_H).px(12.0).gap(16.0).center_y().fill(p.deep.alpha(0.6)).child(tabs).child(spacer()).child(instrument(s, p))
+        _ => label(copy::MONTH_NOTHING_YET, sans(13.0, 400.0), p.muted),
+    };
+    row()
+        .w_full()
+        .h(DECK_H)
+        .px(12.0)
+        .gap(16.0)
+        .center_y()
+        .fill(p.deep.alpha(0.6))
+        .child(row().pl(4.0).min_w(0.0).child(month))
+        .child(spacer())
+        .child(instrument(s, p))
 }
 
 /// Media carried across today: whole lengths of finished files, the done
@@ -270,20 +340,6 @@ fn instrument(s: &State, p: &Pal) -> El {
         .child(meter_held(frac, 48, None, 6.0, 2.0, lit, p.unlit, held))
 }
 
-/// First launch's lower deck: the input's level, every segment dark, and the
-/// counter at zero. Nothing has come in yet.
-fn rest_deck(p: &Pal) -> El {
-    row()
-        .w_full()
-        .h(DECK_H)
-        .px(12.0)
-        .gap(12.0)
-        .center_y()
-        .fill(p.deep.alpha(0.6))
-        .child(label(model::timecode(0.0), mono(13.0, 500.0), p.muted))
-        .child(el().grow(1.0).child(meter(0.0, 96, None, 8.0, 2.0, p.accent, p.unlit)))
-}
-
 /// The rest-state caption under the bar.
 fn caption(p: &Pal) -> El {
     let left = row()
@@ -306,7 +362,6 @@ fn works_with(p: &Pal) -> El {
     let mark = |source: SourcePlatform, name: &'static str| row().gap(8.0).center_y().child(icon(platform_icon(source), 16.0).color(source_color(p, source))).child(label(name, sans(13.0, 500.0), p.text));
     row()
         .w_full()
-        .px(4.0)
         .gap(20.0)
         .center_y()
         .flex_wrap()
@@ -318,7 +373,7 @@ fn works_with(p: &Pal) -> El {
         .child(label(copy::WORKS_WITH_TAIL, sans(13.0, 400.0), p.text2))
 }
 
-/// The three keys that are the whole app, set along the window's foot.
+/// The keys that are the whole app, along the foot of the empty desk.
 fn legend(p: &Pal) -> El {
     let pair = |keys: &[&str], words: &str| {
         let mut caps = row().gap(4.0);
@@ -329,9 +384,10 @@ fn legend(p: &Pal) -> El {
     };
     row()
         .w_full()
+        .px(24.0)
         .gap(32.0)
-        .center()
+        .center_y()
         .child(pair(&[copy::KEY_CTRL, copy::KEY_K], copy::SHORTCUT_PALETTE))
-        .child(pair(&[copy::KEY_CTRL, copy::KEYCAP_SLASH], copy::SHORTCUT_SHOW))
-        .child(pair(&[copy::KEYCAP_ESC], copy::SHORTCUT_CLOSE))
+        .child(pair(&[copy::KEY_CTRL, &copy::keycap_tab_range(3)], copy::RAIL_ARIA))
+        .child(pair(&[copy::KEY_CTRL, copy::KEYCAP_SLASH], copy::SHORTCUTS_TITLE))
 }

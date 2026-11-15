@@ -4,7 +4,8 @@
 // (cargo build -p ahg-app --no-default-features --features shelf --target-dir target/gate-shelf), then:
 //
 //   node tools/design-gate/render.mjs            all three directions
-//   node tools/design-gate/render.mjs shelf      one direction only (the page is rebuilt from what exists)
+//   node tools/design-gate/render.mjs shelf      one direction or layout only (the page is rebuilt from what exists)
+//   node tools/design-gate/render.mjs page       only rebuild the page
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -69,8 +70,11 @@ const renderAll = (list, flag, scenes, mixed) => {
   for (const palette of PALETTE_PROOFS) snap(`palette-${palette}`, ['--scene', mixed, '--theme', 'dark', '--palette', String(palette)]);
  }
 };
-renderAll(LAYOUTS, '--layout', STATES, 'everything');
-renderAll(DIRECTIONS, '--direction', SCENES, 'downloads-everything');
+// `page` rebuilds the page from the pictures already there, rendering nothing.
+if (only !== 'page') {
+  renderAll(LAYOUTS, '--layout', STATES, 'everything');
+  renderAll(DIRECTIONS, '--direction', SCENES, 'downloads-everything');
+}
 console.log(shots.join('\n'));
 
 // ── The page: one row per state, the three directions side by side ──────────
