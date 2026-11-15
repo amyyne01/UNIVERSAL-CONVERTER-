@@ -135,6 +135,11 @@ impl YtDlp {
         *self.proxy.lock().unwrap_or_else(|e| e.into_inner()) = proxy.filter(|p| !p.is_empty()).map(str::to_owned);
     }
 
+    /// The proxy in force for lookups and searches, if any.
+    pub fn proxy(&self) -> Option<String> {
+        self.proxy.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
     pub fn set_metadata_timeout(&mut self, limit: Duration) {
         self.metadata_timeout = limit;
     }

@@ -211,3 +211,16 @@ fn requests_go_through_the_proxy_when_one_is_set() {
     let http = Http::new(Some("http://127.0.0.1:9"));
     assert!(http.send("GET", &format!("{base}/ok"), &[], None, Duration::from_secs(3)).is_none());
 }
+
+/// The real YouTube Music song search: it answers without credentials, and
+/// its rows carry what the bridge matches on. Network; run with --ignored.
+#[test]
+#[ignore = "talks to the real YouTube Music"]
+fn the_real_song_search_returns_rows_with_artist_and_length() {
+    use ahg_engine::downloader::bridge::song_rows;
+    let search = ahg_runtime::http::song_search(|| None);
+    let rows = song_rows(&search("Fleetwood Mac - Dreams").expect("the search should answer"));
+    assert!(rows.len() >= 5, "{} rows", rows.len());
+    let first = &rows[0];
+    assert!(first.title.contains("Dreams") && first.artist.contains("Fleetwood Mac") && first.duration.is_some(), "{first:?}");
+}

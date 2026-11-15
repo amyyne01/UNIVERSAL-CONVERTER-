@@ -5,7 +5,7 @@ use std::io::Read;
 use std::time::Duration;
 
 use ahg_engine::spotify;
-use ureq::tls::{TlsConfig, TlsProvider};
+use ureq::tls::{RootCerts, TlsConfig, TlsProvider};
 use ureq::{Agent, Proxy, ResponseExt};
 
 pub struct Http {
@@ -69,8 +69,11 @@ impl Http {
             .http_status_as_error(false)
             .timeout_global(Some(timeout))
             .proxy(self.proxy.clone())
-            // Windows' own TLS: nothing extra to ship.
-            .tls_config(TlsConfig::builder().provider(TlsProvider::NativeTls).build())
+            // Windows' own TLS and Windows' own list of trusted authorities:
+            // nothing extra to ship, and a certificate the system trusts (a
+            // company proxy, an antivirus) is trusted here too. The library's
+            // built-in list refuses Google's chain.
+            .tls_config(TlsConfig::builder().provider(TlsProvider::NativeTls).root_certs(RootCerts::PlatformVerifier).build())
             .build()
             .into();
         let mut request = ureq::http::Request::builder().method(method).uri(url);
@@ -83,6 +86,18 @@ impl Http {
         let content_length = response.headers().get("content-length").and_then(|v| v.to_str().ok()).map(str::to_owned);
         Some(Response { status, final_url, content_length, body: response.into_body() })
     }
+}
+
+/// YouTube Music's own song search (D34), sent as its web page sends it: no
+/// login, no key. `proxy` is asked on every call, so a changed setting applies
+/// at once. `None` for anything but a 2xx answer.
+pub fn song_search(proxy: impl Fn() -> Option<String> + Send + Sync + 'static) -> crate::download::SongSearch {
+    use ahg_engine::downloader::bridge::{SONG_SEARCH_URL, song_search_body};
+    std::sync::Arc::new(move |query: &str| {
+        let headers = [("Content-Type", "application/json"), ("Origin", "https://music.youtube.com"), ("User-Agent", "Mozilla/5.0")].map(|(k, v)| (k.to_owned(), v.to_owned()));
+        let response = Http::new(proxy().as_deref()).send("POST", SONG_SEARCH_URL, &headers, Some(&song_search_body(query)), Duration::from_secs(10))?;
+        response.ok().then(|| response.text()).flatten()
+    })
 }
 
 /// Spotify's pages and API, read without looking at the status: the engine

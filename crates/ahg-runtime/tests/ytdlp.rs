@@ -288,3 +288,94 @@ fn a_shipped_build_does_not_run_a_yt_dlp_found_on_the_system_path() {
     let tools = Tools::strict(vec![dir.clone()]);
     assert_eq!(tools.ytdlp(), None, "nothing in the app's folders means no yt-dlp, whatever the system has");
 }
+
+// ── The Spotify bridge with YouTube Music's song search (D34) ───────────────
+
+/// What the stand-in plays for the download itself.
+const DOWNLOADS: &str = "out [FILEPATH]C:\\Music\\a.mp3\nexit 0\n";
+
+/// A song-search response holding these rows: (video id, title, "Artist • Album • m:ss").
+fn song_search(rows: &[(&str, &str, &str)]) -> String {
+    let items: Vec<serde_json::Value> = rows
+        .iter()
+        .map(|(id, title, second)| {
+            let column = |text: &str| serde_json::json!({ "musicResponsiveListItemFlexColumnRenderer": { "text": { "runs": [{ "text": text }] } } });
+            serde_json::json!({ "musicResponsiveListItemRenderer": { "flexColumns": [column(title), column(second)], "playlistItemData": { "videoId": id } } })
+        })
+        .collect();
+    serde_json::json!({ "contents": { "musicShelfRenderer": { "contents": items } } }).to_string()
+}
+
+/// Runs the Spotify task with `search` answering the song search (`None`: it is unreachable).
+fn run_song_bridge(y: YtDlp, search: Option<String>) -> (Vec<Report>, Vec<String>) {
+    let asked = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let mut d = Downloader::with(Arc::new(y));
+    let seen = asked.clone();
+    d.set_song_search(Arc::new(move |query: &str| {
+        seen.lock().unwrap().push(query.to_owned());
+        search.clone()
+    }));
+    let (tx, rx) = channel();
+    d.start(spotify_task(), 3, tx);
+    let mut reports = Vec::new();
+    while let Ok(report) = rx.recv_timeout(Duration::from_secs(20)) {
+        let ended = matches!(report, Report::Done { .. } | Report::Error { .. });
+        reports.push(report);
+        if ended {
+            break;
+        }
+    }
+    let asked = asked.lock().unwrap().clone();
+    (reports, asked)
+}
+
+fn the_match(reports: &[Report]) -> Option<(String, f64)> {
+    reports.iter().find_map(|r| if let Report::Match { url, confidence, .. } = r { Some((url.clone(), *confidence)) } else { None })
+}
+
+#[test]
+fn a_song_that_agrees_in_artist_name_and_length_is_downloaded_without_any_lookup() {
+    let dir = scratch("song");
+    let search = song_search(&[
+        ("live0000001", "The Song (Live)", "Artist • Live Album • 4:10"),
+        ("other000001", "The Song", "Someone Else • Album • 3:20"),
+        ("right000001", "The Song", "Artist • Album • 3:21"),
+    ]);
+    let (reports, asked) = run_song_bridge(ytdlp(&dir, "exit 1\n", DOWNLOADS), Some(search));
+    assert_eq!(asked, ["Artist - The Song"]);
+    assert_eq!(the_match(&reports), Some(("https://music.youtube.com/watch?v=right000001".to_owned(), 1.0)));
+    assert!(matches!(reports.last().unwrap(), Report::Done { .. }));
+    assert!(fs::read_to_string(dir.join("args.txt")).unwrap().ends_with("https://music.youtube.com/watch?v=right000001"));
+    assert!(!dir.join("args.txt.json").exists(), "a row that agrees needs no yt-dlp search or lookup");
+}
+
+#[test]
+fn when_no_song_agrees_the_plain_search_is_scored_and_never_counts_as_confirmed() {
+    let dir = scratch("songnone");
+    let search = song_search(&[("other000001", "Another Song", "Someone Else • Album • 3:20")]);
+    let candidates = "out {\"id\":\"topic000001\",\"title\":\"The Song\",\"uploader\":\"Artist - Topic\",\"duration\":200,\"url\":\"https://www.youtube.com/watch?v=topic000001\"}\nexit 0\n";
+    let (reports, _) = run_song_bridge(ytdlp(&dir, candidates, DOWNLOADS), Some(search));
+    let (url, confidence) = the_match(&reports).expect("the scored match is reported");
+    assert_eq!(url, "https://www.youtube.com/watch?v=topic000001");
+    assert!(confidence < 1.0, "a scored guess is not a confirmed match: {confidence}");
+    assert!(fs::read_to_string(dir.join("args.txt.json")).unwrap().ends_with("ytsearch5:Artist - The Song"));
+}
+
+#[test]
+fn when_the_song_search_is_unreachable_yt_dlp_finds_the_song_and_a_lookup_confirms_it() {
+    let dir = scratch("songbackup");
+    // The stand-in answers the song search and the lookup alike: a song with its music metadata.
+    let song = "out {\"id\":\"right000001\",\"title\":\"The Song\",\"track\":\"The Song\",\"artist\":\"Artist\",\"duration\":201}\nexit 0\n";
+    let (reports, _) = run_song_bridge(ytdlp(&dir, song, DOWNLOADS), None);
+    assert_eq!(the_match(&reports), Some(("https://music.youtube.com/watch?v=right000001".to_owned(), 1.0)));
+    assert!(fs::read_to_string(dir.join("args.txt")).unwrap().ends_with("https://music.youtube.com/watch?v=right000001"));
+}
+
+#[test]
+fn a_song_the_lookup_contradicts_is_not_downloaded_as_a_match() {
+    let dir = scratch("songwrong");
+    // Same title, but four minutes longer: a different version.
+    let song = "out {\"id\":\"long0000001\",\"title\":\"The Song\",\"track\":\"The Song\",\"artist\":\"Artist\",\"duration\":440,\"uploader\":\"Fan\",\"url\":\"https://www.youtube.com/watch?v=long0000001\"}\nexit 0\n";
+    let (reports, _) = run_song_bridge(ytdlp(&dir, song, DOWNLOADS), None);
+    assert!(the_match(&reports).is_none_or(|(url, _)| !url.contains("long0000001")), "{reports:?}");
+}

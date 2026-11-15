@@ -282,3 +282,10 @@ pub fn pick_row(track: &Track, rows: &[SongHit], explicit: Option<bool>) -> Opti
     };
     Some(Pick { index: exact.unwrap_or(first).0, explicit_agrees: exact.is_some() })
 }
+
+/// The same song search as a page yt-dlp can read, for when the direct
+/// request cannot be made. Its rows carry only an id and a title.
+pub fn song_search_page(query: &str) -> String {
+    let query: String = url::form_urlencoded::byte_serialize(query.as_bytes()).collect();
+    format!("https://music.youtube.com/search?q={query}#songs")
+}

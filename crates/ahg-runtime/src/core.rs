@@ -97,7 +97,12 @@ impl Core {
         let stats = Arc::new(Mutex::new(stats));
 
         let (notices, incoming) = channel();
-        let engine = Arc::new(Engine::start(Downloader::with(ytdlp.clone()), &paths.user_data.join("downloads-history.json"), notices));
+        let mut downloader = Downloader::with(ytdlp.clone());
+        downloader.set_song_search(crate::http::song_search({
+            let ytdlp = ytdlp.clone();
+            move || ytdlp.proxy()
+        }));
+        let engine = Arc::new(Engine::start(downloader, &paths.user_data.join("downloads-history.json"), notices));
         let plan: Arc<dyn Fn() -> Plan + Send + Sync> = Arc::from(plan);
         let (stop, stopped) = channel();
         let dispatcher = {

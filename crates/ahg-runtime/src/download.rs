@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use ahg_engine::downloader::args::build_ytdlp_args;
+use ahg_engine::downloader::bridge::{Lookup, Verdict, pick_row, song_rows, song_search_page, verify};
 use ahg_engine::downloader::metadata::search_results;
 use ahg_engine::downloader::progress::{Outcome, OutputScan};
 use ahg_engine::downloader::score::score_candidates;
@@ -46,9 +47,22 @@ fn lock(active: &Active) -> std::sync::MutexGuard<'_, HashMap<String, Running>> 
     active.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+/// Asks YouTube Music's own song search for `query` and returns the response
+/// text, or `None` when it cannot be reached.
+pub type SongSearch = Arc<dyn Fn(&str) -> Option<String> + Send + Sync>;
+
+/// The confidence of a song that agrees with the track but whose explicit
+/// flag differs from Spotify's: a best guess, not a confirmed match.
+const EXPLICIT_DIFFERS: f64 = 0.9;
+/// A match picked by score alone is never reported as confirmed (1.0).
+const GUESS_CEILING: f64 = 0.89;
+/// How many songs the yt-dlp backup looks up before giving up.
+const LOOKUPS: usize = 3;
+
 pub struct Downloader {
     ytdlp: Arc<YtDlp>,
     active: Active,
+    song_search: Option<SongSearch>,
 }
 
 impl Downloader {
@@ -58,7 +72,7 @@ impl Downloader {
     }
 
     pub fn with(ytdlp: Arc<YtDlp>) -> Self {
-        Self { ytdlp, active: Arc::default() }
+        Self { ytdlp, active: Arc::default(), song_search: None }
     }
 
     /// An extra environment variable for every process this downloader starts.
@@ -67,6 +81,12 @@ impl Downloader {
         if let Some(ytdlp) = Arc::get_mut(&mut self.ytdlp) {
             ytdlp.env(key, value);
         }
+    }
+
+    /// D34: match Spotify tracks through YouTube Music's song search. Without
+    /// it the bridge is the plain scored search, as in Electron.
+    pub fn set_song_search(&mut self, search: SongSearch) {
+        self.song_search = Some(search);
     }
 
     /// How many downloads are in flight.
@@ -78,7 +98,7 @@ impl Downloader {
     pub fn start(&self, task: DownloadTask, attempt: u64, reports: Sender<Report>) {
         let killed = Arc::new(AtomicBool::new(false));
         lock(&self.active).insert(task.task_id.clone(), Running { attempt, killed: killed.clone(), pid: None });
-        let (ytdlp, active) = (self.ytdlp.clone(), self.active.clone());
+        let (ytdlp, active, song_search) = (self.ytdlp.clone(), self.active.clone(), self.song_search.clone());
         thread::spawn(move || {
             let id = task.task_id.clone();
             let send = |report: Report| {
@@ -86,7 +106,7 @@ impl Downloader {
                     let _ = reports.send(report);
                 }
             };
-            let outcome = run(&ytdlp, &task, attempt, &active, &killed, &send);
+            let outcome = run(&ytdlp, &task, attempt, &active, &killed, song_search.as_ref(), &send);
             // Only this attempt's entry is removed: a pause then a quick resume
             // reuses the task id for a newer download.
             let mut map = lock(&active);
@@ -125,11 +145,17 @@ fn stop(running: &Running) {
     }
 }
 
-/// Spotify audio cannot be downloaded, so the track is found on YouTube: a
-/// five-result search is scored against the track and the best hit replaces
-/// the link. If the search yields nothing, the first hit of a plain search is
-/// downloaded instead. Returns the chosen video and the confidence in it.
-fn spotify_bridge(ytdlp: &YtDlp, track: &Track, args: &mut [String]) -> Option<(String, f64)> {
+/// Spotify audio cannot be downloaded, so the track is found on YouTube.
+/// Returns the chosen video and the confidence in it: 1.0 for a confirmed
+/// match, less for a guess. With nothing chosen, the first hit of a plain
+/// search is downloaded.
+///
+/// D34, with a song search: YouTube Music's songs come first, and a row whose
+/// artist, name and length agree with the track is taken as it is. If that
+/// search cannot be reached, yt-dlp reads the same song list and a full lookup
+/// must confirm the song. Only then is the plain search scored, as in
+/// Electron, and what it finds is never reported as confirmed.
+fn spotify_bridge(ytdlp: &YtDlp, track: &Track, args: &mut [String], song_search: Option<&SongSearch>) -> Option<(String, f64)> {
     // The arguments reach yt-dlp as they are, with no shell, so quotes are removed.
     let clean = |s: &str| js_trim(&s.replace('"', "")).to_owned();
     let artist = if !track.artist.is_empty() { track.artist.clone() } else { track.artists.first().cloned().unwrap_or_default() };
@@ -137,17 +163,42 @@ fn spotify_bridge(ytdlp: &YtDlp, track: &Track, args: &mut [String]) -> Option<(
     let last = args.last_mut()?;
     *last = format!("ytsearch1:{query}");
 
+    if let Some(search) = song_search {
+        let song = match search(&query).map(|response| song_rows(&response)).filter(|rows| !rows.is_empty()) {
+            // ponytail: Spotify's own explicit flag is not read yet, so only the labels are compared.
+            Some(rows) => pick_row(track, &rows, None).map(|pick| (rows[pick.index].url(), if pick.explicit_agrees { 1.0 } else { EXPLICIT_DIFFERS })),
+            None => confirmed_by_lookup(ytdlp, track, &query).map(|url| (url, 1.0)),
+        };
+        if let Some((url, confidence)) = song {
+            *last = url.clone();
+            return Some((url, confidence));
+        }
+    }
+
     let items = ytdlp.run_json(&["--dump-json", "--no-warnings", "--flat-playlist", &format!("ytsearch5:{query}")]).ok()?;
     let best = score_candidates(track, &search_results(&items, SourcePlatform::Youtube)).into_iter().next()?;
     if best.candidate.url.is_empty() {
         return None;
     }
     *last = best.candidate.url.clone();
-    Some((best.candidate.url, best.score.clamp(0.0, 1.0)))
+    let confidence = best.score.clamp(0.0, 1.0);
+    Some((best.candidate.url, if song_search.is_some() { confidence.min(GUESS_CEILING) } else { confidence }))
+}
+
+/// The backup for an unreachable song search: yt-dlp lists the songs, which
+/// then carry only an id and a title, so each is looked up in full until the
+/// music metadata of one confirms it.
+fn confirmed_by_lookup(ytdlp: &YtDlp, track: &Track, query: &str) -> Option<String> {
+    let songs = ytdlp.run_json(&["--dump-json", "--no-warnings", "--flat-playlist", "--playlist-end", &LOOKUPS.to_string(), &song_search_page(query)]).ok()?;
+    songs.iter().take(LOOKUPS).filter_map(|song| song["id"].as_str()).map(|id| format!("https://music.youtube.com/watch?v={id}")).find(|url| {
+        let found = ytdlp.run_json(&["--dump-json", "--no-warnings", "--no-playlist", "--", url]).ok();
+        let look = found.and_then(|items| items.into_iter().next()).and_then(|item| serde_json::from_value::<Lookup>(item).ok());
+        look.is_some_and(|look| verify(track, &look) == Verdict::Confirmed)
+    })
 }
 
 /// Runs one download to its end, sending progress as it goes.
-fn run(ytdlp: &YtDlp, task: &DownloadTask, attempt: u64, active: &Active, killed: &AtomicBool, send: &dyn Fn(Report)) -> Outcome {
+fn run(ytdlp: &YtDlp, task: &DownloadTask, attempt: u64, active: &Active, killed: &AtomicBool, song_search: Option<&SongSearch>, send: &dyn Fn(Report)) -> Outcome {
     let id = task.task_id.as_str();
     let Some(bin) = ytdlp.bin() else {
         return Outcome::Failed("yt-dlp not found. Please ensure yt-dlp is installed or bundled in bin/.".to_owned());
@@ -155,7 +206,7 @@ fn run(ytdlp: &YtDlp, task: &DownloadTask, attempt: u64, active: &Active, killed
     let mut args = build_ytdlp_args(task, ytdlp.ffmpeg().as_deref());
     if task.source == SourcePlatform::Spotify
         && let Some(track) = &task.track
-        && let Some((url, confidence)) = spotify_bridge(ytdlp, track, &mut args)
+        && let Some((url, confidence)) = spotify_bridge(ytdlp, track, &mut args, song_search)
     {
         send(Report::Match { id: id.to_owned(), attempt, url, confidence });
     }
