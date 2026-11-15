@@ -186,6 +186,10 @@ pub fn explain_error(text: &str) -> String {
     if raw.starts_with(TIMEOUT_MESSAGE) {
         return TIMEOUT_MESSAGE.to_owned();
     }
+    // D34, "needs review": our own message, already a sentence a user can act on.
+    if raw == super::bridge::NO_CONFIRMED_MATCH {
+        return "No confirmed match was found for this track \u{2014} pick a match to download it.".to_owned();
+    }
     let t = raw.to_lowercase();
     if needs_client_fallback(&t) {
         return "The site refused to serve this file \u{2014} try again later, or import cookies in Settings.".to_owned();

@@ -148,3 +148,13 @@ fn the_row_to_download_is_chosen_as_in_the_reference() {
     }
     assert!(found > 200 && found < cases.len() && differs > 0, "found {found} of {}, {differs} with a different flag", cases.len());
 }
+
+/// "Needs review": the refusal is our own message. It must not be retried,
+/// and the row shows what to do about it.
+#[test]
+fn a_track_held_for_review_is_not_retried_and_says_what_to_do() {
+    use ahg_engine::downloader::bridge::NO_CONFIRMED_MATCH;
+    use ahg_engine::downloader::errors::{ErrorClass, classify_error, explain_error};
+    assert_eq!(classify_error(NO_CONFIRMED_MATCH), ErrorClass::Permanent);
+    assert!(explain_error(NO_CONFIRMED_MATCH).ends_with("pick a match to download it."), "{}", explain_error(NO_CONFIRMED_MATCH));
+}

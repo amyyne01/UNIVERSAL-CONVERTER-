@@ -456,3 +456,76 @@ fn a_match_already_chosen_is_downloaded_without_searching_again() {
     assert!(fs::read_to_string(dir.join("args.txt")).unwrap().ends_with("https://music.youtube.com/watch?v=chosen00001"));
     assert_eq!(the_match(&reports), Some(("https://music.youtube.com/watch?v=chosen00001".to_owned(), 0.9)));
 }
+
+// ── "Needs review": nothing but a confirmed match is downloaded ─────────────
+
+/// Runs the Spotify task with unconfirmed matches held back. Returns the
+/// reports and how many times the download itself started.
+fn run_held(dir: &Path, search: Option<String>, explicit: Option<bool>) -> (Vec<Report>, usize) {
+    let ran = dir.join("ran");
+    let candidates = "out {\"id\":\"topic000001\",\"title\":\"The Song\",\"uploader\":\"Artist - Topic\",\"duration\":200,\"url\":\"https://www.youtube.com/watch?v=topic000001\"}\nexit 0\n";
+    let mut d = Downloader::with(Arc::new(ytdlp(dir, candidates, &format!("count {}\n{DOWNLOADS}", ran.display()))));
+    d.set_song_search(Arc::new(move |_: &str| search.clone()));
+    d.set_hold_unconfirmed(Arc::new(std::sync::atomic::AtomicBool::new(true)));
+    let mut task = spotify_task();
+    task.track.as_mut().unwrap().explicit = explicit;
+    let (tx, rx) = channel();
+    d.start(task, 3, tx);
+    let mut reports = Vec::new();
+    while let Ok(report) = rx.recv_timeout(Duration::from_secs(20)) {
+        let ended = matches!(report, Report::Done { .. } | Report::Error { .. });
+        reports.push(report);
+        if ended {
+            break;
+        }
+    }
+    (reports, runs(&ran))
+}
+
+fn refused(reports: &[Report]) -> bool {
+    matches!(reports.last(), Some(Report::Error { message, .. }) if message == ahg_engine::downloader::bridge::NO_CONFIRMED_MATCH)
+}
+
+#[test]
+fn needs_review_downloads_a_confirmed_match() {
+    let dir = scratch("heldok");
+    let (reports, ran) = run_held(&dir, Some(song_search(&[("right000001", "The Song", "Artist • Album • 3:20")])), None);
+    assert!(matches!(reports.last().unwrap(), Report::Done { .. }), "{reports:?}");
+    assert_eq!(ran, 1);
+}
+
+#[test]
+fn needs_review_holds_a_best_guess_and_still_says_which_song_it_was() {
+    let dir = scratch("heldguess");
+    // The track is explicit and the only song is the clean one.
+    let (reports, ran) = run_held(&dir, Some(song_search(&[("clean000001", "The Song", "Artist • Album • 3:20")])), Some(true));
+    assert!(refused(&reports), "{reports:?}");
+    assert_eq!(ran, 0, "nothing may be downloaded");
+    assert_eq!(the_match(&reports).map(|(url, _)| url).as_deref(), Some("https://music.youtube.com/watch?v=clean000001"), "the guess is shown so it can be accepted or swapped");
+}
+
+#[test]
+fn needs_review_holds_a_scored_guess_and_a_track_with_no_match_at_all() {
+    let dir = scratch("heldscored");
+    let nothing_agrees = song_search(&[("other000001", "Another Song", "Someone Else • Album • 3:20")]);
+    let (reports, ran) = run_held(&dir, Some(nothing_agrees), None);
+    assert!(refused(&reports) && ran == 0, "{reports:?}");
+    assert!(the_match(&reports).is_some_and(|(url, confidence)| url.contains("topic000001") && confidence < 1.0));
+}
+
+#[test]
+fn needs_review_downloads_a_match_the_user_accepted() {
+    let dir = scratch("heldaccepted");
+    let ran = dir.join("ran");
+    let mut d = Downloader::with(Arc::new(ytdlp(&dir, "exit 1\n", &format!("count {}\n{DOWNLOADS}", ran.display()))));
+    d.set_song_search(Arc::new(|_: &str| None));
+    d.set_hold_unconfirmed(Arc::new(std::sync::atomic::AtomicBool::new(true)));
+    let mut task = spotify_task();
+    task.matched_url = Some("https://music.youtube.com/watch?v=chosen00001".into());
+    task.match_confidence = Some(1.0);
+    let (tx, rx) = channel();
+    d.start(task, 3, tx);
+    let last = std::iter::from_fn(|| rx.recv_timeout(Duration::from_secs(20)).ok()).find(|r| matches!(r, Report::Done { .. } | Report::Error { .. }));
+    assert!(matches!(last, Some(Report::Done { .. })), "{last:?}");
+    assert_eq!(runs(&ran), 1);
+}

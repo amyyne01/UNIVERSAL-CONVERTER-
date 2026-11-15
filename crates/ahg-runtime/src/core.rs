@@ -2,6 +2,7 @@
 //! the engine thread and the statistics, and keeps them consistent with each
 //! other and with the plan the user is on.
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{RecvTimeoutError, Sender, channel};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread::{self, JoinHandle};
@@ -54,6 +55,12 @@ pub enum CoreEvent {
 /// come; look once after downloads have had this long to start.
 const SHUTDOWN_CHECK: Duration = Duration::from_secs(10);
 
+/// Choices only the Rust app has. They live in their own file, so the
+/// settings file stays exactly what Electron 1.x writes and reads.
+fn own_settings_file(user_data: &std::path::Path) -> PathBuf {
+    user_data.join("settings-rust.json")
+}
+
 /// D11: the day the schedule last fired, kept across restarts.
 fn schedule_state_file(user_data: &std::path::Path) -> PathBuf {
     user_data.join("scheduler-state.json")
@@ -87,6 +94,7 @@ pub struct Core {
     stop: Sender<()>,
     dispatcher: Option<JoinHandle<()>>,
     song_search: SongSearch,
+    hold_unconfirmed: Arc<AtomicBool>,
 }
 
 impl Core {
@@ -109,8 +117,11 @@ impl Core {
         let stats = Arc::new(Mutex::new(stats));
 
         let (notices, incoming) = channel();
+        let saved = std::fs::read_to_string(own_settings_file(&paths.user_data)).ok().and_then(|text| serde_json::from_str::<Value>(&text).ok());
+        let hold_unconfirmed = Arc::new(AtomicBool::new(saved.is_some_and(|v| v["holdUnconfirmed"] == true)));
         let mut downloader = Downloader::with(ytdlp.clone());
         downloader.set_song_search(song_search.clone());
+        downloader.set_hold_unconfirmed(hold_unconfirmed.clone());
         let engine = Arc::new(Engine::start(downloader, &paths.user_data.join("downloads-history.json"), notices));
         let plan: Arc<dyn Fn() -> Plan + Send + Sync> = Arc::from(plan);
         let (stop, stopped) = channel();
@@ -178,7 +189,7 @@ impl Core {
                 }
             })
         };
-        let core = Self { paths, config, stats, ytdlp, plan, engine, events, stop, dispatcher: Some(dispatcher), song_search };
+        let core = Self { paths, config, stats, ytdlp, plan, engine, events, stop, dispatcher: Some(dispatcher), song_search, hold_unconfirmed };
         core.sync();
         core
     }
@@ -299,6 +310,19 @@ impl Core {
     pub fn match_track(&self, track: &Track) -> Option<SongMatch> {
         let response = (self.song_search)(&song_query(track))?;
         match_song(track, &song_rows(&response))
+    }
+
+    /// D34, "needs review": whether a Spotify track is downloaded only on a
+    /// confirmed match. Off on a new install: a best guess downloads, marked.
+    pub fn hold_unconfirmed(&self) -> bool {
+        self.hold_unconfirmed.load(Ordering::SeqCst)
+    }
+
+    /// Takes effect for downloads that start from now on, and is remembered.
+    pub fn set_hold_unconfirmed(&self, hold: bool) {
+        self.hold_unconfirmed.store(hold, Ordering::SeqCst);
+        let _ = write_file_atomic(&own_settings_file(&self.paths.user_data), &json!({ "holdUnconfirmed": hold }).to_string());
+        let _ = self.events.send(CoreEvent::SettingsChanged);
     }
 
     /// This month's counters and the last active month before it.

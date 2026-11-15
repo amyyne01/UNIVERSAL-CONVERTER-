@@ -327,3 +327,19 @@ fn wait_for_long(rx: &Receiver<CoreEvent>, mut want: impl FnMut(&CoreEvent) -> b
     }
     seen
 }
+
+#[test]
+fn the_needs_review_choice_is_off_at_first_and_survives_a_restart() {
+    let dir = scratch("holdsetting");
+    let (core, _rx) = start(&dir, "", Plan::Premium);
+    assert!(!core.hold_unconfirmed(), "a new install downloads best guesses");
+    core.set_hold_unconfirmed(true);
+    assert!(core.hold_unconfirmed());
+    core.shutdown();
+
+    let (core, _rx) = start(&dir, "", Plan::Premium);
+    assert!(core.hold_unconfirmed());
+    core.shutdown();
+    // It has its own file: the settings file stays exactly what Electron writes.
+    assert!(!fs::read_to_string(dir.join("userData").join("config.json")).unwrap_or_default().contains("nconfirmed"));
+}

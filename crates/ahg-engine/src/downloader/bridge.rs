@@ -300,6 +300,10 @@ pub const EXPLICIT_DIFFERS: f64 = 0.9;
 /// The most a match picked by score alone, or with no stated confidence, may claim.
 pub const GUESS_CEILING: f64 = 0.89;
 
+/// Why a Spotify track was not downloaded when only confirmed matches may be
+/// ("needs review"). Unlisted in the error phrases, so it is never retried.
+pub const NO_CONFIRMED_MATCH: &str = "No confirmed match for this Spotify track.";
+
 /// What is searched for: "Artist - Name". The text reaches yt-dlp as an
 /// argument, with no shell, so quotes are removed.
 pub fn song_query(track: &Track) -> String {

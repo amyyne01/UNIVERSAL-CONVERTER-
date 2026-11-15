@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use ahg_engine::downloader::args::build_ytdlp_args;
-use ahg_engine::downloader::bridge::{CONFIRMED, GUESS_CEILING, Lookup, Verdict, match_song, song_query, song_rows, song_search_page, song_url, verify};
+use ahg_engine::downloader::bridge::{CONFIRMED, GUESS_CEILING, Lookup, NO_CONFIRMED_MATCH, Verdict, match_song, song_query, song_rows, song_search_page, song_url, verify};
 use ahg_engine::downloader::metadata::search_results;
 use ahg_engine::downloader::progress::{Outcome, OutputScan};
 use ahg_engine::downloader::score::score_candidates;
@@ -57,6 +57,8 @@ pub struct Downloader {
     ytdlp: Arc<YtDlp>,
     active: Active,
     song_search: Option<SongSearch>,
+    /// "Needs review": a Spotify track is downloaded only on a confirmed match.
+    hold_unconfirmed: Arc<AtomicBool>,
 }
 
 impl Downloader {
@@ -66,7 +68,7 @@ impl Downloader {
     }
 
     pub fn with(ytdlp: Arc<YtDlp>) -> Self {
-        Self { ytdlp, active: Arc::default(), song_search: None }
+        Self { ytdlp, active: Arc::default(), song_search: None, hold_unconfirmed: Arc::default() }
     }
 
     /// An extra environment variable for every process this downloader starts.
@@ -83,6 +85,14 @@ impl Downloader {
         self.song_search = Some(search);
     }
 
+    /// D34, "needs review": while the flag is set, a Spotify track with
+    /// anything less than a confirmed match is not downloaded; it fails with
+    /// [`NO_CONFIRMED_MATCH`] after reporting its best guess, for the user to
+    /// accept or swap. The flag is read at the start of each download.
+    pub fn set_hold_unconfirmed(&mut self, flag: Arc<AtomicBool>) {
+        self.hold_unconfirmed = flag;
+    }
+
     /// How many downloads are in flight.
     pub fn running(&self) -> usize {
         lock(&self.active).len()
@@ -93,6 +103,7 @@ impl Downloader {
         let killed = Arc::new(AtomicBool::new(false));
         lock(&self.active).insert(task.task_id.clone(), Running { attempt, killed: killed.clone(), pid: None });
         let (ytdlp, active, song_search) = (self.ytdlp.clone(), self.active.clone(), self.song_search.clone());
+        let hold = self.hold_unconfirmed.load(Ordering::SeqCst);
         thread::spawn(move || {
             let id = task.task_id.clone();
             let send = |report: Report| {
@@ -100,7 +111,7 @@ impl Downloader {
                     let _ = reports.send(report);
                 }
             };
-            let outcome = run(&ytdlp, &task, attempt, &active, &killed, song_search.as_ref(), &send);
+            let outcome = run(&ytdlp, &task, attempt, &active, &killed, song_search.as_ref(), hold, &send);
             // Only this attempt's entry is removed: a pause then a quick resume
             // reuses the task id for a newer download.
             let mut map = lock(&active);
@@ -191,7 +202,8 @@ fn confirmed_by_lookup(ytdlp: &YtDlp, track: &Track, query: &str) -> Option<Stri
 }
 
 /// Runs one download to its end, sending progress as it goes.
-fn run(ytdlp: &YtDlp, task: &DownloadTask, attempt: u64, active: &Active, killed: &AtomicBool, song_search: Option<&SongSearch>, send: &dyn Fn(Report)) -> Outcome {
+#[allow(clippy::too_many_arguments)]
+fn run(ytdlp: &YtDlp, task: &DownloadTask, attempt: u64, active: &Active, killed: &AtomicBool, song_search: Option<&SongSearch>, hold: bool, send: &dyn Fn(Report)) -> Outcome {
     let id = task.task_id.as_str();
     let Some(bin) = ytdlp.bin() else {
         return Outcome::Failed("yt-dlp not found. Please ensure yt-dlp is installed or bundled in bin/.".to_owned());
@@ -199,9 +211,17 @@ fn run(ytdlp: &YtDlp, task: &DownloadTask, attempt: u64, active: &Active, killed
     let mut args = build_ytdlp_args(task, ytdlp.ffmpeg().as_deref());
     if task.source == SourcePlatform::Spotify
         && let Some(track) = &task.track
-        && let Some((url, confidence)) = spotify_bridge(ytdlp, task, track, &mut args, song_search)
     {
-        send(Report::Match { id: id.to_owned(), attempt, url, confidence });
+        let found = spotify_bridge(ytdlp, task, track, &mut args, song_search);
+        let confirmed = found.as_ref().is_some_and(|(_, confidence)| *confidence >= CONFIRMED);
+        if let Some((url, confidence)) = found {
+            send(Report::Match { id: id.to_owned(), attempt, url, confidence });
+        }
+        // "Needs review": the guess was reported, so it can be accepted or
+        // swapped, but nothing short of a confirmed match is downloaded.
+        if hold && song_search.is_some() && !confirmed {
+            return Outcome::Failed(NO_CONFIRMED_MATCH.to_owned());
+        }
     }
     // Cancelled while the search ran: the download must not start.
     if killed.load(Ordering::SeqCst) {
