@@ -1,10 +1,18 @@
 // Writes golden files for the Rust port: the real TypeScript functions are run
 // over a corpus and their outputs saved, so the Rust tests compare against what
-// the Electron app actually does. Run `npm run build:electron` first, then
-// `node scripts/rust-golden.mjs`.
+// the Electron app actually does. Run `npm run build:electron` first, then run
+// this under ELECTRON'S OWN Node, because that is the runtime the app ships on
+// and Node's behaviour differs between versions (path.win32 does, for one):
+//
+//   ELECTRON_RUN_AS_NODE=1 node_modules/electron/dist/electron.exe scripts/rust-golden.mjs
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 
 import { register } from 'node:module';
+
+if (!process.versions.electron) {
+  console.error('Run this with Electron\'s Node, not system Node (see the comment at the top of this file).');
+  process.exit(1);
+}
 
 const OUT = 'crates/ahg-engine/tests/golden';
 
