@@ -201,7 +201,7 @@ macro_rules! extras {
         #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
         #[serde(rename_all = "camelCase", default)]
         pub struct PartialExtras {
-            $(pub $field: Option<$ty>,)*
+            $(#[serde(skip_serializing_if = "Option::is_none")] pub $field: Option<$ty>,)*
         }
 
         /// Complete a possibly partial set of extras from the defaults. Only
@@ -243,4 +243,231 @@ extras! {
     /// Bandwidth cap passed to `--limit-rate`, e.g. "2M"; empty means unlimited.
     rate_limit: String = String::new(),
     proxy: String = String::new(),
+}
+
+/// Numbers that come from yt-dlp or the network are `f64`, as in JavaScript.
+/// Whole values are written without a fraction (`5`, not `5.0`), so the files
+/// both apps share look the same whichever app wrote them.
+pub mod num {
+    use serde::Serializer;
+
+    pub fn serialize<S: Serializer>(v: &f64, s: S) -> Result<S::Ok, S::Error> {
+        if v.fract() == 0.0 && v.abs() < 9_007_199_254_740_992.0 {
+            s.serialize_i64(*v as i64)
+        } else {
+            s.serialize_f64(*v)
+        }
+    }
+
+    pub fn option<S: Serializer>(v: &Option<f64>, s: S) -> Result<S::Ok, S::Error> {
+        match v {
+            Some(v) => serialize(v, s),
+            None => s.serialize_none(),
+        }
+    }
+}
+
+/// Why a download failed, in a form the UI can branch on. Set on failed tasks
+/// beside the human-readable message.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ErrorCode {
+    Private,
+    Removed,
+    AgeRestricted,
+    LoginRequired,
+    GeoBlocked,
+    Drm,
+    RateLimited,
+    Network,
+    Unsupported,
+    FfmpegMissing,
+    DiskFull,
+    Unknown,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadProgress {
+    pub status: DownloadStatus,
+    #[serde(serialize_with = "num::serialize")]
+    pub percent: f64,
+    /// Bytes per second.
+    #[serde(serialize_with = "num::serialize")]
+    pub speed: f64,
+    /// Seconds remaining.
+    #[serde(serialize_with = "num::serialize")]
+    pub eta: f64,
+    #[serde(serialize_with = "num::serialize")]
+    pub downloaded: f64,
+    #[serde(serialize_with = "num::serialize")]
+    pub total: f64,
+    pub filename: String,
+    pub error: String,
+    #[serde(serialize_with = "num::serialize")]
+    pub playlist_index: f64,
+    #[serde(serialize_with = "num::serialize")]
+    pub playlist_total: f64,
+    /// Done because the file was already on disk: nothing was written.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub already_on_disk: Option<bool>,
+}
+
+impl Default for DownloadProgress {
+    fn default() -> Self {
+        Self {
+            status: DownloadStatus::Queued,
+            percent: 0.0,
+            speed: 0.0,
+            eta: 0.0,
+            downloaded: 0.0,
+            total: 0.0,
+            filename: String::new(),
+            error: String::new(),
+            playlist_index: 0.0,
+            playlist_total: 0.0,
+            already_on_disk: None,
+        }
+    }
+}
+
+/// A scraped Spotify track. It drives the search query and the tagging.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Track {
+    pub id: String,
+    pub name: String,
+    pub artist: String,
+    pub artists: Vec<String>,
+    pub album: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub album_year: Option<String>,
+    #[serde(serialize_with = "num::serialize")]
+    pub track_number: f64,
+    #[serde(serialize_with = "num::serialize")]
+    pub duration_ms: f64,
+    pub thumbnail_url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spotify_url: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Playlist {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub owner: String,
+    pub tracks: Vec<Track>,
+    pub thumbnail_url: String,
+    pub url: String,
+    #[serde(serialize_with = "num::serialize")]
+    pub track_count: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchResult {
+    pub id: String,
+    pub title: String,
+    pub uploader: String,
+    #[serde(serialize_with = "num::serialize")]
+    pub duration: f64,
+    pub thumbnail_url: String,
+    pub url: String,
+    pub source: SourcePlatform,
+}
+
+/// Normalised metadata for a link; collections carry their entries. The
+/// optional fields are best-effort, since yt-dlp reports them only for some sites.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaMetadata {
+    pub title: String,
+    pub uploader: String,
+    #[serde(serialize_with = "num::serialize")]
+    pub duration: f64,
+    pub thumbnail_url: String,
+    pub url: String,
+    pub is_collection: bool,
+    pub entries: Vec<SearchResult>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none", serialize_with = "num::option")]
+    pub width: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none", serialize_with = "num::option")]
+    pub height: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none", serialize_with = "num::option")]
+    pub view_count: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none", serialize_with = "num::option")]
+    pub like_count: Option<f64>,
+    /// yt-dlp's `upload_date`, "YYYYMMDD" as reported.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub upload_date: Option<String>,
+    /// Which extractor resolved it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extractor: Option<String>,
+}
+
+/// One download job, as queued, shown and saved in `downloads-history.json`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadTask {
+    pub task_id: String,
+    pub url: String,
+    pub source: SourcePlatform,
+    pub output_dir: String,
+    pub format: String,
+    /// Audio bitrate (e.g. "320") or "lossless".
+    pub quality: String,
+    pub video_quality: VideoQuality,
+    pub is_audio_only: bool,
+    pub is_playlist: bool,
+    pub playlist_name: String,
+    /// Cap on items taken from a collection (basic tier); absent means no cap.
+    #[serde(default, skip_serializing_if = "Option::is_none", serialize_with = "num::option")]
+    pub playlist_limit: Option<f64>,
+    /// yt-dlp `--playlist-items` spec, e.g. "1,3-5".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub playlist_items: Option<String>,
+    /// Set when the task fails; the raw message stays in `progress.error`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error_code: Option<ErrorCode>,
+    pub embed_thumbnail: bool,
+    pub embed_metadata: bool,
+    pub skip_existing: bool,
+    pub title: String,
+    pub thumbnail_url: String,
+    /// Seconds.
+    #[serde(serialize_with = "num::serialize")]
+    pub duration: f64,
+    pub uploader: String,
+    pub progress: DownloadProgress,
+    #[serde(default, skip_serializing_if = "Option::is_none", serialize_with = "num::option")]
+    pub retry_count: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub original_task_id: Option<String>,
+    /// True when the task was cut off by an app exit and restored at launch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub interrupted: Option<bool>,
+    /// Epoch milliseconds. Absent on rows saved before these existed.
+    #[serde(default, skip_serializing_if = "Option::is_none", serialize_with = "num::option")]
+    pub created_at: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none", serialize_with = "num::option")]
+    pub completed_at: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub track: Option<Track>,
+    /// Spotify bridge: confidence in the chosen search match, 0 to 1.
+    #[serde(default, skip_serializing_if = "Option::is_none", serialize_with = "num::option")]
+    pub match_confidence: Option<f64>,
+    /// Spotify bridge: the video URL picked to download.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub matched_url: Option<String>,
+    /// Set by the queue on a retry after YouTube's token gate, never by the UI.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fallback_profile: Option<bool>,
+    /// Subtitles, chapters, SponsorBlock, container, cookies and naming. Absent
+    /// on rows saved before extras existed, which means "no extras".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extras: Option<PartialExtras>,
 }
