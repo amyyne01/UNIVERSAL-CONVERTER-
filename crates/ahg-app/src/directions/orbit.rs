@@ -6,11 +6,11 @@
 //! appears nowhere else. A download in flight is round, on its orbit; once it lands it is a
 //! square tile, a file you own.
 mod downloads;
-mod draw;
+pub(crate) mod draw;
 mod home;
-mod icons;
-mod look;
-mod model;
+pub(crate) mod icons;
+pub(crate) mod look;
+pub(crate) mod model;
 
 use rune::{ChromeInsets, Color, Cx, El, Icon, SurfaceFit, col, el, icon, row, spacer};
 
