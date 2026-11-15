@@ -294,3 +294,15 @@ fn the_file_notes_the_video_it_came_from_and_whether_that_was_a_guess() {
         assert_eq!(args.last().unwrap(), "https://open.spotify.com/track/abc");
     }
 }
+
+/// The finished file's real length, as ffmpeg prints it when asked about a file.
+#[test]
+fn the_length_ffmpeg_reports_for_a_file_is_read() {
+    use ahg_engine::downloader::bridge::media_seconds;
+    let report = "Input #0, mp3, from 'C:\\Music\\a.mp3':\n  Metadata:\n    title           : Duration: 99:99:99.99 is not it\n  Duration: 00:04:17.83, start: 0.025057, bitrate: 137 kb/s\n  Stream #0:0: Audio: mp3";
+    assert_eq!(media_seconds(report), Some(257.83));
+    assert_eq!(media_seconds("  Duration: 01:02:03.50, start: 0"), Some(3723.5));
+    assert_eq!(media_seconds("  Duration: N/A, start: 0"), None);
+    assert_eq!(media_seconds("no such file"), None);
+    assert_eq!(media_seconds(""), None);
+}

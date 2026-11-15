@@ -425,3 +425,25 @@ fn fixed_tag(field: &str, text: &str) -> Option<String> {
     let text = text.trim_end_matches('\\');
     (!text.trim().is_empty()).then(|| format!("{}:%(meta_{field})s", text.replace('%', "%%").replace(':', "\\:")))
 }
+
+// ── The finished file ───────────────────────────────────────────────────────
+
+/// The confidence left to a match whose finished file is not the track's
+/// length: whatever the search said, what was saved is something else.
+pub const LENGTH_DIFFERS: f64 = 0.5;
+/// How far, in seconds, the finished file may be from the track's length.
+/// The same allowance as for a song's stated length.
+const LENGTH_ALLOWANCE: f64 = 5.5;
+
+/// The length in seconds that ffmpeg prints when asked about a file
+/// (`ffmpeg -i file`): its "  Duration: 00:04:17.83, ..." line.
+pub fn media_seconds(ffmpeg_report: &str) -> Option<f64> {
+    let clock = ffmpeg_report.lines().find_map(|line| line.trim_start().strip_prefix("Duration: "))?.split(',').next()?;
+    let parts: Vec<f64> = clock.trim().split(':').map(|p| p.parse::<f64>().ok().filter(|n| n.is_finite() && *n >= 0.0)).collect::<Option<_>>()?;
+    (parts.len() == 3).then(|| parts[0] * 3600.0 + parts[1] * 60.0 + parts[2])
+}
+
+/// True when a finished file of `seconds` cannot be this track.
+pub fn length_differs(track: &Track, seconds: f64) -> bool {
+    track.duration_ms > 0.0 && (seconds - track.duration_ms / 1000.0).abs() > LENGTH_ALLOWANCE
+}

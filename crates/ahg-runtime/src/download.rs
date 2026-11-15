@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use ahg_engine::downloader::args::build_ytdlp_args;
-use ahg_engine::downloader::bridge::{CONFIRMED, GUESS_CEILING, GUESS_FLOOR, Lookup, NO_CONFIRMED_MATCH, NO_MATCH_FOUND, name_and_tag_from_spotify, note_the_source, Verdict, match_song, song_query, song_rows, song_search_page, song_url, verify};
+use ahg_engine::downloader::bridge::{CONFIRMED, GUESS_CEILING, GUESS_FLOOR, LENGTH_DIFFERS, Lookup, length_differs, media_seconds, NO_CONFIRMED_MATCH, NO_MATCH_FOUND, name_and_tag_from_spotify, note_the_source, Verdict, match_song, song_query, song_rows, song_search_page, song_url, verify};
 use ahg_engine::downloader::metadata::search_results;
 use ahg_engine::downloader::progress::{Outcome, OutputScan};
 use ahg_engine::downloader::score::score_candidates;
@@ -210,6 +210,8 @@ fn run(ytdlp: &YtDlp, task: &DownloadTask, attempt: u64, active: &Active, killed
         return Outcome::Failed("yt-dlp not found. Please ensure yt-dlp is installed or bundled in bin/.".to_owned());
     };
     let mut args = build_ytdlp_args(task, ytdlp.ffmpeg().as_deref());
+    // The Spotify match this download is made from, with the new bridge.
+    let mut chosen: Option<(String, f64)> = None;
     if task.source == SourcePlatform::Spotify
         && let Some(track) = &task.track
     {
@@ -219,6 +221,7 @@ fn run(ytdlp: &YtDlp, task: &DownloadTask, attempt: u64, active: &Active, killed
         }
         let found = spotify_bridge(ytdlp, task, track, &mut args, song_search);
         let matched = found.is_some();
+        chosen = found.clone();
         let confirmed = found.as_ref().is_some_and(|(_, confidence)| *confidence >= CONFIRMED);
         if let Some((url, confidence)) = found {
             if song_search.is_some() && task.embed_metadata {
@@ -245,7 +248,7 @@ fn run(ytdlp: &YtDlp, task: &DownloadTask, attempt: u64, active: &Active, killed
     }
 
     let mut cmd = ytdlp.command(&bin);
-    cmd.args(args);
+    cmd.args(&args);
     let mut child = match cmd.spawn() {
         Ok(child) => child,
         Err(e) => return Outcome::Failed(e.to_string()),
@@ -285,5 +288,27 @@ fn run(ytdlp: &YtDlp, task: &DownloadTask, attempt: u64, active: &Active, killed
     progress(scan.push_stderr(&err.finish()));
     let (events, outcome) = scan.finish(code);
     progress(events);
+    // D34: what was saved is measured against the track. A file of another
+    // length is kept, but its match no longer counts as confirmed. Removing
+    // sponsor segments shortens a file on purpose, so then nothing is judged.
+    if song_search.is_some()
+        && let (Outcome::Done { path, .. }, Some((url, confidence)), Some(track)) = (&outcome, chosen, &task.track)
+        && !args.iter().any(|a| a == "--sponsorblock-remove")
+        && confidence > LENGTH_DIFFERS
+        && file_seconds(ytdlp, path).is_some_and(|seconds| length_differs(track, seconds))
+    {
+        send(Report::Match { id: id.to_owned(), attempt, url, confidence: LENGTH_DIFFERS });
+    }
     outcome
+}
+
+/// The real length of a finished file, asked of ffmpeg. `None` when there is
+/// no ffmpeg, no file, or no length to read: then nothing is concluded.
+fn file_seconds(ytdlp: &YtDlp, file: &str) -> Option<f64> {
+    if file.is_empty() {
+        return None;
+    }
+    let ffmpeg = ytdlp.ffmpeg()?;
+    let report = ytdlp.command(std::path::Path::new(&ffmpeg)).args(["-hide_banner", "-i", file]).output().ok()?;
+    media_seconds(&String::from_utf8_lossy(&report.stderr))
 }

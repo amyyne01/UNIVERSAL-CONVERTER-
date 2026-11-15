@@ -559,3 +559,74 @@ fn a_video_that_barely_resembles_the_track_is_not_taken_as_a_guess() {
     assert!(no_match_found(&reports), "{reports:?}");
     assert_eq!(runs(&ran), 0);
 }
+
+// ── The finished file's length is checked against Spotify's ─────────────────
+
+/// Runs the Spotify task (a 200-second track) to a confirmed match; the
+/// stand-in also plays ffmpeg, reporting `length` for the finished file.
+fn run_with_file_length(dir: &Path, length: &str, extra_setup: impl FnOnce(&mut ahg_engine::types::DownloadTask)) -> Vec<Report> {
+    let script = format!("err   Duration: {length}, start: 0.000000, bitrate: 128 kb/s\n{DOWNLOADS}");
+    fs::write(dir.join("script.txt"), script).unwrap();
+    fs::write(dir.join("json.txt"), "exit 1\n").unwrap();
+    let mut y = YtDlp::new(PathBuf::from(FAKE), Some(FAKE.to_owned()));
+    y.env("FAKE_YTDLP_SCRIPT_JSON", dir.join("json.txt").to_str().unwrap());
+    y.env("FAKE_YTDLP_SCRIPT", dir.join("script.txt").to_str().unwrap());
+    y.env("FAKE_YTDLP_ARGS", dir.join("args.txt").to_str().unwrap());
+    let mut d = Downloader::with(Arc::new(y));
+    let search = song_search(&[("right000001", "The Song", "Artist • Album • 3:20")]);
+    d.set_song_search(Arc::new(move |_: &str| Some(search.clone())));
+    let mut task = spotify_task();
+    extra_setup(&mut task);
+    let (tx, rx) = channel();
+    d.start(task, 3, tx);
+    let mut reports = Vec::new();
+    while let Ok(report) = rx.recv_timeout(Duration::from_secs(20)) {
+        let ended = matches!(report, Report::Done { .. } | Report::Error { .. });
+        reports.push(report);
+        if ended {
+            break;
+        }
+    }
+    reports
+}
+
+fn confidences(reports: &[Report]) -> Vec<f64> {
+    reports.iter().filter_map(|r| if let Report::Match { confidence, .. } = r { Some(*confidence) } else { None }).collect()
+}
+
+#[test]
+fn a_file_of_the_right_length_stays_a_confirmed_match() {
+    let dir = scratch("lengthok");
+    let reports = run_with_file_length(&dir, "00:03:21.40", |_| {});
+    assert!(matches!(reports.last().unwrap(), Report::Done { .. }), "{reports:?}");
+    assert_eq!(confidences(&reports), [1.0]);
+}
+
+#[test]
+fn a_file_of_the_wrong_length_is_kept_but_no_longer_counts_as_confirmed() {
+    let dir = scratch("lengthoff");
+    // The search said 3:20 and the track is 200 s, but what was saved runs 7:20.
+    let reports = run_with_file_length(&dir, "00:07:20.00", |_| {});
+    assert!(matches!(reports.last().unwrap(), Report::Done { .. }), "the file is kept: {reports:?}");
+    let seen = confidences(&reports);
+    assert_eq!(seen.len(), 2, "{seen:?}");
+    assert!(seen[0] == 1.0 && seen[1] < 1.0, "{seen:?}");
+    // The lowered confidence arrives before the download is reported as done.
+    assert!(matches!(reports[reports.len() - 2], Report::Match { .. }) || reports.iter().rposition(|r| matches!(r, Report::Match { .. })) < reports.iter().rposition(|r| matches!(r, Report::Done { .. })));
+}
+
+#[test]
+fn a_length_that_cannot_be_read_changes_nothing() {
+    let dir = scratch("lengthunknown");
+    assert_eq!(confidences(&run_with_file_length(&dir, "N/A", |_| {})), [1.0]);
+}
+
+#[test]
+fn removing_sponsor_segments_shortens_the_file_so_its_length_is_not_judged() {
+    use ahg_engine::types::{PartialExtras, SponsorBlockMode};
+    let dir = scratch("lengthsponsor");
+    let reports = run_with_file_length(&dir, "00:02:00.00", |task| {
+        task.extras = Some(PartialExtras { sponsor_block: Some(SponsorBlockMode::Remove), sponsor_block_categories: Some(vec!["sponsor".into()]), ..Default::default() });
+    });
+    assert_eq!(confidences(&reports), [1.0]);
+}

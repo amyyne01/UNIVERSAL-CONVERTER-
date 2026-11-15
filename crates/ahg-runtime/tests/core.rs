@@ -311,6 +311,8 @@ fn a_real_spotify_track_is_matched_and_downloaded() {
     assert_eq!(file.extension().and_then(|e| e.to_str()), Some("mp3"));
     assert!(fs::metadata(&file).unwrap().len() > 1_000_000, "about four minutes of audio");
     assert_eq!(done.matched_url.as_deref(), Some(found.url.as_str()));
+    // The real file is the track's length, so the match is still confirmed after the check.
+    assert_eq!(done.match_confidence, Some(1.0));
     // Named and tagged from Spotify's data, not from the video's title.
     assert_eq!(file.file_name().and_then(|n| n.to_str()), Some("Fleetwood Mac - Dreams - 2004 Remaster.mp3"));
     let probe = std::process::Command::new(root.join("bin").join("ffmpeg.exe")).args(["-hide_banner", "-i"]).arg(&file).output().unwrap();
