@@ -7,6 +7,7 @@
 //! square tile, a file you own.
 mod downloads;
 pub(crate) mod draw;
+pub(crate) mod found;
 mod home;
 mod nav;
 mod settings;

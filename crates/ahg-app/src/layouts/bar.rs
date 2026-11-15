@@ -45,6 +45,7 @@ use ahg_engine::types::{DownloadStatus as St, DownloadTask, SourcePlatform};
 use rune::{Color, Cursor, Cx, El, SurfaceFit, col, el, icon, row, spacer};
 
 use crate::copy;
+use crate::directions::signal::found;
 use crate::directions::signal::icons;
 use crate::directions::signal::model;
 use crate::directions::signal::parts::{Line, label, meter, meter_held, mono, platform_icon, sans};
@@ -127,15 +128,22 @@ fn titlebar(s: &State, p: &Pal, trailing: f32) -> El {
 /// In the `nav` scene the bar is in command mode with its panel dropped.
 fn home(s: &State, p: &Pal) -> El {
     let command = s.nav_open;
-    let mut top = col().w_full().child(bar(p, command, command, deck(s, p)));
+    // What the field found drops from the bar like the command panel, over the stream.
+    let found = if command { None } else { found::view(s, p) };
+    let mut top = col().w_full().child(bar(p, &s.input, command, command || found.is_some(), deck(s, p)));
     if command {
         top = top.child(reach::panel(s, p).pin(Some(0.0), Some(INPUT_H + DECK_H + 8.0), Some(0.0), None).raise());
     }
     let mut stream = stream::view(s, p, true).grow(1.0).min_h(0.0).mt(24.0);
-    if command {
+    if command || found.is_some() {
         stream = stream.opacity(0.4);
     }
-    let column = col().w_full().max_w(MEASURE).h_full().min_h(0.0).pt(32.0).child(top).child(caption(p).mt(12.0)).child(stream);
+    let mut column = col().w_full().max_w(MEASURE).h_full().min_h(0.0).pt(32.0).child(top).child(caption(p).mt(12.0)).child(stream);
+    if let Some(found) = found {
+        // The drop runs to the window's foot; a press beside it puts it away.
+        let drop = col().pin(Some(0.0), Some(32.0 + INPUT_H + DECK_H + 8.0), Some(0.0), Some(24.0)).on_press(found::dismiss).child(found.on_press(|_: &mut State| {}));
+        column = column.child(drop.raise());
+    }
     col().w_full().grow(1.0).min_h(0.0).px(32.0).items_center().child(column)
 }
 
@@ -182,13 +190,13 @@ fn first_launch(s: &State, p: &Pal) -> El {
         .child(channels)
         .child(spacer())
         .child(legend(p).h(48.0).border_sides([1.0, 0.0, 0.0, 0.0], p.line));
-    let column = col().w_full().max_w(MEASURE).h_full().min_h(0.0).pt(32.0).child(bar(p, false, true, deck(s, p))).child(caption(p).mt(12.0)).child(well);
+    let column = col().w_full().max_w(MEASURE).h_full().min_h(0.0).pt(32.0).child(bar(p, &s.input, false, true, deck(s, p))).child(caption(p).mt(12.0)).child(well);
     col().w_full().grow(1.0).min_h(0.0).px(32.0).items_center().child(column)
 }
 
 /// The bar: the input deck over the readout deck, one surface.
 /// `command`: Ctrl+K was pressed. `listening`: the bar has the caret.
-fn bar(p: &Pal, command: bool, listening: bool, lower: El) -> El {
+fn bar(p: &Pal, input: &str, command: bool, listening: bool, lower: El) -> El {
     let jack = el()
         .size(40.0, 40.0)
         .radius(8.0)
@@ -202,7 +210,9 @@ fn bar(p: &Pal, command: bool, listening: bool, lower: El) -> El {
         // The caret is the only lit thing on the line: the bar is listening.
         typed = typed.child(el().size(2.0, 20.0).radius(1.0).fill(p.accent));
     }
-    let typed = typed.child(label(words, sans(16.0, 400.0), p.muted).single_line().truncate().min_w(0.0));
+    let typed = if command || input.is_empty() { typed.child(label(words, sans(16.0, 400.0), p.muted)) } else { typed.child(label(input, sans(16.0, 400.0), p.text)) };
+    let typed = typed.single_line().truncate().min_w(0.0);
+    let go = if !input.is_empty() && !input.contains("://") { copy::FIELD_BUTTON_SEARCH } else { copy::FIELD_BUTTON_LOOK_UP };
     let end = if command {
         keycap(copy::PALETTE_ESC_CAP, p)
     } else {
@@ -224,7 +234,7 @@ fn bar(p: &Pal, command: bool, listening: bool, lower: El) -> El {
                     .cursor(Cursor::Pointer)
                     .focusable(true)
                     .role("button")
-                    .child(label(copy::FIELD_BUTTON_LOOK_UP, sans(14.0, 500.0), p.bg))
+                    .child(label(go, sans(14.0, 500.0), p.bg))
                     .child(icon(&icons::FORWARD, 16.0).color(p.bg)),
             )
     };

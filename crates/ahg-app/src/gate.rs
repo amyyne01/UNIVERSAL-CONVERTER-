@@ -126,6 +126,11 @@ pub fn on_key(s: &mut State, ev: &KeyEvent, _tx: &mut Tx) -> bool {
         s.picker = !s.picker;
     } else if s.picker && ev.key == rune::Key::Escape {
         s.picker = false;
+    } else if !matches!(s.found, Found::Nothing) && ev.key == rune::Key::Escape {
+        // Esc closes what the field found, as the close button does.
+        s.found = Found::Nothing;
+        s.input.clear();
+        s.notice = None;
     } else {
         return false;
     }

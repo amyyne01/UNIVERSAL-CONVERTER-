@@ -63,8 +63,8 @@ fn item(s: &State, p: &Pal, nav: Nav, glyph: &'static Icon, name: &str, n: usize
     let ink = if on { p.text } else { p.muted };
     let mut mark = el().size(40.0, 40.0).center().child(icon(glyph, 16.0).color(ink));
     if badge > 0 && !open {
-        // The count as a lit segment beside the glyph.
-        mark = mark.child(el().h(16.0).min_w(16.0).px(4.0).center().radius(4.0).fill(p.accent).absolute(24.0, 2.0).child(label(badge.to_string(), mono(12.0, 500.0), p.deep)));
+        // The count as a lit segment beside the glyph, clear of its corner.
+        mark = mark.child(el().h(16.0).min_w(16.0).px(4.0).center().radius(4.0).fill(p.accent).absolute(28.0, 2.0).child(label(badge.to_string(), mono(12.0, 500.0), p.deep)));
     }
     let mut r = row()
         .key(format!("nav-{n}"))

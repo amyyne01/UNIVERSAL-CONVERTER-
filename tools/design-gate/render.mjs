@@ -37,6 +37,16 @@ const SCENES = [
   ['reach', 'Settings'],
   ['nav', 'The sidebar, opened on hover'],
   ['nav-pinned', 'The sidebar, pinned open'],
+  ['looking-up', 'After a paste: reading the link'],
+  ['lookup-failed', 'After a paste: the lookup failed'],
+  ['media', 'After a paste: one video'],
+  ['playlist', 'After a paste: an album, tracks being matched'],
+  ['search', 'A search'],
+  ['search-loading', 'A search, loading'],
+  ['search-mixed', 'A search: results, nothing, a failure'],
+  ['media-basic', 'Basic plan: one video, locked options'],
+  ['playlist-basic', 'Basic plan: a YouTube playlist'],
+  ['search-limit', 'Basic plan: the five-link limit'],
 ];
 // The new layouts (owner, 2026-11-15): the whole app from scratch, no sidebar and no pages. Each wears one look.
 const LAYOUTS = [
@@ -54,6 +64,16 @@ const STATES = [
   ['downloads', 'Downloads: the full list'],
   ['reach', 'Settings'],
   ['nav', 'The navigation, opened'],
+  ['looking-up', 'After a paste: reading the link'],
+  ['lookup-failed', 'After a paste: the lookup failed'],
+  ['media', 'After a paste: one video'],
+  ['playlist', 'After a paste: an album, tracks being matched'],
+  ['search', 'A search'],
+  ['search-loading', 'A search, loading'],
+  ['search-mixed', 'A search: results, nothing, a failure'],
+  ['media-basic', 'Basic plan: one video, locked options'],
+  ['playlist-basic', 'Basic plan: a YouTube playlist'],
+  ['search-limit', 'Basic plan: the five-link limit'],
 ];
 // Two of the app's existing palettes, to show a direction survives a switch.
 const PALETTE_PROOFS = [2, 5];

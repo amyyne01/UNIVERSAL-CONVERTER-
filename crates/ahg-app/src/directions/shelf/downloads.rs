@@ -10,10 +10,10 @@ use super::parts::{
 };
 use super::theme::{Pal, mono, sans, serif};
 use crate::copy;
-use crate::gate::{Screen, State};
+use crate::gate::{Nav, State};
 
-const ROW_H: f32 = 68.0;
-const SLEEVE: f32 = 52.0;
+const ROW_H: f32 = 60.0;
+const SLEEVE: f32 = 48.0;
 
 pub fn view(s: &State, p: &Pal) -> El {
     let tasks = &s.tasks;
@@ -24,7 +24,7 @@ pub fn view(s: &State, p: &Pal) -> El {
         .h_full()
         .min_h(0.0)
         .px(40.0)
-        .pt(28.0)
+        .pt(16.0)
         .pb(24.0)
         .gap(16.0)
         .child(header(p, tasks));
@@ -90,10 +90,10 @@ fn header(p: &Pal, tasks: &[DownloadTask]) -> El {
         rest = &rest[part.len()..];
     }
     let mut left = col()
-        .gap(6.0)
+        .gap(4.0)
         .child(
             text(copy::DL_TITLE)
-                .font(serif(42.0).lh(46.0))
+                .font(serif(44.0).lh(48.0))
                 .color(p.text),
         )
         .child(runs(counts).font(mono(12.0, 400.0)).single_line());
@@ -215,11 +215,11 @@ fn strip(p: &Pal, tasks: &[DownloadTask]) -> El {
         ),
     ];
     let mut group = row()
-        .h(32.0)
-        .padding(2.0)
-        .gap(2.0)
+        .h(36.0)
+        .padding(4.0)
+        .gap(4.0)
         .center_y()
-        .radius(9.0)
+        .radius(10.0)
         .fill(p.sunk)
         .border(1.0, p.line_soft)
         .role("radiogroup")
@@ -230,7 +230,7 @@ fn strip(p: &Pal, tasks: &[DownloadTask]) -> El {
             .key(key)
             .h(28.0)
             .px(12.0)
-            .gap(6.0)
+            .gap(8.0)
             .center_y()
             .radius(6.0)
             .focusable(true)
@@ -256,7 +256,7 @@ fn strip(p: &Pal, tasks: &[DownloadTask]) -> El {
         .key("dl-search")
         .w(240.0)
         .h(32.0)
-        .px(10.0)
+        .px(12.0)
         .gap(8.0)
         .center_y()
         .radius(8.0)
@@ -288,9 +288,9 @@ fn banner(p: &Pal, n: usize) -> El {
     row()
         .key("interrupted")
         .w_full()
-        .h(44.0)
+        .h(40.0)
         .pl(16.0)
-        .pr(6.0)
+        .pr(4.0)
         .gap(12.0)
         .center_y()
         .radius(12.0)
@@ -394,10 +394,10 @@ fn list(s: &State, p: &Pal, tasks: &[DownloadTask]) -> El {
                 };
                 Some(
                     row()
-                        .gap(6.0)
+                        .gap(8.0)
                         .center_y()
                         .label(copy::transferring_aria(live.len(), &sp))
-                        .child(icon(&icons::DOWNLOAD, 14.0).color(p.muted))
+                        .child(icon(&icons::DOWNLOAD, 16.0).color(p.muted))
                         .child(text(line).font(mono(12.0, 400.0)).color(p.text2)),
                 )
             };
@@ -513,9 +513,9 @@ fn empty_row(p: &Pal) -> El {
         .size(SLEEVE, SLEEVE)
         .radius(4.0)
         .border(1.0, p.control.alpha(0.6))
-        .border_dash(4.0, 3.0)
+        .border_dash(4.0, 4.0)
         .center()
-        .child(icon(&icons::DOWNLOAD, 18.0).color(p.muted));
+        .child(icon(&icons::DOWNLOAD, 16.0).color(p.muted));
     row()
         .key("empty")
         .w_full()
@@ -542,7 +542,7 @@ fn empty_row(p: &Pal) -> El {
         )
         .child(
             ghost(p, "paste-a-link", None, copy::EMPTY_NONE_ACTION, p.text)
-                .on_press(|s: &mut State| s.screen = Screen::Home),
+                .on_press(|s: &mut State| s.nav = Nav::Home),
         )
 }
 
@@ -603,7 +603,7 @@ fn task_row(s: &State, p: &Pal, t: &DownloadTask, grip: bool, do_next: bool) -> 
     };
     // 3. The sleeve, in a fixed slot so the text column never moves.
     let slot = el()
-        .w(SLEEVE * (1.0 + parts::DISC_TRAVEL) + 2.0)
+        .w(84.0)
         .h(SLEEVE)
         .child(parts::sleeve(
             s,
@@ -621,7 +621,7 @@ fn task_row(s: &State, p: &Pal, t: &DownloadTask, grip: bool, do_next: bool) -> 
         title.push(run(copy::row_dot_part(&parts::link_label(&t.url)), p.muted));
     }
     let title_el = runs(title)
-        .font(sans(14.0, if finished { 400.0 } else { 500.0 }))
+        .font(sans(13.0, if finished { 400.0 } else { 500.0 }))
         .single_line()
         .truncate()
         .help(if show_link {
@@ -664,7 +664,7 @@ fn task_row(s: &State, p: &Pal, t: &DownloadTask, grip: bool, do_next: bool) -> 
     let mut block = col()
         .grow(1.0)
         .min_w(0.0)
-        .gap(3.0)
+        .gap(4.0)
         .child(title_el)
         .child(detail_el);
     if done && !t.progress.filename.is_empty() {
@@ -680,10 +680,10 @@ fn task_row(s: &State, p: &Pal, t: &DownloadTask, grip: bool, do_next: bool) -> 
         block = block.child(
             row()
                 .w_full()
-                .gap(6.0)
+                .gap(8.0)
                 .center_y()
                 .help(t.progress.filename.clone())
-                .child(icon(&icons::FOLDER, 14.0).color(p.muted))
+                .child(icon(&icons::FOLDER, 16.0).color(p.muted))
                 .child(
                     text(file)
                         .font(sans(12.0, 500.0))
@@ -708,7 +708,7 @@ fn task_row(s: &State, p: &Pal, t: &DownloadTask, grip: bool, do_next: bool) -> 
         let pct = (t.progress.percent.clamp(0.0, 100.0)).round() as u64;
         col()
             .w(128.0)
-            .gap(2.0)
+            .gap(0.0)
             .items_end()
             .child(
                 text(format!("{pct}%"))
@@ -725,7 +725,7 @@ fn task_row(s: &State, p: &Pal, t: &DownloadTask, grip: bool, do_next: bool) -> 
         let (glyph, word, tone) = state_word(p, t);
         row()
             .w(128.0)
-            .gap(6.0)
+            .gap(8.0)
             .center_y()
             .justify_end()
             .child(icon(glyph, 16.0).color(tone))
@@ -735,7 +735,7 @@ fn task_row(s: &State, p: &Pal, t: &DownloadTask, grip: bool, do_next: bool) -> 
     // 6. Actions.
     let fixable = matches!(status, St::Failed | St::Cancelled);
     let kind = t.error_code.unwrap_or(ErrorCode::Unknown);
-    let mut actions = row().min_w(100.0).gap(2.0).center_y().justify_end();
+    let mut actions = row().min_w(100.0).gap(4.0).center_y().justify_end();
     let mut act = |glyph: &'static Icon, name: &'static str, ink: Color| {
         actions = std::mem::replace(&mut actions, row()).child(icon_button(
             p,
@@ -801,7 +801,9 @@ fn task_row(s: &State, p: &Pal, t: &DownloadTask, grip: bool, do_next: bool) -> 
     let mut r = row()
         .key(format!("row-{id}"))
         .w_full()
-        .h(ROW_H)
+        .min_h(ROW_H)
+        // A finished row carries a third line, the file: it gets room to breathe.
+        .py(if done && !t.progress.filename.is_empty() { 8.0 } else { 4.0 })
         .pl(8.0)
         .pr(12.0)
         .gap(12.0)

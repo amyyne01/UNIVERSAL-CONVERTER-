@@ -9,7 +9,7 @@ use super::model;
 use super::parts::{Line, art, dot, keycap, label, meter, mono, platform_icon, sans, stack};
 use super::theme::{Pal, source_color};
 use crate::copy;
-use crate::gate::{Nav, State};
+use crate::gate::{Found, Nav, State};
 use model::{AUDIO_FORMAT, OUTPUT_DIR};
 
 pub fn view(s: &State, p: &Pal) -> El {
@@ -25,7 +25,7 @@ pub fn view(s: &State, p: &Pal) -> El {
             .max_w(880.0)
             .gap(20.0)
             .child(label(copy::HOME_HEADLINE, sans(44.0, 500.0).tracking(-0.9), p.text))
-            .child(stack(12.0).child(field(&s.input, p)).child(status(p)))
+            .child(stack(12.0).child(field(s, p)).child(status(p)))
             .child(works_with(p).mt(28.0));
         return col().w_full().h_full().px(40.0).pb(72.0).items_center().justify_center().child(hero);
     }
@@ -34,7 +34,12 @@ pub fn view(s: &State, p: &Pal) -> El {
     if active > 0 {
         headline = headline.child(in_flight(active, p));
     }
-    let mut page = col().w_full().max_w(1600.0).px(40.0).pt(36.0).pb(40.0).gap(16.0).child(headline).child(stack(12.0).mt(4.0).child(field(&s.input, p)).child(status(p)));
+    // What the field found takes the body's place, under the field it came out of.
+    if let Some(found) = super::found::view(s, p) {
+        let page = col().w_full().max_w(1600.0).h_full().min_h(0.0).px(40.0).pt(36.0).pb(40.0).gap(16.0).child(headline).child(stack(12.0).mt(4.0).child(field(s, p)).child(status(p))).child(found.mt(8.0));
+        return col().w_full().h_full().min_h(0.0).items_center().child(page);
+    }
+    let mut page = col().w_full().max_w(1600.0).px(40.0).pt(36.0).pb(40.0).gap(16.0).child(headline).child(stack(12.0).mt(4.0).child(field(s, p)).child(status(p)));
     let mut bento = col().w_full().gap(16.0).mt(16.0);
     if active > 0 {
         bento = bento.child(speed_cell(&s.tasks, p));
@@ -69,7 +74,11 @@ fn in_flight(n: usize, p: &Pal) -> El {
 
 /// The input of the desk: a jack, the line, the one filled button, and under
 /// them the input's level, every segment dark until a link comes in.
-fn field(input: &str, p: &Pal) -> El {
+fn field(s: &State, p: &Pal) -> El {
+    let input = s.input.as_str();
+    let words = if !input.is_empty() && !input.contains("://") { copy::FIELD_BUTTON_SEARCH } else { copy::FIELD_BUTTON_LOOK_UP };
+    // A failed lookup leaves the input's level red, as the old field's strip did.
+    let (lit, level_color) = if matches!(s.found, Found::LookupFailed(_)) { (1.0, p.error.alpha(0.6)) } else { (0.0, p.accent) };
     let jack = el().size(40.0, 40.0).radius(8.0).fill(p.deep).border(1.0, p.line).center().child(icon(&icons::LINK, 16.0).color(if input.is_empty() { p.muted } else { p.accent_ink }));
     let go = row()
         .h(44.0)
@@ -84,11 +93,11 @@ fn field(input: &str, p: &Pal) -> El {
         .cursor(rune::Cursor::Pointer)
         .focusable(true)
         .role("button")
-        .child(label(copy::FIELD_BUTTON_LOOK_UP, sans(14.0, 500.0), p.bg))
+        .child(label(words, sans(14.0, 500.0), p.bg))
         .child(icon(&icons::FORWARD, 16.0).color(p.bg));
     let typed = if input.is_empty() { label(copy::FIELD_PLACEHOLDER, sans(16.0, 400.0), p.muted) } else { label(input.to_string(), sans(16.0, 400.0), p.text) };
     let line = row().w_full().h(64.0).pl(12.0).pr(12.0).gap(12.0).center_y().child(jack).child(typed.grow(1.0).single_line().truncate().min_w(0.0)).child(go);
-    let level = el().w_full().h(16.0).px(12.0).pb(8.0).child(meter(0.0, 120, None, 8.0, 2.0, p.accent, p.unlit));
+    let level = el().w_full().h(16.0).px(12.0).pb(8.0).child(meter(lit, 120, None, 8.0, 2.0, level_color, p.unlit));
     col()
         .w_full()
         .radius(12.0)

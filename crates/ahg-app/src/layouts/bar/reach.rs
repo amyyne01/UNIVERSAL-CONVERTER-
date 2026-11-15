@@ -8,6 +8,7 @@ use rune::{Color, Cursor, El, Icon, ScrollSpec, col, el, icon, row, spacer};
 
 use super::{AUDIO_FORMAT, keycap};
 use crate::copy;
+use crate::copy::settings as w;
 use crate::directions::signal::icons;
 use crate::directions::signal::parts::{label, mono, platform_icon, sans, stack};
 use crate::directions::signal::theme::{Pal, source_color};
@@ -16,22 +17,21 @@ use crate::gate::State;
 const PANEL_H: f32 = 520.0;
 const LIST_W: f32 = 336.0;
 /// The section shown open.
-pub(crate) const PICKED: &str = "Scheduled downloads";
-/// Wording from the Electron app's Settings screen (05-tabs.md 4.10).
-pub(crate) const SAVES_ITSELF: &str = "Changes save automatically";
+pub(crate) const PICKED: &str = w::SCHEDULE;
+pub(crate) const SAVES_ITSELF: &str = w::SAVES;
 
-// Section names from the Electron app's Settings screen (05-tabs.md 4.4);
-// the shared `copy` stops at Home and Downloads, so they live here.
+// The Settings sections, in the old app's order. Destination had no heading
+// there; its row's label stands for it.
 const SECTIONS: [(&str, &Icon); 9] = [
-    ("Destination", &icons::FOLDER),
-    ("Download defaults", &icons::DOWNLOAD),
-    ("More download options", &icons::SETTINGS),
-    ("Appearance & behavior", &icons::SETTINGS),
-    ("Scheduled downloads", &icons::CLOCK),
-    ("Software", &icons::REFRESH),
-    ("Advanced", &icons::SETTINGS),
-    ("Plan & license", &icons::CHECK),
-    ("Help", &icons::ALERT),
+    (w::SAVING_TO, &icons::FOLDER),
+    (w::DEFAULTS, &icons::DOWNLOAD),
+    (w::MORE, &icons::SETTINGS),
+    (w::APPEARANCE, &icons::SETTINGS),
+    (w::SCHEDULE, &icons::CLOCK),
+    (w::SOFTWARE, &icons::REFRESH),
+    (w::ADVANCED, &icons::SETTINGS),
+    (w::PLAN, &icons::CHECK),
+    (w::HELP, &icons::ALERT),
 ];
 
 pub fn panel(s: &State, p: &Pal) -> El {
@@ -70,11 +70,11 @@ pub(crate) fn section_list(s: &State, p: &Pal) -> El {
     let month = s.stats.as_ref().map(|st| st.current.files as u64).unwrap_or(0);
     let status = |name: &str| -> String {
         match name {
-            "Destination" => "Music".into(),
-            "Download defaults" => format!("{} · 320 kbps", AUDIO_FORMAT.to_uppercase()),
-            "Scheduled downloads" => "03:00".into(),
-            "Software" => "2.0.0".into(),
-            "Plan & license" => "Premium".into(),
+            w::SAVING_TO => "Music".into(),
+            w::DEFAULTS => format!("{} · 320 kbps", AUDIO_FORMAT.to_uppercase()),
+            w::SCHEDULE => "03:00".into(),
+            w::SOFTWARE => "2.0.0".into(),
+            w::PLAN => w::PLAN_PREMIUM.0.into(),
             _ => String::new(),
         }
     };
@@ -153,11 +153,12 @@ fn entry(i: Option<&'static Icon>, tint: Option<Color>, name: &str, status: &str
 /// The Scheduled downloads section, as the Electron Settings screen words it.
 /// `crumb`: show where it sits (in the bar's panel, which has no other title).
 pub(crate) fn schedule_sheet(p: &Pal, crumb: bool) -> El {
-    let days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
     let mut chips = row().gap(4.0);
-    for (i, d) in days.into_iter().enumerate() {
+    for (i, day) in w::DAYS.into_iter().enumerate() {
+        // The chips are short; the day's full name is their label.
+        let d = &day[..3];
         let on = (1..=5).contains(&i);
-        let chip = el().h(32.0).w(48.0).center().radius(6.0).hover(p.hover).cursor(Cursor::Pointer).role("checkbox").checked(on);
+        let chip = el().h(32.0).w(48.0).center().radius(6.0).hover(p.hover).cursor(Cursor::Pointer).role("checkbox").checked(on).label(day);
         chips = chips.child(if on {
             chip.fill(p.raised).border(1.0, p.line_strong).child(label(d, sans(13.0, 500.0), p.text)).child(el().size(16.0, 2.0).radius(1.0).fill(p.accent).absolute(16.0, 24.0))
         } else {
@@ -170,15 +171,20 @@ pub(crate) fn schedule_sheet(p: &Pal, crumb: bool) -> El {
         c = c.child(row().w_full().center_y().gap(8.0).mb(8.0).child(label(copy::NAV_SETTINGS, sans(12.0, 400.0), p.muted)).child(label("/", sans(12.0, 400.0), p.muted)).child(label(PICKED, sans(12.0, 400.0), p.text2)));
     }
     c.child(label(PICKED, sans(16.0, 500.0), p.text))
-        .child(label("Start downloads automatically at a set time", sans(13.0, 400.0), p.text2).mb(16.0))
-        .child(setting("Enable scheduler", toggle(true, p), p))
-        .child(setting("Start time", time, p))
-        .child(setting("Active days", chips, p))
-        .child(setting("Shutdown after queue", toggle(false, p), p))
+        .child(label(w::SCHEDULE_HINT, sans(13.0, 400.0), p.text2).mb(16.0))
+        .child(setting((w::ENABLE_SCHEDULER, ""), toggle(true, p), p))
+        .child(setting(w::START_TIME, time, p))
+        .child(setting(w::ACTIVE_DAYS, chips, p))
+        .child(setting(w::SHUTDOWN, toggle(false, p), p))
 }
 
-fn setting(name: &str, control: El, p: &Pal) -> El {
-    row().w_full().min_h(56.0).py(12.0).gap(16.0).center_y().border_sides([1.0, 0.0, 0.0, 0.0], p.line).child(stack(4.0).grow(1.0).child(label(name, sans(13.0, 500.0), p.text))).child(control)
+/// A Settings row: (label, description) and its control.
+pub(crate) fn setting(row_words: (&str, &str), control: El, p: &Pal) -> El {
+    let mut words = stack(4.0).grow(1.0).child(label(row_words.0, sans(13.0, 500.0), p.text));
+    if !row_words.1.is_empty() {
+        words = words.child(label(row_words.1, sans(13.0, 400.0), p.text2).wrap());
+    }
+    row().w_full().min_h(56.0).py(12.0).gap(16.0).center_y().border_sides([1.0, 0.0, 0.0, 0.0], p.line).child(words).child(control)
 }
 
 pub(crate) fn toggle(on: bool, p: &Pal) -> El {

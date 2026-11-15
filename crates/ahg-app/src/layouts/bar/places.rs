@@ -6,6 +6,7 @@ use rune::{Color, Cursor, El, ScrollSpec, col, el, icon, row};
 
 use super::{SECTIONS, reach, section_count, stream};
 use crate::copy;
+use crate::copy::settings as w;
 use crate::directions::signal::icons;
 use crate::directions::signal::model;
 use crate::directions::signal::parts::{button, ghost, label, mono, sans};
@@ -82,7 +83,7 @@ pub fn settings(s: &State, p: &Pal) -> El {
         .pr(24.0)
         .gap(8.0)
         .border_sides([0.0, 1.0, 0.0, 0.0], p.line)
-        .child(label(copy::NAV_SETTINGS, sans(16.0, 500.0), p.text).ml(8.0).mb(8.0))
+        .child(label(w::TITLE, sans(16.0, 500.0), p.text).ml(8.0).mb(8.0))
         .child(col().w_full().grow(1.0).min_h(0.0).scroll(ScrollSpec { stick_bottom: false }).child(reach::section_list(s, p)))
         .child(label(reach::SAVES_ITSELF, sans(12.0, 400.0), p.muted).ml(8.0));
     // One scroll of every section; the list marks the one in view. Scheduled downloads is scrolled to.
@@ -92,6 +93,8 @@ pub fn settings(s: &State, p: &Pal) -> El {
         .pt(32.0)
         .pb(32.0)
         .gap(48.0)
+        .child(destination(p))
+        .child(appearance(p))
         .child(reach::schedule_sheet(p, false))
         .child(software(p))
         .child(plan(p));
@@ -100,16 +103,32 @@ pub fn settings(s: &State, p: &Pal) -> El {
     col().w_full().grow(1.0).min_h(0.0).px(32.0).items_center().child(column)
 }
 
-// Wording from the Electron app's Settings screen (05-tabs.md 4.4).
+/// Destination had no heading in the old app: one line, the folder and `Change`.
+fn destination(p: &Pal) -> El {
+    row()
+        .w_full()
+        .gap(12.0)
+        .center_y()
+        .child(icon(&icons::FOLDER, 16.0).color(p.muted))
+        .child(label(w::SAVING_TO, sans(13.0, 400.0), p.text2))
+        .child(label(super::OUTPUT_DIR, mono(13.0, 400.0), p.text).single_line().truncate().min_w(0.0).shrink())
+        .child(el().grow(1.0))
+        .child(button(None, w::CHANGE, p.text, p))
+}
+
+fn appearance(p: &Pal) -> El {
+    section(w::APPEARANCE, "", p).child(reach::setting(w::LAYOUT, button(None, w::LAYOUT_CHOOSE, p.text, p).on_press(|s: &mut State| s.picker = true), p))
+}
+
 fn software(p: &Pal) -> El {
-    section("Software", "Two moving parts: the app itself, and the yt-dlp engine that does the downloading.", p)
-        .child(status_row("AHG Universal Converter", "v2.0.0", button(Some(&icons::REFRESH), copy::PALETTE_CHECK_UPDATES, p.text, p), p))
-        .child(status_row("Download engine", "2026.11.01", ghost(None, "Check for engine update", p.text2, p), p))
-        .child(status_row("Auto-update engine", "", reach::toggle(true, p), p))
+    section(w::SOFTWARE, w::SOFTWARE_HINT, p)
+        .child(status_row(w::APP_NAME, "v2.0.0", button(Some(&icons::REFRESH), w::CHECK_FOR_UPDATES, p.text, p), p))
+        .child(status_row(w::ENGINE_NAME, "2026.11.01", ghost(None, w::ENGINE_CHECK, p.text2, p), p))
+        .child(reach::setting(w::AUTO_UPDATE_ENGINE, reach::toggle(true, p), p))
 }
 
 fn plan(p: &Pal) -> El {
-    section("Plan & license", "", p).child(status_row("Your plan", "Premium", label("Every feature is included on this machine", sans(13.0, 400.0), p.text2), p))
+    section(w::PLAN, "", p).child(status_row(w::YOUR_PLAN, w::PLAN_PREMIUM.0, label(w::PLAN_PREMIUM.1, sans(13.0, 400.0), p.text2), p))
 }
 
 fn section(title: &str, hint: &str, p: &Pal) -> El {

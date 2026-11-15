@@ -39,8 +39,10 @@ pub fn orbit(size: f32, pass: Pass, track: Color, ink: Color, under: Color) -> S
     let top = -FRAC_PI_2;
     let mut s = Shape::new();
     if pass == Pass::Planned {
-        for i in 0..32 {
-            let a = top + TAU * i as f32 / 32.0;
+        // A dot every 3 pt or so, at most 32: a small ring stays dotted, not solid.
+        let n = ((TAU * r) / 3.0).clamp(8.0, 32.0) as usize;
+        for i in 0..n {
+            let a = top + TAU * i as f32 / n as f32;
             s = s.fill(disc(c + r * a.cos(), c + r * a.sin(), 0.9), ink);
         }
         return s;

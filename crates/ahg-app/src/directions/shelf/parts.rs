@@ -272,8 +272,8 @@ pub fn runs(parts: Vec<Run>) -> El {
 
 /// A key, as printed on the keyboard.
 pub fn keycap(p: &Pal, key: &str) -> El {
-    el().h(18.0)
-        .px(5.0)
+    el().h(20.0)
+        .px(4.0)
         .center()
         .radius(4.0)
         .fill(p.raised)
@@ -287,7 +287,7 @@ pub fn ghost(p: &Pal, key: &str, glyph: Option<&'static Icon>, label: &str, ink:
         .key(key)
         .h(32.0)
         .px(12.0)
-        .gap(6.0)
+        .gap(8.0)
         .center_y()
         .radius(8.0)
         .border(1.0, p.line)
@@ -308,7 +308,7 @@ pub fn primary(p: &Pal, key: &str, glyph: Option<&'static Icon>, label: &str) ->
         .key(key)
         .h(32.0)
         .px(12.0)
-        .gap(6.0)
+        .gap(8.0)
         .center_y()
         .radius(8.0)
         .fill(p.text)

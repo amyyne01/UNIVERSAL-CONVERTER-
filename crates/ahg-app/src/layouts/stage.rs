@@ -60,10 +60,10 @@ use rune::{Color, Cursor, Cx, El, Icon, canvas, col, el, row, spacer};
 
 use crate::copy;
 use crate::directions::orbit::draw::{Pass, orbit, planet};
-use crate::directions::orbit::icons;
 use crate::directions::orbit::look::{Pal, mix, txt};
 use crate::directions::orbit::model::{self, is_active};
-use crate::gate::{Nav, State};
+use crate::directions::orbit::{found, icons};
+use crate::gate::{Found, Nav, State};
 use parts::{BODY, BODY_M, FIG, FIG_L, FIG_XL, HERO, SMALL, SMALL_M, button, cover, glyph, icon_button, keys, state_word, text_button};
 
 /// The shared state carries no settings: the folder and the audio format the samples use.
@@ -95,9 +95,12 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> El {
     let (wide, tall) = cx.layout_with("stage-root", |r| (r[2] >= 1100.0, r[3] >= 760.0)).unwrap_or((true, true));
     let fit = Fit { ring: if tall { 296.0 } else { 192.0 }, rail: if wide { 400.0 } else { 320.0 }, tile: if tall { 80.0 } else { 56.0 }, pad: if tall { 24.0 } else { 16.0 }, tall, wide };
     let first = s.tasks.is_empty() && s.stats.is_none();
+    let home = |s: &State| if first { first_launch(&p).grow(1.0).min_h(0.0) } else { player(s, &p, fit) };
     let body = match s.nav {
-        Nav::Home if first => first_launch(&p).grow(1.0).min_h(0.0),
-        Nav::Home => player(s, &p, fit),
+        Nav::Home => match found::body(s, &p) {
+            Some(answer) => found_sheet(s, &p, fit, home(s), answer),
+            None => home(s),
+        },
         Nav::Downloads => list::view(s, &p, fit),
         Nav::Settings => sheet::view(&p, fit),
     };
@@ -524,6 +527,35 @@ fn first_launch(p: &Pal) -> El {
         .child(works.mt(32.0))
 }
 
+// ── What the field found ───────────────────────────────────────────────────
+
+/// The answer rises out of the transport bar as a sheet over the stage, which stays faintly
+/// behind it (what is playing goes on playing). The sheet stands on the bar: its foot is open
+/// to the bar's hairline. Short answers are as tall as they need; a track list takes the
+/// stage's height and scrolls inside. Esc or the close button puts the stage back.
+fn found_sheet(s: &State, p: &Pal, fit: Fit, under: El, answer: El) -> El {
+    let side = fit.pad + 8.0;
+    let head = row().w_full().h(32.0).center_y().child(spacer()).child(found::dismiss(p));
+    let mut sheet = col()
+        .key("found")
+        .px(24.0)
+        .pt(16.0)
+        .pb(24.0)
+        .gap(8.0)
+        .fill(p.card)
+        .border_sides([1.0, 1.0, 0.0, 1.0], p.track)
+        .corners([16.0, 16.0, 0.0, 0.0])
+        .shadow(-8.0, 32.0, Color::BLACK.alpha(if p.dark { 0.45 } else { 0.10 }))
+        .child(head);
+    sheet = if found::fills(s) { sheet.child(answer.grow(1.0).min_h(0.0)).pin(Some(side), Some(fit.pad), Some(side), Some(0.0)) } else { sheet.child(answer).pin(Some(side), None, Some(side), Some(0.0)) };
+    let mut c = col().w_full().grow(1.0).min_h(0.0).child(under.opacity(0.24).inert()).child(sheet);
+    // A notice rises above the bar's right end, over the sheet.
+    if let Some(n) = found::notice(s, p) {
+        c = c.child(n.pin(None, None, Some(side + 16.0), Some(16.0)));
+    }
+    c
+}
+
 // ── The transport ──────────────────────────────────────────────────────────
 
 fn transport(s: &State, p: &Pal, fit: Fit) -> El {
@@ -547,8 +579,9 @@ fn transport(s: &State, p: &Pal, fit: Fit) -> El {
         .border(1.0, p.track)
         .label(copy::FIELD_ARIA)
         .child(glyph(&icons::LINK, p.muted))
-        .child(txt(copy::FIELD_PLACEHOLDER, BODY, p.muted).truncate().grow(1.0).min_w(0.0))
-        .child(button(p, "look-up".into(), copy::FIELD_BUTTON_LOOK_UP, None, true).radius(4.0));
+        .child(if s.input.is_empty() { txt(copy::FIELD_PLACEHOLDER, BODY, p.muted) } else { txt(s.input.clone(), BODY, p.text) }.truncate().grow(1.0).min_w(0.0))
+        // While an answer is open its Download is the lit control, so Look up steps down.
+        .child(button(p, "look-up".into(), copy::FIELD_BUTTON_LOOK_UP, None, matches!(s.found, Found::Nothing)).radius(4.0));
 
     // Play-pause and stop, as on any player: one for everything in flight.
     let (pp_label, pp_icon) = if all_paused { (copy::DL_RESUME_ALL, &icons::PLAY) } else { (copy::DL_PAUSE_ALL, &icons::PAUSE) };

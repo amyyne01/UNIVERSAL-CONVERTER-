@@ -9,6 +9,7 @@ mod downloads;
 mod home;
 mod nav;
 mod settings;
+pub(crate) mod found;
 pub(crate) mod icons;
 pub(crate) mod model;
 pub(crate) mod parts;

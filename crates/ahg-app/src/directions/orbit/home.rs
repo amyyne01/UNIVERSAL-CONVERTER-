@@ -7,7 +7,7 @@ use rune::{Color, El, Icon, ScrollSpec, canvas, col, el, icon, oklch, oklcha, ro
 use super::draw::{planet, trace};
 use super::look::{BODY, BODY_M, CELL_TITLE, DISPLAY, FIG, FIG_L, FIG_S, FIG_XL, Pal, SMALL, SMALL_M, mix, txt};
 use super::model::{self, is_active};
-use super::{Tone, button, cover, icons, keycap};
+use super::{Tone, button, cover, found, icons, keycap};
 use crate::copy;
 use crate::gate::{Nav, State};
 
@@ -21,11 +21,14 @@ pub fn view(s: &State, p: &Pal) -> El {
     let done: Vec<&DownloadTask> = s.tasks.iter().filter(|t| t.progress.status == St::Done).collect();
     let counted = s.stats.as_ref().is_some_and(|st| st.current.files > 0.0 || st.previous.as_ref().is_some_and(|p| p.files > 0.0));
     let quiet = !counted && done.is_empty() && active.is_empty();
+    if let Some(body) = found::body(s, p) {
+        return found_page(s, p, active.len(), body);
+    }
 
     let planet_w = if quiet { 380.0 } else { 260.0 };
     let mark = canvas(planet(planet_w, mix(p.text, p.bg, 0.08), p.bg)).key("planet").size(planet_w, planet_w * 0.592);
 
-    let mut launch = col().grow(1.0).min_w(0.0).gap(20.0).child(headline(p, active.len())).child(field(p, &s.input)).child(status(s, p));
+    let mut launch = col().grow(1.0).min_w(0.0).gap(20.0).child(headline(p, active.len())).child(field(p, &s.input, false)).child(status(s, p));
     if quiet {
         launch = launch.child(works_with(p).mt(12.0));
     }
@@ -77,7 +80,10 @@ fn headline(p: &Pal, in_flight: usize) -> El {
     r
 }
 
-fn field(p: &Pal, input: &str) -> El {
+/// The paste field. `open`: it has opened into the found surface, so it carries the way back
+/// and Look up steps down to an outline (the surface's Download is the lit control then).
+fn field(p: &Pal, input: &str, open: bool) -> El {
+    let (fill, ink, edge, over) = if open { (Color::TRANSPARENT, p.text, p.track, p.raised) } else { (p.accent, p.on_accent, p.accent, mix(p.accent, p.text, 0.15)) };
     let go = row()
         .key("look-up")
         .h(44.0)
@@ -85,15 +91,16 @@ fn field(p: &Pal, input: &str) -> El {
         .gap(8.0)
         .center_y()
         .radius(8.0)
-        .fill(p.accent)
-        .hover(mix(p.accent, p.text, 0.15))
+        .fill(fill)
+        .border(1.0, edge)
+        .hover(over)
         .press_scale(0.97)
         .role("button")
         .focusable(true)
         .cursor(rune::Cursor::Pointer)
-        .child(txt(copy::FIELD_BUTTON_LOOK_UP, BODY_M, p.on_accent))
-        .child(icon(&icons::FORWARD, 16.0).color(p.on_accent));
-    row()
+        .child(txt(copy::FIELD_BUTTON_LOOK_UP, BODY_M, ink))
+        .child(icon(&icons::FORWARD, 16.0).color(ink));
+    let mut r = row()
         .key("paste")
         .w_full()
         .h(64.0)
@@ -101,13 +108,37 @@ fn field(p: &Pal, input: &str) -> El {
         .pr(12.0)
         .gap(16.0)
         .center_y()
-        .radius(16.0)
-        .fill(p.card)
-        .border(1.0, p.track)
         .label(copy::FIELD_ARIA)
         .child(icon(&icons::LINK, 16.0).color(p.muted))
-        .child(if input.is_empty() { txt(copy::FIELD_PLACEHOLDER, BODY.lh(22.0), p.muted) } else { txt(input.to_string(), BODY.lh(22.0), p.text) }.grow(1.0).truncate())
-        .child(go)
+        .child(if input.is_empty() { txt(copy::FIELD_PLACEHOLDER, BODY.lh(22.0), p.muted) } else { txt(input.to_string(), BODY.lh(22.0), p.text) }.grow(1.0).truncate());
+    if open {
+        r = r.child(found::dismiss(p));
+    }
+    r = r.child(go);
+    if open { r } else { r.radius(16.0).fill(p.card).border(1.0, p.track) }
+}
+
+/// Home once something was looked up: the field opens downward into what it found, one
+/// piece, so the answer reads as the field's own. A track list takes the height left and
+/// scrolls inside; a notice rises at the bottom right.
+fn found_page(s: &State, p: &Pal, in_flight: usize, body: El) -> El {
+    let fills = found::fills(s);
+    let mut inner = col().w_full().padding(24.0).border_sides([1.0, 0.0, 0.0, 0.0], p.line).child(body);
+    let mut unit = col().key("found").w_full().min_h(0.0).radius(16.0).fill(p.card).border(1.0, p.track).child(field(p, &s.input, true));
+    if fills {
+        inner = inner.grow(1.0).min_h(0.0);
+        unit = unit.grow(1.0);
+    }
+    // A track list needs every row of height it can get: the headline steps aside for it.
+    let mut page = col().w_full().h_full().px(40.0).pt(24.0).pb(24.0).gap(20.0);
+    if !fills {
+        page = page.child(headline(p, in_flight));
+    }
+    page = page.child(unit.child(inner));
+    if let Some(n) = found::notice(s, p) {
+        page = page.child(n.pin(None, None, Some(40.0), Some(24.0)));
+    }
+    page
 }
 
 fn status(s: &State, p: &Pal) -> El {

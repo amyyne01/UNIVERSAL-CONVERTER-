@@ -3,13 +3,13 @@
 use ahg_engine::config::default_config;
 use ahg_engine::stats::DownloadStats;
 use ahg_engine::types::{DownloadStatus as St, DownloadTask};
-use rune::{Color, El, Icon, ScrollSpec, col, el, icon, row, text};
+use rune::{Color, El, ScrollSpec, col, el, icon, row, text};
 
 use super::icons;
 use super::parts::{self, Disc, keycap, run, run_mono, runs};
 use super::theme::{Pal, label_paper, mono, sans, serif, vinyl};
 use crate::copy;
-use crate::gate::{Screen, State};
+use crate::gate::{Nav, State};
 
 pub fn view(s: &State, p: &Pal, active: usize) -> El {
     let finished: Vec<&DownloadTask> = s
@@ -91,7 +91,7 @@ pub fn view(s: &State, p: &Pal, active: usize) -> El {
 fn headline(p: &Pal, active: usize) -> El {
     let mut r = row().w_full().items_end().child(
         text(copy::HOME_HEADLINE)
-            .font(serif(42.0).lh(48.0))
+            .font(serif(44.0).lh(48.0))
             .color(p.text),
     );
     if active > 0 {
@@ -101,15 +101,15 @@ fn headline(p: &Pal, active: usize) -> El {
             .pl(12.0)
             .pr(12.0)
             .gap(8.0)
-            .mb(6.0)
+            .mb(4.0)
             .center_y()
             .radius(16.0)
             .border(1.0, p.line)
             .hover(p.raised)
             .focusable(true)
             .role("button")
-            .on_press(|s: &mut State| s.screen = Screen::Downloads)
-            .child(el().size(6.0, 6.0).radius(3.0).fill(p.accent))
+            .on_press(|s: &mut State| s.nav = Nav::Downloads)
+            .child(el().size(8.0, 8.0).radius(4.0).fill(p.accent))
             .child(
                 runs(vec![
                     run_mono(active.to_string(), p.text),
@@ -145,7 +145,7 @@ fn field(p: &Pal, input: &str) -> El {
         .label(copy::FIELD_BUTTON_LOOK_UP)
         .child(
             text(copy::FIELD_BUTTON_LOOK_UP)
-                .font(sans(14.0, 500.0))
+                .font(sans(15.0, 500.0))
                 .color(p.bg),
         )
         .child(icon(&icons::FORWARD, 16.0).color(p.bg));
@@ -162,10 +162,10 @@ fn field(p: &Pal, input: &str) -> El {
         .border(1.0, p.control.alpha(0.55))
         .role("textbox")
         .label(copy::FIELD_ARIA)
-        .child(icon(&icons::LINK, 20.0).color(p.muted))
+        .child(icon(&icons::LINK, 16.0).color(p.muted))
         .child(
             text(shown)
-                .font(sans(17.0, 400.0))
+                .font(sans(15.0, 400.0))
                 .color(ink)
                 .grow(1.0)
                 .single_line()
@@ -265,11 +265,11 @@ fn status_line(s: &State, p: &Pal) -> El {
 
 /// First launch: where links can come from.
 fn works_with(p: &Pal) -> El {
-    let site = |key: &'static str, glyph: &'static Icon, name: &'static str, hue: Color| {
+    let site = |key: &'static str, name: &'static str, hue: Color| {
         row()
             .key(key)
             .h(32.0)
-            .px(10.0)
+            .px(12.0)
             .gap(8.0)
             .center_y()
             .radius(8.0)
@@ -278,7 +278,7 @@ fn works_with(p: &Pal) -> El {
             .focusable(true)
             .role("button")
             .label(name)
-            .child(icon(glyph, 16.0).color(hue))
+            .child(el().size(8.0, 8.0).radius(4.0).fill(hue))
             .child(text(name).font(sans(13.0, 500.0)).color(p.text))
     };
     row()
@@ -295,25 +295,21 @@ fn works_with(p: &Pal) -> El {
         )
         .child(site(
             "works-youtube",
-            &icons::YOUTUBE,
             copy::WORKS_WITH_YOUTUBE,
             p.youtube(),
         ))
         .child(site(
             "works-spotify",
-            &icons::SPOTIFY,
             copy::WORKS_WITH_SPOTIFY,
             p.spotify(),
         ))
         .child(site(
             "works-soundcloud",
-            &icons::SOUNDCLOUD,
             copy::WORKS_WITH_SOUNDCLOUD,
             p.soundcloud(),
         ))
         .child(site(
             "works-reels",
-            &icons::REELS,
             copy::WORKS_WITH_REELS,
             p.reels(),
         ))
@@ -343,7 +339,7 @@ fn board(p: &Pal) -> El {
     col()
         .w_full()
         .child(el().w_full().h(1.0).fill(p.line))
-        .child(el().w_full().h(7.0).fill(p.raised))
+        .child(el().w_full().h(8.0).fill(p.raised))
         .child(el().w_full().h(1.0).fill(p.line_soft))
 }
 
@@ -412,10 +408,10 @@ fn speed(s: &State, p: &Pal) -> El {
         .child(grid(0.0))
         .child(grid(h / 2.0))
         .child(grid(h - 1.0))
-        .child(el().size(7.0, 7.0).radius(3.5).fill(p.accent).pin(
+        .child(el().size(8.0, 8.0).radius(4.0).fill(p.accent).pin(
             None,
-            Some((h - 1.0) * (1.0 - level) - 3.0),
-            Some(-3.0),
+            Some(((h - 8.0) * (1.0 - level)).round()),
+            Some(-4.0),
             None,
         ));
     let title = text(copy::CELL_SPEED)
@@ -442,7 +438,7 @@ fn this_month(p: &Pal, stats: &DownloadStats) -> El {
             None => copy::MONTH_NOTHING_YET_NO_PREV.to_string(),
         };
         col()
-            .gap(6.0)
+            .gap(8.0)
             .child(
                 text(copy::MONTH_NOTHING_YET)
                     .font(sans(15.0, 400.0))
@@ -467,14 +463,14 @@ fn this_month(p: &Pal, stats: &DownloadStats) -> El {
             .items_end()
             .child(
                 text(files.to_string())
-                    .font(mono(44.0, 400.0).lh(46.0))
+                    .font(mono(44.0, 400.0).lh(48.0))
                     .color(p.text),
             )
             .child(
                 text(copy::file_word(files))
                     .font(sans(15.0, 400.0))
                     .color(p.text2)
-                    .mb(6.0),
+                    .mb(4.0),
             );
         let line = runs(vec![
             run_mono(copy::format_bytes(cur.bytes), p.text),
@@ -513,7 +509,7 @@ fn this_month(p: &Pal, stats: &DownloadStats) -> El {
                 col()
                     .w_full()
                     .max_w(520.0)
-                    .mt(2.0)
+                    .mt(4.0)
                     .gap(8.0)
                     .label(copy::month_bars_aria(
                         &name,
@@ -596,7 +592,7 @@ fn where_from(p: &Pal, stats: &DownloadStats) -> El {
         list = list.child(
             col()
                 .w_full()
-                .gap(6.0)
+                .gap(8.0)
                 .child(
                     row()
                         .w_full()
@@ -638,11 +634,11 @@ fn where_from(p: &Pal, stats: &DownloadStats) -> El {
 fn shelf(s: &State, p: &Pal, finished: &[&DownloadTask]) -> El {
     let view_all = row()
         .key("view-all")
-        .gap(6.0)
+        .gap(8.0)
         .center_y()
         .focusable(true)
         .role("button")
-        .on_press(|s: &mut State| s.screen = Screen::Downloads)
+        .on_press(|s: &mut State| s.nav = Nav::Downloads)
         .child(
             text(copy::CELL_RECENT_VIEW_ALL)
                 .font(sans(13.0, 500.0))
@@ -661,13 +657,13 @@ fn shelf(s: &State, p: &Pal, finished: &[&DownloadTask]) -> El {
         let duration = copy::format_duration(t.duration);
         if !duration.is_empty() {
             art = art.child(
-                el().h(18.0)
-                    .px(5.0)
+                el().h(20.0)
+                    .px(4.0)
                     .center()
                     .radius(4.0)
                     .fill(vinyl().alpha(0.78))
-                    .pin(None, Some(6.0), Some(6.0), None)
-                    .child(text(duration).font(mono(10.0, 500.0)).color(label_paper())),
+                    .pin(None, Some(8.0), Some(8.0), None)
+                    .child(text(duration).font(mono(11.0, 500.0)).color(label_paper())),
             );
         }
         let title = if t.title.is_empty() {
@@ -720,7 +716,7 @@ fn shelf(s: &State, p: &Pal, finished: &[&DownloadTask]) -> El {
             .focusable(true)
             .role("button")
             .label(copy::recent_details_aria(&title))
-            .on_press(|s: &mut State| s.screen = Screen::Downloads)
+            .on_press(|s: &mut State| s.nav = Nav::Downloads)
             .child(art);
         sleeves = sleeves.child(tile);
         captions = captions.child(caption);
@@ -728,7 +724,7 @@ fn shelf(s: &State, p: &Pal, finished: &[&DownloadTask]) -> El {
     col()
         .w_full()
         .gap(0.0)
-        .child(heading(p, copy::CELL_RECENT, Some(view_all)).mb(14.0))
+        .child(heading(p, copy::CELL_RECENT, Some(view_all)).mb(16.0))
         .child(sleeves)
         .child(board(p))
         .child(captions.mt(12.0))
