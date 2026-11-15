@@ -102,34 +102,3 @@ impl spotify::Transport for SpotifyHttp {
         self.http.send(req.method, &req.url, &req.headers, req.body.as_deref(), Duration::from_millis(req.timeout_ms))?.text()
     }
 }
-
-/// The license registry. Unlike Spotify's replies, a reply here counts only
-/// with a success status, and each request has ten seconds. Neither the token
-/// in the request nor the reply is ever logged.
-#[cfg(feature = "license")]
-pub struct GistHttp {
-    http: Http,
-}
-
-#[cfg(feature = "license")]
-impl GistHttp {
-    /// Always a direct connection: the proxy in Settings is for media, not for licensing.
-    pub fn new() -> Self {
-        Self { http: Http::new(None) }
-    }
-}
-
-#[cfg(feature = "license")]
-impl Default for GistHttp {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[cfg(feature = "license")]
-impl ahg_engine::license::Registry for GistHttp {
-    fn send(&mut self, request: &ahg_engine::license::Request) -> Option<String> {
-        let response = self.http.send(request.method, &request.url, &request.headers, request.body.as_deref(), Duration::from_secs(10))?;
-        if response.ok() { response.text() } else { None }
-    }
-}

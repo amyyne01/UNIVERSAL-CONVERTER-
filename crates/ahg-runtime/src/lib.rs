@@ -5,5 +5,7 @@
 pub mod download;
 pub mod engine;
 pub mod http;
+#[cfg(feature = "license")]
+pub mod machine;
 pub mod proc;
 pub mod ytdlp;

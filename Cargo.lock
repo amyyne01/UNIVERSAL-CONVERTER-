@@ -29,6 +29,7 @@ dependencies = [
  "ahg-engine",
  "serde_json",
  "ureq",
+ "windows-sys",
 ]
 
 [[package]]
