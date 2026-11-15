@@ -117,3 +117,27 @@ impl spotify::Transport for SpotifyHttp {
         self.http.send(req.method, &req.url, &req.headers, req.body.as_deref(), Duration::from_millis(req.timeout_ms))?.text()
     }
 }
+
+/// The updaters' requests to GitHub's release pages. Always direct: update
+/// checks do not use the proxy (D10). There is no limit on the whole
+/// download, only on how long the connection may stay silent, so a large file
+/// on a slow line is not cut off while it is still arriving.
+pub struct Releases;
+
+impl crate::engine_update::Fetch for Releases {
+    fn get(&self, request: &ahg_engine::updater::Request) -> Option<crate::engine_update::Fetched> {
+        const QUIET: Duration = Duration::from_secs(30);
+        let agent: Agent = Agent::config_builder()
+            .http_status_as_error(false)
+            .timeout_connect(Some(QUIET))
+            .timeout_recv_response(Some(QUIET))
+            .timeout_per_read(Some(QUIET))
+            .tls_config(TlsConfig::builder().provider(TlsProvider::NativeTls).root_certs(RootCerts::PlatformVerifier).build())
+            .build()
+            .into();
+        let response = agent.get(&request.url).header("User-Agent", request.user_agent).call().ok()?;
+        let status = response.status().as_u16();
+        let final_url = response.get_uri().to_string();
+        Some(crate::engine_update::Fetched { status, final_url, body: Box::new(response.into_body().into_with_config().limit(u64::MAX).reader()) })
+    }
+}

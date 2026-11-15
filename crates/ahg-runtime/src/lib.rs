@@ -5,6 +5,7 @@
 pub mod core;
 pub mod download;
 pub mod engine;
+pub mod engine_update;
 pub mod http;
 #[cfg(feature = "license")]
 pub mod machine;

@@ -18,12 +18,14 @@ use ahg_engine::queue::{Event, new_task_id};
 use ahg_engine::scheduler::{Fire, POLL_MS, ScheduleConfig, Scheduler};
 use ahg_engine::stats::{DownloadStats, StatsStore, stats_file_path};
 use ahg_engine::tier::{Plan, clamp_concurrency};
+use ahg_engine::ytdlp_updater::YtdlpStatus;
 use ahg_engine::downloader::bridge::{CONFIRMED, SongMatch, match_song, song_query, song_rows, song_url};
 use ahg_engine::types::{DownloadTask, MediaMetadata, SearchResult, Track};
 use ahg_engine::validate::media_url_arg;
 use serde_json::{Map, Value, json};
 
 use crate::download::{Downloader, SongSearch};
+use crate::engine_update::{EngineUpdater, Fetch};
 use crate::engine::{Engine, Notice};
 use crate::ytdlp::YtDlp;
 
@@ -45,6 +47,10 @@ pub enum CoreEvent {
     SettingsChanged,
     /// The raw error text of a failed download.
     DownloadFailed(String),
+    /// The yt-dlp updater's state changed: `current`, `latest`, `state`
+    /// ("idle", "checking", "available", "uptodate", "downloading", "updated",
+    /// "error") and, on an error, `message`.
+    EngineStatus(Value),
     /// The scheduled time came and the queue was resumed. The interface shows
     /// "Scheduled downloads started." when notifications are on.
     ScheduleFired,
@@ -122,6 +128,7 @@ pub struct Core {
     song_search: SongSearch,
     hold_unconfirmed: Arc<AtomicBool>,
     remembered: Mutex<HashMap<String, SongMatch>>,
+    engine_updater: Arc<EngineUpdater>,
 }
 
 impl Core {
@@ -137,6 +144,21 @@ impl Core {
     /// `start`, with the YouTube Music song search given: the real one, or a
     /// stand-in for tests.
     pub fn start_with_search(paths: Paths, ytdlp: Arc<YtDlp>, plan: PlanSource, events: Sender<CoreEvent>, song_search: SongSearch) -> Self {
+        Self::start_with(paths, ytdlp, plan, events, song_search, Box::new(crate::http::Releases))
+    }
+
+    /// `start`, with everything that reaches the network given.
+    pub fn start_with(paths: Paths, ytdlp: Arc<YtDlp>, plan: PlanSource, events: Sender<CoreEvent>, song_search: SongSearch, releases: Box<dyn Fetch>) -> Self {
+        let engine_updater = {
+            let (version, found, tell) = (ytdlp.clone(), ytdlp.clone(), events.clone());
+            Arc::new(EngineUpdater::new(
+                &paths.user_data.join("bin").to_string_lossy(),
+                releases,
+                Box::new(move || version.version()),
+                Box::new(move || found.reset_cache()),
+                Box::new(move |event| drop(tell.send(CoreEvent::EngineStatus(event.payload)))),
+            ))
+        };
         init_log(&paths.user_data);
         let config = Arc::new(Mutex::new(ConfigManager::new(&paths.user_data, paths.downloads.clone())));
         let mut stats = StatsStore::default();
@@ -155,6 +177,7 @@ impl Core {
         let (stop, stopped) = channel();
         let dispatcher = {
             let (config, stats, events, engine, plan) = (config.clone(), stats.clone(), events.clone(), engine.clone(), plan.clone());
+            let engine_updater = engine_updater.clone();
             let state_file = schedule_state_file(&paths.user_data);
             let mut scheduler = Scheduler::restored(&last_fired_date(&state_file));
             // One look at the schedule. When it is due: resume the queue, remember
@@ -186,7 +209,15 @@ impl Core {
                             queue_changed = true;
                             let _ = events.send(CoreEvent::QueueChanged);
                         }
-                        Ok(Notice::Failure(text)) => drop(events.send(CoreEvent::DownloadFailed(text))),
+                        Ok(Notice::Failure(text)) => {
+                            // A failure that reads like an outdated yt-dlp updates it, once, if allowed.
+                            let allowed = lock(&config).get("autoUpdateEngine").is_none_or(|v| v != &Value::Bool(false));
+                            if engine_updater.on_download_failure(&text, allowed) {
+                                let updater = engine_updater.clone();
+                                thread::spawn(move || drop(updater.update()));
+                            }
+                            let _ = events.send(CoreEvent::DownloadFailed(text));
+                        }
                         // Counted here, the one place a download is truly finished.
                         Ok(Notice::Completed { task, filepaths }) => lock(&stats).record(task.source, &filepaths, task.progress.total),
                         Err(RecvTimeoutError::Timeout) => {}
@@ -217,7 +248,7 @@ impl Core {
                 }
             })
         };
-        let core = Self { paths, config, stats, ytdlp, plan, engine, events, stop, dispatcher: Some(dispatcher), song_search, hold_unconfirmed, remembered };
+        let core = Self { paths, config, stats, ytdlp, plan, engine, events, stop, dispatcher: Some(dispatcher), song_search, hold_unconfirmed, remembered, engine_updater };
         core.sync();
         core
     }
@@ -397,6 +428,25 @@ impl Core {
         self.hold_unconfirmed.store(hold, Ordering::SeqCst);
         let _ = write_file_atomic(&own_settings_file(&self.paths.user_data), &json!({ "holdUnconfirmed": hold }).to_string());
         let _ = self.events.send(CoreEvent::SettingsChanged);
+    }
+
+    // ── Keeping yt-dlp current ──────────────────────────────────────────────
+
+    /// What is known about the installed and the latest yt-dlp.
+    pub fn engine_status(&self) -> YtdlpStatus {
+        self.engine_updater.status()
+    }
+
+    /// Ask whether a newer yt-dlp exists; the answer is kept for a day unless
+    /// `force`. Slow: call it from a worker thread.
+    pub fn check_engine(&self, force: bool) -> YtdlpStatus {
+        self.engine_updater.check(force)
+    }
+
+    /// Download, verify and install the latest yt-dlp. Slow: call it from a
+    /// worker thread.
+    pub fn update_engine(&self) -> YtdlpStatus {
+        self.engine_updater.update()
     }
 
     /// This month's counters and the last active month before it.

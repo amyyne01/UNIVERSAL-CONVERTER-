@@ -135,6 +135,21 @@ impl YtDlp {
         *self.proxy.lock().unwrap_or_else(|e| e.into_inner()) = proxy.filter(|p| !p.is_empty()).map(str::to_owned);
     }
 
+    /// The installed yt-dlp release, such as "2026.06.30", or "" when there is none.
+    pub fn version(&self) -> String {
+        match &self.bins {
+            Bins::Fixed(bin, _) => version_of(bin).unwrap_or_default(),
+            Bins::Found(tools) => tools.ytdlp_version(),
+        }
+    }
+
+    /// Look for yt-dlp again on the next run: a new one was just installed.
+    pub fn reset_cache(&self) {
+        if let Bins::Found(tools) = &self.bins {
+            tools.reset_cache();
+        }
+    }
+
     /// The proxy in force for lookups and searches, if any.
     pub fn proxy(&self) -> Option<String> {
         self.proxy.lock().unwrap_or_else(|e| e.into_inner()).clone()

@@ -28,6 +28,7 @@ version = "2.0.0"
 dependencies = [
  "ahg-engine",
  "serde_json",
+ "sha2",
  "ureq",
  "windows-sys",
 ]

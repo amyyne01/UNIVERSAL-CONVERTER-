@@ -439,3 +439,80 @@ fn a_tampered_list_of_remembered_matches_cannot_send_yt_dlp_anywhere() {
     assert_eq!(task.matched_url, None);
     core.shutdown();
 }
+
+// ── Keeping yt-dlp current, through the core ────────────────────────────────
+
+/// A release feed that always answers with the same new yt-dlp.
+struct OneRelease {
+    binary: Vec<u8>,
+}
+
+impl ahg_runtime::engine_update::Fetch for OneRelease {
+    fn get(&self, request: &ahg_engine::updater::Request) -> Option<ahg_runtime::engine_update::Fetched> {
+        use sha2::{Digest, Sha256};
+        let base = "https://github.com/yt-dlp/yt-dlp/releases/download/2099.01.01";
+        let body = if request.url.ends_with("/releases/latest") {
+            json!({ "tag_name": "2099.01.01", "assets": [
+                { "name": "yt-dlp.exe", "browser_download_url": format!("{base}/yt-dlp.exe") },
+                { "name": "SHA2-256SUMS", "browser_download_url": format!("{base}/SHA2-256SUMS") } ] })
+            .to_string()
+            .into_bytes()
+        } else if request.url.ends_with("/yt-dlp.exe") {
+            self.binary.clone()
+        } else {
+            let sha: String = Sha256::digest(&self.binary).iter().map(|b| format!("{b:02x}")).collect();
+            format!("{sha}  yt-dlp.exe\n").into_bytes()
+        };
+        Some(ahg_runtime::engine_update::Fetched { status: 200, final_url: request.url.clone(), body: Box::new(std::io::Cursor::new(body)) })
+    }
+}
+
+fn start_with_release(dir: &Path, script: &str) -> (Core, Receiver<CoreEvent>) {
+    fs::write(dir.join("script.txt"), script).unwrap();
+    let mut ytdlp = YtDlp::new(PathBuf::from(FAKE), None);
+    ytdlp.env("FAKE_YTDLP_SCRIPT", dir.join("script.txt").to_str().unwrap());
+    let (tx, rx) = channel();
+    let paths = Paths { user_data: dir.join("userData"), downloads: dir.join("Downloads").to_string_lossy().into_owned() };
+    let core = Core::start_with(paths, Arc::new(ytdlp), Box::new(|| Plan::Premium), tx, Arc::new(|_: &str| None), Box::new(OneRelease { binary: b"MZ a newer yt-dlp".to_vec() }));
+    (core, rx)
+}
+
+fn engine_states(seen: &[CoreEvent]) -> Vec<String> {
+    seen.iter().filter_map(|e| if let CoreEvent::EngineStatus(status) = e { status["state"].as_str().map(str::to_owned) } else { None }).collect()
+}
+
+#[test]
+fn the_core_checks_for_and_installs_a_newer_yt_dlp_and_says_so() {
+    let dir = scratch("engineupdate");
+    let (core, rx) = start_with_release(&dir, "");
+    assert_eq!(core.engine_status().state, "idle");
+    assert_eq!(core.check_engine(false).latest, "2099.01.01");
+    let done = core.update_engine();
+    assert_eq!(done.state, "updated", "{:?}", done.message);
+    assert_eq!(fs::read(dir.join("userData").join("bin").join("yt-dlp.exe")).unwrap(), b"MZ a newer yt-dlp");
+    let seen: Vec<CoreEvent> = rx.try_iter().collect();
+    assert_eq!(engine_states(&seen), ["checking", "available", "downloading", "updated"]);
+    core.shutdown();
+}
+
+#[test]
+fn a_download_that_fails_like_an_outdated_yt_dlp_updates_it_unless_that_is_switched_off() {
+    let stale = "err ERROR: [youtube] abc: Unable to extract player response; please report this issue on https://github.com/yt-dlp/yt-dlp/issues , confirm you are on the latest version using yt-dlp -U\nexit 1\n";
+    let updated = |e: &CoreEvent| matches!(e, CoreEvent::EngineStatus(status) if status["state"] == "updated");
+
+    let dir = scratch("enginestale");
+    let (core, rx) = start_with_release(&dir, stale);
+    core.start_download(&request()).unwrap();
+    wait_for(&rx, updated);
+    assert!(dir.join("userData").join("bin").join("yt-dlp.exe").exists());
+    core.shutdown();
+
+    let dir = scratch("enginestaleoff");
+    let (core, rx) = start_with_release(&dir, stale);
+    core.update_settings(json!({ "autoUpdateEngine": false }).as_object().unwrap());
+    core.start_download(&request()).unwrap();
+    wait_for(&rx, |e| matches!(e, CoreEvent::DownloadFailed(_)));
+    never_within(&rx, Duration::from_millis(800), |e| matches!(e, CoreEvent::EngineStatus(_)));
+    assert!(!dir.join("userData").join("bin").join("yt-dlp.exe").exists());
+    core.shutdown();
+}
