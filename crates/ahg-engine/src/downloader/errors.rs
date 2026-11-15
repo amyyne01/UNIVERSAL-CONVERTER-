@@ -14,6 +14,22 @@ pub enum ErrorClass {
 
 const TIMEOUT_MESSAGE: &str = "Timed out reading that link \u{2014} the site did not answer in time.";
 
+// D30 (Rust-only behaviour change, owner-approved): the needles below are phrases yt-dlp
+// (or the site, relayed by yt-dlp) really prints, not loose words that also turn up in file
+// paths, playlist names or other sentences. The old "geo", "region", "private", "removed",
+// "deleted", "copyright", "drm", "not found", "network", "timeout" and "temporar" matched
+// anywhere in the text; each is now a phrase quoted from yt-dlp's source (master):
+//   yt_dlp/extractor/common.py          raise_geo_restricted default message and
+//                                       "Video is geo restricted", report_drm, "A network error has occurred."
+//   yt_dlp/YoutubeDL.py                 GeoRestrictedError hint "use a VPN or a proxy server"
+//   yt_dlp/extractor/youtube/_video.py  "The uploader has not made this video available in your
+//                                       country"; test reasons "Private video", "This video has been removed ..."
+//   yt_dlp/extractor/youtube/_tab.py    "not available in your region", "This playlist is private"
+//   yt_dlp/extractor/tiktok.py          "account is private", "either private or"
+//   yt_dlp/extractor/twitter.py         "Tweet has been deleted", "Twitter Space not found"
+//   yt_dlp/extractor/twitch.py          `Channel "x" not found`
+// A stray word now falls through to the default: Permanent / Unknown, shown with yt-dlp's own text.
+
 const AUTH: &[&str] = &[
     "sign in",
     "login required",
@@ -21,23 +37,30 @@ const AUTH: &[&str] = &[
     "members only",
     "age-restricted",
     "age restricted",
-    "private",
     "confirm your age",
     "logged-in",
     "logged in",
     "authentication is required",
 ];
-const GEO: &[&str] = &["geo", "region", "not available in your country"];
+const PRIVATE: &[&str] = &["private video. ", "playlist is private", "account is private", "either private or"];
+const GEO: &[&str] = &[
+    "geo restriction",
+    "geo restricted",
+    "not available from your location",
+    "not available in your country",
+    "made this video available in your country",
+    "not available in your region",
+    "use a vpn or a proxy server",
+];
 const PERMANENT: &[&str] = &[
     "is unavailable",
     "video unavailable",
     "no longer available",
-    "removed",
-    "deleted",
+    "has been removed",
+    "has been deleted",
     "does not exist",
     "this video is not available",
-    "copyright",
-    "drm",
+    "drm protected",
     "is not a valid url",
     "unsupported url",
     "http error 404",
@@ -48,14 +71,12 @@ const PERMANENT: &[&str] = &[
 ];
 const RETRYABLE: &[&str] = &[
     "timed out",
-    "timeout",
-    "temporar",
     "http error 5",
     "too many requests",
     "connection reset",
     "reset by peer",
     "connection refused",
-    "network",
+    "network error",
     "read error",
     "unable to download",
 ];
@@ -69,9 +90,9 @@ const ERROR_CODE_NEEDLES: &[(ErrorCode, &[&str])] = &[
         &["ffmpeg is not installed", "ffmpeg not found", "ffprobe and ffmpeg not found", "ffmpeg-location"],
     ),
     (ErrorCode::DiskFull, &["no space left", "disk full", "enospc", "not enough space"]),
-    (ErrorCode::Drm, &["drm"]),
+    (ErrorCode::Drm, &["drm protected"]),
     (ErrorCode::AgeRestricted, &["age-restricted", "age restricted", "confirm your age"]),
-    (ErrorCode::Private, &["private"]),
+    (ErrorCode::Private, PRIVATE),
     (
         ErrorCode::LoginRequired,
         &[
@@ -84,7 +105,7 @@ const ERROR_CODE_NEEDLES: &[(ErrorCode, &[&str])] = &[
             "authentication is required",
         ],
     ),
-    (ErrorCode::GeoBlocked, &["geo", "region", "not available in your country"]),
+    (ErrorCode::GeoBlocked, GEO),
     (ErrorCode::RateLimited, &["too many requests", "http error 429", "rate-limit", "rate limit"]),
     (ErrorCode::Unsupported, &["unsupported url", "is not a valid url"]),
     (
@@ -92,15 +113,15 @@ const ERROR_CODE_NEEDLES: &[(ErrorCode, &[&str])] = &[
         &[
             "http error 404",
             "http error 410",
-            "removed",
-            "deleted",
+            "has been removed",
+            "has been deleted",
             "does not exist",
             "no longer available",
             "video unavailable",
             "is unavailable",
             "this video is not available",
-            "copyright",
-            "not found",
+            "\" not found",
+            "space not found",
         ],
     ),
 ];
@@ -113,7 +134,7 @@ fn has_any(t: &str, needles: &[&str]) -> bool {
 /// retryable (which includes the gated signs); anything unlisted is permanent.
 pub fn classify_error(text: &str) -> ErrorClass {
     let t = text.to_lowercase();
-    if has_any(&t, AUTH) {
+    if has_any(&t, AUTH) || has_any(&t, PRIVATE) {
         ErrorClass::Auth
     } else if has_any(&t, GEO) {
         ErrorClass::Geo
