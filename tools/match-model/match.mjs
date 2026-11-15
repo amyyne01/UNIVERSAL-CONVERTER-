@@ -134,14 +134,21 @@ export function songRows(response) {
   }).filter((r) => r.id);
 }
 
+/** An album's name for comparing: lowercase, punctuation as spaces, edition notes kept ("Rumours (Deluxe Edition)" is not "Rumours"). */
+const albumKey = (s) => String(s ?? '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+
 /**
- * The row to download: the first that agrees and carries Spotify's explicit
- * flag, else the first that agrees. `explicit` is null when Spotify's flag is
- * not known. Returns { index, explicitAgrees } or null.
+ * The row to download. Among the rows that agree with the track, those
+ * carrying Spotify's explicit flag come first; among those, one from the
+ * track's own album, when Spotify named it; else the first. `explicit` is
+ * null when Spotify's flag is not known. Returns { index, explicitAgrees } or null.
  */
 export function pickRow(track, rows, explicit) {
   const agreeing = rows.map((r, index) => ({ r, index })).filter(({ r }) => rowAgrees(track, r));
   if (!agreeing.length) return null;
-  const exact = explicit == null ? agreeing[0] : agreeing.find(({ r }) => r.explicit === explicit);
-  return { index: (exact ?? agreeing[0]).index, explicitAgrees: Boolean(exact) };
+  const flagged = explicit == null ? agreeing : agreeing.filter(({ r }) => r.explicit === explicit);
+  const pool = flagged.length ? flagged : agreeing;
+  const album = albumKey(track.album);
+  const sameAlbum = album ? pool.find(({ r }) => albumKey(r.album) === album) : undefined;
+  return { index: (sameAlbum ?? pool[0]).index, explicitAgrees: flagged.length > 0 };
 }

@@ -251,3 +251,25 @@ fn a_name_the_request_chose_is_kept_and_tags_follow_the_embed_setting() {
     assert!(tags(&untagged).is_empty(), "no tags are written when embedding is off");
     assert_eq!(output(&untagged), "C:\\Music\\Fleetwood Mac - Dreams - 2004 Remaster.%(ext)s");
 }
+
+/// The same recording often sits on several albums (the original, a deluxe
+/// edition, a best-of). When Spotify names the album, that one is taken.
+#[test]
+fn among_songs_that_agree_the_one_from_the_same_album_is_taken() {
+    use ahg_engine::downloader::bridge::{SongHit, pick_row};
+    let hit = |id: &str, album: &str, explicit: bool| SongHit { id: id.into(), title: "Dreams".into(), artist: "Fleetwood Mac".into(), album: album.into(), duration: Some(258.0), explicit };
+    let wanted = |album: &str| track(&json!({ "name": "Dreams", "artist": "Fleetwood Mac", "artists": ["Fleetwood Mac"], "album": album, "durationMs": 257_800 }));
+    let rows = [hit("deluxe", "Rumours (Deluxe Edition)", false), hit("bestof", "Greatest Hits", false), hit("original", "Rumours", false)];
+
+    assert_eq!(pick_row(&wanted("Rumours"), &rows, None).unwrap().index, 2);
+    assert_eq!(pick_row(&wanted("RUMOURS!"), &rows, None).unwrap().index, 2, "case and punctuation do not matter");
+    assert_eq!(pick_row(&wanted("Greatest Hits"), &rows, None).unwrap().index, 1);
+    // No album named, or one YouTube does not list: the first that agrees, as before.
+    assert_eq!(pick_row(&wanted(""), &rows, None).unwrap().index, 0);
+    assert_eq!(pick_row(&wanted("Live in Boston"), &rows, None).unwrap().index, 0);
+
+    // The explicit flag outranks the album: the right version first, then the right edition.
+    let mixed = [hit("clean-same-album", "Rumours", false), hit("explicit-other-album", "Greatest Hits", true)];
+    let pick = pick_row(&wanted("Rumours"), &mixed, Some(true)).unwrap();
+    assert_eq!((pick.index, pick.explicit_agrees), (1, true));
+}

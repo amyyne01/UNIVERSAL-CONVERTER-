@@ -13,7 +13,7 @@ const DATA = path.join(HERE, 'data');
 const lines = (f) => fs.readFileSync(path.join(DATA, f), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
 const examples = fs.readdirSync(DATA).filter((f) => /^examples(-\d+)?\.jsonl$/.test(f)).sort().flatMap(lines);
 
-const track = (t) => ({ name: t.name, artist: t.artist, artists: t.artists, durationMs: t.durationMs });
+const track = (t) => ({ name: t.name, artist: t.artist, artists: t.artists, album: t.album ?? '', durationMs: t.durationMs });
 const text = new Set();
 const verdicts = [];
 examples.forEach((ex, i) => {

@@ -270,17 +270,24 @@ pub struct Pick {
     pub explicit_agrees: bool,
 }
 
-/// The row to download: the first that agrees and carries Spotify's explicit
-/// flag, else the first that agrees. `explicit` is `None` when Spotify's flag
-/// is not known.
+/// An album's name for comparing: lowercase, punctuation as spaces, edition
+/// notes kept ("Rumours (Deluxe Edition)" is not "Rumours").
+fn album_key(album: &str) -> String {
+    NOT_WORD.replace_all(&album.to_lowercase(), " ").trim_matches(' ').to_owned()
+}
+
+/// The row to download. Among the rows that agree with the track, those
+/// carrying Spotify's explicit flag come first; among those, one from the
+/// track's own album, when Spotify named it; else the first. `explicit` is
+/// `None` when Spotify's flag is not known.
 pub fn pick_row(track: &Track, rows: &[SongHit], explicit: Option<bool>) -> Option<Pick> {
-    let mut agreeing = rows.iter().enumerate().filter(|(_, row)| row_agrees(track, &row.row()));
-    let first = agreeing.next()?;
-    let exact = match explicit {
-        None => Some(first),
-        Some(flag) => std::iter::once(first).chain(agreeing).find(|(_, row)| row.explicit == flag),
-    };
-    Some(Pick { index: exact.unwrap_or(first).0, explicit_agrees: exact.is_some() })
+    let agreeing: Vec<(usize, &SongHit)> = rows.iter().enumerate().filter(|(_, row)| row_agrees(track, &row.row())).collect();
+    let flagged: Vec<(usize, &SongHit)> = agreeing.iter().copied().filter(|(_, row)| explicit.is_none_or(|flag| row.explicit == flag)).collect();
+    let pool = if flagged.is_empty() { &agreeing } else { &flagged };
+    let album = album_key(&track.album);
+    let same_album = pool.iter().find(|(_, row)| !album.is_empty() && album_key(&row.album) == album);
+    let (index, _) = same_album.or(pool.first())?;
+    Some(Pick { index: *index, explicit_agrees: !flagged.is_empty() })
 }
 
 /// The same song search as a page yt-dlp can read, for when the direct
