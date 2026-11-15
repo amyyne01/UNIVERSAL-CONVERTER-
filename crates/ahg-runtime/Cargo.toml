@@ -1,0 +1,8 @@
+[package]
+name = "ahg-runtime"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+ahg-engine = { path = "../ahg-engine" }
+serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }

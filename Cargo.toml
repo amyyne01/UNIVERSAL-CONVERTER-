@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/ahg-engine"]
+members = ["crates/ahg-engine", "crates/ahg-runtime"]
 
 [workspace.package]
 version = "2.0.0"
