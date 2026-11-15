@@ -10,40 +10,10 @@ use std::sync::LazyLock;
 use fancy_regex::Regex;
 use url::Url;
 
-use crate::text::{js_trim, utf16_prefix};
+use crate::text::{ascii_ci_regex as re, js_trim, utf16_prefix};
 use crate::types::{ContentType, SourcePlatform, UrlDetection};
 use ContentType::{Album, Artist, Playlist, Track, Video};
 use SourcePlatform::*;
-
-/// Compiles a pattern with JavaScript's `i` flag as it behaves without `u`:
-/// only ASCII letters fold. Every letter outside a character class or an
-/// escape becomes a two-case class; classes are written with both cases.
-fn re(pattern: &str) -> Regex {
-    let mut out = String::with_capacity(pattern.len() * 2);
-    let mut chars = pattern.chars();
-    let mut in_class = false;
-    while let Some(c) = chars.next() {
-        match c {
-            '\\' => {
-                out.push(c);
-                out.extend(chars.next());
-            }
-            '[' => {
-                in_class = true;
-                out.push(c);
-            }
-            ']' => {
-                in_class = false;
-                out.push(c);
-            }
-            c if c.is_ascii_alphabetic() && !in_class => {
-                out.extend(['[', c.to_ascii_lowercase(), c.to_ascii_uppercase(), ']']);
-            }
-            c => out.push(c),
-        }
-    }
-    Regex::new(&out).expect("pattern is a compile-time constant")
-}
 
 /// The leftmost match's first participating capture group. The outer `Option`
 /// says whether the pattern matched at all.

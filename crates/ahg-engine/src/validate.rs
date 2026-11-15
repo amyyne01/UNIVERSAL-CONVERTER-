@@ -2,12 +2,7 @@
 //! clipboard links, `ahg://` links, file paths and imported cookie files.
 //! Ported from electron/security.ts. Its sender attestation, rate limiting and
 //! content policy guarded the web page inside Electron and have no counterpart.
-use crate::text::js_trim;
-
-/// `value.length` in JavaScript: UTF-16 code units.
-fn js_len(s: &str) -> usize {
-    s.encode_utf16().count()
-}
+use crate::text::{js_len, js_trim};
 
 const MAX_URL: usize = 2048;
 
