@@ -101,3 +101,47 @@ export function features(track, cand, rank, fromSongs) {
     Math.min(1, Math.max(0, titleTokens.length - tokens(name).length - tokens(artist).length) / 8),
   ];
 }
+
+// ── YouTube Music's own song search ─────────────────────────────────────────
+/** The request its web page makes for a search limited to songs. No login, no key. */
+export const SONG_SEARCH = {
+  url: 'https://music.youtube.com/youtubei/v1/search?alt=json',
+  body: (query) => ({ context: { client: { clientName: 'WEB_REMIX', clientVersion: '1.20240918.01.00', hl: 'en' } }, query, params: 'EgWKAQIIAWoKEAoQAxAEEAkQBQ==' }),
+};
+
+/** The song rows of a search response, wherever they sit in it, in order. */
+export function songRows(response) {
+  const items = [];
+  (function walk(o) {
+    if (!o || typeof o !== 'object') return;
+    if (o.musicResponsiveListItemRenderer) items.push(o.musicResponsiveListItemRenderer);
+    for (const v of Object.values(o)) walk(v);
+  })(response);
+  return items.map((it) => {
+    const cols = (it.flexColumns ?? []).map((c) => (c.musicResponsiveListItemFlexColumnRenderer?.text?.runs ?? []).map((x) => x.text ?? '').join(''));
+    // The second column reads "Artist • Album • 3:08".
+    const parts = (cols[1] ?? '').split(' • ');
+    const clock = parts.at(-1).split(':').map(Number);
+    const timed = clock.length >= 2 && clock.every(Number.isFinite);
+    return {
+      id: it.playlistItemData?.videoId ?? '',
+      title: cols[0] ?? '',
+      artist: (timed ? parts.slice(0, parts.length >= 3 ? -2 : -1) : parts).join(' • '),
+      album: timed && parts.length >= 3 ? parts.at(-2) : '',
+      duration: timed ? clock.reduce((s, p) => s * 60 + p, 0) : null,
+      explicit: JSON.stringify(it.badges ?? []).includes('MUSIC_EXPLICIT_BADGE'),
+    };
+  }).filter((r) => r.id);
+}
+
+/**
+ * The row to download: the first that agrees and carries Spotify's explicit
+ * flag, else the first that agrees. `explicit` is null when Spotify's flag is
+ * not known. Returns { index, explicitAgrees } or null.
+ */
+export function pickRow(track, rows, explicit) {
+  const agreeing = rows.map((r, index) => ({ r, index })).filter(({ r }) => rowAgrees(track, r));
+  if (!agreeing.length) return null;
+  const exact = explicit == null ? agreeing[0] : agreeing.find(({ r }) => r.explicit === explicit);
+  return { index: (exact ?? agreeing[0]).index, explicitAgrees: Boolean(exact) };
+}

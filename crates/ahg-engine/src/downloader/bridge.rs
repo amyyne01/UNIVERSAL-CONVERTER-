@@ -1,20 +1,17 @@
-//! Matching a Spotify track to a YouTube video (D34): the verdict on a
-//! looked-up candidate and the numbers the plain-video ranker reads. A port of
-//! tools/match-model/match.mjs, which the ranker's weights were fitted against,
-//! so the two must agree exactly.
+//! Matching a Spotify track to a YouTube Music song (D34): reading the song
+//! search, choosing a row, and the verdict on a looked-up candidate. A port of
+//! tools/match-model/match.mjs, the reference the rules were measured with.
 use std::collections::HashSet;
 use std::sync::LazyLock;
 
 use regex::Regex;
 use serde::Deserialize;
+use serde_json::Value;
 
 use crate::types::Track;
 
 static BRACKETED: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\((.*?)\)|\[(.*?)\]").expect("constant pattern"));
 static NOT_WORD: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[^\p{L}\p{N}]+").expect("constant pattern"));
-
-/// Words that mark a different version, unless the Spotify title has them too.
-const BAD: [&str; 10] = ["live", "cover", "remix", "sped", "8d", "nightcore", "karaoke", "instrumental", "slowed", "reverb"];
 
 /// Lowercase, bracketed notes removed, every run of anything but letters and
 /// digits a single space.
@@ -178,46 +175,110 @@ pub fn verify(track: &Track, look: &Lookup) -> Verdict {
     Verdict::Unknown
 }
 
-/// A search result as the ranker sees it: only what a flat search returns.
-#[derive(Debug, Clone, Copy)]
-pub struct Candidate<'a> {
-    pub title: &'a str,
-    pub uploader: &'a str,
-    /// Seconds; song results carry none.
-    pub duration: Option<f64>,
+// ── YouTube Music's own song search ─────────────────────────────────────────
+
+/// Where the YouTube Music web page sends a search. No login, no key.
+pub const SONG_SEARCH_URL: &str = "https://music.youtube.com/youtubei/v1/search?alt=json";
+
+/// The body of a search limited to songs.
+pub fn song_search_body(query: &str) -> String {
+    serde_json::json!({
+        "context": { "client": { "clientName": "WEB_REMIX", "clientVersion": "1.20240918.01.00", "hl": "en" } },
+        "query": query,
+        "params": "EgWKAQIIAWoKEAoQAxAEEAkQBQ==",
+    })
+    .to_string()
 }
 
-/// How many numbers describe a candidate.
-pub const FEATURES: usize = 14;
+/// One song of a search response.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SongHit {
+    /// The video id.
+    pub id: String,
+    pub title: String,
+    pub artist: String,
+    pub album: String,
+    /// Seconds.
+    pub duration: Option<f64>,
+    /// Carries YouTube Music's "E" badge.
+    pub explicit: bool,
+}
 
-/// The numbers the ranker reads, in the order its weights expect: bias, title
-/// overlap, artist in title, artist is uploader, topic channel, has duration,
-/// duration close, duration far, bad keyword, rank, from songs, "official",
-/// "lyrics", extra words.
-pub fn features(track: &Track, cand: &Candidate, rank: usize, from_songs: bool) -> [f64; FEATURES] {
-    let flag = |b: bool| if b { 1.0 } else { 0.0 };
-    let name = base_name(&track.name);
-    let artist = if track.artist.is_empty() { track.artists.first().map_or("", String::as_str) } else { &track.artist };
-    let title = tokens(cand.title);
-    let diff = cand.duration.map_or(0.0, |d| (d - track.duration_ms / 1000.0).abs());
-    let uploader = norm(cand.uploader);
-    let artist_norm = norm(artist);
-    let ours = tokens(&track.name);
-    let extra = title.len() as f64 - tokens(name).len() as f64 - tokens(artist).len() as f64;
-    [
-        1.0,
-        overlap(name, cand.title),
-        overlap(artist, cand.title),
-        flag(!uploader.is_empty() && (uploader == artist_norm || uploader == format!("{artist_norm} topic"))),
-        flag(cand.uploader.to_ascii_lowercase().ends_with(" - topic")),
-        flag(cand.duration.is_some()),
-        if cand.duration.is_some() { (1.0 - diff / 12.0).max(0.0) } else { 0.0 },
-        flag(cand.duration.is_some() && diff > 12.0),
-        flag(BAD.iter().any(|k| title.iter().any(|t| t == k) && !ours.iter().any(|t| t == k))),
-        1.0 / (1.0 + rank as f64),
-        flag(from_songs),
-        flag(title.iter().any(|t| t == "official")),
-        flag(title.iter().any(|t| t == "lyrics" || t == "lyric")),
-        (extra.max(0.0) / 8.0).min(1.0),
-    ]
+impl SongHit {
+    pub fn row(&self) -> SongRow<'_> {
+        SongRow { title: &self.title, artist: &self.artist, duration: self.duration }
+    }
+
+    pub fn url(&self) -> String {
+        format!("https://music.youtube.com/watch?v={}", self.id)
+    }
+}
+
+/// The songs in a search response, in order. The response is outside input:
+/// anything that is not the expected shape simply yields no rows.
+pub fn song_rows(response: &str) -> Vec<SongHit> {
+    fn collect<'a>(value: &'a Value, found: &mut Vec<&'a Value>) {
+        match value {
+            Value::Object(map) => {
+                if let Some(item) = map.get("musicResponsiveListItemRenderer").filter(|v| v.is_object()) {
+                    found.push(item);
+                }
+                map.values().for_each(|v| collect(v, found));
+            }
+            Value::Array(list) => list.iter().for_each(|v| collect(v, found)),
+            _ => {}
+        }
+    }
+    let Ok(response) = serde_json::from_str::<Value>(response) else { return Vec::new() };
+    let mut items = Vec::new();
+    collect(&response, &mut items);
+    items.into_iter().filter_map(song_hit).collect()
+}
+
+fn song_hit(item: &Value) -> Option<SongHit> {
+    let id = item["playlistItemData"]["videoId"].as_str().filter(|id| !id.is_empty())?;
+    let column = |n: usize| -> String {
+        let runs = item["flexColumns"][n]["musicResponsiveListItemFlexColumnRenderer"]["text"]["runs"].as_array();
+        runs.into_iter().flatten().filter_map(|run| run["text"].as_str()).collect()
+    };
+    // The second column reads "Artist • Album • 3:08".
+    let second = column(1);
+    let parts: Vec<&str> = second.split(" • ").collect();
+    let clock: Option<Vec<f64>> = parts.last().and_then(|last| {
+        last.split(':').map(|p| if p.trim().is_empty() { Some(0.0) } else { p.trim().parse::<f64>().ok().filter(|n| n.is_finite()) }).collect()
+    });
+    let clock = clock.filter(|c| c.len() >= 2);
+    let (artist, album) = match &clock {
+        Some(_) if parts.len() >= 3 => (parts[..parts.len() - 2].join(" • "), parts[parts.len() - 2].to_owned()),
+        Some(_) => (parts[..parts.len() - 1].join(" • "), String::new()),
+        None => (second.clone(), String::new()),
+    };
+    Some(SongHit {
+        id: id.to_owned(),
+        title: column(0),
+        artist,
+        album,
+        duration: clock.map(|c| c.iter().fold(0.0, |total, part| total * 60.0 + part)),
+        explicit: item.get("badges").is_some_and(|badges| badges.to_string().contains("MUSIC_EXPLICIT_BADGE")),
+    })
+}
+
+/// Which row to download, and whether it carries Spotify's explicit flag.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Pick {
+    pub index: usize,
+    pub explicit_agrees: bool,
+}
+
+/// The row to download: the first that agrees and carries Spotify's explicit
+/// flag, else the first that agrees. `explicit` is `None` when Spotify's flag
+/// is not known.
+pub fn pick_row(track: &Track, rows: &[SongHit], explicit: Option<bool>) -> Option<Pick> {
+    let mut agreeing = rows.iter().enumerate().filter(|(_, row)| row_agrees(track, &row.row()));
+    let first = agreeing.next()?;
+    let exact = match explicit {
+        None => Some(first),
+        Some(flag) => std::iter::once(first).chain(agreeing).find(|(_, row)| row.explicit == flag),
+    };
+    Some(Pick { index: exact.unwrap_or(first).0, explicit_agrees: exact.is_some() })
 }

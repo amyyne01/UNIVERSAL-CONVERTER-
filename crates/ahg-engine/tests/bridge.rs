@@ -1,8 +1,7 @@
 //! The Spotify bridge's matching rules against their reference,
 //! tools/match-model/match.mjs (tests/golden/bridge.json, written by
-//! tools/match-model/golden.mjs from collected songs). Feature values are
-//! compared exactly: the ranker's weights were fitted on the reference's numbers.
-use ahg_engine::downloader::bridge::{Candidate, Lookup, Verdict, features, norm, verify};
+//! tools/match-model/golden.mjs from collected songs and real search responses).
+use ahg_engine::downloader::bridge::{Lookup, Verdict, norm, verify};
 use ahg_engine::types::Track;
 use serde_json::{Value, json};
 
@@ -44,23 +43,6 @@ fn a_looked_up_video_gets_the_same_verdict_as_in_the_reference() {
         seen[got as usize] += 1;
     }
     assert!(seen.iter().all(|n| *n > 50), "every verdict should be well represented: {seen:?}");
-}
-
-#[test]
-fn a_candidate_is_described_by_the_same_numbers_as_in_the_reference() {
-    let golden = golden();
-    let cases = golden["features"].as_array().unwrap();
-    assert!(cases.len() > 200, "bridge.json has too few feature rows");
-    for c in cases {
-        let cand = Candidate {
-            title: c["cand"]["title"].as_str().unwrap(),
-            uploader: c["cand"]["uploader"].as_str().unwrap_or(""),
-            duration: c["cand"]["duration"].as_f64(),
-        };
-        let got = features(&track(&c["track"]), &cand, c["rank"].as_u64().unwrap() as usize, c["fromSongs"].as_bool().unwrap());
-        let want: Vec<f64> = c["x"].as_array().unwrap().iter().map(|v| v.as_f64().unwrap()).collect();
-        assert_eq!(got.to_vec(), want, "{} against {}", c["track"], c["cand"]);
-    }
 }
 
 /// The few-seconds rule, spelled out: the same recording may differ by a few
@@ -109,4 +91,60 @@ fn a_shared_composer_is_not_the_same_performer() {
     // A one-word name must match whole.
     let nas = track(&json!({ "name": "Rodeo", "artist": "Nas", "artists": ["Nas"], "durationMs": 139_000 }));
     assert!(!row_agrees(&nas, &SongRow { title: "Rodeo", artist: "Lil Nas X", duration: Some(139.0) }));
+}
+
+#[test]
+fn a_song_search_is_asked_and_read_as_in_the_reference() {
+    use ahg_engine::downloader::bridge::{SONG_SEARCH_URL, song_rows, song_search_body};
+    let golden = golden();
+    assert_eq!(SONG_SEARCH_URL, golden["searchUrl"].as_str().unwrap());
+    let cases = golden["searches"].as_array().unwrap();
+    assert!(cases.len() >= 5, "bridge.json has too few searches");
+    let mut explicit = 0;
+    for c in cases {
+        let body: Value = serde_json::from_str(&song_search_body(c["query"].as_str().unwrap())).unwrap();
+        assert_eq!(body, c["body"], "request body for {}", c["query"]);
+        let rows = song_rows(&c["response"].to_string());
+        let got: Vec<Value> = rows
+            .iter()
+            .map(|r| json!({ "id": r.id, "title": r.title, "artist": r.artist, "album": r.album, "duration": r.duration, "explicit": r.explicit }))
+            .collect();
+        let want: Vec<Value> = c["rows"].as_array().unwrap().iter().map(|w| json!({ "id": w["id"], "title": w["title"], "artist": w["artist"], "album": w["album"], "duration": w["duration"].as_f64(), "explicit": w["explicit"] })).collect();
+        assert!(!got.is_empty(), "no rows read for {}", c["query"]);
+        assert_eq!(got, want, "rows for {}", c["query"]);
+        explicit += rows.iter().filter(|r| r.explicit).count();
+    }
+    assert!(explicit > 0, "the cases should include explicit songs");
+    // Anything that is not a search response gives no rows, and no panic.
+    assert!(song_rows("").is_empty() && song_rows("[1, {\"a\": null}]").is_empty() && song_rows("<html>").is_empty());
+}
+
+#[test]
+fn the_row_to_download_is_chosen_as_in_the_reference() {
+    use ahg_engine::downloader::bridge::{SongHit, pick_row};
+    let golden = golden();
+    let cases = golden["picks"].as_array().unwrap();
+    assert!(cases.len() > 300, "bridge.json has too few picks");
+    let (mut found, mut differs) = (0, 0);
+    for c in cases {
+        let rows: Vec<SongHit> = c["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| SongHit {
+                id: r["id"].as_str().unwrap().into(),
+                title: r["title"].as_str().unwrap().into(),
+                artist: r["artist"].as_str().unwrap_or("").into(),
+                album: r["album"].as_str().unwrap_or("").into(),
+                duration: r["duration"].as_f64(),
+                explicit: r["explicit"].as_bool().unwrap(),
+            })
+            .collect();
+        let got = pick_row(&track(&c["track"]), &rows, c["explicit"].as_bool());
+        let got = got.map_or(Value::Null, |p| json!({ "index": p.index, "explicitAgrees": p.explicit_agrees }));
+        assert_eq!(got, c["pick"], "{} with explicit {}", c["track"], c["explicit"]);
+        found += usize::from(!got.is_null());
+        differs += usize::from(got["explicitAgrees"] == false);
+    }
+    assert!(found > 200 && found < cases.len() && differs > 0, "found {found} of {}, {differs} with a different flag", cases.len());
 }
