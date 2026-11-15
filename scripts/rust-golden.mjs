@@ -2,7 +2,7 @@
 // over a corpus and their outputs saved, so the Rust tests compare against what
 // the Electron app actually does. Run `npm run build:electron` first, then
 // `node scripts/rust-golden.mjs`.
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 
 import { register } from 'node:module';
 
@@ -269,3 +269,9 @@ const inputs = [...new Set([...literals('electron/url-detector.test.ts'), ...ext
 const cases = inputs.map((input) => ({ input, detect: detectUrl(input), spotify: parseSpotifyUrl(input) }));
 writeFileSync(`${OUT}/url_detector.json`, JSON.stringify(cases, null, 1) + '\n');
 console.log(`url_detector.json: ${cases.length} cases`);
+
+// Further sections, one file each under scripts/rust-golden/. A section
+// default-exports `async ({ OUT, literals }) => void` and writes its own file.
+for (const name of readdirSync(new URL('./rust-golden/', import.meta.url)).filter((n) => n.endsWith('.mjs')).sort()) {
+  await (await import(`./rust-golden/${name}`)).default({ OUT, literals });
+}

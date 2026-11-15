@@ -2,6 +2,7 @@
 
 pub mod atomic_write;
 pub mod config;
+pub mod downloader;
 pub mod state_machine;
 pub mod text;
 pub mod tier;
