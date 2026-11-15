@@ -17,6 +17,38 @@ export const overlap = (want, have) => {
 /** Words inside brackets: where a title carries its version ("(2016 Remaster)", "[Live]"). */
 const notes = (s) => [...String(s ?? '').toLowerCase().matchAll(/\((.*?)\)|\[(.*?)\]/g)].flatMap((m) => (m[1] ?? m[2]).split(/[^\p{L}\p{N}]+/u).filter(Boolean));
 
+/** The separate artists in a credit ("A, B & C"), normalised, without a leading "the". */
+export const people = (list) => list.flatMap((a) => String(a ?? '').split(/\s*,\s*|\s+&\s+|\s+x\s+/i)).map((a) => norm(a).replace(/^the /, '')).filter(Boolean);
+// A one-word name must match whole ("Nas" is not "Lil Nas X"); a longer one may sit inside a longer credit.
+const within = (hay, needle) => { if (hay === needle) return true; const n = needle.split(' '); const h = new Set(hay.split(' ')); return n.length >= 2 && n.every((w) => h.has(w)); };
+/**
+ * The two credits name the same people: every artist on one side is on the
+ * other. YouTube often credits only the main artist and Spotify all of them,
+ * so either side may be the shorter one. One shared name is not enough: a
+ * composer is shared by every performer of the piece.
+ */
+export const sameArtist = (ours, theirs) => {
+  const a = people(ours);
+  const b = people(theirs);
+  const inside = (few, many) => few.length > 0 && few.every((x) => many.some((y) => within(y, x) || within(x, y)));
+  return inside(a, b) || inside(b, a);
+};
+/** YouTube's title adds no version note of its own ("(2016 Remaster)", "(With Horns Remix)"). */
+const noNewNote = (track, title) => { const ours = new Set(tokens(String(track.name).replace(/[()[\]]/g, ' '))); return notes(title).every((w) => ours.has(w)); };
+
+/**
+ * Does this row of a YouTube Music song search name the Spotify track? Rows
+ * carry title, artist and length, so most matches are settled here, before
+ * any slow lookup.
+ */
+export function rowAgrees(track, row) {
+  if (row.duration == null || !sameArtist(track.artists.length ? track.artists : [track.artist], [row.artist])) return false;
+  const diff = Math.abs(row.duration - track.durationMs / 1000);
+  if (overlap(baseName(track.name), row.title) >= 0.99) return diff <= 3.5 || (diff <= 5.5 && noNewNote(track, row.title));
+  // Spotify puts the composer in front of a classical title ("Ravel: Pavane ..."); YouTube does not.
+  return tokens(row.title).length >= 3 && overlap(row.title, track.name) >= 0.99 && diff <= 2;
+}
+
 export const BAD = ['live', 'cover', 'remix', 'sped', '8d', 'nightcore', 'karaoke', 'instrumental', 'slowed', 'reverb'];
 
 /**
@@ -28,14 +60,13 @@ export function verify(track, look) {
   if (!look || look.duration == null || !look.track || !(look.artist || look.creator)) return 'unknown';
   const diff = Math.abs(look.duration - track.durationMs / 1000);
   const name = overlap(baseName(track.name), look.track) >= 0.99;
-  const artist = track.artists.some((a) => overlap(a, `${look.artist ?? ''} ${look.creator ?? ''}`) >= 0.99);
+  const artist = sameArtist(track.artists.length ? track.artists : [track.artist], [look.artist, look.creator]);
   if (name && artist) {
     if (diff <= 3) return 'confirmed';
     if (diff > 12) return 'rejected';
     // A few seconds apart is the same recording only when YouTube's title adds
     // no version note of its own ("(2016 Remaster)", "(With Horns Remix)").
-    const ours = new Set(tokens(String(track.name).replace(/[()[\]]/g, ' ')));
-    return diff <= 5 && notes(look.track).every((w) => ours.has(w)) ? 'confirmed' : 'unknown';
+    return diff <= 5 && noNewNote(track, look.track) ? 'confirmed' : 'unknown';
   }
   // A different name alone may be a translation; it counts with a second disagreement.
   if (!name && (!artist || diff > 3)) return 'rejected';

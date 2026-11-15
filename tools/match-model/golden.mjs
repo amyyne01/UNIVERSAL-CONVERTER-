@@ -6,7 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { features, norm, verify } from './match.mjs';
+import { features, norm, rowAgrees, verify } from './match.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const DATA = path.join(HERE, 'data');
@@ -34,8 +34,18 @@ examples.forEach((ex, i) => {
 // Hand-made edges the collected data may not hold.
 for (const s of ['', '   ', '(only a note)', 'A (b) [c] D', 'Ünïcödé – ÉCOLE', '日本語 の タイトル', 'İstanbul', 'a_b-c.d', 'x (unclosed', 'one\n(two\nlines) three']) text.add(s);
 
-const out = { norm: [...text].map((input) => ({ input, output: norm(input) })), verdicts, features: rows };
+// Rows of the direct YouTube Music song search, as saved by the measurement runs.
+const byId = new Map(examples.map((ex) => [ex.track.id, ex]));
+const searchRows = [];
+for (const f of fs.readdirSync(DATA).filter((x) => x.startsWith('direct-search'))) {
+  for (const s of JSON.parse(fs.readFileSync(path.join(DATA, f), 'utf8'))) {
+    const t = byId.get(s.trackId).track;
+    s.rows.slice(0, 5).forEach((r) => searchRows.push({ track: track(t), row: { title: r.title, artist: r.artist, duration: r.duration }, agrees: rowAgrees(t, r) }));
+  }
+}
+
+const out = { rows: searchRows, norm: [...text].map((input) => ({ input, output: norm(input) })), verdicts, features: rows };
 const file = path.join(HERE, '..', '..', 'crates', 'ahg-engine', 'tests', 'golden', 'bridge.json');
 fs.writeFileSync(file, JSON.stringify(out, null, 1) + '\n');
 const tally = verdicts.reduce((t, v) => ({ ...t, [v.verdict]: (t[v.verdict] ?? 0) + 1 }), {});
-console.log(`bridge.json: ${out.norm.length} texts, ${verdicts.length} verdicts ${JSON.stringify(tally)}, ${rows.length} feature rows, ${(fs.statSync(file).size / 1024).toFixed(0)} KB`);
+console.log(`bridge.json: ${out.norm.length} texts, ${verdicts.length} verdicts ${JSON.stringify(tally)}, ${rows.length} feature rows, ${searchRows.length} search rows (${searchRows.filter((r) => r.agrees).length} agree), ${(fs.statSync(file).size / 1024).toFixed(0)} KB`);

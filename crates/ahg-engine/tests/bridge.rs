@@ -79,3 +79,34 @@ fn a_few_seconds_apart_is_confirmed_only_without_a_version_note_of_its_own() {
     // No music metadata: nothing to judge by.
     assert_eq!(verify(&wanted, &Lookup { duration: Some(180.0), ..Default::default() }), Verdict::Unknown);
 }
+
+#[test]
+fn a_song_search_row_agrees_or_not_as_in_the_reference() {
+    use ahg_engine::downloader::bridge::{SongRow, row_agrees};
+    let golden = golden();
+    let cases = golden["rows"].as_array().unwrap();
+    assert!(cases.len() > 500, "bridge.json has too few search rows");
+    let mut yes = 0;
+    for c in cases {
+        let row = SongRow { title: c["row"]["title"].as_str().unwrap(), artist: c["row"]["artist"].as_str().unwrap_or(""), duration: c["row"]["duration"].as_f64() };
+        let got = row_agrees(&track(&c["track"]), &row);
+        assert_eq!(got, c["agrees"].as_bool().unwrap(), "{} against {}", c["track"], c["row"]);
+        yes += usize::from(got);
+    }
+    assert!(yes > 100 && yes < cases.len() - 100, "both answers should be well represented: {yes} of {}", cases.len());
+}
+
+/// A composer is shared by every performer of a piece, so one shared name
+/// does not make two credits the same.
+#[test]
+fn a_shared_composer_is_not_the_same_performer() {
+    use ahg_engine::downloader::bridge::{SongRow, row_agrees};
+    let wanted = track(&json!({ "name": "Prelude in C Major, BWV 846", "artist": "Johann Sebastian Bach, Lang Lang", "artists": ["Johann Sebastian Bach, Lang Lang"], "durationMs": 139_000 }));
+    let row = |artist| SongRow { title: "Prelude in C Major, BWV 846", artist, duration: Some(139.0) };
+    assert!(!row_agrees(&wanted, &row("Aurélien Pontier & Johann Sebastian Bach")));
+    assert!(row_agrees(&wanted, &row("Lang Lang & Johann Sebastian Bach")));
+    assert!(row_agrees(&wanted, &row("Lang Lang")), "YouTube may credit only one of them");
+    // A one-word name must match whole.
+    let nas = track(&json!({ "name": "Rodeo", "artist": "Nas", "artists": ["Nas"], "durationMs": 139_000 }));
+    assert!(!row_agrees(&nas, &SongRow { title: "Rodeo", artist: "Lil Nas X", duration: Some(139.0) }));
+}

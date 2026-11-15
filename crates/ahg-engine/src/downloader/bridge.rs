@@ -56,6 +56,73 @@ fn notes(s: &str) -> Vec<String> {
         .collect()
 }
 
+/// The separate artists in a credit ("A, B & C"), normalised, without a
+/// leading "the".
+fn people<'a>(credits: impl IntoIterator<Item = &'a str>) -> Vec<String> {
+    static BETWEEN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s*,\s*|\s+&\s+|\s+[xX]\s+").expect("constant pattern"));
+    credits
+        .into_iter()
+        .flat_map(|credit| BETWEEN.split(credit).map(norm).collect::<Vec<_>>())
+        .map(|name| name.strip_prefix("the ").map(str::to_owned).unwrap_or(name))
+        .filter(|name| !name.is_empty())
+        .collect()
+}
+
+/// A one-word name must match whole ("Nas" is not "Lil Nas X"); a longer one
+/// may sit inside a longer credit.
+fn within(hay: &str, needle: &str) -> bool {
+    if hay == needle {
+        return true;
+    }
+    let words: Vec<&str> = needle.split(' ').collect();
+    let hay: HashSet<&str> = hay.split(' ').collect();
+    words.len() >= 2 && words.iter().all(|w| hay.contains(w))
+}
+
+/// The two credits name the same people: every artist on one side is on the
+/// other. YouTube often credits only the main artist and Spotify all of them,
+/// so either side may be the shorter one. One shared name is not enough: a
+/// composer is shared by every performer of the piece.
+fn same_artist(ours: &[String], theirs: &[String]) -> bool {
+    let inside = |few: &[String], many: &[String]| !few.is_empty() && few.iter().all(|x| many.iter().any(|y| within(y, x) || within(x, y)));
+    inside(ours, theirs) || inside(theirs, ours)
+}
+
+fn credited(track: &Track) -> Vec<String> {
+    if track.artists.is_empty() { people([track.artist.as_str()]) } else { people(track.artists.iter().map(String::as_str)) }
+}
+
+/// YouTube's title adds no version note of its own ("(2016 Remaster)").
+fn no_new_note(track: &Track, title: &str) -> bool {
+    let ours: HashSet<String> = tokens(&track.name.replace(['(', ')', '[', ']'], " ")).into_iter().collect();
+    notes(title).iter().all(|w| ours.contains(w))
+}
+
+/// One row of a YouTube Music song search: unlike a plain search result it
+/// carries the artist and the length.
+#[derive(Debug, Clone, Copy)]
+pub struct SongRow<'a> {
+    pub title: &'a str,
+    pub artist: &'a str,
+    /// Seconds, to the second.
+    pub duration: Option<f64>,
+}
+
+/// Does this search row name the Spotify track? Most matches are settled
+/// here, before any slow lookup.
+pub fn row_agrees(track: &Track, row: &SongRow) -> bool {
+    let Some(duration) = row.duration else { return false };
+    if !same_artist(&credited(track), &people([row.artist])) {
+        return false;
+    }
+    let diff = (duration - track.duration_ms / 1000.0).abs();
+    if overlap(base_name(&track.name), row.title) >= 0.99 {
+        return diff <= 3.5 || (diff <= 5.5 && no_new_note(track, row.title));
+    }
+    // Spotify puts the composer in front of a classical title ("Ravel: Pavane ..."); YouTube does not.
+    tokens(row.title).len() >= 3 && overlap(row.title, &track.name) >= 0.99 && diff <= 2.0
+}
+
 /// What a full lookup says about a video: the music metadata YouTube attaches
 /// to a song, absent on ordinary uploads.
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
@@ -89,8 +156,7 @@ pub fn verify(track: &Track, look: &Lookup) -> Verdict {
     }
     let diff = (duration - track.duration_ms / 1000.0).abs();
     let name = overlap(base_name(&track.name), title) >= 0.99;
-    let who = format!("{} {}", look.artist.as_deref().unwrap_or(""), look.creator.as_deref().unwrap_or(""));
-    let artist = track.artists.iter().any(|a| overlap(a, &who) >= 0.99);
+    let artist = same_artist(&credited(track), &people([look.artist.as_deref().unwrap_or(""), look.creator.as_deref().unwrap_or("")]));
     if name && artist {
         if diff <= 3.0 {
             return Verdict::Confirmed;
@@ -100,8 +166,7 @@ pub fn verify(track: &Track, look: &Lookup) -> Verdict {
         }
         // A few seconds apart is the same recording only when YouTube's title
         // adds no version note of its own ("(2016 Remaster)").
-        let ours: HashSet<String> = tokens(&track.name.replace(['(', ')', '[', ']'], " ")).into_iter().collect();
-        return if diff <= 5.0 && notes(title).iter().all(|w| ours.contains(w)) { Verdict::Confirmed } else { Verdict::Unknown };
+        return if diff <= 5.0 && no_new_note(track, title) { Verdict::Confirmed } else { Verdict::Unknown };
     }
     // A different name alone may be a translation; it counts with a second disagreement.
     if !name && (!artist || diff > 3.0) {
