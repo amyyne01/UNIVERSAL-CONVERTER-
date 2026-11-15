@@ -47,6 +47,47 @@ const extra = [
   'a'.repeat(2100) + '.com', 'https://youtu.be/' + 'x'.repeat(2100), '\uD83D\uDE00'.repeat(1030) + 'youtu.be/dQw4w9WgXcQ',
 ];
 
+// ── Tier clamps and extras (shared/types.ts) ─────────────────────────────────
+{
+  const t = await import('../dist-electron/shared/types.js');
+  const plans = ['basic', 'premium'];
+  const formats = ['mp3', 'aac', 'm4a', 'ogg', 'opus', 'flac', 'wav', 'alac', 'FLAC', '', 'weird'];
+  const qualities = ['128', '192', '320', 'lossless', 'LOSSLESS', ''];
+  // Numbers JSON cannot carry are written as strings and parsed back in the Rust test.
+  const numbers = [-3, -0.5, 0, 0.5, 1, 1.9, 2, 2.9, 3, 4, 5, 5.5, 6, 20, 1e9, 'NaN', 'Infinity', '-Infinity'];
+  const partials = [
+    undefined,
+    {},
+    { subtitleLangs: 'en,fr, de ,,es', subtitleAuto: true, splitChapters: true, cookieBrowser: 'firefox', cookiesFile: 'C:\\x\\cookies.txt' },
+    { subtitleLangs: ' , ,', subtitleMode: 'both' },
+    { subtitleLangs: '', sponsorBlock: 'remove', sponsorBlockCategories: ['sponsor', 'intro'] },
+    { subtitleLangs: 'fr', embedChapters: false, writeThumbnail: true, writeInfoJson: true, writeDescription: true },
+    { videoContainer: 'mkv', videoCodec: 'av1', outputTemplate: '%(title)s.%(ext)s', rateLimit: '2M', proxy: 'socks5://127.0.0.1:9050' },
+    { subtitleMode: undefined, subtitleLangs: undefined, proxy: undefined },
+    { unknownKey: 1, proxy: 'http://p:1' },
+  ];
+  const golden = {
+    defaultExtras: t.defaultExtras,
+    retryBackoffMs: t.RETRY_BACKOFF_MS,
+    basicLimits: t.BASIC_LIMITS,
+    maxConcurrentDownloads: t.MAX_CONCURRENT_DOWNLOADS,
+    videoQuality: t.VIDEO_QUALITIES.flatMap((q) => plans.map((plan) => (
+      { q, plan, premium: t.isPremiumVideoQuality(q), out: t.clampVideoQuality(q, plan) }))),
+    format: formats.flatMap((f) => plans.map((plan) => (
+      { f, plan, premium: t.isPremiumFormat(f), out: t.clampFormat(f, plan) }))),
+    audioQuality: qualities.flatMap((q) => plans.map((plan) => ({ q, plan, out: t.clampAudioQuality(q, plan) }))),
+    concurrency: numbers.flatMap((n) => plans.map((plan) => ({ n: String(n), plan, out: t.clampConcurrency(Number(n), plan) }))),
+    // `partial` goes through JSON, so an explicit undefined becomes an absent key:
+    // the two are the same thing to mergeExtras.
+    extras: partials.flatMap((partial) => [
+      { partial: partial ?? null, plan: null, out: t.mergeExtras(partial) },
+      ...plans.map((plan) => ({ partial: partial ?? null, plan, out: t.clampExtras(partial ?? {}, plan) })),
+    ]),
+  };
+  writeFileSync(`${OUT}/tier.json`, JSON.stringify(golden, null, 1) + '\n');
+  console.log(`tier.json: ${Object.values(golden).filter(Array.isArray).reduce((n, a) => n + a.length, 0)} cases`);
+}
+
 const inputs = [...new Set([...literals('electron/url-detector.test.ts'), ...extra])];
 const cases = inputs.map((input) => ({ input, detect: detectUrl(input), spotify: parseSpotifyUrl(input) }));
 writeFileSync(`${OUT}/url_detector.json`, JSON.stringify(cases, null, 1) + '\n');

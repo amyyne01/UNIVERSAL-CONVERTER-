@@ -10,6 +10,7 @@ use std::sync::LazyLock;
 use fancy_regex::Regex;
 use url::Url;
 
+use crate::text::{js_trim, utf16_prefix};
 use crate::types::{ContentType, SourcePlatform, UrlDetection};
 use ContentType::{Album, Artist, Playlist, Track, Video};
 use SourcePlatform::*;
@@ -218,29 +219,6 @@ fn cascade(url: &str) -> Option<UrlDetection> {
     is_match(&REAL_HOST, &host).then(|| build(url, Generic, Video, Some(host)))
 }
 
-/// Characters `String.prototype.trim` removes.
-fn is_js_whitespace(c: char) -> bool {
-    matches!(
-        c,
-        '\t' | '\n' | '\u{B}' | '\u{C}' | '\r' | ' ' | '\u{A0}' | '\u{1680}' | '\u{2000}'..='\u{200A}'
-            | '\u{2028}' | '\u{2029}' | '\u{202F}' | '\u{205F}' | '\u{3000}' | '\u{FEFF}'
-    )
-}
-
-/// `s.slice(0, units)`, counted in UTF-16 code units as JavaScript does.
-/// ponytail: a character straddling the limit is dropped whole, where
-/// JavaScript would keep half of it; the result is otherwise identical.
-fn utf16_prefix(s: &str, units: usize) -> &str {
-    let mut used = 0;
-    for (i, c) in s.char_indices() {
-        used += c.len_utf16();
-        if used > units {
-            return &s[..i];
-        }
-    }
-    s
-}
-
 fn has_scheme(s: &str) -> bool {
     let mut chars = s.chars();
     chars.next().is_some_and(|c| c.is_ascii_alphabetic())
@@ -249,7 +227,7 @@ fn has_scheme(s: &str) -> bool {
 
 pub fn detect_url(input: &str) -> UrlDetection {
     // The length bound limits regex work on clipboard text.
-    let trimmed = utf16_prefix(input.trim_matches(is_js_whitespace), 2048);
+    let trimmed = utf16_prefix(js_trim(input), 2048);
     // A bare address gets https://; spotify: and http(s): keep their scheme.
     let url = if has_scheme(trimmed) { trimmed.to_owned() } else { format!("https://{trimmed}") };
     cascade(&url).unwrap_or_else(|| build(&url, Unknown, ContentType::Unknown, None))

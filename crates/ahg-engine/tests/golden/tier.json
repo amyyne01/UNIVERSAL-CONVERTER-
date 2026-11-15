@@ -1,0 +1,1266 @@
+{
+ "defaultExtras": {
+  "subtitleMode": "off",
+  "subtitleLangs": "en",
+  "subtitleAuto": false,
+  "embedChapters": true,
+  "splitChapters": false,
+  "sponsorBlock": "off",
+  "sponsorBlockCategories": [
+   "sponsor"
+  ],
+  "writeThumbnail": false,
+  "writeInfoJson": false,
+  "writeDescription": false,
+  "videoContainer": "mp4",
+  "videoCodec": "any",
+  "cookieBrowser": "",
+  "cookiesFile": "",
+  "outputTemplate": "",
+  "rateLimit": "",
+  "proxy": ""
+ },
+ "retryBackoffMs": [
+  5000,
+  15000,
+  45000
+ ],
+ "basicLimits": {
+  "maxVideoQuality": "1080p",
+  "maxBatchLinks": 5,
+  "maxCollectionTracks": 20,
+  "maxConcurrent": 2,
+  "lossless": false,
+  "scheduler": false,
+  "maxSubtitleLangs": 1,
+  "subtitleAuto": false,
+  "cookies": false,
+  "splitChapters": false
+ },
+ "maxConcurrentDownloads": 5,
+ "videoQuality": [
+  {
+   "q": "360p",
+   "plan": "basic",
+   "premium": false,
+   "out": "360p"
+  },
+  {
+   "q": "360p",
+   "plan": "premium",
+   "premium": false,
+   "out": "360p"
+  },
+  {
+   "q": "480p",
+   "plan": "basic",
+   "premium": false,
+   "out": "480p"
+  },
+  {
+   "q": "480p",
+   "plan": "premium",
+   "premium": false,
+   "out": "480p"
+  },
+  {
+   "q": "720p",
+   "plan": "basic",
+   "premium": false,
+   "out": "720p"
+  },
+  {
+   "q": "720p",
+   "plan": "premium",
+   "premium": false,
+   "out": "720p"
+  },
+  {
+   "q": "1080p",
+   "plan": "basic",
+   "premium": false,
+   "out": "1080p"
+  },
+  {
+   "q": "1080p",
+   "plan": "premium",
+   "premium": false,
+   "out": "1080p"
+  },
+  {
+   "q": "2160p",
+   "plan": "basic",
+   "premium": true,
+   "out": "1080p"
+  },
+  {
+   "q": "2160p",
+   "plan": "premium",
+   "premium": true,
+   "out": "2160p"
+  },
+  {
+   "q": "best",
+   "plan": "basic",
+   "premium": true,
+   "out": "1080p"
+  },
+  {
+   "q": "best",
+   "plan": "premium",
+   "premium": true,
+   "out": "best"
+  }
+ ],
+ "format": [
+  {
+   "f": "mp3",
+   "plan": "basic",
+   "premium": false,
+   "out": "mp3"
+  },
+  {
+   "f": "mp3",
+   "plan": "premium",
+   "premium": false,
+   "out": "mp3"
+  },
+  {
+   "f": "aac",
+   "plan": "basic",
+   "premium": false,
+   "out": "aac"
+  },
+  {
+   "f": "aac",
+   "plan": "premium",
+   "premium": false,
+   "out": "aac"
+  },
+  {
+   "f": "m4a",
+   "plan": "basic",
+   "premium": false,
+   "out": "m4a"
+  },
+  {
+   "f": "m4a",
+   "plan": "premium",
+   "premium": false,
+   "out": "m4a"
+  },
+  {
+   "f": "ogg",
+   "plan": "basic",
+   "premium": false,
+   "out": "ogg"
+  },
+  {
+   "f": "ogg",
+   "plan": "premium",
+   "premium": false,
+   "out": "ogg"
+  },
+  {
+   "f": "opus",
+   "plan": "basic",
+   "premium": false,
+   "out": "opus"
+  },
+  {
+   "f": "opus",
+   "plan": "premium",
+   "premium": false,
+   "out": "opus"
+  },
+  {
+   "f": "flac",
+   "plan": "basic",
+   "premium": true,
+   "out": "mp3"
+  },
+  {
+   "f": "flac",
+   "plan": "premium",
+   "premium": true,
+   "out": "flac"
+  },
+  {
+   "f": "wav",
+   "plan": "basic",
+   "premium": true,
+   "out": "mp3"
+  },
+  {
+   "f": "wav",
+   "plan": "premium",
+   "premium": true,
+   "out": "wav"
+  },
+  {
+   "f": "alac",
+   "plan": "basic",
+   "premium": true,
+   "out": "mp3"
+  },
+  {
+   "f": "alac",
+   "plan": "premium",
+   "premium": true,
+   "out": "alac"
+  },
+  {
+   "f": "FLAC",
+   "plan": "basic",
+   "premium": false,
+   "out": "FLAC"
+  },
+  {
+   "f": "FLAC",
+   "plan": "premium",
+   "premium": false,
+   "out": "FLAC"
+  },
+  {
+   "f": "",
+   "plan": "basic",
+   "premium": false,
+   "out": ""
+  },
+  {
+   "f": "",
+   "plan": "premium",
+   "premium": false,
+   "out": ""
+  },
+  {
+   "f": "weird",
+   "plan": "basic",
+   "premium": false,
+   "out": "weird"
+  },
+  {
+   "f": "weird",
+   "plan": "premium",
+   "premium": false,
+   "out": "weird"
+  }
+ ],
+ "audioQuality": [
+  {
+   "q": "128",
+   "plan": "basic",
+   "out": "128"
+  },
+  {
+   "q": "128",
+   "plan": "premium",
+   "out": "128"
+  },
+  {
+   "q": "192",
+   "plan": "basic",
+   "out": "192"
+  },
+  {
+   "q": "192",
+   "plan": "premium",
+   "out": "192"
+  },
+  {
+   "q": "320",
+   "plan": "basic",
+   "out": "320"
+  },
+  {
+   "q": "320",
+   "plan": "premium",
+   "out": "320"
+  },
+  {
+   "q": "lossless",
+   "plan": "basic",
+   "out": "320"
+  },
+  {
+   "q": "lossless",
+   "plan": "premium",
+   "out": "lossless"
+  },
+  {
+   "q": "LOSSLESS",
+   "plan": "basic",
+   "out": "LOSSLESS"
+  },
+  {
+   "q": "LOSSLESS",
+   "plan": "premium",
+   "out": "LOSSLESS"
+  },
+  {
+   "q": "",
+   "plan": "basic",
+   "out": ""
+  },
+  {
+   "q": "",
+   "plan": "premium",
+   "out": ""
+  }
+ ],
+ "concurrency": [
+  {
+   "n": "-3",
+   "plan": "basic",
+   "out": 1
+  },
+  {
+   "n": "-3",
+   "plan": "premium",
+   "out": 1
+  },
+  {
+   "n": "-0.5",
+   "plan": "basic",
+   "out": 1
+  },
+  {
+   "n": "-0.5",
+   "plan": "premium",
+   "out": 1
+  },
+  {
+   "n": "0",
+   "plan": "basic",
+   "out": 1
+  },
+  {
+   "n": "0",
+   "plan": "premium",
+   "out": 1
+  },
+  {
+   "n": "0.5",
+   "plan": "basic",
+   "out": 1
+  },
+  {
+   "n": "0.5",
+   "plan": "premium",
+   "out": 1
+  },
+  {
+   "n": "1",
+   "plan": "basic",
+   "out": 1
+  },
+  {
+   "n": "1",
+   "plan": "premium",
+   "out": 1
+  },
+  {
+   "n": "1.9",
+   "plan": "basic",
+   "out": 1
+  },
+  {
+   "n": "1.9",
+   "plan": "premium",
+   "out": 1
+  },
+  {
+   "n": "2",
+   "plan": "basic",
+   "out": 2
+  },
+  {
+   "n": "2",
+   "plan": "premium",
+   "out": 2
+  },
+  {
+   "n": "2.9",
+   "plan": "basic",
+   "out": 2
+  },
+  {
+   "n": "2.9",
+   "plan": "premium",
+   "out": 2
+  },
+  {
+   "n": "3",
+   "plan": "basic",
+   "out": 2
+  },
+  {
+   "n": "3",
+   "plan": "premium",
+   "out": 3
+  },
+  {
+   "n": "4",
+   "plan": "basic",
+   "out": 2
+  },
+  {
+   "n": "4",
+   "plan": "premium",
+   "out": 4
+  },
+  {
+   "n": "5",
+   "plan": "basic",
+   "out": 2
+  },
+  {
+   "n": "5",
+   "plan": "premium",
+   "out": 5
+  },
+  {
+   "n": "5.5",
+   "plan": "basic",
+   "out": 2
+  },
+  {
+   "n": "5.5",
+   "plan": "premium",
+   "out": 5
+  },
+  {
+   "n": "6",
+   "plan": "basic",
+   "out": 2
+  },
+  {
+   "n": "6",
+   "plan": "premium",
+   "out": 5
+  },
+  {
+   "n": "20",
+   "plan": "basic",
+   "out": 2
+  },
+  {
+   "n": "20",
+   "plan": "premium",
+   "out": 5
+  },
+  {
+   "n": "1000000000",
+   "plan": "basic",
+   "out": 2
+  },
+  {
+   "n": "1000000000",
+   "plan": "premium",
+   "out": 5
+  },
+  {
+   "n": "NaN",
+   "plan": "basic",
+   "out": 1
+  },
+  {
+   "n": "NaN",
+   "plan": "premium",
+   "out": 1
+  },
+  {
+   "n": "Infinity",
+   "plan": "basic",
+   "out": 2
+  },
+  {
+   "n": "Infinity",
+   "plan": "premium",
+   "out": 5
+  },
+  {
+   "n": "-Infinity",
+   "plan": "basic",
+   "out": 1
+  },
+  {
+   "n": "-Infinity",
+   "plan": "premium",
+   "out": 1
+  }
+ ],
+ "extras": [
+  {
+   "partial": null,
+   "plan": null,
+   "out": {
+    "subtitleMode": "off",
+    "subtitleLangs": "en",
+    "subtitleAuto": false,
+    "embedChapters": true,
+    "splitChapters": false,
+    "sponsorBlock": "off",
+    "sponsorBlockCategories": [
+     "sponsor"
+    ],
+    "writeThumbnail": false,
+    "writeInfoJson": false,
+    "writeDescription": false,
+    "videoContainer": "mp4",
+    "videoCodec": "any",
+    "cookieBrowser": "",
+    "cookiesFile": "",
+    "outputTemplate": "",
+    "rateLimit": "",
+    "proxy": ""
+   }
+  },
+  {
+   "partial": null,
+   "plan": "basic",
+   "out": {
+    "subtitleMode": "off",
+    "subtitleLangs": "en",
+    "subtitleAuto": false,
+    "embedChapters": true,
+    "splitChapters": false,
+    "sponsorBlock": "off",
+    "sponsorBlockCategories": [
+     "sponsor"
+    ],
+    "writeThumbnail": false,
+    "writeInfoJson": false,
+    "writeDescription": false,
+    "videoContainer": "mp4",
+    "videoCodec": "any",
+    "cookieBrowser": "",
+    "cookiesFile": "",
+    "outputTemplate": "",
+    "rateLimit": "",
+    "proxy": ""
+   }
+  },
+  {
+   "partial": null,
+   "plan": "premium",
+   "out": {
+    "subtitleMode": "off",
+    "subtitleLangs": "en",
+    "subtitleAuto": false,
+    "embedChapters": true,
+    "splitChapters": false,
+    "sponsorBlock": "off",
+    "sponsorBlockCategories": [
+     "sponsor"
+    ],
+    "writeThumbnail": false,
+    "writeInfoJson": false,
+    "writeDescription": false,
+    "videoContainer": "mp4",
+    "videoCodec": "any",
+    "cookieBrowser": "",
+    "cookiesFile": "",
+    "outputTemplate": "",
+    "rateLimit": "",
+    "proxy": ""
+   }
+  },
+  {
+   "partial": {},
+   "plan": null,
+   "out": {
+    "subtitleMode": "off",
+    "subtitleLangs": "en",
+    "subtitleAuto": false,
+    "embedChapters": true,
+    "splitChapters": false,
+    "sponsorBlock": "off",
+    "sponsorBlockCategories": [
+     "sponsor"
+    ],
+    "writeThumbnail": false,
+    "writeInfoJson": false,
+    "writeDescription": false,
+    "videoContainer": "mp4",
+    "videoCodec": "any",
+    "cookieBrowser": "",
+    "cookiesFile": "",
+    "outputTemplate": "",
+    "rateLimit": "",
+    "proxy": ""
+   }
+  },
+  {
+   "partial": {},
+   "plan": "basic",
+   "out": {
+    "subtitleMode": "off",
+    "subtitleLangs": "en",
+    "subtitleAuto": false,
+    "embedChapters": true,
+    "splitChapters": false,
+    "sponsorBlock": "off",
+    "sponsorBlockCategories": [
+     "sponsor"
+    ],
+    "writeThumbnail": false,
+    "writeInfoJson": false,
+    "writeDescription": false,
+    "videoContainer": "mp4",
+    "videoCodec": "any",
+    "cookieBrowser": "",
+    "cookiesFile": "",
+    "outputTemplate": "",
+    "rateLimit": "",
+    "proxy": ""
+   }
+  },
+  {
+   "partial": {},
+   "plan": "premium",
+   "out": {
+    "subtitleMode": "off",
+    "subtitleLangs": "en",
+    "subtitleAuto": false,
+    "embedChapters": true,
+    "splitChapters": false,
+    "sponsorBlock": "off",
+    "sponsorBlockCategories": [
+     "sponsor"
+    ],
+    "writeThumbnail": false,
+    "writeInfoJson": false,
+    "writeDescription": false,
+    "videoContainer": "mp4",
+    "videoCodec": "any",
+    "cookieBrowser": "",
+    "cookiesFile": "",
+    "outputTemplate": "",
+    "rateLimit": "",
+    "proxy": ""
+   }
+  },
+  {
+   "partial": {
+    "subtitleLangs": "en,fr, de ,,es",
+    "subtitleAuto": true,
+    "splitChapters": true,
+    "cookieBrowser": "firefox",
+    "cookiesFile": "C:\\x\\cookies.txt"
+   },
+   "plan": null,
+   "out": {
+    "subtitleMode": "off",
+    "subtitleLangs": "en,fr, de ,,es",
+    "subtitleAuto": true,
+    "embedChapters": true,
+    "splitChapters": true,
+    "sponsorBlock": "off",
+    "sponsorBlockCategories": [
+     "sponsor"
+    ],
+    "writeThumbnail": false,
+    "writeInfoJson": false,
+    "writeDescription": false,
+    "videoContainer": "mp4",
+    "videoCodec": "any",
+    "cookieBrowser": "firefox",
+    "cookiesFile": "C:\\x\\cookies.txt",
+    "outputTemplate": "",
+    "rateLimit": "",
+    "proxy": ""
+   }
+  },
+  {
+   "partial": {
+    "subtitleLangs": "en,fr, de ,,es",
+    "subtitleAuto": true,
+    "splitChapters": true,
+    "cookieBrowser": "firefox",
+    "cookiesFile": "C:\\x\\cookies.txt"
+   },
+   "plan": "basic",
+   "out": {
+    "subtitleMode": "off",
+    "subtitleLangs": "en",
+    "subtitleAuto": false,
+    "embedChapters": true,
+    "splitChapters": false,
+    "sponsorBlock": "off",
+    "sponsorBlockCategories": [
+     "sponsor"
+    ],
+    "writeThumbnail": false,
+    "writeInfoJson": false,
+    "writeDescription": false,
+    "videoContainer": "mp4",
+    "videoCodec": "any",
+    "cookieBrowser": "",
+    "cookiesFile": "",
+    "outputTemplate": "",
+    "rateLimit": "",
+    "proxy": ""
+   }
+  },
+  {
+   "partial": {
+    "subtitleLangs": "en,fr, de ,,es",
+    "subtitleAuto": true,
+    "splitChapters": true,
+    "cookieBrowser": "firefox",
+    "cookiesFile": "C:\\x\\cookies.txt"
+   },
+   "plan": "premium",
+   "out": {
+    "subtitleMode": "off",
+    "subtitleLangs": "en,fr, de ,,es",
+    "subtitleAuto": true,
+    "embedChapters": true,
+    "splitChapters": true,
+    "sponsorBlock": "off",
+    "sponsorBlockCategories": [
+     "sponsor"
+    ],
+    "writeThumbnail": false,
+    "writeInfoJson": false,
+    "writeDescription": false,
+    "videoContainer": "mp4",
+    "videoCodec": "any",
+    "cookieBrowser": "firefox",
+    "cookiesFile": "C:\\x\\cookies.txt",
+    "outputTemplate": "",
+    "rateLimit": "",
+    "proxy": ""
+   }
+  },
+  {
+   "partial": {
+    "subtitleLangs": " , ,",
+    "subtitleMode": "both"
+   },
+   "plan": null,
+   "out": {
+    "subtitleMode": "both",
+    "subtitleLangs": " , ,",
+    "subtitleAuto": false,
+    "embedChapters": true,
+    "splitChapters": false,
+    "sponsorBlock": "off",
+    "sponsorBlockCategories": [
+     "sponsor"
+    ],
+    "writeThumbnail": false,
+    "writeInfoJson": false,
+    "writeDescription": false,
+    "videoContainer": "mp4",
+    "videoCodec": "any",
+    "cookieBrowser": "",
+    "cookiesFile": "",
+    "outputTemplate": "",
+    "rateLimit": "",
+    "proxy": ""
+   }
+  },
+  {
+   "partial": {
+    "subtitleLangs": " , ,",
+    "subtitleMode": "both"
+   },
+   "plan": "basic",
+   "out": {
+    "subtitleMode": "both",
+    "subtitleLangs": "en",
+    "subtitleAuto": false,
+    "embedChapters": true,
+    "splitChapters": false,
+    "sponsorBlock": "off",
+    "sponsorBlockCategories": [
+     "sponsor"
+    ],
+    "writeThumbnail": false,
+    "writeInfoJson": false,
+    "writeDescription": false,
+    "videoContainer": "mp4",
+    "videoCodec": "any",
+    "cookieBrowser": "",
+    "cookiesFile": "",
+    "outputTemplate": "",
+    "rateLimit": "",
+    "proxy": ""
+   }
+  },
+  {
+   "partial": {
+    "subtitleLangs": " , ,",
+    "subtitleMode": "both"
+   },
+   "plan": "premium",
+   "out": {
+    "subtitleMode": "both",
+    "subtitleLangs": " , ,",
+    "subtitleAuto": false,
+    "embedChapters": true,
+    "splitChapters": false,
+    "sponsorBlock": "off",
+    "sponsorBlockCategories": [
+     "sponsor"
+    ],
+    "writeThumbnail": false,
+    "writeInfoJson": false,
+    "writeDescription": false,
+    "videoContainer": "mp4",
+    "videoCodec": "any",
+    "cookieBrowser": "",
+    "cookiesFile": "",
+    "outputTemplate": "",
+    "rateLimit": "",
+    "proxy": ""
+   }
+  },
+  {
+   "partial": {
+    "subtitleLangs": "",
+    "sponsorBlock": "remove",
+    "sponsorBlockCategories": [
+     "sponsor",
+     "intro"
+    ]
+   },
+   "plan": null,
+   "out": {
+    "subtitleMode": "off",
+    "subtitleLangs": "",
+    "subtitleAuto": false,
+    "embedChapters": true,
+    "splitChapters": false,
+    "sponsorBlock": "remove",
+    "sponsorBlockCategories": [
+     "sponsor",
+     "intro"
+    ],
+    "writeThumbnail": false,
+    "writeInfoJson": false,
+    "writeDescription": false,
+    "videoContainer": "mp4",
+    "videoCodec": "any",
+    "cookieBrowser": "",
+    "cookiesFile": "",
+    "outputTemplate": "",
+    "rateLimit": "",
+    "proxy": ""
+   }
+  },
+  {
+   "partial": {
+    "subtitleLangs": "",
+    "sponsorBlock": "remove",
+    "sponsorBlockCategories": [
+     "sponsor",
+     "intro"
+    ]
+   },
+   "plan": "basic",
+   "out": {
+    "subtitleMode": "off",
+    "subtitleLangs": "en",
+    "subtitleAuto": false,
+    "embedChapters": true,
+    "splitChapters": false,
+    "sponsorBlock": "remove",
+    "sponsorBlockCategories": [
+     "sponsor",
+     "intro"
+    ],
+    "writeThumbnail": false,
+    "writeInfoJson": false,
+    "writeDescription": false,
+    "videoContainer": "mp4",
+    "videoCodec": "any",
+    "cookieBrowser": "",
+    "cookiesFile": "",
+    "outputTemplate": "",
+    "rateLimit": "",
+    "proxy": ""
+   }
+  },
+  {
+   "partial": {
+    "subtitleLangs": "",
+    "sponsorBlock": "remove",
+    "sponsorBlockCategories": [
+     "sponsor",
+     "intro"
+    ]
+   },
+   "plan": "premium",
+   "out": {
+    "subtitleMode": "off",
+    "subtitleLangs": "",
+    "subtitleAuto": false,
+    "embedChapters": true,
+    "splitChapters": false,
+    "sponsorBlock": "remove",
+    "sponsorBlockCategories": [
+     "sponsor",
+     "intro"
+    ],
+    "writeThumbnail": false,
+    "writeInfoJson": false,
+    "writeDescription": false,
+    "videoContainer": "mp4",
+    "videoCodec": "any",
+    "cookieBrowser": "",
+    "cookiesFile": "",
+    "outputTemplate": "",
+    "rateLimit": "",
+    "proxy": ""
+   }
+  },
+  {
+   "partial": {
+    "subtitleLangs": "fr",
+    "embedChapters": false,
+    "writeThumbnail": true,
+    "writeInfoJson": true,
+    "writeDescription": true
+   },
+   "plan": null,
+   "out": {
+    "subtitleMode": "off",
+    "subtitleLangs": "fr",
+    "subtitleAuto": false,
+    "embedChapters": false,
+    "splitChapters": false,
+    "sponsorBlock": "off",
+    "sponsorBlockCategories": [
+     "sponsor"
+    ],
+    "writeThumbnail": true,
+    "writeInfoJson": true,
+    "writeDescription": true,
+    "videoContainer": "mp4",
+    "videoCodec": "any",
+    "cookieBrowser": "",
+    "cookiesFile": "",
+    "outputTemplate": "",
+    "rateLimit": "",
+    "proxy": ""
+   }
+  },
+  {
+   "partial": {
+    "subtitleLangs": "fr",
+    "embedChapters": false,
+    "writeThumbnail": true,
+    "writeInfoJson": true,
+    "writeDescription": true
+   },
+   "plan": "basic",
+   "out": {
+    "subtitleMode": "off",
+    "subtitleLangs": "fr",
+    "subtitleAuto": false,
+    "embedChapters": false,
+    "splitChapters": false,
+    "sponsorBlock": "off",
+    "sponsorBlockCategories": [
+     "sponsor"
+    ],
+    "writeThumbnail": true,
+    "writeInfoJson": true,
+    "writeDescription": true,
+    "videoContainer": "mp4",
+    "videoCodec": "any",
+    "cookieBrowser": "",
+    "cookiesFile": "",
+    "outputTemplate": "",
+    "rateLimit": "",
+    "proxy": ""
+   }
+  },
+  {
+   "partial": {
+    "subtitleLangs": "fr",
+    "embedChapters": false,
+    "writeThumbnail": true,
+    "writeInfoJson": true,
+    "writeDescription": true
+   },
+   "plan": "premium",
+   "out": {
+    "subtitleMode": "off",
+    "subtitleLangs": "fr",
+    "subtitleAuto": false,
+    "embedChapters": false,
+    "splitChapters": false,
+    "sponsorBlock": "off",
+    "sponsorBlockCategories": [
+     "sponsor"
+    ],
+    "writeThumbnail": true,
+    "writeInfoJson": true,
+    "writeDescription": true,
+    "videoContainer": "mp4",
+    "videoCodec": "any",
+    "cookieBrowser": "",
+    "cookiesFile": "",
+    "outputTemplate": "",
+    "rateLimit": "",
+    "proxy": ""
+   }
+  },
+  {
+   "partial": {
+    "videoContainer": "mkv",
+    "videoCodec": "av1",
+    "outputTemplate": "%(title)s.%(ext)s",
+    "rateLimit": "2M",
+    "proxy": "socks5://127.0.0.1:9050"
+   },
+   "plan": null,
+   "out": {
+    "subtitleMode": "off",
+    "subtitleLangs": "en",
+    "subtitleAuto": false,
+    "embedChapters": true,
+    "splitChapters": false,
+    "sponsorBlock": "off",
+    "sponsorBlockCategories": [
+     "sponsor"
+    ],
+    "writeThumbnail": false,
+    "writeInfoJson": false,
+    "writeDescription": false,
+    "videoContainer": "mkv",
+    "videoCodec": "av1",
+    "cookieBrowser": "",
+    "cookiesFile": "",
+    "outputTemplate": "%(title)s.%(ext)s",
+    "rateLimit": "2M",
+    "proxy": "socks5://127.0.0.1:9050"
+   }
+  },
+  {
+   "partial": {
+    "videoContainer": "mkv",
+    "videoCodec": "av1",
+    "outputTemplate": "%(title)s.%(ext)s",
+    "rateLimit": "2M",
+    "proxy": "socks5://127.0.0.1:9050"
+   },
+   "plan": "basic",
+   "out": {
+    "subtitleMode": "off",
+    "subtitleLangs": "en",
+    "subtitleAuto": false,
+    "embedChapters": true,
+    "splitChapters": false,
+    "sponsorBlock": "off",
+    "sponsorBlockCategories": [
+     "sponsor"
+    ],
+    "writeThumbnail": false,
+    "writeInfoJson": false,
+    "writeDescription": false,
+    "videoContainer": "mkv",
+    "videoCodec": "av1",
+    "cookieBrowser": "",
+    "cookiesFile": "",
+    "outputTemplate": "%(title)s.%(ext)s",
+    "rateLimit": "2M",
+    "proxy": "socks5://127.0.0.1:9050"
+   }
+  },
+  {
+   "partial": {
+    "videoContainer": "mkv",
+    "videoCodec": "av1",
+    "outputTemplate": "%(title)s.%(ext)s",
+    "rateLimit": "2M",
+    "proxy": "socks5://127.0.0.1:9050"
+   },
+   "plan": "premium",
+   "out": {
+    "subtitleMode": "off",
+    "subtitleLangs": "en",
+    "subtitleAuto": false,
+    "embedChapters": true,
+    "splitChapters": false,
+    "sponsorBlock": "off",
+    "sponsorBlockCategories": [
+     "sponsor"
+    ],
+    "writeThumbnail": false,
+    "writeInfoJson": false,
+    "writeDescription": false,
+    "videoContainer": "mkv",
+    "videoCodec": "av1",
+    "cookieBrowser": "",
+    "cookiesFile": "",
+    "outputTemplate": "%(title)s.%(ext)s",
+    "rateLimit": "2M",
+    "proxy": "socks5://127.0.0.1:9050"
+   }
+  },
+  {
+   "partial": {},
+   "plan": null,
+   "out": {
+    "subtitleMode": "off",
+    "subtitleLangs": "en",
+    "subtitleAuto": false,
+    "embedChapters": true,
+    "splitChapters": false,
+    "sponsorBlock": "off",
+    "sponsorBlockCategories": [
+     "sponsor"
+    ],
+    "writeThumbnail": false,
+    "writeInfoJson": false,
+    "writeDescription": false,
+    "videoContainer": "mp4",
+    "videoCodec": "any",
+    "cookieBrowser": "",
+    "cookiesFile": "",
+    "outputTemplate": "",
+    "rateLimit": "",
+    "proxy": ""
+   }
+  },
+  {
+   "partial": {},
+   "plan": "basic",
+   "out": {
+    "subtitleMode": "off",
+    "subtitleLangs": "en",
+    "subtitleAuto": false,
+    "embedChapters": true,
+    "splitChapters": false,
+    "sponsorBlock": "off",
+    "sponsorBlockCategories": [
+     "sponsor"
+    ],
+    "writeThumbnail": false,
+    "writeInfoJson": false,
+    "writeDescription": false,
+    "videoContainer": "mp4",
+    "videoCodec": "any",
+    "cookieBrowser": "",
+    "cookiesFile": "",
+    "outputTemplate": "",
+    "rateLimit": "",
+    "proxy": ""
+   }
+  },
+  {
+   "partial": {},
+   "plan": "premium",
+   "out": {
+    "subtitleMode": "off",
+    "subtitleLangs": "en",
+    "subtitleAuto": false,
+    "embedChapters": true,
+    "splitChapters": false,
+    "sponsorBlock": "off",
+    "sponsorBlockCategories": [
+     "sponsor"
+    ],
+    "writeThumbnail": false,
+    "writeInfoJson": false,
+    "writeDescription": false,
+    "videoContainer": "mp4",
+    "videoCodec": "any",
+    "cookieBrowser": "",
+    "cookiesFile": "",
+    "outputTemplate": "",
+    "rateLimit": "",
+    "proxy": ""
+   }
+  },
+  {
+   "partial": {
+    "unknownKey": 1,
+    "proxy": "http://p:1"
+   },
+   "plan": null,
+   "out": {
+    "subtitleMode": "off",
+    "subtitleLangs": "en",
+    "subtitleAuto": false,
+    "embedChapters": true,
+    "splitChapters": false,
+    "sponsorBlock": "off",
+    "sponsorBlockCategories": [
+     "sponsor"
+    ],
+    "writeThumbnail": false,
+    "writeInfoJson": false,
+    "writeDescription": false,
+    "videoContainer": "mp4",
+    "videoCodec": "any",
+    "cookieBrowser": "",
+    "cookiesFile": "",
+    "outputTemplate": "",
+    "rateLimit": "",
+    "proxy": "http://p:1"
+   }
+  },
+  {
+   "partial": {
+    "unknownKey": 1,
+    "proxy": "http://p:1"
+   },
+   "plan": "basic",
+   "out": {
+    "subtitleMode": "off",
+    "subtitleLangs": "en",
+    "subtitleAuto": false,
+    "embedChapters": true,
+    "splitChapters": false,
+    "sponsorBlock": "off",
+    "sponsorBlockCategories": [
+     "sponsor"
+    ],
+    "writeThumbnail": false,
+    "writeInfoJson": false,
+    "writeDescription": false,
+    "videoContainer": "mp4",
+    "videoCodec": "any",
+    "cookieBrowser": "",
+    "cookiesFile": "",
+    "outputTemplate": "",
+    "rateLimit": "",
+    "proxy": "http://p:1"
+   }
+  },
+  {
+   "partial": {
+    "unknownKey": 1,
+    "proxy": "http://p:1"
+   },
+   "plan": "premium",
+   "out": {
+    "subtitleMode": "off",
+    "subtitleLangs": "en",
+    "subtitleAuto": false,
+    "embedChapters": true,
+    "splitChapters": false,
+    "sponsorBlock": "off",
+    "sponsorBlockCategories": [
+     "sponsor"
+    ],
+    "writeThumbnail": false,
+    "writeInfoJson": false,
+    "writeDescription": false,
+    "videoContainer": "mp4",
+    "videoCodec": "any",
+    "cookieBrowser": "",
+    "cookiesFile": "",
+    "outputTemplate": "",
+    "rateLimit": "",
+    "proxy": "http://p:1"
+   }
+  }
+ ]
+}
