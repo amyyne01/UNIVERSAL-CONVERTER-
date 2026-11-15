@@ -10,7 +10,7 @@ use std::collections::HashMap;
 
 use ahg_engine::stats::DownloadStats;
 use ahg_engine::types::DownloadTask;
-use rune::{Image, ImageCache, Waker};
+use rune::{Image, ImageCache, KeyEvent, Tx, Waker};
 
 use crate::sample;
 
@@ -80,6 +80,53 @@ pub fn layout_from_args() -> Option<Layout> {
         Some("stage") => Some(Layout::Stage),
         _ => None,
     }
+}
+
+/// The six presets the app ships (owner, 2026-11-15), in the order Settings
+/// lists them: the three new layouts, then the three looks on the classic one.
+pub const PRESETS: [(&str, Direction, Option<Layout>); 6] = [
+    ("One bar", Direction::Signal, Some(Layout::Bar)),
+    ("The collection", Direction::Shelf, Some(Layout::Collection)),
+    ("Now playing", Direction::Orbit, Some(Layout::Stage)),
+    ("Signal", Direction::Signal, None),
+    ("Shelf", Direction::Shelf, None),
+    ("Orbit", Direction::Orbit, None),
+];
+
+/// Which of [`PRESETS`] is on.
+pub fn preset(s: &State) -> usize {
+    PRESETS.iter().position(|p| p.1 == s.direction && p.2 == s.layout).unwrap_or(0)
+}
+
+/// Switches preset in the running app: no restart, the fonts follow.
+pub fn set_preset(s: &mut State, index: usize, tx: &mut Tx) {
+    let (_, direction, layout) = PRESETS[index % PRESETS.len()];
+    s.direction = direction;
+    s.layout = layout;
+    let (sans, mono) = direction.families();
+    tx.set_font_families(sans, mono);
+}
+
+/// The keys every preset shares: Ctrl+1, 2, 3 for Home, Downloads and
+/// Settings, and Ctrl+. for the next preset (until Settings has its picker).
+pub fn on_key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
+    let go = |s: &mut State, nav: Nav| {
+        s.nav = nav;
+        s.reach = nav == Nav::Settings;
+        s.screen = if nav == Nav::Downloads { Screen::Downloads } else { Screen::Home };
+    };
+    if ev.is_command('1') {
+        go(s, Nav::Home);
+    } else if ev.is_command('2') {
+        go(s, Nav::Downloads);
+    } else if ev.is_command('3') {
+        go(s, Nav::Settings);
+    } else if ev.is_command('.') {
+        set_preset(s, preset(s) + 1, tx);
+    } else {
+        return false;
+    }
+    true
 }
 
 /// The display serif, for Shelf's one headline per screen and nothing else.

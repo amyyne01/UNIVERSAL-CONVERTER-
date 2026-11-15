@@ -16,12 +16,20 @@ mod layouts;
 mod sample;
 
 use gate::{Direction, State};
-use rune::{App, AppSpec, Cx, El, Titlebar};
+use rune::{App, AppSpec, Cx, El, Titlebar, Transition, el};
 
 /// The window's title band, in points. Rune draws the three caption buttons over its trailing end.
 pub const TITLEBAR: f32 = 44.0;
 
+/// The preset on show, keyed by its place in the list so that a switch
+/// dissolves the old one into the new one instead of cutting.
 fn view(s: &State, cx: &mut Cx<State>) -> El {
+    const KEYS: [&str; 6] = ["preset-0", "preset-1", "preset-2", "preset-3", "preset-4", "preset-5"];
+    let shown = el().key(KEYS[gate::preset(s)]).pin(Some(0.0), Some(0.0), Some(0.0), Some(0.0)).transition(Transition::blur_replace()).child(preset_view(s, cx));
+    el().w_full().h_full().child(shown)
+}
+
+fn preset_view(s: &State, cx: &mut Cx<State>) -> El {
     match s.layout {
         #[cfg(feature = "bar")]
         Some(gate::Layout::Bar) => return layouts::bar::view(s, cx),
@@ -69,6 +77,7 @@ fn main() {
         // The interface family and the one for figures, per direction (owner, 2026-11-15).
         families: gate::direction_from_args().families(),
         setup: Some(gate::setup),
+        on_key: Some(gate::on_key),
         ..AppSpec::new("AHG Universal Converter", (1240.0, 820.0), gate::init, view)
     };
     App::new(spec).titlebar(Titlebar::new(TITLEBAR)).run();
