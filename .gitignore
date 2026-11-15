@@ -45,3 +45,11 @@ config/secrets.template.json
 !README.md
 docs/
 design-concepts/
+
+# Rust port. Build output, and the entitlement layer (same rule as
+# electron/license.ts above): the tracked tree does not build without it.
+target/
+crates/ahg-engine/src/license.rs
+crates/ahg-engine/src/license/
+crates/ahg-engine/tests/license*.rs
+crates/**/secrets.gen.rs
