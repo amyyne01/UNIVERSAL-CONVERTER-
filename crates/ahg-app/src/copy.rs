@@ -613,3 +613,6 @@ pub fn rate_line(bps: f64, eta_secs: f64) -> String {
         .collect();
     if parts.is_empty() { RATE_UNKNOWN.to_string() } else { parts.join(" · ") }
 }
+
+// ── Settings: its own file, shared by all six presets.
+pub mod settings;
