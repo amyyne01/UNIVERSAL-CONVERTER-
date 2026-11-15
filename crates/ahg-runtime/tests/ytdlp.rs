@@ -262,7 +262,7 @@ fn a_cancel_during_the_search_calls_the_download_off() {
 #[test]
 fn the_proxy_also_covers_lookups_and_searches() {
     let dir = scratch("proxy");
-    let mut y = ytdlp(&dir, "out {\"id\":\"a\",\"title\":\"A\"}\nexit 0\n", "");
+    let y = ytdlp(&dir, "out {\"id\":\"a\",\"title\":\"A\"}\nexit 0\n", "");
     let args_of = |dir: &Path| fs::read_to_string(dir.join("args.txt.json")).unwrap();
 
     y.fetch_metadata("https://youtu.be/dQw4w9WgXcQ").unwrap();
