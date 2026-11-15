@@ -354,3 +354,78 @@ fn the_needs_review_choice_is_off_at_first_and_survives_a_restart() {
     // It has its own file: the settings file stays exactly what Electron writes.
     assert!(!fs::read_to_string(dir.join("userData").join("config.json")).unwrap_or_default().contains("nconfirmed"));
 }
+
+// ── A match the user chose is remembered ────────────────────────────────────
+
+#[test]
+fn a_chosen_match_is_remembered_for_that_track_and_used_from_then_on() {
+    use ahg_engine::downloader::bridge::SongMatch;
+    use ahg_engine::types::Track;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let dir = scratch("remember");
+    let searches = Arc::new(AtomicUsize::new(0));
+    let begin = |dir: &Path| {
+        fs::write(dir.join("script.txt"), "sleep 3000\nexit 0\n").unwrap();
+        let mut ytdlp = YtDlp::new(PathBuf::from(FAKE), None);
+        ytdlp.env("FAKE_YTDLP_SCRIPT", dir.join("script.txt").to_str().unwrap());
+        let count = searches.clone();
+        let search: ahg_runtime::download::SongSearch = Arc::new(move |_: &str| {
+            count.fetch_add(1, Ordering::SeqCst);
+            None
+        });
+        let (tx, rx) = channel();
+        let paths = Paths { user_data: dir.join("userData"), downloads: dir.join("Downloads").to_string_lossy().into_owned() };
+        (Core::start_with_search(paths, Arc::new(ytdlp), Box::new(|| Plan::Premium), tx, search), rx)
+    };
+    let track: Track = serde_json::from_value(json!({ "id": "t1", "name": "The Song", "artist": "Artist", "artists": ["Artist"], "album": "", "trackNumber": 1, "durationMs": 200000, "thumbnailUrl": "" })).unwrap();
+    let chosen = SongMatch { url: "https://www.youtube.com/watch?v=mine0000001".into(), title: "The Song (the one I wanted)".into(), artist: "Artist".into(), album: String::new(), duration: Some(201.0), explicit: false, confidence: 0.4 };
+
+    let (core, _rx) = begin(&dir);
+    assert!(core.match_track(&track).is_none());
+    assert!(core.remember_match("t1", &chosen));
+    // An address that is not YouTube's is refused: it would be handed to yt-dlp.
+    assert!(!core.remember_match("t2", &SongMatch { url: "https://evil.example/x".into(), ..chosen.clone() }));
+    assert!(!core.remember_match("", &chosen));
+    core.shutdown();
+
+    let (core, _rx) = begin(&dir);
+    let before = searches.load(Ordering::SeqCst);
+    let found = core.match_track(&track).expect("the choice was saved");
+    assert_eq!((found.url.as_str(), found.title.as_str()), (chosen.url.as_str(), chosen.title.as_str()));
+    assert_eq!(found.confidence, 1.0, "the user's own choice is a confirmed match");
+    assert_eq!(searches.load(Ordering::SeqCst), before, "a remembered match needs no search");
+
+    // A download of that track with no match named (the hotkey, say) uses it too.
+    let task = core.start_download(&json!({ "url": "https://open.spotify.com/track/t1", "source": "spotify", "track": track })).unwrap();
+    assert_eq!(task.matched_url.as_deref(), Some(chosen.url.as_str()));
+    assert_eq!(task.match_confidence, Some(1.0));
+    // A match named by the request still wins over the remembered one.
+    let named = core.start_download(&json!({ "url": "https://open.spotify.com/track/t1", "source": "spotify", "track": track, "matchedUrl": "https://music.youtube.com/watch?v=other000001" })).unwrap();
+    assert_eq!(named.matched_url.as_deref(), Some("https://music.youtube.com/watch?v=other000001"));
+
+    core.forget_match("t1");
+    assert!(core.match_track(&track).is_none());
+    core.shutdown();
+    let (core, _rx) = begin(&dir);
+    assert!(core.match_track(&track).is_none(), "forgetting is saved too");
+    core.shutdown();
+}
+
+#[test]
+fn a_tampered_list_of_remembered_matches_cannot_send_yt_dlp_anywhere() {
+    use ahg_engine::types::Track;
+    let dir = scratch("remembertamper");
+    fs::write(dir.join("userData").join("spotify-matches.json"), r#"{"t1":{"url":"--exec=calc","title":"x","artist":"","album":"","duration":null,"explicit":false,"confidence":1},"t2":"nonsense"}"#).unwrap();
+    // A song search that is never reachable: this test must not touch the network.
+    fs::write(dir.join("script.txt"), "exit 1
+").unwrap();
+    let mut ytdlp = YtDlp::new(PathBuf::from(FAKE), None);
+    ytdlp.env("FAKE_YTDLP_SCRIPT", dir.join("script.txt").to_str().unwrap());
+    let (tx, _rx) = channel();
+    let paths = Paths { user_data: dir.join("userData"), downloads: dir.join("Downloads").to_string_lossy().into_owned() };
+    let core = Core::start_with_search(paths, Arc::new(ytdlp), Box::new(|| Plan::Premium), tx, Arc::new(|_: &str| None));
+    let track: Track = serde_json::from_value(json!({ "id": "t1", "name": "No Such Song zzqq", "artist": "Nobody zzqq", "artists": ["Nobody zzqq"], "album": "", "trackNumber": 1, "durationMs": 200000, "thumbnailUrl": "" })).unwrap();
+    let task = core.start_download(&json!({ "url": "https://open.spotify.com/track/t1", "source": "spotify", "track": track })).unwrap();
+    assert_eq!(task.matched_url, None);
+    core.shutdown();
+}

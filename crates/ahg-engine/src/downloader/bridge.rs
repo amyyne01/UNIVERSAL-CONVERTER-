@@ -330,7 +330,8 @@ pub fn song_query(track: &Track) -> String {
 }
 
 /// The song chosen for a track, with what the search said about it.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SongMatch {
     pub url: String,
     pub title: String,

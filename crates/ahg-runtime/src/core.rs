@@ -1,6 +1,7 @@
 //! The app core: the one object the interface talks to. It owns the settings,
 //! the engine thread and the statistics, and keeps them consistent with each
 //! other and with the plan the user is on.
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{RecvTimeoutError, Sender, channel};
@@ -17,7 +18,7 @@ use ahg_engine::queue::{Event, new_task_id};
 use ahg_engine::scheduler::{Fire, POLL_MS, ScheduleConfig, Scheduler};
 use ahg_engine::stats::{DownloadStats, StatsStore, stats_file_path};
 use ahg_engine::tier::{Plan, clamp_concurrency};
-use ahg_engine::downloader::bridge::{SongMatch, match_song, song_query, song_rows};
+use ahg_engine::downloader::bridge::{CONFIRMED, SongMatch, match_song, song_query, song_rows, song_url};
 use ahg_engine::types::{DownloadTask, MediaMetadata, SearchResult, Track};
 use ahg_engine::validate::media_url_arg;
 use serde_json::{Map, Value, json};
@@ -61,6 +62,18 @@ fn own_settings_file(user_data: &std::path::Path) -> PathBuf {
     user_data.join("settings-rust.json")
 }
 
+/// D34: the matches the user chose, by Spotify track id.
+fn remembered_file(user_data: &std::path::Path) -> PathBuf {
+    user_data.join("spotify-matches.json")
+}
+
+/// The saved choices. The file is outside input: an entry is kept only if it
+/// is a whole match whose address is YouTube's.
+fn load_remembered(file: &std::path::Path) -> HashMap<String, SongMatch> {
+    let saved = std::fs::read_to_string(file).ok().and_then(|text| serde_json::from_str::<Map<String, Value>>(&text).ok()).unwrap_or_default();
+    saved.into_iter().filter_map(|(id, entry)| Some((id, serde_json::from_value::<SongMatch>(entry).ok()?))).filter(|(_, m)| song_url(&m.url).is_some()).collect()
+}
+
 /// D11: the day the schedule last fired, kept across restarts.
 fn schedule_state_file(user_data: &std::path::Path) -> PathBuf {
     user_data.join("scheduler-state.json")
@@ -95,6 +108,7 @@ pub struct Core {
     dispatcher: Option<JoinHandle<()>>,
     song_search: SongSearch,
     hold_unconfirmed: Arc<AtomicBool>,
+    remembered: Mutex<HashMap<String, SongMatch>>,
 }
 
 impl Core {
@@ -117,6 +131,7 @@ impl Core {
         let stats = Arc::new(Mutex::new(stats));
 
         let (notices, incoming) = channel();
+        let remembered = Mutex::new(load_remembered(&remembered_file(&paths.user_data)));
         let saved = std::fs::read_to_string(own_settings_file(&paths.user_data)).ok().and_then(|text| serde_json::from_str::<Value>(&text).ok());
         let hold_unconfirmed = Arc::new(AtomicBool::new(saved.is_some_and(|v| v["holdUnconfirmed"] == true)));
         let mut downloader = Downloader::with(ytdlp.clone());
@@ -189,7 +204,7 @@ impl Core {
                 }
             })
         };
-        let core = Self { paths, config, stats, ytdlp, plan, engine, events, stop, dispatcher: Some(dispatcher), song_search, hold_unconfirmed };
+        let core = Self { paths, config, stats, ytdlp, plan, engine, events, stop, dispatcher: Some(dispatcher), song_search, hold_unconfirmed, remembered };
         core.sync();
         core
     }
@@ -238,6 +253,17 @@ impl Core {
         let now = now_ms();
         let cookies = self.paths.user_data.join("cookies.txt");
         let cookies = cookies.exists().then(|| cookies.to_string_lossy().into_owned());
+        // A Spotify track the user chose a match for downloads that match,
+        // unless the request names one itself.
+        let chosen = request["track"]["id"].as_str().filter(|_| request["source"] == "spotify" && request.get("matchedUrl").is_none_or(Value::is_null));
+        let chosen = chosen.and_then(|id| lock(&self.remembered).get(id).map(|m| m.url.clone()));
+        let with_choice = chosen.map(|url| {
+            let mut request = request.clone();
+            request["matchedUrl"] = Value::String(url);
+            request["matchConfidence"] = json!(CONFIRMED);
+            request
+        });
+        let request = with_choice.as_ref().unwrap_or(request);
         let task = build_task(request, lock(&self.config).get_all(), (self.plan)(), cookies.as_deref(), new_task_id(now), now)?;
         self.engine().enqueue(task.clone());
         Ok(task)
@@ -308,8 +334,41 @@ impl Core {
     /// second on the network: call it from a worker thread. `None` is not a
     /// failure; the download still tries its fallbacks.
     pub fn match_track(&self, track: &Track) -> Option<SongMatch> {
+        // What the user chose for this track before stands, and is theirs to change.
+        if let Some(chosen) = lock(&self.remembered).get(&track.id) {
+            return Some(SongMatch { confidence: CONFIRMED, ..chosen.clone() });
+        }
         let response = (self.song_search)(&song_query(track))?;
         match_song(track, &song_rows(&response))
+    }
+
+    /// D34: the user picked this song for the Spotify track `track_id`. It is
+    /// used for that track from now on, by the preview and by downloads, and is
+    /// kept across restarts. False when the track id is empty or the address is
+    /// not YouTube's.
+    // ponytail: the list is never trimmed; one short entry per corrected track.
+    pub fn remember_match(&self, track_id: &str, chosen: &SongMatch) -> bool {
+        if track_id.is_empty() || song_url(&chosen.url).is_none() {
+            return false;
+        }
+        let mut remembered = lock(&self.remembered);
+        remembered.insert(track_id.to_owned(), chosen.clone());
+        self.save_remembered(&remembered);
+        true
+    }
+
+    /// Drop the remembered choice for a track: it is matched afresh next time.
+    pub fn forget_match(&self, track_id: &str) {
+        let mut remembered = lock(&self.remembered);
+        if remembered.remove(track_id).is_some() {
+            self.save_remembered(&remembered);
+        }
+    }
+
+    fn save_remembered(&self, remembered: &HashMap<String, SongMatch>) {
+        if let Ok(text) = serde_json::to_string(remembered) {
+            let _ = write_file_atomic(&remembered_file(&self.paths.user_data), &text);
+        }
     }
 
     /// D34, "needs review": whether a Spotify track is downloaded only on a
