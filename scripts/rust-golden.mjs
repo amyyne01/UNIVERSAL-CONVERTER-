@@ -25,6 +25,9 @@ register(`data:text/javascript,${encodeURIComponent(`
     '  getVersion: () => process.env.AHG_GOLDEN_VERSION ?? "0.0.0",' +
     '  get isPackaged() { return process.env.AHG_GOLDEN_PACKAGED === "1"; } };' +
     'export const BrowserWindow = { getAllWindows: () => globalThis.__ahgWindows ?? [] };' +
+    // Handlers registered through ipcMain.handle are collected for a section to call.
+    'export const ipcMain = { handle: (channel, fn) => { (globalThis.__ahgIpc ??= new Map()).set(channel, fn); } };' +
+    'export const dialog = {}; export const shell = {};' +
     'export const session = {}; export default {};');
   // A section may script what a module sees of the machine: these stand-ins
   // answer from globalThis.__ahgMachine when a section has set it.

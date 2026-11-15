@@ -1,5 +1,6 @@
 //! The UI-free engine of AHG Universal Converter. Nothing here may depend on Rune.
 
+pub mod api;
 pub mod atomic_write;
 pub mod clipboard_watch;
 pub mod clock;
