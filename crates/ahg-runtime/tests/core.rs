@@ -217,3 +217,32 @@ fn shutdown_after_a_scheduled_run_with_nothing_to_download_comes_after_a_short_w
     assert!(began.elapsed() >= Duration::from_secs(9), "downloads get time to start before the PC is shut down");
     core.shutdown();
 }
+
+#[test]
+fn an_upgrade_raises_the_number_of_simultaneous_downloads_without_a_restart() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let dir = scratch("upgrade");
+    fs::write(dir.join("script.txt"), "err [PROGRESS]1|100|NA|1|9\nsleep 3000\nexit 0\n").unwrap();
+    let mut ytdlp = YtDlp::new(PathBuf::from(FAKE), None);
+    ytdlp.env("FAKE_YTDLP_SCRIPT", dir.join("script.txt").to_str().unwrap());
+    let premium = Arc::new(AtomicBool::new(false));
+    let plan = { let premium = premium.clone(); move || if premium.load(Ordering::SeqCst) { Plan::Premium } else { Plan::Basic } };
+    let (tx, rx) = channel();
+    let paths = Paths { user_data: dir.join("userData"), downloads: dir.join("Downloads").to_string_lossy().into_owned() };
+    let core = Core::start(paths, Arc::new(ytdlp), Box::new(plan), tx);
+    let running = |core: &Core| core.tasks().iter().filter(|t| !matches!(t.progress.status, DownloadStatus::Queued | DownloadStatus::Done)).count();
+
+    core.update_settings(json!({ "maxConcurrentDownloads": 4 }).as_object().unwrap());
+    for _ in 0..4 {
+        core.start_download(&request()).unwrap();
+    }
+    wait_for(&rx, |e| matches!(e, CoreEvent::Download(Event::Progress { progress, .. }) if progress.status == DownloadStatus::Downloading));
+    std::thread::sleep(Duration::from_millis(400));
+    assert_eq!(running(&core), 2, "the free tier runs two");
+
+    premium.store(true, Ordering::SeqCst);
+    core.plan_changed();
+    std::thread::sleep(Duration::from_millis(600));
+    assert_eq!(running(&core), 4, "the key was just activated: all four run");
+    core.shutdown();
+}
