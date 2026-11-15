@@ -21,6 +21,7 @@ import fs from 'node:fs';
 import { register } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { FEATURES, baseName, features, norm, overlap, verify } from './match.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ELECTRON = path.resolve(process.env.AHG_ELECTRON ?? path.join(HERE, '..', '..', '..', 'converter-electron'));
@@ -38,62 +39,9 @@ for (const ex of examples) {
   }
 }
 
-// ── Text helpers ────────────────────────────────────────────────────────────
-const norm = (s) => String(s ?? '').toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '')
-  .replace(/\(.*?\)|\[.*?\]/g, ' ').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
-const tokens = (s) => norm(s).split(' ').filter(Boolean);
-/** Spotify appends edition notes after " - " ("Dreams - 2004 Remaster"); the song's name is the part before. */
-const baseName = (name) => String(name ?? '').split(' - ')[0];
-const BAD = ['live', 'cover', 'remix', 'sped', '8d', 'nightcore', 'karaoke', 'instrumental', 'slowed', 'reverb'];
-const overlap = (want, have) => {
-  const w = tokens(want);
-  if (!w.length) return 0;
-  const h = new Set(tokens(have));
-  return w.filter((t) => h.has(t)).length / w.length;
-};
+// The rules themselves (text handling, the verdict, the features) live in match.mjs.
+const label = (track, look) => ({ confirmed: 1, rejected: 0, unknown: null })[verify(track, look)];
 
-// ── Labels, from the music metadata of a looked-up candidate ────────────────
-/** 1 = this video is the track, 0 = it is not, null = the metadata cannot tell. */
-function label(track, look) {
-  if (!look || look.duration == null || !look.track || !(look.artist || look.creator)) return null;
-  const diff = Math.abs(look.duration - track.durationMs / 1000);
-  const name = overlap(baseName(track.name), look.track) >= 0.99;
-  const artist = track.artists.some((a) => overlap(a, `${look.artist ?? ''} ${look.creator ?? ''}`) >= 0.99);
-  // Same song by the same artist: the length says whether it is this recording.
-  if (name && artist) return diff <= 3 ? 1 : diff > 12 ? 0 : null;
-  // A different name alone may be a translation; it counts with a second disagreement.
-  if (!name && (!artist || diff > 3)) return 0;
-  if (name && !artist && diff > 12) return 0;
-  return null;
-}
-
-// ── Features, from what the two flat searches give for free ─────────────────
-const FEATURES = ['bias', 'titleOverlap', 'artistInTitle', 'artistIsUploader', 'topicChannel', 'hasDuration', 'durationClose', 'durationFar',
-  'badKeyword', 'rank', 'fromSongs', 'officialWord', 'lyricsWord', 'extraWords'];
-function features(track, cand, rank, fromSongs) {
-  const name = baseName(track.name);
-  const artist = track.artist || track.artists[0] || '';
-  const titleTokens = tokens(cand.title);
-  const hasDuration = cand.duration != null;
-  const diff = hasDuration ? Math.abs(cand.duration - track.durationMs / 1000) : 0;
-  const up = norm(cand.uploader);
-  return [
-    1,
-    overlap(name, cand.title),
-    overlap(artist, cand.title),
-    up && (up === norm(artist) || up === `${norm(artist)} topic`) ? 1 : 0,
-    / - topic$/i.test(cand.uploader ?? '') ? 1 : 0,
-    hasDuration ? 1 : 0,
-    hasDuration ? Math.max(0, 1 - diff / 12) : 0,
-    hasDuration && diff > 12 ? 1 : 0,
-    BAD.some((k) => titleTokens.includes(k) && !tokens(track.name).includes(k)) ? 1 : 0,
-    1 / (1 + rank),
-    fromSongs ? 1 : 0,
-    titleTokens.includes('official') ? 1 : 0,
-    titleTokens.includes('lyrics') || titleTokens.includes('lyric') ? 1 : 0,
-    Math.min(1, Math.max(0, titleTokens.length - tokens(name).length - tokens(artist).length) / 8),
-  ];
-}
 /** Feature positions that carry the video's length. */
 const LENGTH = ['hasDuration', 'durationClose', 'durationFar'].map((f) => FEATURES.indexOf(f));
 const noLength = (x) => x.map((v, i) => (LENGTH.includes(i) ? 0 : v));
