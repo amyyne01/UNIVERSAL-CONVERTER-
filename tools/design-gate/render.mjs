@@ -34,6 +34,9 @@ const SCENES = [
   ['downloads-finished', 'Downloads, finished'],
   ['downloads-failed', 'Downloads, problems'],
   ['downloads-everything', 'Downloads, a mixed day'],
+  ['reach', 'Settings'],
+  ['nav', 'The sidebar, opened on hover'],
+  ['nav-pinned', 'The sidebar, pinned open'],
 ];
 // The new layouts (owner, 2026-11-15): the whole app from scratch, no sidebar and no pages. Each wears one look.
 const LAYOUTS = [
@@ -102,11 +105,11 @@ const html = `<!doctype html>
   .missing { aspect-ratio: 1240 / 820; display: grid; place-items: center; border: 1px dashed #3a3a42; border-radius: 8px; color: #70707a; }
 </style>
 <h1>Design gate: three new apps</h1>
-<p class="lead">Three layouts built from scratch, each wearing one of the three looks, over the same prepared downloads. Click a picture to open it full size. Further down: the three looks on the old layout, kept for reference.</p>
+<p class="lead">Three layouts built from scratch, each wearing one of the three looks, over the same prepared downloads. Click a picture to open it full size. Further down: the three classic presets. All six ship, chosen in the app with Ctrl+. or from Settings.</p>
 <div class="heads">${LAYOUTS.map(([, name, about]) => `<div><h3>${name}</h3><p>${about}</p></div>`).join('')}</div>
 ${STATES.flatMap(([scene, title]) => [row(`${title} · dark`, `${scene}-dark`, LAYOUTS), row(`${title} · light`, `${scene}-light`, LAYOUTS)]).join('')}
 ${PALETTE_PROOFS.map((p) => row(`A mixed day in existing palette ${p} · dark`, `palette-${p}`, LAYOUTS)).join('')}
-<h1 style="margin-top:72px">For reference: the three looks on the old layout</h1>
+<h1 style="margin-top:72px">The three classic presets</h1>
 <div class="heads" style="position:static">${DIRECTIONS.map(([, name, about]) => `<div><h3>${name}</h3><p>${about}</p></div>`).join('')}</div>
 ${SCENES.flatMap(([scene, title]) => [row(`${title} · dark`, `${scene}-dark`), row(`${title} · light`, `${scene}-light`)]).join('\n')}
 ${PALETTE_PROOFS.map((p) => row(`A mixed day in existing palette ${p} · dark`, `palette-${p}`)).join('\n')}
