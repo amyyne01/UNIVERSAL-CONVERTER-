@@ -1,0 +1,13 @@
+[package]
+name = "ahg-app"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "AHG-Converter"
+path = "src/main.rs"
+
+[dependencies]
+# Rune is pre-release: one pinned commit, upgraded deliberately. The same rev
+# is repeated in the workspace's [patch.crates-io].
+rune = { git = "https://github.com/anomalyco/rune", rev = "feac7b155c5f5873ad611e8aa420ad217db5ef16" }
