@@ -3,10 +3,10 @@
 // the Electron app actually does.
 //
 // The Electron source is not on this branch. It is read from a checkout of the
-// `prod` branch, by default the folder `../converter-electron` beside this one
+// `Electron-version` branch, by default the folder `../converter-electron` beside this one
 // (set AHG_ELECTRON to use another). Set that checkout up once:
 //
-//   git worktree add ../converter-electron prod
+//   git worktree add ../converter-electron Electron-version
 //   cd ../converter-electron && npm ci && npm run build:electron
 //
 // Then run this from the root of this checkout, under ELECTRON'S OWN Node,
