@@ -507,6 +507,12 @@ impl Updater {
 
     // install ──────────────────────────────────────────────────────────────
 
+    /// D33: the verified download waiting to be installed, if there is one.
+    /// The Rust app swaps it in itself; `install` below is Electron's script.
+    pub fn staged(&self) -> Option<&str> {
+        self.downloaded.as_deref()
+    }
+
     /// `install()`: `Err` is the thrown error. `target_exe` from `resolve_target_exe`.
     pub fn install(&self, target_exe: Option<&str>) -> Result<InstallPlan, String> {
         let staged = self.downloaded.as_deref().ok_or("Update refused: nothing downloaded to install")?;

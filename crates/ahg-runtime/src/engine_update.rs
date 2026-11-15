@@ -24,6 +24,8 @@ pub struct Fetched {
     pub status: u16,
     /// Where the answer finally came from, after any redirects.
     pub final_url: String,
+    /// The `content-length` header as sent, if any.
+    pub content_length: Option<String>,
     pub body: Box<dyn Read + Send>,
 }
 

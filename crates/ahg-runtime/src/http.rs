@@ -138,6 +138,7 @@ impl crate::engine_update::Fetch for Releases {
         let response = agent.get(&request.url).header("User-Agent", request.user_agent).call().ok()?;
         let status = response.status().as_u16();
         let final_url = response.get_uri().to_string();
-        Some(crate::engine_update::Fetched { status, final_url, body: Box::new(response.into_body().into_with_config().limit(u64::MAX).reader()) })
+        let content_length = response.headers().get("content-length").and_then(|v| v.to_str().ok()).map(str::to_owned);
+        Some(crate::engine_update::Fetched { status, final_url, content_length, body: Box::new(response.into_body().into_with_config().limit(u64::MAX).reader()) })
     }
 }

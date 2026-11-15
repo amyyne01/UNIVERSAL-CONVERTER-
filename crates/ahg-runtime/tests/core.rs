@@ -463,7 +463,7 @@ impl ahg_runtime::engine_update::Fetch for OneRelease {
             let sha: String = Sha256::digest(&self.binary).iter().map(|b| format!("{b:02x}")).collect();
             format!("{sha}  yt-dlp.exe\n").into_bytes()
         };
-        Some(ahg_runtime::engine_update::Fetched { status: 200, final_url: request.url.clone(), body: Box::new(std::io::Cursor::new(body)) })
+        Some(ahg_runtime::engine_update::Fetched { status: 200, final_url: request.url.clone(), content_length: None, body: Box::new(std::io::Cursor::new(body)) })
     }
 }
 

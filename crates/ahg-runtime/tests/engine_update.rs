@@ -1,16 +1,16 @@
 //! The yt-dlp updater with a scripted network: what it fetches, what it
 //! refuses, and what ends up on disk. Nothing here touches the network.
-use std::collections::HashMap;
+mod common;
+
 use std::fs;
-use std::io::Cursor;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
-use ahg_engine::updater::{Event, Request};
-use ahg_runtime::engine_update::{EngineUpdater, Fetch, Fetched};
+use ahg_engine::updater::Event;
+use ahg_runtime::engine_update::EngineUpdater;
+use common::{Net, sha};
 use serde_json::json;
-use sha2::{Digest, Sha256};
 
 const FEED: &str = "https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest";
 const ASSET: &str = "https://github.com/yt-dlp/yt-dlp/releases/download/2026.11.01/yt-dlp.exe";
@@ -22,45 +22,6 @@ fn scratch(name: &str) -> PathBuf {
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).unwrap();
     dir
-}
-
-fn sha(bytes: &[u8]) -> String {
-    Sha256::digest(bytes).iter().map(|b| format!("{b:02x}")).collect()
-}
-
-/// Url -> (status, final url, body).
-type Replies = HashMap<String, (u16, String, Vec<u8>)>;
-
-/// A network that answers from a table.
-#[derive(Clone, Default)]
-struct Net {
-    replies: Arc<Mutex<Replies>>,
-    asked: Arc<Mutex<Vec<String>>>,
-}
-
-impl Net {
-    fn with(self, url: &str, status: u16, body: &[u8]) -> Self {
-        self.replies.lock().unwrap().insert(url.to_owned(), (status, url.to_owned(), body.to_vec()));
-        self
-    }
-
-    fn redirected(self, url: &str, final_url: &str, body: &[u8]) -> Self {
-        self.replies.lock().unwrap().insert(url.to_owned(), (200, final_url.to_owned(), body.to_vec()));
-        self
-    }
-
-    fn asked(&self) -> Vec<String> {
-        self.asked.lock().unwrap().clone()
-    }
-}
-
-impl Fetch for Net {
-    fn get(&self, request: &Request) -> Option<Fetched> {
-        assert_eq!(request.user_agent, "AHG-Universal-Converter");
-        self.asked.lock().unwrap().push(request.url.clone());
-        let (status, final_url, body) = self.replies.lock().unwrap().get(&request.url)?.clone();
-        Some(Fetched { status, final_url, body: Box::new(Cursor::new(body)) })
-    }
 }
 
 fn feed(tag: &str, asset: &str, sums: &str) -> Vec<u8> {
