@@ -576,5 +576,26 @@ fn latest_release(json: &Value) -> Result<Option<Available>, String> {
             return Err(format!("{PREFIX} refused: untrusted host \"{url}\""));
         }
     }
+    // D32: the download is saved under this name, so it must be a plain file name.
+    if !is_plain_file_name(exe_name) {
+        return Err(format!("{PREFIX} refused: unsafe file name \"{exe_name}\""));
+    }
     Ok(Some(Available { version, asset_name: exe_name.into(), asset_url: exe_url, sums_url }))
+}
+
+/// True for a name that is only a file name: no folder, drive or stream part,
+/// no control character, nothing Windows would silently rename (a trailing dot
+/// or space) and no reserved device name.
+pub fn is_plain_file_name(name: &str) -> bool {
+    const RESERVED: [&str; 22] = [
+        "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2", "LPT3",
+        "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+    ];
+    let stem = name.split('.').next().unwrap_or("");
+    !name.is_empty()
+        && name != "."
+        && name != ".."
+        && !name.chars().any(|c| r#"/\:*?"<>|"#.contains(c) || c.is_control())
+        && !name.ends_with(['.', ' '])
+        && !RESERVED.iter().any(|r| stem.eq_ignore_ascii_case(r))
 }

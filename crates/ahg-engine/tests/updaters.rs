@@ -334,6 +334,7 @@ fn the_app_updater_behaves_as_electron_does() {
     let tmp = root.to_str().unwrap().to_string();
     let mut wrong = Vec::new();
     let mut steps = 0;
+    let mut d32_scenarios = 0;
     for sc in list {
         let sandbox = root.join(sc["sandbox"].as_str().unwrap());
         fs::create_dir_all(&sandbox).unwrap();
@@ -341,6 +342,9 @@ fn the_app_updater_behaves_as_electron_does() {
         let update_dir = updater::win_join(sandbox_s, sc.get("dir").and_then(Value::as_str).unwrap_or("upd"));
         let mut run = Run { u: Updater::new(&update_dir), net: Net::new(&sc["routes"]), current: sc["current"].as_str().unwrap().to_string(), sc };
         let no_window = sc.get("noWindow").is_some();
+        // D32: Rust refuses a release whose asset name is not a plain file name;
+        // Electron uses it as given. Such a scenario is expected to differ.
+        let (mut refused_name, mut differing) = (false, Vec::new());
         for want in sc["out"].as_array().unwrap() {
             steps += 1;
             let want = with_tmp(want, &tmp);
@@ -375,14 +379,21 @@ fn the_app_updater_behaves_as_electron_does() {
             });
             let mut expect = want.clone();
             expect["requests"] = want_requests(&want["requests"]);
+            refused_name |= got.to_string().contains("refused: unsafe file name");
             if got != expect {
                 let field = ["requests", "events", "state", "threw", "files", "spawns", "quits"].into_iter().find(|f| got[*f] != expect[*f]).unwrap();
-                wrong.push(format!("{} / {step}\n  {field}: rust {}\n  {field}: electron {}", sc["name"], short(&got[field]), short(&expect[field])));
+                differing.push(format!("{} / {step}\n  {field}: rust {}\n  {field}: electron {}", sc["name"], short(&got[field]), short(&expect[field])));
             }
+        }
+        if refused_name {
+            d32_scenarios += 1;
+        } else {
+            wrong.extend(differing);
         }
     }
     report("the app updater", steps, wrong);
     assert!(steps > 900);
+    assert!((1..=20).contains(&d32_scenarios), "{d32_scenarios} scenarios refused for an unsafe asset name");
 }
 
 // ── the yt-dlp updater ───────────────────────────────────────────────────────
