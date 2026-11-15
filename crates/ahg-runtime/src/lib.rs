@@ -9,4 +9,5 @@ pub mod http;
 #[cfg(feature = "license")]
 pub mod machine;
 pub mod proc;
+pub mod unpack;
 pub mod ytdlp;
