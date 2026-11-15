@@ -8,12 +8,13 @@ import { register } from 'node:module';
 
 const OUT = 'crates/ahg-engine/tests/golden';
 
-// Some modules import 'electron' for parts the Rust engine does not port. Plain
-// Node cannot load it, so it resolves to an empty stand-in; only pure functions
-// are called here, and none of them touches it.
+// Some modules import 'electron'. Plain Node cannot load it, so it resolves to
+// a stand-in whose only working part is app.getPath(), answered from
+// AHG_GOLDEN_<NAME> environment variables set by the sections below.
 register(`data:text/javascript,${encodeURIComponent(`
   const STUB = 'data:text/javascript,' + encodeURIComponent(
-    'export const app = {}; export const session = {}; export default {};');
+    'export const app = { getPath: (name) => process.env["AHG_GOLDEN_" + name.toUpperCase()] };' +
+    'export const session = {}; export default {};');
   export async function resolve(specifier, context, next) {
     return specifier === 'electron' ? { url: STUB, shortCircuit: true } : next(specifier, context);
   }
@@ -101,6 +102,126 @@ const extra = [
   };
   writeFileSync(`${OUT}/validate.json`, JSON.stringify(golden) + '\n');
   console.log(`validate.json: ${Object.values(golden).filter(Array.isArray).reduce((n, a) => n + a.length, 0)} cases`);
+}
+
+// ── Settings file (electron/config.ts) ───────────────────────────────────────
+// Drives the real ConfigManager in a scratch folder. That folder's path is
+// written as {TMP}; the Rust test builds the same layout in its own folder.
+{
+  const fs = await import('node:fs');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const { ConfigManager, defaultConfig, migrateConfig } = await import('../dist-electron/electron/config.js');
+
+  const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'ahg-golden-'));
+  fs.mkdirSync(path.join(TMP, 'Downloads'));
+  fs.mkdirSync(path.join(TMP, 'out'));
+  fs.writeFileSync(path.join(TMP, 'file.txt'), 'x');
+  process.env.AHG_GOLDEN_DOWNLOADS = path.join(TMP, 'Downloads');
+  const real = (v) => (typeof v === 'string' ? v.replaceAll('{TMP}', TMP) : v);
+  const tok = (v) =>
+    typeof v === 'string' ? v.replaceAll(TMP, '{TMP}')
+    : Array.isArray(v) ? v.map(tok)
+    : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, tok(x)]))
+    : v;
+  /** The same replacement inside JSON text, where backslashes are doubled. */
+  const tokText = (t) => t.replaceAll(TMP.replaceAll('\\', '\\\\'), '{TMP}');
+  /** File contents written from a case: {TMP} becomes the real path, JSON-escaped. */
+  const realText = (t) => t.replaceAll('{TMP}', TMP.replaceAll('\\', '\\\\'));
+  let n = 0;
+  /** A manager on a folder that does not exist: nothing to load, and saves fail quietly. */
+  const fresh = () => {
+    process.env.AHG_GOLDEN_USERDATA = path.join(TMP, 'u', String(n++));
+    return new ConfigManager();
+  };
+
+  const generic = ['', 'x', 0, 1, 2.5, -1, true, false, null, [], [1], ['a'], [1, 'a'], {}];
+  const specific = {
+    outputDir: ['{TMP}\\out', '{TMP}/out', '{TMP}\\file.txt', '{TMP}\\missing', '{TMP}\\out\\..\\out', '{TMP}\\out\\', 'relative',
+      'out', '\\\\server\\share\\dir', 'C:\\Windows', 'c:\\windows\\Temp', 'C:/Windows', 'C:\\', 'c:', 'C:\\Program Files',
+      'C:\\ProgramData\\x', 'C:\\Users'],
+    proxy: ['http://a:1', 'https://a', 'socks5://127.0.0.1:9050', 'socks5h://a', 'socks4://a', 'HTTP://a', 'host:8080', ' http://a'],
+    rateLimit: ['2M', '500K', '1G', '100', '2 MB', '2m', '2MB', '\u0661', '2M\n', '0', 'K'],
+    palette: ['aurora', 'slate', 'moss', 'ember', 'paper', 'lagoon', 'orchid', 'Aurora', 'nope', ' moss'],
+    theme: ['dark', 'light', 'system', 'neon'],
+    defaultVideoQuality: ['1080p', 'best', '8k'],
+    scheduleDays: [[0, 6], [1.5], [7, -1], [[1]], [null], [true]],
+    sponsorBlockCategories: [['sponsor', 'intro'], ['made-up'], [''], [1], [null]],
+    maxConcurrentDownloads: [5, 20, 0, 1e21, 0.1],
+  };
+  const keys = [...Object.keys(defaultConfig), 'nope', '__proto__', 'constructor', 'prototype', 'toString', 'hasOwnProperty'];
+  const setCases = keys.flatMap((key) => [...generic, ...(Object.hasOwn(specific, key) ? specific[key] : [])].map((value) => {
+    const c = fresh();
+    const ok = c.set(key, real(value));
+    const all = c.getAll();
+    // Own keys only: `all['__proto__']` would read the built-in prototype.
+    return tok({ key, value, ok, after: Object.hasOwn(all, key) ? all[key] : undefined });
+  }));
+
+  const good = (o) => JSON.stringify(o);
+  const loads = [
+    { file: null }, { file: '' }, { file: '{' }, { file: 'null' }, { file: '5' }, { file: '"str"' }, { file: '[]' },
+    { file: '[1,2]' }, { file: '{}' }, { file: good({ theme: 'dark' }) }, { file: '\uFEFF' + good({ theme: 'dark' }) },
+    { file: good({ theme: 'dark', nope: 1, toString: 'x', constructor: 2 }) },
+    { file: '{"__proto__":{"polluted":true},"theme":"dark","theme":"light"}' },
+    { file: good({ theme: 5, embedThumbnail: 'yes', scheduleDays: 'mon', maxConcurrentDownloads: '3', globalHotkey: null }) },
+    { file: good({ schemaVersion: 0, theme: 'dark' }) }, { file: good({ schemaVersion: 1, theme: 'dark' }) },
+    { file: good({ schemaVersion: 2, theme: 'dark' }) }, { file: good({ schemaVersion: '1', theme: 'dark' }) },
+    { file: good({ outputDir: '', palette: '', proxy: '', rateLimit: '' }) },
+    { file: good({ outputDir: '{TMP}\\out', palette: 'moss', proxy: 'socks5://a', rateLimit: '2M' }) },
+    { file: good({ outputDir: 'C:\\Windows', palette: 'nope', proxy: 'a', rateLimit: 'fast' }) },
+    { file: good({ scheduleDays: [1, 2], sponsorBlockCategories: ['intro'], maxConcurrentDownloads: 4, scheduleTime: '25:99' }) },
+    { file: good({ scheduleDays: ['1'], sponsorBlockCategories: [1], subtitleMode: 'bogus', videoCodec: 'h265' }) },
+    { file: '{', backups: [good({ theme: 'dark' })] },
+    { file: null, backups: ['{', good({ theme: 'light' }), good({ theme: 'dark' })] },
+    { file: '', backups: ['null', '5', good({ palette: 'ember' })] },
+    { file: '{', backups: ['[]'] },
+    { file: '{', backups: ['{', '{', '{'] },
+    { file: 'null', backups: [good({ theme: 'dark' })] },
+    { file: '{', backups: [good({ nope: 1, schemaVersion: 0, outputDir: '' })] },
+  ];
+  const loadCases = loads.map(({ file, backups = [] }) => {
+    const dir = path.join(TMP, 'l', String(n++));
+    fs.mkdirSync(dir, { recursive: true });
+    if (file !== null) fs.writeFileSync(path.join(dir, 'config.json'), realText(file));
+    backups.forEach((b, i) => fs.writeFileSync(path.join(dir, `config.backup.${i + 1}.json`), realText(b)));
+    process.env.AHG_GOLDEN_USERDATA = dir;
+    const c = new ConfigManager();
+    return { file, backups, out: tok(c.getAll()), restored: c.wasRestoredFromBackup() };
+  });
+
+  // What ends up on disk, write after write.
+  const dir = path.join(TMP, 'w');
+  fs.mkdirSync(dir);
+  process.env.AHG_GOLDEN_USERDATA = dir;
+  const c = new ConfigManager();
+  const read = (name) => { try { return tokText(fs.readFileSync(path.join(dir, name), 'utf-8')); } catch { return null; } };
+  const snapshot = () => ({
+    config: read('config.json'), backup1: read('config.backup.1.json'), backup2: read('config.backup.2.json'),
+    backup3: read('config.backup.3.json'), tmp: fs.existsSync(path.join(dir, 'config.json.tmp')),
+  });
+  const steps = [
+    { theme: 'dark', scheduleDays: [1, 3], maxConcurrentDownloads: 2.5, sponsorBlockCategories: ['sponsor', 'intro'], nope: 1 },
+    { palette: 'moss', proxy: 'bad', outputDir: '' },
+    { globalHotkey: 'Ctrl+"\\\u00E9\u2028\u0001', rateLimit: '2M' },
+    { outputTemplate: '%(title)s', scheduleDays: [] },
+    { theme: 'light' },
+  ];
+  const writeCases = steps.map((update) => { c.update(update); c.saveNow(); return { update, after: snapshot() }; });
+
+  const golden = {
+    defaults: tok(fresh().getAll()),
+    set: setCases,
+    load: loadCases,
+    write: writeCases,
+    migrate: [{}, { schemaVersion: 0 }, { schemaVersion: 1 }, { schemaVersion: 5, a: 1 }, { schemaVersion: '1', a: 1 }, { theme: 'dark' }]
+      .map((obj) => ({ obj, out: migrateConfig(obj) })),
+  };
+  writeFileSync(`${OUT}/config.json`, JSON.stringify(golden) + '\n');
+  console.log(`config.json: ${setCases.length + loadCases.length + writeCases.length + golden.migrate.length} cases`);
+  // Debounced saves from the set cases are still pending; let them fail against
+  // their missing folders before the scratch folder goes.
+  setTimeout(() => fs.rmSync(TMP, { recursive: true, force: true }), 600);
 }
 
 // ── Tier clamps and extras (shared/types.ts) ─────────────────────────────────

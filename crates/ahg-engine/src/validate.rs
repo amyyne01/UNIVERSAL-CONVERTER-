@@ -88,7 +88,7 @@ fn is_sep(c: char) -> bool {
 
 /// Node's `path.win32.resolve`, done on text alone: it never touches the disk
 /// and keeps trailing dots and spaces, which the Windows API would strip.
-fn win32_resolve(paths: &[&str]) -> String {
+pub(crate) fn win32_resolve(paths: &[&str]) -> String {
     let cwd = || std::env::current_dir().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
     let mut device = String::new();
     let mut tail = String::new();
