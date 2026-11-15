@@ -9,6 +9,7 @@
 use std::collections::HashMap;
 
 use ahg_engine::stats::DownloadStats;
+use ahg_engine::tier::Plan;
 use ahg_engine::types::{DownloadTask, MediaMetadata, Playlist, SearchResult};
 use rune::{Image, ImageCache, KeyEvent, Tx, Waker};
 
@@ -194,6 +195,11 @@ pub struct State {
     /// True in the `nav` scene: the layout's navigation in its opened state
     /// (a sidebar expanded as on hover, say), for the picture.
     pub nav_open: bool,
+    /// Basic or Premium. Premium unless `--plan basic` is given: on Basic the
+    /// presets draw the locks, limits and upgrade prompts (`ahg_engine::tier`).
+    pub plan: Plan,
+    /// A one-line notice on show, such as a Basic limit that was just hit.
+    pub notice: Option<String>,
     /// What the field found; `Found::Nothing` in every scene but `search`, `playlist` and `media`.
     pub found: Found,
     /// The sidebar is pinned open (the presets that have one).
@@ -249,7 +255,7 @@ pub fn init() -> State {
     let direction = direction_from_args();
     let palette = arg("--palette").and_then(|p| p.parse().ok()).filter(|p| *p <= 7).unwrap_or(0);
     // With no scene asked for, the fullest state: Home with history.
-    State { direction, layout: layout_from_args(), reach: false, nav: Nav::Home, nav_open: false, found: Found::Nothing, nav_pinned: false, picker: false, previews: Vec::new(), screen: Screen::Home, palette, tasks: sample::everything(), stats: Some(sample::stats()), covers: HashMap::new(), logo: None, input: String::new(), cache: None }
+    State { direction, layout: layout_from_args(), reach: false, nav: Nav::Home, nav_open: false, plan: if arg("--plan") == Some("basic") { Plan::Basic } else { Plan::Premium }, notice: None, found: Found::Nothing, nav_pinned: false, picker: false, previews: Vec::new(), screen: Screen::Home, palette, tasks: sample::everything(), stats: Some(sample::stats()), covers: HashMap::new(), logo: None, input: String::new(), cache: None }
 }
 
 /// Loads the sample covers. It waits for each to decode, so a headless
@@ -348,6 +354,21 @@ pub const SCENES: &[(&str, fn(&mut State))] = &[
         let selected = (0..playlist.tracks.len()).map(|i| i != 4 && i != 6).collect();
         s.input = "https://open.spotify.com/album/example".into();
         s.found = Found::Playlist { playlist, matched, selected };
+    }),
+    // A YouTube playlist on the Basic plan: rows cannot be picked, 20 at most are taken.
+    ("playlist-basic", |s| {
+        let playlist = sample::youtube_playlist();
+        let rows = playlist.tracks.len();
+        s.plan = Plan::Basic;
+        s.input = playlist.url.clone();
+        s.found = Found::Playlist { playlist, matched: vec![Matched::Confirmed; rows], selected: vec![true; rows] };
+    }),
+    // More than five results ticked on Basic: nothing is queued and the notice shows.
+    ("search-limit", |s| {
+        s.plan = Plan::Basic;
+        s.input = sample::QUERY.into();
+        s.found = Found::Search { query: sample::QUERY.into(), bands: sample::search().map(Band::Results) };
+        s.notice = Some(crate::copy::found::LIMIT_BATCH.into());
     }),
     ("media", |s| {
         s.input = "https://www.youtube.com/watch?v=example".into();

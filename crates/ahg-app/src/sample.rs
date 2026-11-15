@@ -263,3 +263,14 @@ pub fn playlist() -> Playlist {
 pub fn media() -> MediaMetadata {
     MediaMetadata { title: "Cosmos: A Spacetime Odyssey - Standing Up in the Milky Way".into(), uploader: "National Geographic".into(), duration: 2640.0, thumbnail_url: String::new(), url: "https://www.youtube.com/watch?v=example".into(), is_collection: false, entries: Vec::new(), description: None, width: Some(3840.0), height: Some(2160.0), view_count: Some(4_812_339.0), like_count: None, upload_date: Some("20240309".into()), extractor: Some("youtube".into()) }
 }
+
+/// A YouTube playlist link looked up: 48 videos, the first ten listed.
+pub fn youtube_playlist() -> Playlist {
+    let names: [(&str, f64); 10] = [("Lecture 1: The Law of Gravitation", 3342.0), ("Lecture 2: The Relation of Mathematics and Physics", 3318.0), ("Lecture 3: The Great Conservation Principles", 3371.0), ("Lecture 4: Symmetry in Physical Law", 3423.0), ("Lecture 5: The Distinction of Past and Future", 2760.0), ("Lecture 6: Probability and Uncertainty", 3398.0), ("Lecture 7: Seeking New Laws", 3454.0), ("Questions and answers, part 1", 1260.0), ("Questions and answers, part 2", 1385.0), ("Closing remarks", 610.0)];
+    let tracks: Vec<Track> = names
+        .iter()
+        .enumerate()
+        .map(|(i, (name, seconds))| Track { id: format!("yt-pl-{i}"), name: (*name).into(), artist: "Cornell University".into(), artists: vec!["Cornell University".into()], album: String::new(), album_year: None, track_number: i as f64 + 1.0, duration_ms: seconds * 1000.0, thumbnail_url: String::new(), spotify_url: None, explicit: None })
+        .collect();
+    Playlist { id: "character-of-physical-law".into(), name: "The Character of Physical Law".into(), description: String::new(), owner: "Cornell University".into(), track_count: 48.0, tracks, thumbnail_url: String::new(), url: "https://www.youtube.com/playlist?list=example".into() }
+}
