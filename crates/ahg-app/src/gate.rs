@@ -9,7 +9,7 @@
 use std::collections::HashMap;
 
 use ahg_engine::stats::DownloadStats;
-use ahg_engine::types::DownloadTask;
+use ahg_engine::types::{DownloadTask, MediaMetadata, Playlist, SearchResult};
 use rune::{Image, ImageCache, KeyEvent, Tx, Waker};
 
 use crate::sample;
@@ -140,6 +140,18 @@ pub enum Screen {
     Downloads,
 }
 
+/// What the field found after a paste or a search: the step between the
+/// empty field and a running download. It shows on Home, coming out of the field.
+pub enum Found {
+    Nothing,
+    /// Words were typed: answers from YouTube, SoundCloud and Spotify, in that order.
+    Search { query: &'static str, results: [Vec<SearchResult>; 3] },
+    /// A playlist or album link: its tracks, to pick from.
+    Playlist(Playlist),
+    /// One video or track: choose audio or video, format and quality, then download.
+    Media(MediaMetadata),
+}
+
 /// Everything a direction's view reads. The same for all three.
 pub struct State {
     pub direction: Direction,
@@ -153,6 +165,8 @@ pub struct State {
     /// True in the `nav` scene: the layout's navigation in its opened state
     /// (a sidebar expanded as on hover, say), for the picture.
     pub nav_open: bool,
+    /// What the field found; `Found::Nothing` in every scene but `search`, `playlist` and `media`.
+    pub found: Found,
     /// The sidebar is pinned open (the presets that have one).
     pub nav_pinned: bool,
     /// The preset picker is open.
@@ -206,7 +220,7 @@ pub fn init() -> State {
     let direction = direction_from_args();
     let palette = arg("--palette").and_then(|p| p.parse().ok()).filter(|p| *p <= 7).unwrap_or(0);
     // With no scene asked for, the fullest state: Home with history.
-    State { direction, layout: layout_from_args(), reach: false, nav: Nav::Home, nav_open: false, nav_pinned: false, picker: false, previews: Vec::new(), screen: Screen::Home, palette, tasks: sample::everything(), stats: Some(sample::stats()), covers: HashMap::new(), logo: None, input: String::new(), cache: None }
+    State { direction, layout: layout_from_args(), reach: false, nav: Nav::Home, nav_open: false, found: Found::Nothing, nav_pinned: false, picker: false, previews: Vec::new(), screen: Screen::Home, palette, tasks: sample::everything(), stats: Some(sample::stats()), covers: HashMap::new(), logo: None, input: String::new(), cache: None }
 }
 
 /// Loads the sample covers. It waits for each to decode, so a headless
@@ -276,5 +290,17 @@ pub const SCENES: &[(&str, fn(&mut State))] = &[
     ("downloads", |s| s.nav = Nav::Downloads),
     ("nav", |s| s.nav_open = true),
     ("picker", |s| s.picker = true),
+    ("search", |s| {
+        s.input = sample::QUERY.into();
+        s.found = Found::Search { query: sample::QUERY, results: sample::search() };
+    }),
+    ("playlist", |s| {
+        s.input = "https://open.spotify.com/album/example".into();
+        s.found = Found::Playlist(sample::playlist());
+    }),
+    ("media", |s| {
+        s.input = "https://www.youtube.com/watch?v=example".into();
+        s.found = Found::Media(sample::media());
+    }),
     ("nav-pinned", |s| s.nav_pinned = true),
 ];

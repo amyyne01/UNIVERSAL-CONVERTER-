@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use ahg_engine::queue::{TaskInit, create_task};
 use ahg_engine::stats::{DownloadStats, MonthBucket};
-use ahg_engine::types::{DownloadStatus, DownloadTask, ErrorCode, SourcePlatform, Track, VideoQuality};
+use ahg_engine::types::{DownloadStatus, DownloadTask, ErrorCode, MediaMetadata, Playlist, SearchResult, SourcePlatform, Track, VideoQuality};
 use serde_json::json;
 
 const MIB: f64 = 1024.0 * 1024.0;
@@ -210,4 +210,56 @@ pub fn covers() -> Vec<(String, Vec<u8>)> {
         .filter(|e| e.path().extension().is_some_and(|x| x == "jpg" || x == "png" || x == "webp"))
         .filter_map(|e| Some((e.path().file_stem()?.to_string_lossy().into_owned(), std::fs::read(e.path()).ok()?)))
         .collect()
+}
+
+// ── After a paste: what "Look up" found ──────────────────────────────────────
+
+fn result(id: &str, source: SourcePlatform, title: &str, uploader: &str, duration: f64) -> SearchResult {
+    SearchResult { id: id.into(), title: title.into(), uploader: uploader.into(), duration, thumbnail_url: String::new(), url: format!("https://example.invalid/{id}"), source }
+}
+
+/// The words typed for [`search`].
+pub const QUERY: &str = "khruangbin";
+
+/// A search typed into the field: YouTube, SoundCloud and Spotify answers, in that order.
+pub fn search() -> [Vec<SearchResult>; 3] {
+    use SourcePlatform::{Soundcloud, Spotify, Youtube};
+    [
+        vec![
+            result("yt-1", Youtube, "Khruangbin: Tiny Desk Concert", "NPR Music", 1034.0),
+            result("yt-2", Youtube, "Khruangbin - Live at Villain | Pitchfork Live", "Pitchfork", 3128.0),
+            result("yt-3", Youtube, "Khruangbin - So We Won't Forget (Official Video)", "Khruangbin", 300.0),
+            result("yt-4", Youtube, "Khruangbin @ Lightning in a Bottle 2019 (Full Set)", "Do LaB", 4380.0),
+            result("yt-5", Youtube, "Khruangbin - Maria Tambien (Official Video)", "Khruangbin", 195.0),
+            result("yt-6", Youtube, "Khruangbin & Leon Bridges - Texas Sun (Official Video)", "Khruangbin", 253.0),
+            result("yt-7", Youtube, "Khruangbin - Time (You and I)", "Khruangbin", 342.0),
+        ],
+        vec![
+            result("sc-1", Soundcloud, "White Gloves", "Khruangbin", 236.0),
+            result("sc-2", Soundcloud, "People Everywhere (Still Alive)", "Khruangbin", 212.0),
+            result("sc-3", Soundcloud, "Khruangbin Boiler Room mix", "Boiler Room", 3660.0),
+        ],
+        vec![
+            result("sp-1", Spotify, "Texas Sun", "Khruangbin, Leon Bridges", 252.0),
+            result("sp-2", Spotify, "So We Won't Forget", "Khruangbin", 300.0),
+            result("sp-3", Spotify, "Friday Morning", "Khruangbin", 407.0),
+            result("sp-4", Spotify, "August 10", "Khruangbin", 259.0),
+        ],
+    ]
+}
+
+/// A Spotify album link looked up: its tracks, to pick from before downloading.
+pub fn playlist() -> Playlist {
+    let names: [(&str, f64); 10] = [("Speedo", 187.0), ("Shadowboxin'", 198.0), ("Rhymes Like Dimes", 259.0), ("The Finest", 240.0), ("Back in the Days (Skit)", 49.0), ("Go With the Flow", 216.0), ("Tick, Tick...", 247.0), ("Red and Gold", 284.0), ("The Hands of Doom (Skit)", 111.0), ("Who You Think I Am?", 204.0)];
+    let tracks: Vec<Track> = names
+        .iter()
+        .enumerate()
+        .map(|(i, (name, seconds))| Track { id: format!("op-{i}"), name: (*name).into(), artist: "MF DOOM".into(), artists: vec!["MF DOOM".into()], album: "Operation: Doomsday".into(), album_year: None, track_number: i as f64 + 1.0, duration_ms: seconds * 1000.0, thumbnail_url: String::new(), spotify_url: None, explicit: Some(i % 3 != 1) })
+        .collect();
+    Playlist { id: "operation-doomsday".into(), name: "Operation: Doomsday".into(), description: String::new(), owner: "MF DOOM".into(), track_count: 19.0, tracks, thumbnail_url: String::new(), url: "https://open.spotify.com/album/example".into() }
+}
+
+/// One YouTube video looked up: the step where format and quality are chosen.
+pub fn media() -> MediaMetadata {
+    MediaMetadata { title: "Cosmos: A Spacetime Odyssey - Standing Up in the Milky Way".into(), uploader: "National Geographic".into(), duration: 2640.0, thumbnail_url: String::new(), url: "https://www.youtube.com/watch?v=example".into(), is_collection: false, entries: Vec::new(), description: None, width: Some(3840.0), height: Some(2160.0), view_count: Some(4_812_339.0), like_count: None, upload_date: Some("20240309".into()), extractor: Some("youtube".into()) }
 }
