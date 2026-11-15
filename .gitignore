@@ -47,7 +47,8 @@ docs/
 design-concepts/
 
 # Rust port. Build output, and the entitlement layer (same rule as
-# electron/license.ts above): the tracked tree does not build without it.
+# electron/license.ts above). It sits behind the off-by-default `license`
+# cargo feature, so the tracked tree builds without it.
 target/
 crates/ahg-engine/src/license.rs
 crates/ahg-engine/src/license/
