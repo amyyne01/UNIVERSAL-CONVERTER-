@@ -26,8 +26,9 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ELECTRON = path.resolve(process.env.AHG_ELECTRON ?? path.join(HERE, '..', '..', '..', 'converter-electron'));
 const DATA = path.join(HERE, 'data');
 const lines = (file) => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
-// Every batch: examples.jsonl, examples-2.jsonl, ...
-const examples = fs.readdirSync(DATA).filter((f) => /^examples(-\d+)?\.jsonl$/.test(f)).sort().flatMap((f) => lines(path.join(DATA, f)));
+// Every batch (examples.jsonl, examples-2.jsonl, ...), or only batch MATCH_BATCH when that is set.
+const ONLY = process.env.MATCH_BATCH && (process.env.MATCH_BATCH === '1' ? 'examples.jsonl' : `examples-${process.env.MATCH_BATCH}.jsonl`);
+const examples = fs.readdirSync(DATA).filter((f) => (ONLY ? f === ONLY : /^examples(-\d+)?\.jsonl$/.test(f))).sort().flatMap((f) => lines(path.join(DATA, f)));
 // Lookups made afterwards for the scorers' own picks (collect.mjs --fill).
 const extra = new Map(lines(path.join(DATA, 'lookups-extra.jsonl')).map(({ trackId, lookup }) => [`${trackId} ${lookup.id}`, lookup]));
 for (const ex of examples) {
