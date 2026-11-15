@@ -7,9 +7,9 @@
 //! This file draws the shell: the title bar, the rail and the screen beside it.
 mod downloads;
 mod home;
-mod icons;
-mod parts;
-mod theme;
+pub(crate) mod icons;
+pub(crate) mod parts;
+pub(crate) mod theme;
 
 use rune::{Cx, El, Icon, Image, col, el, icon, rich, row, text};
 
