@@ -304,6 +304,16 @@ pub const GUESS_CEILING: f64 = 0.89;
 /// ("needs review"). Unlisted in the error phrases, so it is never retried.
 pub const NO_CONFIRMED_MATCH: &str = "No confirmed match for this Spotify track.";
 
+/// Why a Spotify track was not downloaded at all: no song agreed and no
+/// video resembled it enough to be offered even as a guess.
+pub const NO_MATCH_FOUND: &str = "No match was found for this Spotify track.";
+/// Below this score a plain video is not offered even as a guess. A judgment
+/// call: the videos that can be judged from YouTube's music labels are mostly
+/// official uploads, so the collected songs say little about covers, live
+/// versions and fan uploads. On them it would have dropped 3 right picks of 79
+/// and no wrong one.
+pub const GUESS_FLOOR: f64 = 0.5;
+
 /// What is searched for: "Artist - Name". The text reaches yt-dlp as an
 /// argument, with no shell, so quotes are removed.
 pub fn song_query(track: &Track) -> String {

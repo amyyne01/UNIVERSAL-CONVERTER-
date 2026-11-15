@@ -529,3 +529,33 @@ fn needs_review_downloads_a_match_the_user_accepted() {
     assert!(matches!(last, Some(Report::Done { .. })), "{last:?}");
     assert_eq!(runs(&ran), 1);
 }
+
+// ── Nothing is downloaded blind, and a weak guess is no guess ───────────────
+
+fn no_match_found(reports: &[Report]) -> bool {
+    matches!(reports.last(), Some(Report::Error { message, .. }) if message == ahg_engine::downloader::bridge::NO_MATCH_FOUND)
+}
+
+#[test]
+fn with_no_song_and_no_usable_video_nothing_is_downloaded() {
+    let dir = scratch("nomatch");
+    let ran = dir.join("ran");
+    let nothing_agrees = song_search(&[("other000001", "Another Song", "Someone Else • Album • 3:20")]);
+    // The plain search fails too. Electron would download the first hit of a blind search here.
+    let (reports, _) = run_song_bridge(ytdlp(&dir, "err ERROR: Video unavailable\nexit 1\n", &format!("count {}\n{DOWNLOADS}", ran.display())), Some(nothing_agrees));
+    assert!(no_match_found(&reports), "{reports:?}");
+    assert!(the_match(&reports).is_none());
+    assert_eq!(runs(&ran), 0, "nothing may be downloaded");
+}
+
+#[test]
+fn a_video_that_barely_resembles_the_track_is_not_taken_as_a_guess() {
+    let dir = scratch("weakguess");
+    let ran = dir.join("ran");
+    let nothing_agrees = song_search(&[("other000001", "Another Song", "Someone Else • Album • 3:20")]);
+    // One word in common with "Artist - The Song", right length, a stranger's upload.
+    let weak = "out {\"id\":\"weak0000001\",\"title\":\"Best song mix 2024\",\"uploader\":\"Fan\",\"duration\":200,\"url\":\"https://www.youtube.com/watch?v=weak0000001\"}\nexit 0\n";
+    let (reports, _) = run_song_bridge(ytdlp(&dir, weak, &format!("count {}\n{DOWNLOADS}", ran.display())), Some(nothing_agrees));
+    assert!(no_match_found(&reports), "{reports:?}");
+    assert_eq!(runs(&ran), 0);
+}

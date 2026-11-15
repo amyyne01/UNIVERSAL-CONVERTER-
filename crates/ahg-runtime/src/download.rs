@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use ahg_engine::downloader::args::build_ytdlp_args;
-use ahg_engine::downloader::bridge::{CONFIRMED, GUESS_CEILING, Lookup, NO_CONFIRMED_MATCH, name_and_tag_from_spotify, Verdict, match_song, song_query, song_rows, song_search_page, song_url, verify};
+use ahg_engine::downloader::bridge::{CONFIRMED, GUESS_CEILING, GUESS_FLOOR, Lookup, NO_CONFIRMED_MATCH, NO_MATCH_FOUND, name_and_tag_from_spotify, Verdict, match_song, song_query, song_rows, song_search_page, song_url, verify};
 use ahg_engine::downloader::metadata::search_results;
 use ahg_engine::downloader::progress::{Outcome, OutputScan};
 use ahg_engine::downloader::score::score_candidates;
@@ -181,7 +181,8 @@ fn spotify_bridge(ytdlp: &YtDlp, task: &DownloadTask, track: &Track, args: &mut 
 
     let items = ytdlp.run_json(&["--dump-json", "--no-warnings", "--flat-playlist", &format!("ytsearch5:{query}")]).ok()?;
     let best = score_candidates(track, &search_results(&items, SourcePlatform::Youtube)).into_iter().next()?;
-    if best.candidate.url.is_empty() {
+    // D34: a video that barely resembles the track is not offered even as a guess.
+    if best.candidate.url.is_empty() || (song_search.is_some() && best.score < GUESS_FLOOR) {
         return None;
     }
     *last = best.candidate.url.clone();
@@ -217,14 +218,22 @@ fn run(ytdlp: &YtDlp, task: &DownloadTask, attempt: u64, active: &Active, killed
             name_and_tag_from_spotify(task, &mut args);
         }
         let found = spotify_bridge(ytdlp, task, track, &mut args, song_search);
+        let matched = found.is_some();
         let confirmed = found.as_ref().is_some_and(|(_, confidence)| *confidence >= CONFIRMED);
         if let Some((url, confidence)) = found {
             send(Report::Match { id: id.to_owned(), attempt, url, confidence });
         }
-        // "Needs review": the guess was reported, so it can be accepted or
-        // swapped, but nothing short of a confirmed match is downloaded.
-        if hold && song_search.is_some() && !confirmed {
-            return Outcome::Failed(NO_CONFIRMED_MATCH.to_owned());
+        if song_search.is_some() {
+            // D34: nothing is downloaded blind. Electron takes the first hit
+            // of a plain search here, unmarked; a track with no match says so.
+            if !matched {
+                return Outcome::Failed(NO_MATCH_FOUND.to_owned());
+            }
+            // "Needs review": the guess was reported, so it can be accepted or
+            // swapped, but nothing short of a confirmed match is downloaded.
+            if hold && !confirmed {
+                return Outcome::Failed(NO_CONFIRMED_MATCH.to_owned());
+            }
         }
     }
     // Cancelled while the search ran: the download must not start.

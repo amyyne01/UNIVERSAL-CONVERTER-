@@ -156,6 +156,9 @@ fn a_track_held_for_review_is_not_retried_and_says_what_to_do() {
     use ahg_engine::downloader::bridge::NO_CONFIRMED_MATCH;
     use ahg_engine::downloader::errors::{ErrorClass, classify_error, explain_error};
     assert_eq!(classify_error(NO_CONFIRMED_MATCH), ErrorClass::Permanent);
+    use ahg_engine::downloader::bridge::NO_MATCH_FOUND;
+    assert_eq!(classify_error(NO_MATCH_FOUND), ErrorClass::Permanent);
+    assert!(explain_error(NO_MATCH_FOUND).starts_with("No match was found for this track"), "{}", explain_error(NO_MATCH_FOUND));
     assert!(explain_error(NO_CONFIRMED_MATCH).ends_with("pick a match to download it."), "{}", explain_error(NO_CONFIRMED_MATCH));
 }
 
