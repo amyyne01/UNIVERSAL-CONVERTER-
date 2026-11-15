@@ -108,8 +108,8 @@ pub fn set_preset(s: &mut State, index: usize, tx: &mut Tx) {
 }
 
 /// The keys every preset shares: Ctrl+1, 2, 3 for Home, Downloads and
-/// Settings, and Ctrl+. for the next preset (until Settings has its picker).
-pub fn on_key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
+/// Settings, and Ctrl+. for the preset picker.
+pub fn on_key(s: &mut State, ev: &KeyEvent, _tx: &mut Tx) -> bool {
     let go = |s: &mut State, nav: Nav| {
         s.nav = nav;
         s.reach = nav == Nav::Settings;
@@ -122,7 +122,9 @@ pub fn on_key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
     } else if ev.is_command('3') {
         go(s, Nav::Settings);
     } else if ev.is_command('.') {
-        set_preset(s, preset(s) + 1, tx);
+        s.picker = !s.picker;
+    } else if s.picker && ev.key == rune::Key::Escape {
+        s.picker = false;
     } else {
         return false;
     }
@@ -151,6 +153,10 @@ pub struct State {
     /// True in the `nav` scene: the layout's navigation in its opened state
     /// (a sidebar expanded as on hover, say), for the picture.
     pub nav_open: bool,
+    /// The preset picker is open.
+    pub picker: bool,
+    /// The picker's six previews, in the order of [`PRESETS`].
+    pub previews: Vec<Image>,
     pub screen: Screen,
     /// 0 is the direction's own colour mood; 1 to 7 are the app's existing
     /// palettes, in the order Settings lists them, to show the direction
@@ -198,7 +204,7 @@ pub fn init() -> State {
     let direction = direction_from_args();
     let palette = arg("--palette").and_then(|p| p.parse().ok()).filter(|p| *p <= 7).unwrap_or(0);
     // With no scene asked for, the fullest state: Home with history.
-    State { direction, layout: layout_from_args(), reach: false, nav: Nav::Home, nav_open: false, screen: Screen::Home, palette, tasks: sample::everything(), stats: Some(sample::stats()), covers: HashMap::new(), logo: None, input: String::new(), cache: None }
+    State { direction, layout: layout_from_args(), reach: false, nav: Nav::Home, nav_open: false, picker: false, previews: Vec::new(), screen: Screen::Home, palette, tasks: sample::everything(), stats: Some(sample::stats()), covers: HashMap::new(), logo: None, input: String::new(), cache: None }
 }
 
 /// Loads the sample covers. It waits for each to decode, so a headless
@@ -208,6 +214,10 @@ pub fn setup(s: &mut State, waker: Waker) {
     let logo = cache.load(&include_bytes!("../../../assets/icon-256.png")[..]);
     let _ = logo.wait();
     s.logo = Some(logo);
+    s.previews = crate::picker::PREVIEWS.iter().map(|bytes| cache.load(*bytes)).collect();
+    for preview in &s.previews {
+        let _ = preview.wait();
+    }
     for (task_id, bytes) in sample::covers() {
         let image = cache.load(&bytes[..]);
         let _ = image.wait();
@@ -256,4 +266,5 @@ pub const SCENES: &[(&str, fn(&mut State))] = &[
     }),
     ("downloads", |s| s.nav = Nav::Downloads),
     ("nav", |s| s.nav_open = true),
+    ("picker", |s| s.picker = true),
 ];

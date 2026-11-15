@@ -13,6 +13,7 @@ mod copy;
 mod directions;
 mod gate;
 mod layouts;
+mod picker;
 mod sample;
 
 use gate::{Direction, State};
@@ -26,7 +27,8 @@ pub const TITLEBAR: f32 = 44.0;
 fn view(s: &State, cx: &mut Cx<State>) -> El {
     const KEYS: [&str; 6] = ["preset-0", "preset-1", "preset-2", "preset-3", "preset-4", "preset-5"];
     let shown = el().key(KEYS[gate::preset(s)]).pin(Some(0.0), Some(0.0), Some(0.0), Some(0.0)).transition(Transition::blur_replace()).child(preset_view(s, cx));
-    el().w_full().h_full().child(shown)
+    let window = el().w_full().h_full().child(shown);
+    if s.picker { window.child(picker::view(s, cx)) } else { window }
 }
 
 fn preset_view(s: &State, cx: &mut Cx<State>) -> El {
