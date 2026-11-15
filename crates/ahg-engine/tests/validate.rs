@@ -61,7 +61,21 @@ fn is_netscape_cookies_agrees_with_electron() {
 #[test]
 fn confine_to_root_agrees_with_electron() {
     for c in rows(&golden(), "confineToRoot") {
-        let got = confine_to_root(c["candidate"].as_str().unwrap(), c["root"].as_str().unwrap());
-        assert_eq!(json!(got), c["out"], "{}", short(&c));
+        let (candidate, root) = (c["candidate"].as_str().unwrap(), c["root"].as_str().unwrap());
+        // D29: Electron refuses every file under a drive root; Rust does not.
+        if root == "C:\\" && candidate == "a.mp3" {
+            continue;
+        }
+        assert_eq!(json!(confine_to_root(candidate, root)), c["out"], "{}", short(&c));
     }
+}
+
+/// D29, an approved difference from Electron 1.6.0.
+#[cfg(windows)]
+#[test]
+fn a_drive_root_contains_its_files() {
+    assert_eq!(confine_to_root("a.mp3", "C:\\").as_deref(), Some("C:\\a.mp3"));
+    assert_eq!(confine_to_root("sub\\a.mp3", "D:\\").as_deref(), Some("D:\\sub\\a.mp3"));
+    assert_eq!(confine_to_root("D:\\a.mp3", "C:\\"), None);
+    assert_eq!(confine_to_root("..\\..\\a.mp3", "C:\\").as_deref(), Some("C:\\a.mp3"));
 }

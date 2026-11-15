@@ -211,5 +211,8 @@ fn win32_resolve(paths: &[&str]) -> String {
 pub fn confine_to_root(candidate: &str, root: &str) -> Option<String> {
     let abs_root = win32_resolve(&[root]);
     let abs = win32_resolve(&[&abs_root, candidate]);
-    (abs == abs_root || abs.starts_with(&format!("{abs_root}\\"))).then_some(abs)
+    // D29: a drive root already ends in a separator. The original appended a
+    // second one, so nothing was ever inside `D:\`.
+    let inside = if abs_root.ends_with('\\') { abs_root.clone() } else { format!("{abs_root}\\") };
+    (abs == abs_root || abs.starts_with(&inside)).then_some(abs)
 }
