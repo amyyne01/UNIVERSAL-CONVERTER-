@@ -37,6 +37,39 @@ impl Direction {
     }
 }
 
+/// A whole-app layout, new from scratch (owner, 2026-11-15): no sidebar and
+/// no Home / Downloads pages. Each wears one of the three looks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Layout {
+    /// One paste-and-command bar; downloads stream under it. Wears Signal.
+    Bar,
+    /// A wall of cover art; a download is a cover filling in. Wears Shelf.
+    Collection,
+    /// A player: the current download on stage, the queue beside it. Wears Orbit.
+    Stage,
+}
+
+impl Layout {
+    /// The look this layout wears.
+    pub fn look(self) -> Direction {
+        match self {
+            Layout::Bar => Direction::Signal,
+            Layout::Collection => Direction::Shelf,
+            Layout::Stage => Direction::Orbit,
+        }
+    }
+}
+
+/// `--layout bar|collection|stage`; none means an old-layout direction is shown.
+pub fn layout_from_args() -> Option<Layout> {
+    match arg("--layout") {
+        Some("bar") => Some(Layout::Bar),
+        Some("collection") => Some(Layout::Collection),
+        Some("stage") => Some(Layout::Stage),
+        _ => None,
+    }
+}
+
 /// The display serif, for Shelf's one headline per screen and nothing else.
 pub const SERIF: &str = "Instrument Serif";
 
@@ -49,6 +82,11 @@ pub enum Screen {
 /// Everything a direction's view reads. The same for all three.
 pub struct State {
     pub direction: Direction,
+    /// The new layout on show, if one was asked for.
+    pub layout: Option<Layout>,
+    /// True in the `reach` scene: the layout shows its way to everything
+    /// that is not a download (settings, schedule, licence, updates) open.
+    pub reach: bool,
     pub screen: Screen,
     /// 0 is the direction's own colour mood; 1 to 7 are the app's existing
     /// palettes, in the order Settings lists them, to show the direction
@@ -82,6 +120,9 @@ fn arg(name: &str) -> Option<&'static str> {
 
 /// `--direction shelf|signal|orbit`; Shelf when none is given.
 pub fn direction_from_args() -> Direction {
+    if let Some(layout) = layout_from_args() {
+        return layout.look();
+    }
     match arg("--direction") {
         Some("signal") => Direction::Signal,
         Some("orbit") => Direction::Orbit,
@@ -93,7 +134,7 @@ pub fn init() -> State {
     let direction = direction_from_args();
     let palette = arg("--palette").and_then(|p| p.parse().ok()).filter(|p| *p <= 7).unwrap_or(0);
     // With no scene asked for, the fullest state: Home with history.
-    State { direction, screen: Screen::Home, palette, tasks: sample::everything(), stats: Some(sample::stats()), covers: HashMap::new(), logo: None, input: String::new(), cache: None }
+    State { direction, layout: layout_from_args(), reach: false, screen: Screen::Home, palette, tasks: sample::everything(), stats: Some(sample::stats()), covers: HashMap::new(), logo: None, input: String::new(), cache: None }
 }
 
 /// Loads the sample covers. It waits for each to decode, so a headless
@@ -135,4 +176,15 @@ pub const SCENES: &[(&str, fn(&mut State))] = &[
         s.tasks = sample::troubled();
     }),
     ("downloads-everything", |s| s.screen = Screen::Downloads),
+    // The new layouts have no pages, so their scenes are states of the app.
+    ("first", |s| {
+        s.tasks.clear();
+        s.stats = None;
+    }),
+    ("idle", |s| s.tasks = sample::finished().into_iter().chain(sample::troubled()).collect()),
+    ("active", |s| s.tasks = sample::active()),
+    ("finished", |s| s.tasks = sample::finished()),
+    ("failed", |s| s.tasks = sample::troubled()),
+    ("everything", |_| {}),
+    ("reach", |s| s.reach = true),
 ];

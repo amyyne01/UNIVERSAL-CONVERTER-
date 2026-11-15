@@ -12,7 +12,8 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 /** A direction built on its own (`--target-dir target/gate-<id>`) is used when it exists and is newer; else the full build. */
-const exeFor = (id) => {
+const exeFor = (built) => {
+  const id = { bar: 'signal', collection: 'shelf', stage: 'orbit' }[built] ?? built; // a layout is built in its look's folder
   const own = path.join(ROOT, 'target', `gate-${id}`, 'debug', 'AHG-Converter.exe');
   const all = path.join(ROOT, 'target', 'debug', 'AHG-Converter.exe');
   const age = (f) => (fs.existsSync(f) ? fs.statSync(f).mtimeMs : 0);
@@ -33,22 +34,41 @@ const SCENES = [
   ['downloads-failed', 'Downloads, problems'],
   ['downloads-everything', 'Downloads, a mixed day'],
 ];
+// The new layouts (owner, 2026-11-15): the whole app from scratch, no sidebar and no pages. Each wears one look.
+const LAYOUTS = [
+  ['bar', 'One bar', 'The app is one paste-and-command bar; downloads stream under it. Wears Signal.'],
+  ['collection', 'The collection', 'A wall of cover art; a download is a cover filling in. Wears Shelf.'],
+  ['stage', 'Now playing', 'A player: the current download on stage, the queue beside it. Wears Orbit.'],
+];
+const STATES = [
+  ['first', 'First launch'],
+  ['idle', 'Opened with history, nothing running'],
+  ['active', 'Downloads in progress'],
+  ['finished', 'Finished'],
+  ['failed', 'Problems'],
+  ['everything', 'A mixed day'],
+  ['reach', 'Reaching settings, schedule and the rest'],
+];
 // Two of the app's existing palettes, to show a direction survives a switch.
 const PALETTE_PROOFS = [2, 5];
 
 const only = process.argv[2];
 const shots = [];
-for (const [id] of DIRECTIONS.filter(([d]) => !only || d === only)) {
+const renderAll = (list, flag, scenes, mixed) => {
+ for (const [id] of list.filter(([d]) => !only || d === only)) {
   const dir = path.join(OUT, 'shots', id);
   fs.mkdirSync(dir, { recursive: true });
   const snap = (name, args) => {
     const file = path.join(dir, `${name}.png`);
-    const r = spawnSync(exeFor(id), ['--direction', id, ...args, '--snap', file], { encoding: 'utf8', windowsHide: true });
+    const r = spawnSync(exeFor(id), [flag, id, ...args, '--snap', file], { encoding: 'utf8', windowsHide: true });
     shots.push(`${id}/${name}: ${r.status === 0 && fs.existsSync(file) ? 'ok' : `FAILED ${(r.stderr ?? '').trim().split('\n').pop()?.slice(0, 120)}`}`);
   };
-  for (const [scene] of SCENES) for (const theme of ['dark', 'light']) snap(`${scene}-${theme}`, ['--scene', scene, '--theme', theme]);
-  for (const palette of PALETTE_PROOFS) snap(`palette-${palette}`, ['--scene', 'downloads-everything', '--theme', 'dark', '--palette', String(palette)]);
-}
+  for (const [scene] of scenes) for (const theme of ['dark', 'light']) snap(`${scene}-${theme}`, ['--scene', scene, '--theme', theme]);
+  for (const palette of PALETTE_PROOFS) snap(`palette-${palette}`, ['--scene', mixed, '--theme', 'dark', '--palette', String(palette)]);
+ }
+};
+renderAll(LAYOUTS, '--layout', STATES, 'everything');
+renderAll(DIRECTIONS, '--direction', SCENES, 'downloads-everything');
 console.log(shots.join('\n'));
 
 // ── The page: one row per state, the three directions side by side ──────────
@@ -56,7 +76,7 @@ const img = (id, name) => {
   const rel = `shots/${id}/${name}.png`;
   return fs.existsSync(path.join(OUT, rel)) ? `<a href="${rel}" target="_blank"><img loading="lazy" src="${rel}" alt="${id} ${name}"></a>` : '<div class="missing">not rendered</div>';
 };
-const row = (title, name) => `<section><h2>${title}</h2><div class="three">${DIRECTIONS.map(([id]) => `<figure>${img(id, name)}</figure>`).join('')}</div></section>`;
+const row = (title, name, list = DIRECTIONS) => `<section><h2>${title}</h2><div class="three">${list.map(([id]) => `<figure>${img(id, name)}</figure>`).join('')}</div></section>`;
 const html = `<!doctype html>
 <meta charset="utf-8">
 <title>AHG Universal Converter: design gate</title>
@@ -75,9 +95,13 @@ const html = `<!doctype html>
   img { width: 100%; display: block; border-radius: 8px; border: 1px solid #26262b; }
   .missing { aspect-ratio: 1240 / 820; display: grid; place-items: center; border: 1px dashed #3a3a42; border-radius: 8px; color: #70707a; }
 </style>
-<h1>Design gate: Home and Downloads, three ways</h1>
-<p class="lead">The same prepared downloads in every direction. Click a picture to open it full size. The last rows show each direction in two of the app's existing palettes.</p>
-<div class="heads">${DIRECTIONS.map(([, name, about]) => `<div><h3>${name}</h3><p>${about}</p></div>`).join('')}</div>
+<h1>Design gate: three new apps</h1>
+<p class="lead">Three layouts built from scratch, each wearing one of the three looks, over the same prepared downloads. Click a picture to open it full size. Further down: the three looks on the old layout, kept for reference.</p>
+<div class="heads">${LAYOUTS.map(([, name, about]) => `<div><h3>${name}</h3><p>${about}</p></div>`).join('')}</div>
+${STATES.flatMap(([scene, title]) => [row(`${title} · dark`, `${scene}-dark`, LAYOUTS), row(`${title} · light`, `${scene}-light`, LAYOUTS)]).join('')}
+${PALETTE_PROOFS.map((p) => row(`A mixed day in existing palette ${p} · dark`, `palette-${p}`, LAYOUTS)).join('')}
+<h1 style="margin-top:72px">For reference: the three looks on the old layout</h1>
+<div class="heads" style="position:static">${DIRECTIONS.map(([, name, about]) => `<div><h3>${name}</h3><p>${about}</p></div>`).join('')}</div>
 ${SCENES.flatMap(([scene, title]) => [row(`${title} · dark`, `${scene}-dark`), row(`${title} · light`, `${scene}-light`)]).join('\n')}
 ${PALETTE_PROOFS.map((p) => row(`A mixed day in existing palette ${p} · dark`, `palette-${p}`)).join('\n')}
 `;

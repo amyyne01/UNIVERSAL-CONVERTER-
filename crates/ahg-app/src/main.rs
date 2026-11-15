@@ -12,6 +12,7 @@
 mod copy;
 mod directions;
 mod gate;
+mod layouts;
 mod sample;
 
 use gate::{Direction, State};
@@ -21,6 +22,15 @@ use rune::{App, AppSpec, Cx, El, Titlebar};
 pub const TITLEBAR: f32 = 44.0;
 
 fn view(s: &State, cx: &mut Cx<State>) -> El {
+    match s.layout {
+        #[cfg(feature = "bar")]
+        Some(gate::Layout::Bar) => return layouts::bar::view(s, cx),
+        #[cfg(feature = "collection")]
+        Some(gate::Layout::Collection) => return layouts::collection::view(s, cx),
+        #[cfg(feature = "stage")]
+        Some(gate::Layout::Stage) => return layouts::stage::view(s, cx),
+        _ => {}
+    }
     match s.direction {
         #[cfg(feature = "shelf")]
         Direction::Shelf => directions::shelf::view(s, cx),

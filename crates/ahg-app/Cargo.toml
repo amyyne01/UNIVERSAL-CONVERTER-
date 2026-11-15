@@ -18,7 +18,11 @@ rune = { git = "https://github.com/anomalyco/rune", rev = "feac7b155c5f5873ad611
 # (`--no-default-features --features shelf`), so one direction's unfinished
 # code never stops the other two from building.
 [features]
-default = ["shelf", "signal", "orbit"]
+default = ["shelf", "signal", "orbit", "bar", "collection", "stage"]
 shelf = []
 signal = []
 orbit = []
+# The three new layouts (owner, 2026-11-15), each wearing one look.
+bar = ["signal"]
+collection = ["shelf"]
+stage = ["orbit"]
