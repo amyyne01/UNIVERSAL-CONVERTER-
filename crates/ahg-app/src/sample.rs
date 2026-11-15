@@ -1,0 +1,213 @@
+//! The prepared downloads every direction of the design gate shows: one of
+//! each kind the Downloads screen has to handle, with plausible numbers.
+//! Real engine types, so the direction that wins needs no translation later.
+use std::path::PathBuf;
+
+use ahg_engine::queue::{TaskInit, create_task};
+use ahg_engine::stats::{DownloadStats, MonthBucket};
+use ahg_engine::types::{DownloadStatus, DownloadTask, ErrorCode, SourcePlatform, Track, VideoQuality};
+use serde_json::json;
+
+const MIB: f64 = 1024.0 * 1024.0;
+/// 15 November 2026, 14:00 UTC, in milliseconds.
+const NOW: f64 = 1_794_751_200_000.0;
+
+struct Sample {
+    id: &'static str,
+    source: SourcePlatform,
+    title: &'static str,
+    uploader: &'static str,
+    /// "mp3", "flac", "mp4" ...
+    format: &'static str,
+    audio: bool,
+    /// Seconds.
+    duration: f64,
+    minutes_ago: f64,
+}
+
+fn base(s: &Sample) -> DownloadTask {
+    let init = TaskInit {
+        url: Some(format!("https://example.invalid/{}", s.id)),
+        source: Some(s.source),
+        output_dir: Some("C:\\Users\\Alex\\Music".into()),
+        format: Some(s.format.into()),
+        quality: Some("320".into()),
+        video_quality: Some(VideoQuality::P1080),
+        is_audio_only: Some(s.audio),
+        title: Some(s.title.into()),
+        uploader: Some(s.uploader.into()),
+        duration: Some(s.duration),
+        created_at: Some(NOW - s.minutes_ago * 60_000.0),
+        ..Default::default()
+    };
+    create_task(&init, s.id.into(), (NOW - s.minutes_ago * 60_000.0) as u64)
+}
+
+fn spotify(mut task: DownloadTask, name: &str, artist: &str, album: &str, confidence: f64) -> DownloadTask {
+    task.track = Some(Track {
+        id: task.task_id.clone(),
+        name: name.into(),
+        artist: artist.into(),
+        artists: vec![artist.into()],
+        album: album.into(),
+        album_year: None,
+        track_number: 1.0,
+        duration_ms: task.duration * 1000.0,
+        thumbnail_url: String::new(),
+        spotify_url: None,
+        explicit: None,
+    });
+    task.match_confidence = Some(confidence);
+    task.matched_url = Some("https://music.youtube.com/watch?v=swJOIjjW69U".into());
+    task
+}
+
+fn running(mut task: DownloadTask, status: DownloadStatus, percent: f64, total_mib: f64, mib_per_second: f64) -> DownloadTask {
+    let p = &mut task.progress;
+    p.status = status;
+    p.percent = percent;
+    p.total = total_mib * MIB;
+    p.downloaded = p.total * percent / 100.0;
+    p.speed = mib_per_second * MIB;
+    p.eta = if mib_per_second > 0.0 { (p.total - p.downloaded) / p.speed } else { 0.0 };
+    task
+}
+
+fn done(mut task: DownloadTask, file: &str, size_mib: f64) -> DownloadTask {
+    let p = &mut task.progress;
+    p.status = DownloadStatus::Done;
+    p.percent = 100.0;
+    p.total = size_mib * MIB;
+    p.downloaded = p.total;
+    p.filename = format!("C:\\Users\\Alex\\Music\\{file}");
+    task.completed_at = task.created_at.map(|at| at + 40_000.0);
+    task
+}
+
+fn failed(mut task: DownloadTask, code: ErrorCode, raw: &str) -> DownloadTask {
+    task.progress.status = DownloadStatus::Failed;
+    task.progress.error = ahg_engine::downloader::errors::explain_error(raw);
+    task.error_code = Some(code);
+    task
+}
+
+// ── The downloads ───────────────────────────────────────────────────────────
+
+fn get_lucky() -> DownloadTask {
+    let t = base(&Sample { id: "get-lucky", source: SourcePlatform::Spotify, title: "Get Lucky (feat. Pharrell Williams and Nile Rodgers)", uploader: "Daft Punk", format: "mp3", audio: true, duration: 369.0, minutes_ago: 0.4 });
+    running(spotify(t, "Get Lucky (feat. Pharrell Williams and Nile Rodgers)", "Daft Punk", "Random Access Memories", 1.0), DownloadStatus::Downloading, 62.0, 8.4, 3.1)
+}
+
+fn bunny() -> DownloadTask {
+    let t = base(&Sample { id: "big-buck-bunny", source: SourcePlatform::Youtube, title: "Big Buck Bunny 60fps 4K - Official Blender Foundation Short Film", uploader: "Blender", format: "mp4", audio: false, duration: 635.0, minutes_ago: 0.7 });
+    running(t, DownloadStatus::Downloading, 34.0, 412.0, 11.6)
+}
+
+fn converting() -> DownloadTask {
+    let t = base(&Sample { id: "tiny-desk", source: SourcePlatform::Youtube, title: "Khruangbin: Tiny Desk Concert", uploader: "NPR Music", format: "flac", audio: true, duration: 1034.0, minutes_ago: 1.6 });
+    running(t, DownloadStatus::Converting, 100.0, 96.0, 0.0)
+}
+
+fn queued() -> DownloadTask {
+    base(&Sample { id: "soundcloud-set", source: SourcePlatform::Soundcloud, title: "Four Tet - Boiler Room London DJ Set", uploader: "Boiler Room", format: "mp3", audio: true, duration: 3540.0, minutes_ago: 0.2 })
+}
+
+fn retrying() -> DownloadTask {
+    let mut t = base(&Sample { id: "vimeo-film", source: SourcePlatform::Vimeo, title: "The Last Ice Merchant", uploader: "Sandy Patch", format: "mp4", audio: false, duration: 842.0, minutes_ago: 2.1 });
+    t.progress.status = DownloadStatus::Retrying;
+    t.progress.percent = 18.0;
+    t.retry_count = Some(1.0);
+    t
+}
+
+fn paused() -> DownloadTask {
+    let mut t = running(base(&Sample { id: "lecture", source: SourcePlatform::Youtube, title: "Feynman: The Character of Physical Law - Lecture 1", uploader: "Cornell University", format: "mp4", audio: false, duration: 3342.0, minutes_ago: 26.0 }), DownloadStatus::Paused, 47.0, 640.0, 0.0);
+    t.interrupted = Some(true);
+    t
+}
+
+fn dreams() -> DownloadTask {
+    let t = base(&Sample { id: "dreams", source: SourcePlatform::Spotify, title: "Dreams - 2004 Remaster", uploader: "Fleetwood Mac", format: "mp3", audio: true, duration: 258.0, minutes_ago: 9.0 });
+    done(spotify(t, "Dreams - 2004 Remaster", "Fleetwood Mac", "Rumours", 1.0), "Fleetwood Mac - Dreams - 2004 Remaster.mp3", 4.2)
+}
+
+/// A Spotify track whose only match carried the other explicit flag: a best guess.
+fn humble() -> DownloadTask {
+    let t = base(&Sample { id: "humble", source: SourcePlatform::Spotify, title: "HUMBLE.", uploader: "Kendrick Lamar", format: "mp3", audio: true, duration: 177.0, minutes_ago: 14.0 });
+    done(spotify(t, "HUMBLE.", "Kendrick Lamar", "DAMN.", 0.9), "Kendrick Lamar - HUMBLE..mp3", 6.8)
+}
+
+fn reel() -> DownloadTask {
+    done(base(&Sample { id: "reel", source: SourcePlatform::Instagram, title: "Sourdough, day three", uploader: "breadbythebay", format: "mp4", audio: false, duration: 41.0, minutes_ago: 55.0 }), "Sourdough, day three.mp4", 9.4)
+}
+
+fn nasa() -> DownloadTask {
+    done(base(&Sample { id: "artemis", source: SourcePlatform::Youtube, title: "Artemis II: Around the Moon and Back", uploader: "NASA", format: "mp4", audio: false, duration: 1287.0, minutes_ago: 190.0 }), "Artemis II Around the Moon and Back [1080p].mp4", 386.0)
+}
+
+fn private_post() -> DownloadTask {
+    let t = base(&Sample { id: "private-reel", source: SourcePlatform::Instagram, title: "Reel by studio.notes", uploader: "studio.notes", format: "mp4", audio: false, duration: 0.0, minutes_ago: 4.0 });
+    failed(t, ErrorCode::LoginRequired, "ERROR: [Instagram] C0ffee: Requested content is not available, rate-limit reached or login required. Use --cookies to authenticate")
+}
+
+fn removed() -> DownloadTask {
+    let t = base(&Sample { id: "removed", source: SourcePlatform::Youtube, title: "Live at the Roundhouse (full set)", uploader: "", format: "mp3", audio: true, duration: 0.0, minutes_ago: 31.0 });
+    failed(t, ErrorCode::Removed, "ERROR: [youtube] dQw4w9WgXcQ: Video unavailable. This video has been removed by the uploader")
+}
+
+fn no_match() -> DownloadTask {
+    let t = base(&Sample { id: "no-match", source: SourcePlatform::Spotify, title: "Untitled (Demo, 1997)", uploader: "The Lighthouse Keepers", format: "mp3", audio: true, duration: 203.0, minutes_ago: 6.0 });
+    failed(spotify(t, "Untitled (Demo, 1997)", "The Lighthouse Keepers", "", 0.0), ErrorCode::Unknown, ahg_engine::downloader::bridge::NO_MATCH_FOUND)
+}
+
+fn cancelled() -> DownloadTask {
+    let mut t = base(&Sample { id: "cancelled", source: SourcePlatform::Tiktok, title: "How a mechanical watch works", uploader: "horology.daily", format: "mp4", audio: false, duration: 58.0, minutes_ago: 12.0 });
+    t.progress.status = DownloadStatus::Cancelled;
+    t
+}
+
+/// Downloads in progress: two running, one converting, one waiting, one
+/// retrying, one paused after a restart.
+pub fn active() -> Vec<DownloadTask> {
+    vec![get_lucky(), bunny(), converting(), queued(), retrying(), paused()]
+}
+
+/// Finished files, including a best-guess Spotify match.
+pub fn finished() -> Vec<DownloadTask> {
+    vec![dreams(), humble(), reel(), nasa()]
+}
+
+/// What can go wrong: a post that needs a sign-in, a removed video, a
+/// Spotify track with no match, and a cancelled download.
+pub fn troubled() -> Vec<DownloadTask> {
+    vec![private_post(), no_match(), removed(), cancelled()]
+}
+
+/// A realistic day: a little of everything, newest first.
+pub fn everything() -> Vec<DownloadTask> {
+    let mut all: Vec<DownloadTask> = active().into_iter().chain(finished()).chain(troubled()).collect();
+    all.sort_by(|a, b| b.created_at.partial_cmp(&a.created_at).unwrap_or(std::cmp::Ordering::Equal));
+    all
+}
+
+/// November so far, and October to compare with.
+pub fn stats() -> DownloadStats {
+    let bucket = |month: &str, files: f64, gib: f64, by: serde_json::Value| MonthBucket { month: month.into(), files, bytes: gib * 1024.0 * MIB, by_platform: by.as_object().cloned().unwrap_or_default() };
+    DownloadStats {
+        current: bucket("2026-11", 86.0, 3.9, json!({ "youtube": 41, "spotify": 32, "soundcloud": 7, "instagram": 4, "tiktok": 2 })),
+        previous: Some(bucket("2026-10", 61.0, 2.7, json!({ "youtube": 30, "spotify": 24, "soundcloud": 5, "instagram": 2 }))),
+    }
+}
+
+/// Cover art for the samples, by task id: every `<task id>.jpg` in
+/// `docs/design-gate/covers`. That folder is not in git (the pictures are
+/// other people's), so a checkout without it simply shows placeholders.
+pub fn covers() -> Vec<(String, Vec<u8>)> {
+    let folder = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..").join("docs").join("design-gate").join("covers");
+    let Ok(entries) = std::fs::read_dir(folder) else { return Vec::new() };
+    entries
+        .flatten()
+        .filter(|e| e.path().extension().is_some_and(|x| x == "jpg" || x == "png" || x == "webp"))
+        .filter_map(|e| Some((e.path().file_stem()?.to_string_lossy().into_owned(), std::fs::read(e.path()).ok()?)))
+        .collect()
+}

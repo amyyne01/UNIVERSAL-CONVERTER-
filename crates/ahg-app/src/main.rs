@@ -1,59 +1,65 @@
-//! AHG Universal Converter's interface. It starts as Rune's `examples/hello`, unchanged, to prove
-//! the toolchain, the pinned Rune commit and the headless checks before any screen is built.
-//! `cargo run -p ahg-app` opens the window; `-- --snap hello.png --scene on` renders it headless.
+//! AHG Universal Converter's interface.
+//!
+//! For now it is the design gate: Home and Downloads drawn three ways over
+//! prepared downloads (see `gate.rs`). Headless checks, from the workspace root:
+//!
+//! ```text
+//! target/debug/AHG-Converter.exe --direction shelf --scene home-history --theme dark --snap out.png
+//! target/debug/AHG-Converter.exe --list-scenes
+//! ```
+// Every string the screens show, word for word from the Electron app. A direction uses what it draws.
+#[allow(dead_code)]
+mod copy;
+mod directions;
+mod gate;
+mod sample;
 
-use rune::tok::{self, motion, type_};
-use rune::{AppSpec, Cx, El, col, el, text};
+use gate::{Direction, State};
+use rune::{App, AppSpec, Cx, El, Titlebar};
 
-#[derive(Default)]
-struct State {
-    on: bool,
+/// The window's title band, in points. Rune draws the three caption buttons over its trailing end.
+pub const TITLEBAR: f32 = 44.0;
+
+fn view(s: &State, cx: &mut Cx<State>) -> El {
+    match s.direction {
+        #[cfg(feature = "shelf")]
+        Direction::Shelf => directions::shelf::view(s, cx),
+        #[cfg(feature = "signal")]
+        Direction::Signal => directions::signal::view(s, cx),
+        #[cfg(feature = "orbit")]
+        Direction::Orbit => directions::orbit::view(s, cx),
+        // A build with only some directions (one designer's own build).
+        #[allow(unreachable_patterns)]
+        _ => {
+            let _ = cx;
+            rune::text("This direction is not in this build")
+        }
+    }
 }
 
-fn view(s: &State, _: &mut Cx<State>) -> El {
-    let t = tok::theme(true);
-    let label = text(if s.on { "Lights on" } else { "Lights off" })
-        .font(type_::TITLE).color(t.text);
-    let knob = el().key("knob").size(18.0, 18.0).radius(9.0).fill(t.knob)
-        .absolute(if s.on { 18.0 } else { 2.0 }, 2.0);
-    // Screen readers hear "Lights, switch, on": the label names it, `checked` says its state.
-    let switch = el().key("switch").role("switch").label("Lights").checked(s.on).focusable(true).size(38.0, 22.0).radius(11.0)
-        .fill(if s.on { tok::accent(0, true) } else { t.control_off })
-        .motion(motion::SNAPPY)
-        .on_press(|s: &mut State| s.on = !s.on)
-        .child(knob);
-    col().w_full().h_full().center().gap(16.0).fill(t.bg).child(label).child(switch)
-}
+/// Every face the three directions use, all under the SIL Open Font License
+/// (`assets/fonts/OFL-*.txt`). The direction that wins keeps its own; the
+/// rest are removed with the other two directions.
+const FONTS: &[&[u8]] = &[
+    include_bytes!("../assets/fonts/Geist-Variable.ttf"),
+    include_bytes!("../assets/fonts/GeistMono-Variable.ttf"),
+    include_bytes!("../assets/fonts/InstrumentSans-Variable.ttf"),
+    include_bytes!("../assets/fonts/InstrumentSerif-Regular.ttf"),
+    include_bytes!("../assets/fonts/IBMPlexMono-Regular.ttf"),
+    include_bytes!("../assets/fonts/IBMPlexMono-Medium.ttf"),
+    include_bytes!("../assets/fonts/SpaceGrotesk-Variable.ttf"),
+    include_bytes!("../assets/fonts/SpaceMono-Regular.ttf"),
+];
 
 fn main() {
-    rune::run(AppSpec::<State> {
-        scenes: &[("on", |s| s.on = true)],
-        ..AppSpec::new("Hello", (320.0, 200.0), State::default, view)
-    });
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use rune::{Env, Runtime};
-
-    #[test]
-    fn a_tap_flips_the_switch_and_the_knob_springs_across() {
-        let env = Env { system_dark: true, scale: 2.0 };
-        let mut rt = Runtime::new(State::default(), view, (320.0, 200.0), env);
-        rt.frame(0.0);
-        let knob_x = |rt: &Runtime<State>| rt.presented("knob").unwrap().0[0];
-        let off = knob_x(&rt);
-
-        let (x, y) = rt.find("switch").unwrap();
-        rt.pointer_down(x, y);
-        rt.pointer_up(x, y);
-        for _ in 0..6 { rt.frame(1.0 / 60.0); }
-        assert!(rt.state.on);
-        let mid = knob_x(&rt);
-        for _ in 0..60 { rt.frame(1.0 / 60.0); }
-        let on = knob_x(&rt);
-        assert!(off < mid && mid < on, "the knob travels: {off} → {mid} → {on}");
-        assert!((on - off - 16.0).abs() < 0.01, "and lands 16 points over");
-    }
+    let spec = AppSpec::<State> {
+        min_size: Some((960.0, 640.0)),
+        scenes: gate::SCENES,
+        fonts: FONTS,
+        // The interface family and the one for figures, per direction (owner, 2026-11-15).
+        families: gate::direction_from_args().families(),
+        setup: Some(gate::setup),
+        ..AppSpec::new("AHG Universal Converter", (1240.0, 820.0), gate::init, view)
+    };
+    App::new(spec).titlebar(Titlebar::new(TITLEBAR)).run();
 }
