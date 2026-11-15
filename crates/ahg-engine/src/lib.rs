@@ -5,3 +5,4 @@ pub mod text;
 pub mod tier;
 pub mod types;
 pub mod url_detector;
+pub mod validate;

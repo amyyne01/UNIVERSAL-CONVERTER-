@@ -4,7 +4,20 @@
 // `node scripts/rust-golden.mjs`.
 import { readFileSync, writeFileSync } from 'node:fs';
 
+import { register } from 'node:module';
+
 const OUT = 'crates/ahg-engine/tests/golden';
+
+// Some modules import 'electron' for parts the Rust engine does not port. Plain
+// Node cannot load it, so it resolves to an empty stand-in; only pure functions
+// are called here, and none of them touches it.
+register(`data:text/javascript,${encodeURIComponent(`
+  const STUB = 'data:text/javascript,' + encodeURIComponent(
+    'export const app = {}; export const session = {}; export default {};');
+  export async function resolve(specifier, context, next) {
+    return specifier === 'electron' ? { url: STUB, shortCircuit: true } : next(specifier, context);
+  }
+`)}`);
 
 /** Every plain string literal in a test file: the inputs the suite already cares about. */
 function literals(file) {
@@ -46,6 +59,49 @@ const extra = [
   'https://exa_mple.com/x', 'https://xn--bcher-kva.example/x', 'https://b\u00FCcher.example/x', 'https://example.com./x',
   'a'.repeat(2100) + '.com', 'https://youtu.be/' + 'x'.repeat(2100), '\uD83D\uDE00'.repeat(1030) + 'youtu.be/dQw4w9WgXcQ',
 ];
+
+// ── Outside-input validators (electron/security.ts) ──────────────────────────
+{
+  const s = await import('../dist-electron/electron/security.js');
+  /** Result of a validator that throws: the value, or the error message. */
+  const attempt = (fn) => { try { return { ok: fn() }; } catch (e) { return { err: e.message }; } };
+  const urls = [
+    '', 'https://youtu.be/x', 'http://a.b/c', 'HTTPS://A.B', 'ytsearch:artist - title', 'YTSEARCH:x', 'ytsearch5:x',
+    '-rf', '--exec=calc', ' -x', 'https://a.b/\nc', 'https://a.b/\rc', 'https://a.b/\u2028c', 'ftp://a.b', 'file:///c:/x',
+    'spotify:track:abc', 'javascript:alert(1)', 'a'.repeat(2048), 'a'.repeat(2049), 'https://' + 'a'.repeat(2040),
+    'https://' + 'a'.repeat(2041), '\uD83D\uDE00'.repeat(1024), '\uD83D\uDE00'.repeat(1025), 'https://x.y/\uD83D\uDE00',
+  ];
+  const items = [
+    '', '1', '1,3-5', '1-2-3', '1,', ',1', '1,,2', ' 1', '1 ', '-1', '1-', 'a', '1,3-5,10-12,99', '\u0661', '1\n',
+    '0', '007', '1'.repeat(256), '1'.repeat(257), '1,'.repeat(127) + '1', '1,'.repeat(128) + '1',
+  ];
+  const row = 'example.com\tTRUE\t/\tFALSE\t0\tname\tvalue';
+  const cookies = [
+    '', row, row + '\n', row + '\r\n' + row, '# Netscape HTTP Cookie File\n' + row, '# only a comment\n', '\n\n', '   \n' + row,
+    'example.com\tTRUE\t/\tFALSE\t0\tname', row + '\textra', row + '\n{"json":true}', row + '\0', '#HttpOnly_' + row,
+    ' ' + row, '\t\t\t\t\t\t', 'a\rb', row + '\rnot a row', row + '\n \t \n' + row, '\uFEFF' + row,
+    row + '\n' + 'x'.repeat(2 * 1024 * 1024 - row.length - 1), row + '\n' + 'x'.repeat(2 * 1024 * 1024 - row.length),
+  ];
+  const R = 'C:\\Users\\x\\Music';
+  const confine = [
+    ['song.mp3', R], ['a\\b\\song.mp3', R], ['a/b/song.mp3', R], ['', R], ['.', R], ['..', R], ['..\\Music\\a.mp3', R],
+    ['..\\Music2\\a.mp3', R], ['a\\..\\..\\b', R], [R, R], [R + '\\', R], [R + '\\a.mp3', R], ['c:\\users\\x\\music\\a.mp3', R],
+    ['C:\\Users\\x\\Music2\\a.mp3', R], ['C:\\Windows\\System32\\calc.exe', R], ['D:\\a.mp3', R], ['\\\\server\\share\\a.mp3', R],
+    ['\\a.mp3', R], ['/a.mp3', R], ['C:a.mp3', R], ['a.mp3', R + '\\'], ['a.mp3', 'C:\\'], ['..', 'C:\\'], ['C:\\', 'C:\\'],
+    ['a.mp3.', R], ['a .mp3 ', R], ['sub\\.\\a.mp3', R], ['a.mp3', 'C:/Users/x/Music'], ['a.mp3', 'C:\\Users\\x\\..\\x\\Music'],
+    ['\u00E9t\u00E9\\\uD83D\uDE00.mp3', R], ['a.mp3', '\\\\server\\share\\dir'], ['..\\other\\a.mp3', '\\\\server\\share\\dir'],
+  ];
+  const golden = {
+    maxCookiesBytes: s.MAX_COOKIES_BYTES,
+    urlArg: urls.map((v) => ({ v, out: attempt(() => s.urlArg(v)) })),
+    mediaUrlArg: urls.map((v) => ({ v, out: attempt(() => s.mediaUrlArg(v)) })),
+    playlistItemsArg: items.map((v) => ({ v, out: attempt(() => s.playlistItemsArg(v)) })),
+    isNetscapeCookies: cookies.map((v) => ({ v, out: s.isNetscapeCookies(v) })),
+    confineToRoot: confine.map(([candidate, root]) => ({ candidate, root, out: s.confineToRoot(candidate, root) })),
+  };
+  writeFileSync(`${OUT}/validate.json`, JSON.stringify(golden) + '\n');
+  console.log(`validate.json: ${Object.values(golden).filter(Array.isArray).reduce((n, a) => n + a.length, 0)} cases`);
+}
 
 // ── Tier clamps and extras (shared/types.ts) ─────────────────────────────────
 {
