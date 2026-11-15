@@ -14,20 +14,19 @@ pub enum ErrorClass {
 
 const TIMEOUT_MESSAGE: &str = "Timed out reading that link \u{2014} the site did not answer in time.";
 
-// D30 (Rust-only behaviour change, owner-approved): the needles below are phrases yt-dlp
-// (or the site, relayed by yt-dlp) really prints, not loose words that also turn up in file
-// paths, playlist names or other sentences. The old "geo", "region", "private", "removed",
-// "deleted", "copyright", "drm", "not found", "network", "timeout" and "temporar" matched
-// anywhere in the text; each is now a phrase quoted from yt-dlp's source (master):
-//   yt_dlp/extractor/common.py          raise_geo_restricted default message and
-//                                       "Video is geo restricted", report_drm, "A network error has occurred."
+// D30 (Rust-only behaviour change, owner-approved): the owner-named loose words "geo",
+// "region" and "private", which matched anywhere in the text (paths, playlist names), are
+// now phrases quoted from yt-dlp's source (master). "drm" is tightened the same way. The other
+// loose-looking needles (removed, deleted, copyright, not found, network, timeout, temporar)
+// were deliberately left as they were: no quoted replacement keeps every real message.
+//   yt_dlp/extractor/common.py          raise_geo_restricted default message, "Video is geo restricted",
+//                                       report_drm "This video is DRM protected"
+//   yt_dlp/extractor/unsupported.py     "The requested site is known to use DRM protection"
 //   yt_dlp/YoutubeDL.py                 GeoRestrictedError hint "use a VPN or a proxy server"
-//   yt_dlp/extractor/youtube/_video.py  "The uploader has not made this video available in your
-//                                       country"; test reasons "Private video", "This video has been removed ..."
+//   yt_dlp/extractor/youtube/_video.py  "The uploader has not made this video available in your country";
+//                                       reason "Private video" (+ ". " + subreason)
 //   yt_dlp/extractor/youtube/_tab.py    "not available in your region", "This playlist is private"
 //   yt_dlp/extractor/tiktok.py          "account is private", "either private or"
-//   yt_dlp/extractor/twitter.py         "Tweet has been deleted", "Twitter Space not found"
-//   yt_dlp/extractor/twitch.py          `Channel "x" not found`
 // A stray word now falls through to the default: Permanent / Unknown, shown with yt-dlp's own text.
 
 const AUTH: &[&str] = &[
@@ -56,11 +55,12 @@ const PERMANENT: &[&str] = &[
     "is unavailable",
     "video unavailable",
     "no longer available",
-    "has been removed",
-    "has been deleted",
+    "removed",
+    "deleted",
     "does not exist",
     "this video is not available",
-    "drm protected",
+    "copyright",
+    "drm protect",
     "is not a valid url",
     "unsupported url",
     "http error 404",
@@ -71,12 +71,14 @@ const PERMANENT: &[&str] = &[
 ];
 const RETRYABLE: &[&str] = &[
     "timed out",
+    "timeout",
+    "temporar",
     "http error 5",
     "too many requests",
     "connection reset",
     "reset by peer",
     "connection refused",
-    "network error",
+    "network",
     "read error",
     "unable to download",
 ];
@@ -90,7 +92,7 @@ const ERROR_CODE_NEEDLES: &[(ErrorCode, &[&str])] = &[
         &["ffmpeg is not installed", "ffmpeg not found", "ffprobe and ffmpeg not found", "ffmpeg-location"],
     ),
     (ErrorCode::DiskFull, &["no space left", "disk full", "enospc", "not enough space"]),
-    (ErrorCode::Drm, &["drm protected"]),
+    (ErrorCode::Drm, &["drm protect"]),
     (ErrorCode::AgeRestricted, &["age-restricted", "age restricted", "confirm your age"]),
     (ErrorCode::Private, PRIVATE),
     (
@@ -113,15 +115,15 @@ const ERROR_CODE_NEEDLES: &[(ErrorCode, &[&str])] = &[
         &[
             "http error 404",
             "http error 410",
-            "has been removed",
-            "has been deleted",
+            "removed",
+            "deleted",
             "does not exist",
             "no longer available",
             "video unavailable",
             "is unavailable",
             "this video is not available",
-            "\" not found",
-            "space not found",
+            "copyright",
+            "not found",
         ],
     ),
 ];
@@ -130,11 +132,17 @@ fn has_any(t: &str, needles: &[&str]) -> bool {
     needles.iter().any(|n| t.contains(n))
 }
 
+/// yt-dlp prints YouTube's bare reason "Private video" when there is no subreason. A plain
+/// substring would also match "Private Videos" in a path, so it must end a line.
+fn ends_with_private_video(t: &str) -> bool {
+    t.lines().any(|l| l.trim_end().ends_with("private video"))
+}
+
 /// Whether to retry (§8). Conservative: auth, then geo, then permanent, then
 /// retryable (which includes the gated signs); anything unlisted is permanent.
 pub fn classify_error(text: &str) -> ErrorClass {
     let t = text.to_lowercase();
-    if has_any(&t, AUTH) || has_any(&t, PRIVATE) {
+    if has_any(&t, AUTH) || has_any(&t, PRIVATE) || ends_with_private_video(&t) {
         ErrorClass::Auth
     } else if has_any(&t, GEO) {
         ErrorClass::Geo
@@ -156,7 +164,7 @@ pub fn needs_client_fallback(text: &str) -> bool {
 pub fn error_code_of(text: &str) -> ErrorCode {
     let t = text.to_lowercase();
     for (code, needles) in ERROR_CODE_NEEDLES {
-        if has_any(&t, needles) {
+        if has_any(&t, needles) || (*code == ErrorCode::Private && ends_with_private_video(&t)) {
             return *code;
         }
     }

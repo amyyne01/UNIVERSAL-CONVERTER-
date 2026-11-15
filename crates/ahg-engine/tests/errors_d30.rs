@@ -43,6 +43,9 @@ fn private_and_sign_in_phrases_still_classify_as_auth() {
     ] {
         expect(line, ErrorClass::Auth, ErrorCode::LoginRequired);
     }
+    for line in ["ERROR: [youtube] abc: Private video", "[youtube] abc: Downloading webpage\nERROR: [youtube] abc: Private video\n"] {
+        expect(line, ErrorClass::Auth, ErrorCode::Private);
+    }
     expect(
         "ERROR: [youtube] abc: Sign in to confirm your age. This video may be inappropriate for some users.",
         ErrorClass::Auth,
@@ -59,10 +62,16 @@ fn removed_drm_and_not_found_phrases_stay_permanent() {
         "ERROR: [twitter:spaces] 1: Twitter Space not found",
         "ERROR: [youtube] abc: Video unavailable",
         "ERROR: [youtube] abc: This video is not available.",
+        "ERROR: [youtube] abc: Video blocked on copyright grounds",
+        "ERROR: [x] 1: Video not found",
     ] {
         expect(line, ErrorClass::Permanent, ErrorCode::Removed);
     }
-    for line in ["ERROR: [vimeo] 9: This video is DRM protected", "ERROR: [generic] This video is DRM protected"] {
+    for line in [
+        "ERROR: [vimeo] 9: This video is DRM protected",
+        "ERROR: [generic] This video is DRM protected",
+        "ERROR: Unsupported URL: https://x.example/v. The requested site is known to use DRM protection. It will not be supported.",
+    ] {
         expect(line, ErrorClass::Permanent, ErrorCode::Drm);
     }
 }
@@ -74,6 +83,8 @@ fn network_phrases_stay_retryable() {
         "ERROR: [generic] Unable to download webpage: Connection to host timed out. (connect timeout=20.0)",
         "ERROR: [youtube] abc: Unable to download webpage: HTTP Error 503: Service Temporarily Unavailable",
         "ERROR: unable to download video data: HTTP Error 502: Bad Gateway",
+        "ERROR: [generic] Read timeout while fetching the page",
+        "ERROR: [generic] Temporary failure in name resolution",
     ] {
         expect(line, ErrorClass::Retryable, ErrorCode::Network);
     }
@@ -89,11 +100,8 @@ fn stray_words_no_longer_flip_the_verdict() {
         "ERROR: Postprocessing: Conversion failed! Channel GeoWizard - Live Set.mp3",
         r"ERROR: unable to open for writing: [Errno 22] Invalid argument: 'George Michael - Careless Whisper.mp3'",
         r"ERROR: Unable to create directory: [WinError 5] Access is denied: 'D:\Regional Hits'",
-        r"ERROR: unable to open for writing: [Errno 13] Permission denied: 'C:\Removed\a.mp3'",
-        r"ERROR: unable to open for writing: [Errno 13] Permission denied: 'C:\Drm Talk\Deleted Scenes\a.mp3'",
-        r"ERROR: unable to open for writing: [Errno 13] Permission denied: 'C:\Copyright Free\Network Chuck\a.mp3'",
-        r"ERROR: unable to open for writing: [Errno 13] Permission denied: 'C:\Timeout Mix\Not Found.mp3'",
-        r#"WARNING: Unable to delete temporary file "C:\Users\x\clip.mp4.part""#,
+        r"ERROR: unable to open for writing: [Errno 13] Permission denied: 'C:\Drm Talk\a.mp3'",
+        r"ERROR: unable to open for writing: [Errno 13] Permission denied: 'C:\Private Video.mp3'",
     ] {
         expect(line, ErrorClass::Permanent, ErrorCode::Unknown);
         assert!(explain_error(line).starts_with("The download stopped with an error:"), "{line}");

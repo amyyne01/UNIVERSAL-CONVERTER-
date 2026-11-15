@@ -24,21 +24,26 @@ const D30_LOOSE: &[(&str, &[&str])] = &[
     ("geo", &["geo restriction", "geo restricted", "use a vpn or a proxy server"]),
     ("region", &["not available in your region"]),
     ("private", &["private video. ", "playlist is private", "account is private", "either private or"]),
-    ("removed", &["has been removed"]),
-    ("deleted", &["has been deleted"]),
-    ("copyright", &[]),
-    ("drm", &["drm protected"]),
-    ("not found", &["\" not found", "space not found"]),
-    ("network", &["network error"]),
-    ("timeout", &[]),
-    ("temporar", &[]),
+    ("drm", &["drm protect"]),
 ];
+
+/// A line that ends with the bare reason "Private video" is the one extra private phrase.
+fn private_video_line(t: &str) -> bool {
+    t.lines().any(|l| l.trim_end().ends_with("private video"))
+}
 
 /// An input the Electron result may legitimately differ on: it holds a removed loose word and
 /// none of the precise phrases that replaced it. Only ever consulted when Rust and Electron disagree.
 fn d30_exempt(input: &str) -> bool {
     let t = input.to_lowercase();
-    D30_LOOSE.iter().any(|(loose, precise)| t.contains(loose) && !precise.iter().any(|p| t.contains(p)))
+    uncovered(&t).next().is_some()
+}
+
+fn uncovered(t: &str) -> impl Iterator<Item = &'static str> + '_ {
+    D30_LOOSE.iter().filter_map(move |(loose, precise)| {
+        let covered = precise.iter().any(|p| t.contains(p)) || (*loose == "private" && private_video_line(t));
+        (t.contains(loose) && !covered).then_some(*loose)
+    })
 }
 
 /// Inputs on which any of classify / code / explain differs from Electron.
@@ -106,13 +111,10 @@ fn d30_exempt_inputs_are_counted() {
     assert!(!diff.is_empty(), "D30 should change at least one golden input");
     assert!(diff.iter().all(|&i| d30_exempt(cases[i]["input"].as_str().unwrap())));
     println!("D30: {} of {} golden inputs differ from Electron", diff.len(), cases.len());
-    for (loose, precise) in D30_LOOSE {
+    for (loose, _) in D30_LOOSE {
         let n = diff
             .iter()
-            .filter(|&&i| {
-                let t = cases[i]["input"].as_str().unwrap().to_lowercase();
-                t.contains(loose) && !precise.iter().any(|p| t.contains(p))
-            })
+            .filter(|&&i| uncovered(&cases[i]["input"].as_str().unwrap().to_lowercase()).any(|l| l == *loose))
             .count();
         println!("  uncovered {loose:?}: {n}");
     }
