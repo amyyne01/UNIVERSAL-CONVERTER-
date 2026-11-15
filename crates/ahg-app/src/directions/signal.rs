@@ -7,10 +7,10 @@
 //! across so far, `hh:mm:ss`, on in-flight Downloads rows and nowhere else.
 mod downloads;
 mod home;
-mod icons;
-mod model;
-mod parts;
-mod theme;
+pub(crate) mod icons;
+pub(crate) mod model;
+pub(crate) mod parts;
+pub(crate) mod theme;
 
 use rune::{Color, Cx, El, col, el, icon, row, spacer, text};
 
