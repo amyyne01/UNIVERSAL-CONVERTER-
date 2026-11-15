@@ -53,3 +53,7 @@ crates/ahg-engine/src/license.rs
 crates/ahg-engine/src/license/
 crates/ahg-engine/tests/license*.rs
 crates/**/secrets.gen.rs
+
+# Rust port: the entitlement layer stays out of the public tree here too.
+crates/ahg-engine/tests/golden/license*.json
+scripts/rust-golden/license.mjs
