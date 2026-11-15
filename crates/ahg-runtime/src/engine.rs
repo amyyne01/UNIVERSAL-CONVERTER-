@@ -193,6 +193,10 @@ fn run(mut queue: Queue, downloader: Downloader, rx: Receiver<Msg>, reports: Sen
                     queue.on_done(&id, attempt, &path, &filepaths, already_on_disk, now)
                 }
                 Report::Error { id, attempt, message } => queue.on_error(&id, attempt, &message, now),
+                Report::Match { id, attempt, url, confidence } => {
+                    queue.on_match(&id, attempt, &url, confidence);
+                    Vec::new()
+                }
             },
             Some(Msg::Shutdown) => {
                 // Quit: no process may be left running. Partial files stay, and
