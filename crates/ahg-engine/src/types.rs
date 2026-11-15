@@ -181,8 +181,8 @@ pub enum CookieBrowser {
 }
 
 /// Everything yt-dlp can do that isn't format or quality, as one object. The
-/// second macro arm declares the all-optional twin used for partial input, so
-/// the two field lists cannot drift apart.
+/// macro also declares the all-optional twin used for partial input, so the
+/// two field lists cannot drift apart.
 macro_rules! extras {
     ($($(#[$doc:meta])* $field:ident: $ty:ty = $default:expr,)*) => {
         #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
