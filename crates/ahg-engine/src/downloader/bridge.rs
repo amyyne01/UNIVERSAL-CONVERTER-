@@ -289,3 +289,58 @@ pub fn song_search_page(query: &str) -> String {
     let query: String = url::form_urlencoded::byte_serialize(query.as_bytes()).collect();
     format!("https://music.youtube.com/search?q={query}#songs")
 }
+
+// ── The match itself ────────────────────────────────────────────────────────
+
+/// The confidence of a confirmed match: artist, name, length and explicit
+/// flag all agree. Anything lower is a best guess.
+pub const CONFIRMED: f64 = 1.0;
+/// A song that agrees with the track but carries the other explicit flag.
+pub const EXPLICIT_DIFFERS: f64 = 0.9;
+/// The most a match picked by score alone, or with no stated confidence, may claim.
+pub const GUESS_CEILING: f64 = 0.89;
+
+/// What is searched for: "Artist - Name". The text reaches yt-dlp as an
+/// argument, with no shell, so quotes are removed.
+pub fn song_query(track: &Track) -> String {
+    let clean = |s: &str| crate::text::js_trim(&s.replace('"', "")).to_owned();
+    let artist = if track.artist.is_empty() { track.artists.first().map_or("", String::as_str) } else { &track.artist };
+    format!("{} - {}", clean(artist), clean(&track.name))
+}
+
+/// The song chosen for a track, with what the search said about it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SongMatch {
+    pub url: String,
+    pub title: String,
+    pub artist: String,
+    pub album: String,
+    /// Seconds.
+    pub duration: Option<f64>,
+    pub explicit: bool,
+    /// [`CONFIRMED`], or less for a best guess.
+    pub confidence: f64,
+}
+
+/// The song of these search rows that is the track, if one agrees.
+pub fn match_song(track: &Track, rows: &[SongHit]) -> Option<SongMatch> {
+    let pick = pick_row(track, rows, track.explicit)?;
+    let hit = &rows[pick.index];
+    Some(SongMatch {
+        url: hit.url(),
+        title: hit.title.clone(),
+        artist: hit.artist.clone(),
+        album: hit.album.clone(),
+        duration: hit.duration,
+        explicit: hit.explicit,
+        confidence: if pick.explicit_agrees { CONFIRMED } else { EXPLICIT_DIFFERS },
+    })
+}
+
+/// A match named from outside (a request, a saved task) is only used when it
+/// is a plain YouTube address: it becomes an argument to yt-dlp.
+pub fn song_url(url: &str) -> Option<&str> {
+    let parsed = url::Url::parse(crate::validate::media_url_arg(url).ok()?).ok()?;
+    let host = parsed.host_str()?;
+    (parsed.scheme() == "https" && ["music.youtube.com", "www.youtube.com", "youtube.com", "youtu.be"].contains(&host)).then_some(url)
+}

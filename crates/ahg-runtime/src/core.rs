@@ -16,11 +16,12 @@ use ahg_engine::queue::{Event, new_task_id};
 use ahg_engine::scheduler::{Fire, POLL_MS, ScheduleConfig, Scheduler};
 use ahg_engine::stats::{DownloadStats, StatsStore, stats_file_path};
 use ahg_engine::tier::{Plan, clamp_concurrency};
-use ahg_engine::types::{DownloadTask, MediaMetadata, SearchResult};
+use ahg_engine::downloader::bridge::{SongMatch, match_song, song_query, song_rows};
+use ahg_engine::types::{DownloadTask, MediaMetadata, SearchResult, Track};
 use ahg_engine::validate::media_url_arg;
 use serde_json::{Map, Value, json};
 
-use crate::download::Downloader;
+use crate::download::{Downloader, SongSearch};
 use crate::engine::{Engine, Notice};
 use crate::ytdlp::YtDlp;
 
@@ -85,11 +86,22 @@ pub struct Core {
     events: Sender<CoreEvent>,
     stop: Sender<()>,
     dispatcher: Option<JoinHandle<()>>,
+    song_search: SongSearch,
 }
 
 impl Core {
     /// Load the settings, the history and the statistics, and start the engine.
     pub fn start(paths: Paths, ytdlp: Arc<YtDlp>, plan: PlanSource, events: Sender<CoreEvent>) -> Self {
+        let proxy = {
+            let ytdlp = ytdlp.clone();
+            move || ytdlp.proxy()
+        };
+        Self::start_with_search(paths, ytdlp, plan, events, crate::http::song_search(proxy))
+    }
+
+    /// `start`, with the YouTube Music song search given: the real one, or a
+    /// stand-in for tests.
+    pub fn start_with_search(paths: Paths, ytdlp: Arc<YtDlp>, plan: PlanSource, events: Sender<CoreEvent>, song_search: SongSearch) -> Self {
         init_log(&paths.user_data);
         let config = Arc::new(Mutex::new(ConfigManager::new(&paths.user_data, paths.downloads.clone())));
         let mut stats = StatsStore::default();
@@ -98,10 +110,7 @@ impl Core {
 
         let (notices, incoming) = channel();
         let mut downloader = Downloader::with(ytdlp.clone());
-        downloader.set_song_search(crate::http::song_search({
-            let ytdlp = ytdlp.clone();
-            move || ytdlp.proxy()
-        }));
+        downloader.set_song_search(song_search.clone());
         let engine = Arc::new(Engine::start(downloader, &paths.user_data.join("downloads-history.json"), notices));
         let plan: Arc<dyn Fn() -> Plan + Send + Sync> = Arc::from(plan);
         let (stop, stopped) = channel();
@@ -169,7 +178,7 @@ impl Core {
                 }
             })
         };
-        let core = Self { paths, config, stats, ytdlp, plan, engine, events, stop, dispatcher: Some(dispatcher) };
+        let core = Self { paths, config, stats, ytdlp, plan, engine, events, stop, dispatcher: Some(dispatcher), song_search };
         core.sync();
         core
     }
@@ -281,6 +290,15 @@ impl Core {
 
     pub fn search_soundcloud(&self, query: &str) -> Result<Vec<SearchResult>, String> {
         self.ytdlp.search_soundcloud(query)
+    }
+
+    /// D34, for the playlist preview: the YouTube Music song that is this
+    /// Spotify track, if the song search has one that agrees. About half a
+    /// second on the network: call it from a worker thread. `None` is not a
+    /// failure; the download still tries its fallbacks.
+    pub fn match_track(&self, track: &Track) -> Option<SongMatch> {
+        let response = (self.song_search)(&song_query(track))?;
+        match_song(track, &song_rows(&response))
     }
 
     /// This month's counters and the last active month before it.

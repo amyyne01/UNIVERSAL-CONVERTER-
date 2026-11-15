@@ -426,3 +426,33 @@ fn an_explicit_track_with_only_a_clean_song_is_a_best_guess_not_a_confirmed_matc
     assert_eq!(url, "https://music.youtube.com/watch?v=clean000001");
     assert!(confidence < 1.0, "a different explicit flag is not a confirmed match: {confidence}");
 }
+
+#[test]
+fn a_match_already_chosen_is_downloaded_without_searching_again() {
+    let dir = scratch("chosen");
+    let asked = Arc::new(std::sync::Mutex::new(0));
+    let mut d = Downloader::with(Arc::new(ytdlp(&dir, "exit 1\n", DOWNLOADS)));
+    let count = asked.clone();
+    d.set_song_search(Arc::new(move |_: &str| {
+        *count.lock().unwrap() += 1;
+        None
+    }));
+    let mut task = spotify_task();
+    task.matched_url = Some("https://music.youtube.com/watch?v=chosen00001".into());
+    task.match_confidence = Some(0.9);
+    let (tx, rx) = channel();
+    d.start(task, 3, tx);
+    let mut reports = Vec::new();
+    while let Ok(report) = rx.recv_timeout(Duration::from_secs(20)) {
+        let ended = matches!(report, Report::Done { .. } | Report::Error { .. });
+        reports.push(report);
+        if ended {
+            break;
+        }
+    }
+    assert!(matches!(reports.last().unwrap(), Report::Done { .. }), "{reports:?}");
+    assert_eq!(*asked.lock().unwrap(), 0, "the chosen match needs no search");
+    assert!(!dir.join("args.txt.json").exists(), "and no yt-dlp search either");
+    assert!(fs::read_to_string(dir.join("args.txt")).unwrap().ends_with("https://music.youtube.com/watch?v=chosen00001"));
+    assert_eq!(the_match(&reports), Some(("https://music.youtube.com/watch?v=chosen00001".to_owned(), 0.9)));
+}

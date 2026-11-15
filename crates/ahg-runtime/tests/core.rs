@@ -246,3 +246,32 @@ fn an_upgrade_raises_the_number_of_simultaneous_downloads_without_a_restart() {
     assert_eq!(running(&core), 4, "the key was just activated: all four run");
     core.shutdown();
 }
+
+// ── Matching a Spotify track for the playlist preview (D34) ─────────────────
+
+#[test]
+fn the_preview_can_ask_for_one_tracks_match() {
+    use ahg_engine::types::Track;
+    let dir = scratch("preview");
+    fs::write(dir.join("script.txt"), "").unwrap();
+    let ytdlp = YtDlp::new(PathBuf::from(FAKE), None);
+    let column = |text: &str| json!({ "musicResponsiveListItemFlexColumnRenderer": { "text": { "runs": [{ "text": text }] } } });
+    let response = json!({ "contents": [{ "musicResponsiveListItemRenderer": {
+        "flexColumns": [column("The Song"), column("Artist • The Album • 3:20")], "playlistItemData": { "videoId": "right000001" } } }] })
+    .to_string();
+    let search: ahg_runtime::download::SongSearch = Arc::new(move |query: &str| (query == "Artist - The Song").then(|| response.clone()));
+    let (tx, _rx) = channel();
+    let paths = Paths { user_data: dir.join("userData"), downloads: dir.join("Downloads").to_string_lossy().into_owned() };
+    let core = Core::start_with_search(paths, Arc::new(ytdlp), Box::new(|| Plan::Premium), tx, search);
+
+    let track: Track = serde_json::from_value(json!({ "id": "t1", "name": "The Song", "artist": "Artist", "artists": ["Artist"], "album": "The Album", "trackNumber": 1, "durationMs": 200000, "thumbnailUrl": "" })).unwrap();
+    let found = core.match_track(&track).expect("the song agrees with the track");
+    assert_eq!(found.url, "https://music.youtube.com/watch?v=right000001");
+    assert_eq!((found.title.as_str(), found.artist.as_str(), found.album.as_str(), found.duration), ("The Song", "Artist", "The Album", Some(200.0)));
+    assert_eq!(found.confidence, 1.0);
+
+    // Nothing agrees, or the search cannot be reached: no match to show. The download still tries its fallbacks.
+    let other = Track { name: "Another Song".into(), ..track.clone() };
+    assert!(core.match_track(&other).is_none());
+    core.shutdown();
+}

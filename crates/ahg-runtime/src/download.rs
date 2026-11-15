@@ -9,11 +9,10 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use ahg_engine::downloader::args::build_ytdlp_args;
-use ahg_engine::downloader::bridge::{Lookup, Verdict, pick_row, song_rows, song_search_page, verify};
+use ahg_engine::downloader::bridge::{CONFIRMED, GUESS_CEILING, Lookup, Verdict, match_song, song_query, song_rows, song_search_page, song_url, verify};
 use ahg_engine::downloader::metadata::search_results;
 use ahg_engine::downloader::progress::{Outcome, OutputScan};
 use ahg_engine::downloader::score::score_candidates;
-use ahg_engine::text::js_trim;
 use ahg_engine::types::{DownloadProgress, DownloadTask, SourcePlatform, Track};
 
 use crate::proc::{Stream, Utf8Chunks, kill_tree, read_output};
@@ -51,11 +50,6 @@ fn lock(active: &Active) -> std::sync::MutexGuard<'_, HashMap<String, Running>> 
 /// text, or `None` when it cannot be reached.
 pub type SongSearch = Arc<dyn Fn(&str) -> Option<String> + Send + Sync>;
 
-/// The confidence of a song that agrees with the track but whose explicit
-/// flag differs from Spotify's: a best guess, not a confirmed match.
-const EXPLICIT_DIFFERS: f64 = 0.9;
-/// A match picked by score alone is never reported as confirmed (1.0).
-const GUESS_CEILING: f64 = 0.89;
 /// How many songs the yt-dlp backup looks up before giving up.
 const LOOKUPS: usize = 3;
 
@@ -155,19 +149,19 @@ fn stop(running: &Running) {
 /// search cannot be reached, yt-dlp reads the same song list and a full lookup
 /// must confirm the song. Only then is the plain search scored, as in
 /// Electron, and what it finds is never reported as confirmed.
-fn spotify_bridge(ytdlp: &YtDlp, track: &Track, args: &mut [String], song_search: Option<&SongSearch>) -> Option<(String, f64)> {
-    // The arguments reach yt-dlp as they are, with no shell, so quotes are removed.
-    let clean = |s: &str| js_trim(&s.replace('"', "")).to_owned();
-    let artist = if !track.artist.is_empty() { track.artist.clone() } else { track.artists.first().cloned().unwrap_or_default() };
-    let query = format!("{} - {}", clean(&artist), clean(&track.name));
+fn spotify_bridge(ytdlp: &YtDlp, task: &DownloadTask, track: &Track, args: &mut [String], song_search: Option<&SongSearch>) -> Option<(String, f64)> {
+    let query = song_query(track);
     let last = args.last_mut()?;
     *last = format!("ytsearch1:{query}");
 
     if let Some(search) = song_search {
-        let song = match search(&query).map(|response| song_rows(&response)).filter(|rows| !rows.is_empty()) {
-            Some(rows) => pick_row(track, &rows, track.explicit).map(|pick| (rows[pick.index].url(), if pick.explicit_agrees { 1.0 } else { EXPLICIT_DIFFERS })),
-            None => confirmed_by_lookup(ytdlp, track, &query).map(|url| (url, 1.0)),
-        };
+        // Already chosen, by the playlist preview or by an earlier attempt:
+        // no second search. The address may come from a saved file, so it is checked.
+        let chosen = task.matched_url.as_deref().and_then(song_url).map(|url| (url.to_owned(), task.match_confidence.unwrap_or(GUESS_CEILING)));
+        let song = chosen.or_else(|| match search(&query).map(|response| song_rows(&response)).filter(|rows| !rows.is_empty()) {
+            Some(rows) => match_song(track, &rows).map(|found| (found.url, found.confidence)),
+            None => confirmed_by_lookup(ytdlp, track, &query).map(|url| (url, CONFIRMED)),
+        });
         if let Some((url, confidence)) = song {
             *last = url.clone();
             return Some((url, confidence));
@@ -205,7 +199,7 @@ fn run(ytdlp: &YtDlp, task: &DownloadTask, attempt: u64, active: &Active, killed
     let mut args = build_ytdlp_args(task, ytdlp.ffmpeg().as_deref());
     if task.source == SourcePlatform::Spotify
         && let Some(track) = &task.track
-        && let Some((url, confidence)) = spotify_bridge(ytdlp, track, &mut args, song_search)
+        && let Some((url, confidence)) = spotify_bridge(ytdlp, task, track, &mut args, song_search)
     {
         send(Report::Match { id: id.to_owned(), attempt, url, confidence });
     }

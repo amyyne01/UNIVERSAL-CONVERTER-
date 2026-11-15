@@ -7,6 +7,7 @@
 //! (proxy, cookies, naming) and the cookies file. They come from the settings.
 use serde_json::{Map, Value, json};
 
+use crate::downloader::bridge::{GUESS_CEILING, song_url};
 use crate::queue::{TaskInit, create_task};
 use crate::text::js_len;
 use crate::tier::{BASIC_LIMITS, Plan, clamp_audio_quality, clamp_extras, clamp_format, clamp_video_quality};
@@ -197,5 +198,15 @@ pub fn build_task(
         extras: serde_json::to_value(extras).ok().and_then(|v| serde_json::from_value(v).ok()),
         ..TaskInit::default()
     };
-    Ok(create_task(&init, id, now))
+    let mut task = create_task(&init, id, now);
+    // D34: the playlist preview already matched this track, so the request
+    // names the video and the download does not search again.
+    if source == Some(SourcePlatform::Spotify)
+        && let Some(matched) = req.get("matchedUrl").filter(|v| !v.is_null())
+    {
+        let url = matched.as_str().and_then(song_url).ok_or("Invalid input: matchedUrl")?;
+        task.matched_url = Some(url.to_owned());
+        task.match_confidence = Some(number(req.get("matchConfidence")).filter(|c| (0.0..=1.0).contains(c)).unwrap_or(GUESS_CEILING));
+    }
+    Ok(task)
 }
