@@ -183,3 +183,28 @@ fn the_real_yt_dlp_downloads_a_short_clip_as_mp3() {
     engine.shutdown();
     let _ = fs::remove_dir_all(&dir);
 }
+
+/// A download that cannot even start must not hold its slot: the next task
+/// gets its turn, and both end as failed rather than waiting for ever.
+#[test]
+fn a_download_that_cannot_start_frees_its_slot_for_the_next() {
+    let dir = scratch("nostart");
+    let (tx, rx) = channel();
+    let downloader = Downloader::new(dir.join("no-such-yt-dlp.exe"), None);
+    let engine = Engine::start(downloader, &dir.join("downloads-history.json"), tx);
+    engine.set_max_slots(1.0);
+    engine.enqueue(task("a"));
+    engine.enqueue(task("b"));
+
+    let mut failed = Vec::new();
+    wait_for(&rx, |n| {
+        if let Notice::Event(Event::Error { id, .. }) = n {
+            failed.push(id.clone());
+        }
+        failed.len() == 2
+    });
+    assert_eq!(failed, ["a", "b"], "the second task started only after the first gave up its slot");
+    assert!(engine.tasks().iter().all(|t| t.progress.status == DownloadStatus::Failed));
+    assert!(!engine.has_unfinished_work());
+    engine.shutdown();
+}
