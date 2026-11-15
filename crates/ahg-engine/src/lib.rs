@@ -10,6 +10,7 @@ pub mod downloader;
 pub mod license;
 pub mod log;
 pub mod presence;
+pub mod progress_follow;
 pub mod protocol;
 pub mod queue;
 pub mod scheduler;
