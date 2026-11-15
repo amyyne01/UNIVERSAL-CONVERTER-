@@ -1,5 +1,5 @@
 //! The yt-dlp command line for a task: `Downloader.buildYtDlpArgs` in
-//! electron/downloader.ts, down to the way Node's `path.win32.join` writes
+//! electron/downloader.ts, down to the way Electron 33's Node (20.18.3) `path.win32.join` writes
 //! the output path.
 use crate::text::js_trim;
 use crate::types::{
@@ -272,7 +272,7 @@ fn js_number(n: f64) -> String {
     }
 }
 
-// ── Node's path.win32, on UTF-16 text (version 24) ───────────────────────────
+// ── Node's path.win32 as Node 20.18.3 (Electron 33) implements it, on UTF-16 text ──
 
 const BACKSLASH: u16 = b'\\' as u16;
 const SLASH: u16 = b'/' as u16;
@@ -295,30 +295,8 @@ fn string(v: &[u16]) -> String {
     String::from_utf16_lossy(v)
 }
 
-/// `s.slice(start, end)` with JavaScript's handling of negative bounds.
-fn slice(s: &[u16], start: isize, end: isize) -> &[u16] {
-    let len = s.len() as isize;
-    let at = |i: isize| if i < 0 { (len + i).max(0) } else { i.min(len) } as usize;
-    let (a, b) = (at(start), at(end));
-    if a >= b { &[] } else { &s[a..b] }
-}
-
 fn index_of(s: &[u16], c: u16, from: usize) -> isize {
     s.iter().skip(from).position(|&x| x == c).map_or(-1, |p| (p + from) as isize)
-}
-
-/// Node's `isWindowsReservedName(path, colonIndex)`: whether the text before the
-/// index is CON, PRN, AUX, NUL, COM1-9 or LPT1-9 (also with the superscript
-/// digits). An index of -1, no colon, drops the last character; that is
-/// what Node does, so a plain `CONx` is "reserved".
-fn is_win_reserved(path: &[u16], colon: isize) -> bool {
-    let s = slice(path, 0, colon);
-    let up: Vec<u16> = s.iter().map(|&c| if (b'a' as u16..=b'z' as u16).contains(&c) { c - 32 } else { c }).collect();
-    let is = |t: &str| up == utf16(t);
-    is("CON") || is("PRN") || is("AUX") || is("NUL") || (up.len() == 4 && {
-        let head = string(&up[..3]);
-        (head == "COM" || head == "LPT") && matches!(up[3], 0x31..=0x39 | 0xB2 | 0xB3 | 0xB9)
-    })
 }
 
 /// `path.win32.isAbsolute`.
@@ -364,14 +342,6 @@ fn win32_join(parts: &[&str]) -> String {
         }
     }
 
-    // A part like `CON:x` is left alone apart from its slashes.
-    let reserved_part = joined.split(|&c| c == BACKSLASH).filter(|p| !p.is_empty()).any(|p| {
-        let colon = index_of(p, COLON, 0);
-        colon != -1 && is_win_reserved(p, colon)
-    });
-    if reserved_part {
-        return string(&joined.iter().map(|&c| if c == SLASH { BACKSLASH } else { c }).collect::<Vec<_>>());
-    }
     string(&normalize(&joined))
 }
 
@@ -408,43 +378,25 @@ fn normalize(path: &[u16]) -> Vec<u16> {
                     while j < len && !is_sep(path[j]) {
                         j += 1;
                     }
-                    if j == len || j != last {
-                        if first_part == [DOT] || first_part == [b'?' as u16] {
-                            // A device root such as \\.\PHYSICALDRIVE0.
-                            device = Some([&[BACKSLASH, BACKSLASH][..], first_part].concat());
-                            root_end = 4;
-                            let possible = slice(path, 4, index_of(path, COLON, 0) + 1);
-                            if is_win_reserved(possible, possible.len() as isize - 1) {
-                                device = Some([&utf16("\\\\?\\")[..], possible].concat());
-                                root_end = 4 + possible.len();
-                            }
-                        } else if j == len {
-                            // A UNC root and nothing else.
-                            return [&[BACKSLASH, BACKSLASH][..], first_part, &[BACKSLASH], &path[last..], &[BACKSLASH]].concat();
-                        } else {
-                            device = Some([&[BACKSLASH, BACKSLASH][..], first_part, &[BACKSLASH], &path[last..j]].concat());
-                            root_end = j;
-                        }
+                    if j == len {
+                        // A UNC root and nothing else.
+                        return [&[BACKSLASH, BACKSLASH][..], first_part, &[BACKSLASH], &path[last..], &[BACKSLASH]].concat();
+                    }
+                    if j != last {
+                        device = Some([&[BACKSLASH, BACKSLASH][..], first_part, &[BACKSLASH], &path[last..j]].concat());
+                        root_end = j;
                     }
                 }
             }
         } else {
             root_end = 1;
         }
-    } else {
-        let colon = index_of(path, COLON, 0);
-        if colon > 0 {
-            if is_device_root(code) && colon == 1 {
-                device = Some(path[..2].to_vec());
-                root_end = 2;
-                if len > 2 && is_sep(path[2]) {
-                    absolute = true;
-                    root_end = 3;
-                }
-            } else if is_win_reserved(path, colon) {
-                device = Some(path[..colon as usize + 1].to_vec());
-                root_end = colon as usize + 1;
-            }
+    } else if is_device_root(code) && path[1] == COLON {
+        device = Some(path[..2].to_vec());
+        root_end = 2;
+        if len > 2 && is_sep(path[2]) {
+            absolute = true;
+            root_end = 3;
         }
     }
 
@@ -469,9 +421,6 @@ fn normalize(path: &[u16]) -> Vec<u16> {
             }
             index = index_of(path, COLON, i + 1);
         }
-    }
-    if is_win_reserved(path, index_of(path, COLON, 0)) {
-        return dot_slash(&[device.as_deref().unwrap_or_default(), &tail].concat());
     }
     match (device, absolute) {
         (None, false) => tail,
