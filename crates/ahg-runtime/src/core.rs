@@ -103,13 +103,28 @@ impl Core {
         let dispatcher = {
             let (config, stats, events, engine, plan) = (config.clone(), stats.clone(), events.clone(), engine.clone(), plan.clone());
             let state_file = schedule_state_file(&paths.user_data);
+            let mut scheduler = Scheduler::restored(&last_fired_date(&state_file));
+            // One look at the schedule. When it is due: resume the queue, remember
+            // the day, and answer whether the PC should be shut down afterwards.
+            let mut check_schedule = {
+                let (config, events, engine) = (config.clone(), events.clone(), engine.clone());
+                move || -> Option<bool> {
+                    let settings = serde_json::from_value::<ScheduleConfig>(Value::Object(lock(&config).get_all().clone())).ok()?;
+                    let Fire::Trigger { shutdown } = scheduler.poll(&settings, plan() == Plan::Premium, &LocalTime::now()) else { return None };
+                    let _ = write_file_atomic(&state_file, &json!({ "lastFiredDate": scheduler.last_fired_date() }).to_string());
+                    engine.resume_all();
+                    let _ = events.send(CoreEvent::ScheduleFired);
+                    Some(shutdown)
+                }
+            };
+            // The first look is now, before anything else can happen: it catches a
+            // run missed while the app was closed.
+            let missed = check_schedule();
             thread::spawn(move || {
-                let mut scheduler = Scheduler::restored(&last_fired_date(&state_file));
-                // The first check is at once: it catches a run missed while the app was closed.
-                let mut next_poll = Instant::now();
+                let mut next_poll = Instant::now() + Duration::from_millis(POLL_MS);
                 // Set by a scheduled run that asked for a shutdown, until the queue is empty.
-                let mut shutdown_armed = false;
-                let mut shutdown_check: Option<Instant> = None;
+                let mut shutdown_armed = missed == Some(true);
+                let mut shutdown_check = shutdown_armed.then(|| Instant::now() + SHUTDOWN_CHECK);
                 loop {
                     let mut queue_changed = false;
                     match incoming.recv_timeout(Duration::from_millis(100)) {
@@ -130,16 +145,9 @@ impl Core {
                     let now = Instant::now();
                     if now >= next_poll {
                         next_poll = now + Duration::from_millis(POLL_MS);
-                        let settings = serde_json::from_value::<ScheduleConfig>(Value::Object(lock(&config).get_all().clone()));
-                        let fire = settings.map_or(Fire::None, |cfg| scheduler.poll(&cfg, plan() == Plan::Premium, &LocalTime::now()));
-                        if let Fire::Trigger { shutdown } = fire {
-                            let _ = write_file_atomic(&state_file, &json!({ "lastFiredDate": scheduler.last_fired_date() }).to_string());
-                            engine.resume_all();
-                            let _ = events.send(CoreEvent::ScheduleFired);
-                            if shutdown {
-                                shutdown_armed = true;
-                                shutdown_check = Some(now + SHUTDOWN_CHECK);
-                            }
+                        if check_schedule() == Some(true) {
+                            shutdown_armed = true;
+                            shutdown_check = Some(now + SHUTDOWN_CHECK);
                         }
                     }
                     let check_due = shutdown_check.is_some_and(|at| now >= at);
