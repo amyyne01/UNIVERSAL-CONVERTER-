@@ -153,6 +153,8 @@ pub struct State {
     /// True in the `nav` scene: the layout's navigation in its opened state
     /// (a sidebar expanded as on hover, say), for the picture.
     pub nav_open: bool,
+    /// The sidebar is pinned open (the presets that have one).
+    pub nav_pinned: bool,
     /// The preset picker is open.
     pub picker: bool,
     /// The picker's six previews, in the order of [`PRESETS`].
@@ -204,7 +206,7 @@ pub fn init() -> State {
     let direction = direction_from_args();
     let palette = arg("--palette").and_then(|p| p.parse().ok()).filter(|p| *p <= 7).unwrap_or(0);
     // With no scene asked for, the fullest state: Home with history.
-    State { direction, layout: layout_from_args(), reach: false, nav: Nav::Home, nav_open: false, picker: false, previews: Vec::new(), screen: Screen::Home, palette, tasks: sample::everything(), stats: Some(sample::stats()), covers: HashMap::new(), logo: None, input: String::new(), cache: None }
+    State { direction, layout: layout_from_args(), reach: false, nav: Nav::Home, nav_open: false, nav_pinned: false, picker: false, previews: Vec::new(), screen: Screen::Home, palette, tasks: sample::everything(), stats: Some(sample::stats()), covers: HashMap::new(), logo: None, input: String::new(), cache: None }
 }
 
 /// Loads the sample covers. It waits for each to decode, so a headless
@@ -235,21 +237,28 @@ pub const SCENES: &[(&str, fn(&mut State))] = &[
     ("home-history", |s| s.screen = Screen::Home),
     ("downloads-empty", |s| {
         s.screen = Screen::Downloads;
+        s.nav = Nav::Downloads;
         s.tasks.clear();
     }),
     ("downloads-active", |s| {
         s.screen = Screen::Downloads;
+        s.nav = Nav::Downloads;
         s.tasks = sample::active();
     }),
     ("downloads-finished", |s| {
         s.screen = Screen::Downloads;
+        s.nav = Nav::Downloads;
         s.tasks = sample::finished();
     }),
     ("downloads-failed", |s| {
         s.screen = Screen::Downloads;
+        s.nav = Nav::Downloads;
         s.tasks = sample::troubled();
     }),
-    ("downloads-everything", |s| s.screen = Screen::Downloads),
+    ("downloads-everything", |s| {
+        s.screen = Screen::Downloads;
+        s.nav = Nav::Downloads;
+    }),
     // The new layouts have no pages, so their scenes are states of the app.
     ("first", |s| {
         s.tasks.clear();
@@ -267,4 +276,5 @@ pub const SCENES: &[(&str, fn(&mut State))] = &[
     ("downloads", |s| s.nav = Nav::Downloads),
     ("nav", |s| s.nav_open = true),
     ("picker", |s| s.picker = true),
+    ("nav-pinned", |s| s.nav_pinned = true),
 ];
