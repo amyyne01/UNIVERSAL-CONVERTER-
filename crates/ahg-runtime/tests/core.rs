@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 use ahg_engine::queue::Event;
 use ahg_engine::tier::Plan;
 use ahg_engine::types::{DownloadStatus, VideoQuality};
-use ahg_runtime::core::{Core, CoreEvent, Paths, TrackMatch};
+use ahg_runtime::core::{Core, CoreEvent, Outside, Paths, Shown, TrackMatch};
 use ahg_runtime::ytdlp::YtDlp;
 use serde_json::{Value, json};
 
@@ -475,7 +475,7 @@ fn start_with_release(dir: &Path, script: &str) -> (Core, Receiver<CoreEvent>) {
     ytdlp.env("FAKE_YTDLP_SCRIPT", dir.join("script.txt").to_str().unwrap());
     let (tx, rx) = channel();
     let paths = Paths { user_data: dir.join("userData"), downloads: dir.join("Downloads").to_string_lossy().into_owned() };
-    let core = Core::start_with(paths, Arc::new(ytdlp), Box::new(|| Plan::Premium), tx, Arc::new(|_: &str| None), Arc::new(OneRelease { binary: b"MZ a newer yt-dlp".to_vec() }));
+    let core = Core::start_with(paths, Arc::new(ytdlp), Box::new(|| Plan::Premium), tx, Outside { song_search: Arc::new(|_: &str| None), releases: Arc::new(OneRelease { binary: b"MZ a newer yt-dlp".to_vec() }), desktop: Box::new(ahg_runtime::desktop::Windows) });
     (core, rx)
 }
 
@@ -537,7 +537,7 @@ fn the_core_finds_downloads_and_installs_a_newer_version_of_the_app() {
     fs::write(dir.join("script.txt"), "").unwrap();
     let (tx, rx) = channel();
     let paths = Paths { user_data: dir.join("userData"), downloads: dir.join("Downloads").to_string_lossy().into_owned() };
-    let core = Core::start_with(paths, Arc::new(YtDlp::new(PathBuf::from(FAKE), None)), Box::new(|| Plan::Premium), tx, Arc::new(|_: &str| None), Arc::new(net));
+    let core = Core::start_with(paths, Arc::new(YtDlp::new(PathBuf::from(FAKE), None)), Box::new(|| Plan::Premium), tx, Outside { song_search: Arc::new(|_: &str| None), releases: Arc::new(net), desktop: Box::new(ahg_runtime::desktop::Windows) });
     assert!(!dir.join("userData").join("updates").join("stale.exe").exists());
 
     assert_eq!(core.update_status().phase, "idle");
@@ -556,5 +556,57 @@ fn the_core_finds_downloads_and_installs_a_newer_version_of_the_app() {
     assert_eq!(channels.first(), Some(&"update:available"));
     assert_eq!(channels.last(), Some(&"update:downloaded"));
     assert!(channels.contains(&"update:progress"));
+    core.shutdown();
+}
+
+// ── Showing and opening finished files ──────────────────────────────────────
+
+/// A desktop that only writes down what it was asked to do.
+#[derive(Clone, Default)]
+struct Recorded(Arc<std::sync::Mutex<Vec<String>>>);
+
+impl ahg_runtime::desktop::Desktop for Recorded {
+    fn reveal(&self, path: &str) {
+        self.0.lock().unwrap().push(format!("reveal {path}"));
+    }
+
+    fn open(&self, path: &str) -> bool {
+        self.0.lock().unwrap().push(format!("open {path}"));
+        !path.ends_with("broken.mp3")
+    }
+}
+
+#[test]
+fn only_media_inside_the_download_folder_is_shown_or_opened() {
+    let dir = scratch("openreveal");
+    fs::write(dir.join("script.txt"), "").unwrap();
+    let desktop = Recorded::default();
+    let (tx, _rx) = channel();
+    let downloads = dir.join("Downloads");
+    let paths = Paths { user_data: dir.join("userData"), downloads: downloads.to_string_lossy().into_owned() };
+    let outside = Outside { song_search: Arc::new(|_: &str| None), releases: Arc::new(common::Net::default()), desktop: Box::new(desktop.clone()) };
+    let core = Core::start_with(paths, Arc::new(YtDlp::new(PathBuf::from(FAKE), None)), Box::new(|| Plan::Premium), tx, outside);
+    let at = |name: &str| downloads.join(name).to_string_lossy().into_owned();
+    for name in ["song.mp3", "broken.mp3", "tool.exe"] {
+        fs::write(downloads.join(name), b"x").unwrap();
+    }
+
+    assert_eq!(core.show_in_folder(&at("song.mp3")), Ok(Shown::Ok));
+    assert_eq!(core.open_file(&at("song.mp3")), Ok(Shown::Ok));
+    // Gone since it was downloaded: said so, and Windows is not asked.
+    assert_eq!(core.show_in_folder(&at("gone.mp3")), Ok(Shown::Missing));
+    assert_eq!(core.open_file(&at("gone.mp3")), Ok(Shown::Missing));
+    assert_eq!(core.open_file(""), Ok(Shown::NoPath));
+    // Windows could not open it.
+    assert_eq!(core.open_file(&at("broken.mp3")), Ok(Shown::Missing));
+    // A program in the download folder may be shown, never run.
+    assert_eq!(core.show_in_folder(&at("tool.exe")), Ok(Shown::Ok));
+    assert!(core.open_file(&at("tool.exe")).is_err());
+    // Outside the download folder: neither.
+    let outside_file = dir.join("userData").join("config.json").to_string_lossy().into_owned();
+    assert!(core.show_in_folder(&outside_file).is_err() && core.open_file(&outside_file).is_err());
+
+    let asked = desktop.0.lock().unwrap().clone();
+    assert_eq!(asked, [format!("reveal {}", at("song.mp3")), format!("open {}", at("song.mp3")), format!("open {}", at("broken.mp3")), format!("reveal {}", at("tool.exe"))]);
     core.shutdown();
 }

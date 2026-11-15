@@ -199,6 +199,36 @@ pub(crate) fn win32_resolve(paths: &[&str]) -> String {
     }
 }
 
+/// The longest path a request may name, in UTF-16 units (`MAX_PATH` of ipc.ts).
+const MAX_PATH: usize = 4096;
+/// Files the app itself produces; the only kinds it will open (`OPENABLE_EXT`).
+const OPENABLE: [&str; 15] = ["mp3", "m4a", "aac", "opus", "ogg", "oga", "flac", "wav", "alac", "mp4", "mkv", "webm", "mov", "m4v", "avi"];
+
+fn path_text(raw: &str) -> Result<&str, String> {
+    if crate::text::js_len(raw) > MAX_PATH { Err("Invalid input: expected a string within length limits".to_owned()) } else { Ok(raw) }
+}
+
+/// `shell:showItemInFolder`: the absolute path to show, `None` for an empty
+/// path (nothing to show, not an error), `Err` when it is outside the
+/// download folder. Whether the file still exists is the caller's to check.
+pub fn revealable(raw: &str, output_dir: &str) -> Result<Option<String>, String> {
+    if crate::text::js_trim(path_text(raw)?).is_empty() {
+        return Ok(None);
+    }
+    confine_to_root(raw, output_dir).map(Some).ok_or_else(|| "Invalid input: path escapes the output directory".to_owned())
+}
+
+/// `shell:openItem`: as `revealable`, and only for the kinds of media file
+/// the app produces. Opening runs what it is given, so an `.exe` that happens
+/// to sit in the download folder must never pass.
+pub fn openable(raw: &str, output_dir: &str) -> Result<Option<String>, String> {
+    if crate::text::js_trim(path_text(raw)?).is_empty() {
+        return Ok(None);
+    }
+    let is_media = |abs: &String| abs.rsplit_once('.').is_some_and(|(_, ext)| OPENABLE.iter().any(|known| ext.eq_ignore_ascii_case(known)));
+    confine_to_root(raw, output_dir).filter(is_media).map(Some).ok_or_else(|| "Invalid input: not an openable media file in the output directory".to_owned())
+}
+
 /// Confines a path to an allowed root. Returns the absolute path when it sits
 /// inside `root` (or is `root`), `None` when it escapes through `..`, another
 /// drive, a network share or an absolute path elsewhere. The comparison is

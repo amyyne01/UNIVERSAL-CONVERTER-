@@ -4,6 +4,7 @@
 
 pub mod app_update;
 pub mod core;
+pub mod desktop;
 pub mod download;
 pub mod engine;
 pub mod engine_update;

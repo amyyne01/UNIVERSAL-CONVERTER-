@@ -8,7 +8,7 @@ ahg-engine = { path = "../ahg-engine" }
 serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }
 sha2 = "0.11.1"
 ureq = { version = "3", default-features = false, features = ["native-tls", "gzip", "socks-proxy"] }
-windows-sys = { version = "0.61.2", features = ["Win32_System_SystemInformation", "Win32_Foundation"] }
+windows-sys = { version = "0.61.2", features = ["Win32_System_SystemInformation", "Win32_Foundation", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 
 [features]
 # The entitlement layer; its source is not published.

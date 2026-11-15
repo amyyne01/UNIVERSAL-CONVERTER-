@@ -22,10 +22,11 @@ use ahg_engine::updater::UpdateState;
 use ahg_engine::ytdlp_updater::YtdlpStatus;
 use ahg_engine::downloader::bridge::{CONFIRMED, SongMatch, match_song, song_query, song_rows, song_url};
 use ahg_engine::types::{DownloadTask, MediaMetadata, SearchResult, Track};
-use ahg_engine::validate::media_url_arg;
+use ahg_engine::validate::{media_url_arg, openable, revealable};
 use serde_json::{Map, Value, json};
 
 use crate::app_update::AppUpdater;
+use crate::desktop::Desktop;
 use crate::download::{Downloader, SongSearch};
 use crate::engine_update::{EngineUpdater, Fetch};
 use crate::engine::{Engine, Notice};
@@ -96,6 +97,27 @@ fn last_fired_date(file: &std::path::Path) -> String {
     saved.as_ref().and_then(|v| v["lastFiredDate"].as_str()).unwrap_or_default().to_owned()
 }
 
+/// Everything of the core that reaches outside the app's own files and
+/// processes. The real ones, or stand-ins for tests.
+pub struct Outside {
+    /// YouTube Music's song search.
+    pub song_search: SongSearch,
+    /// GitHub's release pages, for both updaters.
+    pub releases: Arc<dyn Fetch>,
+    /// Showing and opening files.
+    pub desktop: Box<dyn Desktop>,
+}
+
+/// The answer to "show this file" or "open this file" (`RevealResult`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Shown {
+    Ok,
+    /// The file is no longer where the download left it.
+    Missing,
+    /// No path was given: the download recorded none.
+    NoPath,
+}
+
 /// What the playlist preview learns about one Spotify track (D34).
 #[derive(Debug, Clone, PartialEq)]
 pub enum TrackMatch {
@@ -136,6 +158,7 @@ pub struct Core {
     remembered: Mutex<HashMap<String, SongMatch>>,
     engine_updater: Arc<EngineUpdater>,
     app_updater: AppUpdater,
+    desktop: Box<dyn Desktop>,
 }
 
 impl Core {
@@ -151,11 +174,12 @@ impl Core {
     /// `start`, with the YouTube Music song search given: the real one, or a
     /// stand-in for tests.
     pub fn start_with_search(paths: Paths, ytdlp: Arc<YtDlp>, plan: PlanSource, events: Sender<CoreEvent>, song_search: SongSearch) -> Self {
-        Self::start_with(paths, ytdlp, plan, events, song_search, Arc::new(crate::http::Releases))
+        Self::start_with(paths, ytdlp, plan, events, Outside { song_search, releases: Arc::new(crate::http::Releases), desktop: Box::new(crate::desktop::Windows) })
     }
 
     /// `start`, with everything that reaches the network given.
-    pub fn start_with(paths: Paths, ytdlp: Arc<YtDlp>, plan: PlanSource, events: Sender<CoreEvent>, song_search: SongSearch, releases: Arc<dyn Fetch>) -> Self {
+    pub fn start_with(paths: Paths, ytdlp: Arc<YtDlp>, plan: PlanSource, events: Sender<CoreEvent>, outside: Outside) -> Self {
+        let Outside { song_search, releases, desktop } = outside;
         let app_updater = {
             let tell = events.clone();
             AppUpdater::new(&paths.user_data.join("updates"), env!("CARGO_PKG_VERSION"), Box::new(releases.clone()), Box::new(move |event| drop(tell.send(CoreEvent::Update { channel: event.channel, payload: event.payload }))))
@@ -261,7 +285,7 @@ impl Core {
                 }
             })
         };
-        let core = Self { paths, config, stats, ytdlp, plan, engine, events, stop, dispatcher: Some(dispatcher), song_search, hold_unconfirmed, remembered, engine_updater, app_updater };
+        let core = Self { paths, config, stats, ytdlp, plan, engine, events, stop, dispatcher: Some(dispatcher), song_search, hold_unconfirmed, remembered, engine_updater, app_updater, desktop };
         core.sync();
         core
     }
@@ -441,6 +465,33 @@ impl Core {
         self.hold_unconfirmed.store(hold, Ordering::SeqCst);
         let _ = write_file_atomic(&own_settings_file(&self.paths.user_data), &json!({ "holdUnconfirmed": hold }).to_string());
         let _ = self.events.send(CoreEvent::SettingsChanged);
+    }
+
+    // ── Finished files ──────────────────────────────────────────────────────
+
+    /// Show a downloaded file in its folder. `Err` when the path is not
+    /// inside the download folder.
+    pub fn show_in_folder(&self, path: &str) -> Result<Shown, String> {
+        let Some(file) = revealable(path, &self.output_dir())? else { return Ok(Shown::NoPath) };
+        if !std::path::Path::new(&file).exists() {
+            return Ok(Shown::Missing);
+        }
+        self.desktop.reveal(&file);
+        Ok(Shown::Ok)
+    }
+
+    /// Open a downloaded file in its default program. `Err` when the path is
+    /// not a media file inside the download folder.
+    pub fn open_file(&self, path: &str) -> Result<Shown, String> {
+        let Some(file) = openable(path, &self.output_dir())? else { return Ok(Shown::NoPath) };
+        if !std::path::Path::new(&file).exists() {
+            return Ok(Shown::Missing);
+        }
+        Ok(if self.desktop.open(&file) { Shown::Ok } else { Shown::Missing })
+    }
+
+    fn output_dir(&self) -> String {
+        lock(&self.config).get("outputDir").and_then(Value::as_str).unwrap_or_default().to_owned()
     }
 
     // ── The app's own updates ───────────────────────────────────────────────
