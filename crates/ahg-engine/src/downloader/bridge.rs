@@ -348,3 +348,48 @@ pub fn song_url(url: &str) -> Option<&str> {
     let host = parsed.host_str()?;
     (parsed.scheme() == "https" && ["music.youtube.com", "www.youtube.com", "youtube.com", "youtu.be"].contains(&host)).then_some(url)
 }
+
+// ── Naming and tagging the file ─────────────────────────────────────────────
+
+/// D34: a Spotify download is named and tagged from the Spotify track, not
+/// from the video it was matched to. Adds to `args` (as built for the task,
+/// the link last): the tags, when tags are embedded at all, and the file name
+/// "Artist - Name", unless the task or a naming template already names it.
+pub fn name_and_tag_from_spotify(task: &crate::types::DownloadTask, args: &mut Vec<String>) {
+    use crate::downloader::args::{named_after_the_video, sanitize};
+    let Some(track) = &task.track else { return };
+    if args.is_empty() {
+        return;
+    }
+    if task.embed_metadata {
+        let artists = if track.artists.is_empty() { track.artist.clone() } else { track.artists.join(", ") };
+        let number = if track.track_number >= 1.0 { format!("{}", track.track_number as u64) } else { String::new() };
+        let tags = [("title", track.name.as_str()), ("artist", &artists), ("album", &track.album), ("track", &number), ("date", track.album_year.as_deref().unwrap_or(""))];
+        let flags: Vec<String> = tags.iter().filter_map(|(field, text)| fixed_tag(field, text)).flat_map(|tag| ["--parse-metadata".to_owned(), tag]).collect();
+        // Before the link, and before the "--" that ends the options if there is one.
+        let link = args.len() - 1;
+        let at = if link > 0 && args[link - 1] == "--" { link - 1 } else { link };
+        args.splice(at..at, flags);
+    }
+    if named_after_the_video(task) {
+        let artist = if track.artist.is_empty() { track.artists.first().map_or("", String::as_str) } else { &track.artist };
+        let both = if artist.is_empty() { track.name.clone() } else { format!("{artist} - {}", track.name) };
+        // "%" is doubled so yt-dlp fills nothing into the name.
+        let stem = sanitize(&both).replace('%', "%%");
+        if let Some(output) = args.iter().position(|a| a == "-o").and_then(|at| args.get_mut(at + 1))
+            && let Some(at) = output.rfind("%(title)s").filter(|_| !stem.is_empty())
+        {
+            output.replace_range(at..at + "%(title)s".len(), &stem);
+        }
+    }
+}
+
+/// `--parse-metadata` value that sets a tag to this exact text, or `None` for
+/// nothing to set. yt-dlp reads the value in a small language of its own: ":"
+/// separates and "%(...)s" is filled in. Measured against the real yt-dlp:
+/// doubling "%" and escaping ":" carries any text through unchanged, except a
+/// trailing backslash, which would swallow the separator and is dropped.
+fn fixed_tag(field: &str, text: &str) -> Option<String> {
+    let text = text.trim_end_matches('\\');
+    (!text.trim().is_empty()).then(|| format!("{}:%(meta_{field})s", text.replace('%', "%%").replace(':', "\\:")))
+}

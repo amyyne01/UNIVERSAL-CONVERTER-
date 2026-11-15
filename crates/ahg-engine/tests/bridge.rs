@@ -158,3 +158,93 @@ fn a_track_held_for_review_is_not_retried_and_says_what_to_do() {
     assert_eq!(classify_error(NO_CONFIRMED_MATCH), ErrorClass::Permanent);
     assert!(explain_error(NO_CONFIRMED_MATCH).ends_with("pick a match to download it."), "{}", explain_error(NO_CONFIRMED_MATCH));
 }
+
+// ── The file is named and tagged from Spotify's data ────────────────────────
+
+fn spotify_args(details: Value, title: &str, embed_metadata: bool) -> Vec<String> {
+    use ahg_engine::downloader::args::build_ytdlp_args;
+    use ahg_engine::downloader::bridge::name_and_tag_from_spotify;
+    use ahg_engine::queue::{TaskInit, create_task};
+    use ahg_engine::types::SourcePlatform;
+    let init = TaskInit {
+        url: Some("https://open.spotify.com/track/abc".into()),
+        source: Some(SourcePlatform::Spotify),
+        output_dir: Some("C:\\Music".into()),
+        format: Some("mp3".into()),
+        is_audio_only: Some(true),
+        embed_metadata: Some(embed_metadata),
+        title: (!title.is_empty()).then(|| title.to_owned()),
+        track: Some(track(&track_json(details))),
+        ..Default::default()
+    };
+    let task = create_task(&init, "task_1".into(), 0);
+    let mut args = build_ytdlp_args(&task, None);
+    name_and_tag_from_spotify(&task, &mut args);
+    args
+}
+
+fn track_json(extra: Value) -> Value {
+    let mut t = json!({ "name": "Dreams - 2004 Remaster", "artist": "Fleetwood Mac", "artists": ["Fleetwood Mac"], "durationMs": 257800, "album": "Rumours", "albumYear": "1977", "trackNumber": 2 });
+    t.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+    t
+}
+
+/// The values given to `--parse-metadata`, in order.
+fn tags(args: &[String]) -> Vec<&str> {
+    args.windows(2).filter(|w| w[0] == "--parse-metadata").map(|w| w[1].as_str()).collect()
+}
+
+fn output(args: &[String]) -> &str {
+    args.windows(2).find(|w| w[0] == "-o").map(|w| w[1].as_str()).unwrap()
+}
+
+#[test]
+fn a_spotify_download_is_named_and_tagged_from_the_spotify_track() {
+    let args = spotify_args(json!({}), "", true);
+    assert_eq!(
+        tags(&args),
+        [
+            "Dreams - 2004 Remaster:%(meta_title)s",
+            "Fleetwood Mac:%(meta_artist)s",
+            "Rumours:%(meta_album)s",
+            "2:%(meta_track)s",
+            "1977:%(meta_date)s",
+        ]
+    );
+    assert_eq!(output(&args), "C:\\Music\\Fleetwood Mac - Dreams - 2004 Remaster.%(ext)s");
+    // The link is still the last argument: the bridge replaces it with the match.
+    assert_eq!(args.last().unwrap(), "https://open.spotify.com/track/abc");
+    // Everything after "--" is a link to yt-dlp, so the tags must come before it.
+    let end_of_options = args.iter().position(|a| a == "--").expect("the options end with --");
+    assert_eq!(end_of_options, args.len() - 2);
+    assert!(args.iter().rposition(|a| a == "--parse-metadata").unwrap() < end_of_options);
+}
+
+#[test]
+fn every_artist_is_tagged_and_missing_details_are_left_to_youtube() {
+    let args = spotify_args(json!({ "artist": "Taylor Swift", "artists": ["Taylor Swift", "Bon Iver"], "name": "exile (feat. Bon Iver)", "album": "", "albumYear": null, "trackNumber": 0 }), "", true);
+    assert_eq!(tags(&args), ["exile (feat. Bon Iver):%(meta_title)s", "Taylor Swift, Bon Iver:%(meta_artist)s"]);
+    assert_eq!(output(&args), "C:\\Music\\Taylor Swift - exile (feat. Bon Iver).%(ext)s");
+}
+
+/// The text is Spotify's, and yt-dlp reads these values in a small language
+/// of its own: ":" separates, "%(...)s" is filled in. Measured against the
+/// real yt-dlp: doubling "%" and escaping ":" carries any text through, except
+/// a trailing backslash, which would swallow the separator.
+#[test]
+fn text_that_yt_dlp_would_read_as_its_own_language_is_made_plain() {
+    let args = spotify_args(json!({ "name": "100% %(id)s: Live\\", "artist": "AC/DC", "artists": ["AC/DC"], "album": "A: B", "albumYear": null, "trackNumber": 0 }), "", true);
+    assert_eq!(tags(&args), ["100%% %%(id)s\\: Live:%(meta_title)s", "AC/DC:%(meta_artist)s", "A\\: B:%(meta_album)s"]);
+    // In a file name the characters Windows forbids go, and "%" is doubled so yt-dlp fills nothing in.
+    assert_eq!(output(&args), "C:\\Music\\ACDC - 100%% %%(id)s Live.%(ext)s");
+}
+
+#[test]
+fn a_name_the_request_chose_is_kept_and_tags_follow_the_embed_setting() {
+    let named = spotify_args(json!({}), "My Own Name", true);
+    assert_eq!(output(&named), "C:\\Music\\My Own Name.%(ext)s");
+    assert_eq!(tags(&named).len(), 5);
+    let untagged = spotify_args(json!({}), "", false);
+    assert!(tags(&untagged).is_empty(), "no tags are written when embedding is off");
+    assert_eq!(output(&untagged), "C:\\Music\\Fleetwood Mac - Dreams - 2004 Remaster.%(ext)s");
+}

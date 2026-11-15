@@ -311,6 +311,17 @@ fn a_real_spotify_track_is_matched_and_downloaded() {
     assert_eq!(file.extension().and_then(|e| e.to_str()), Some("mp3"));
     assert!(fs::metadata(&file).unwrap().len() > 1_000_000, "about four minutes of audio");
     assert_eq!(done.matched_url.as_deref(), Some(found.url.as_str()));
+    // Named and tagged from Spotify's data, not from the video's title.
+    assert_eq!(file.file_name().and_then(|n| n.to_str()), Some("Fleetwood Mac - Dreams - 2004 Remaster.mp3"));
+    let probe = std::process::Command::new(root.join("bin").join("ffmpeg.exe")).args(["-hide_banner", "-i"]).arg(&file).output().unwrap();
+    let probe = String::from_utf8_lossy(&probe.stderr).into_owned();
+    let tag = |name: &str| probe.lines().find_map(|l| l.trim().strip_prefix(name).map(|rest| rest.trim_start().trim_start_matches(':').trim().to_owned()));
+    println!("tags: title {:?}, artist {:?}, album {:?}, track {:?}, date {:?}", tag("title"), tag("artist"), tag("album"), tag("track"), tag("date"));
+    assert_eq!(tag("title").as_deref(), Some(track.name.as_str()));
+    assert_eq!(tag("artist").as_deref(), Some("Fleetwood Mac"));
+    // A single track's page names no album, so that tag is left to YouTube's own.
+    assert!(track.album.is_empty() || tag("album").as_deref() == Some(track.album.as_str()));
+    assert!(tag("album").is_some_and(|album| !album.is_empty()));
     core.shutdown();
     let _ = fs::remove_dir_all(&dir);
 }

@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use ahg_engine::downloader::args::build_ytdlp_args;
-use ahg_engine::downloader::bridge::{CONFIRMED, GUESS_CEILING, Lookup, NO_CONFIRMED_MATCH, Verdict, match_song, song_query, song_rows, song_search_page, song_url, verify};
+use ahg_engine::downloader::bridge::{CONFIRMED, GUESS_CEILING, Lookup, NO_CONFIRMED_MATCH, name_and_tag_from_spotify, Verdict, match_song, song_query, song_rows, song_search_page, song_url, verify};
 use ahg_engine::downloader::metadata::search_results;
 use ahg_engine::downloader::progress::{Outcome, OutputScan};
 use ahg_engine::downloader::score::score_candidates;
@@ -212,6 +212,10 @@ fn run(ytdlp: &YtDlp, task: &DownloadTask, attempt: u64, active: &Active, killed
     if task.source == SourcePlatform::Spotify
         && let Some(track) = &task.track
     {
+        // D34: with the new bridge the file carries Spotify's own name and tags.
+        if song_search.is_some() {
+            name_and_tag_from_spotify(task, &mut args);
+        }
         let found = spotify_bridge(ytdlp, task, track, &mut args, song_search);
         let confirmed = found.as_ref().is_some_and(|(_, confidence)| *confidence >= CONFIRMED);
         if let Some((url, confidence)) = found {

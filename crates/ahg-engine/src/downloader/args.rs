@@ -231,6 +231,12 @@ fn video_selector(quality: VideoQuality, container: VideoContainer, codec: Video
 }
 
 /// A user template, or "" when it could leave the output folder.
+/// True when the file would be named after the video's own title: a single
+/// item with no name of its own and no naming template from Settings.
+pub(crate) fn named_after_the_video(task: &DownloadTask) -> bool {
+    !task.is_playlist && safe_template(&merge_extras(task.extras.as_ref()).output_template).is_empty() && sanitize(&task.title).is_empty()
+}
+
 fn safe_template(template: &str) -> String {
     let t = js_trim(template).replace('\\', "/");
     let mut chars = t.chars();
@@ -242,7 +248,7 @@ fn safe_template(template: &str) -> String {
 }
 
 /// A file or folder name with path and control characters removed.
-fn sanitize(s: &str) -> String {
+pub(crate) fn sanitize(s: &str) -> String {
     let stripped: String = s.chars().filter(|c| !matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*' | '\0'..='\u{1f}')).collect();
     let t = js_trim(&stripped);
     if !t.is_empty() && t.bytes().all(|b| b == b'.') {
