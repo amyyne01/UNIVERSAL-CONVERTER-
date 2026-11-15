@@ -58,3 +58,6 @@ crates/**/secrets.gen.rs
 # Rust port: the entitlement layer stays out of the public tree here too.
 crates/ahg-engine/tests/golden/license*.json
 scripts/rust-golden/license.mjs
+
+# Match-scorer research data: third-party metadata, kept local.
+tools/match-model/data/
