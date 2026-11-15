@@ -3794,6 +3794,13 @@
   "explain": "The download stopped with an error: \"taskId\":\"z\""
  },
  {
+  "input": "stopForQuit kills the running processes and saves the task as interrupted, not cancelled",
+  "classify": "permanent",
+  "fallback": false,
+  "code": "unknown",
+  "explain": "The download stopped with an error: stopForQuit kills the running processes and saves the task as interrupted, not cancelled"
+ },
+ {
   "input": "evicts the oldest terminal entry once HISTORY_CAP is exceeded",
   "classify": "permanent",
   "fallback": false,
