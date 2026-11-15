@@ -47,7 +47,9 @@ const STATES = [
   ['finished', 'Finished'],
   ['failed', 'Problems'],
   ['everything', 'A mixed day'],
-  ['reach', 'Reaching settings, schedule and the rest'],
+  ['downloads', 'Downloads: the full list'],
+  ['reach', 'Settings'],
+  ['nav', 'The navigation, opened'],
 ];
 // Two of the app's existing palettes, to show a direction survives a switch.
 const PALETTE_PROOFS = [2, 5];

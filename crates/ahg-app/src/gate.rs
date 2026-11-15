@@ -60,6 +60,18 @@ impl Layout {
     }
 }
 
+/// Where a new layout is: its three places (owner, 2026-11-15). Each layout
+/// shows them with its own visible navigation; Ctrl+1, 2, 3 go to them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Nav {
+    /// The layout's signature view.
+    Home,
+    /// The complete list, with filters, search and the bulk actions.
+    Downloads,
+    /// Everything else: schedule, licence, updates, appearance.
+    Settings,
+}
+
 /// `--layout bar|collection|stage`; none means an old-layout direction is shown.
 pub fn layout_from_args() -> Option<Layout> {
     match arg("--layout") {
@@ -87,6 +99,11 @@ pub struct State {
     /// True in the `reach` scene: the layout shows its way to everything
     /// that is not a download (settings, schedule, licence, updates) open.
     pub reach: bool,
+    /// The place a new layout is showing.
+    pub nav: Nav,
+    /// True in the `nav` scene: the layout's navigation in its opened state
+    /// (a sidebar expanded as on hover, say), for the picture.
+    pub nav_open: bool,
     pub screen: Screen,
     /// 0 is the direction's own colour mood; 1 to 7 are the app's existing
     /// palettes, in the order Settings lists them, to show the direction
@@ -134,7 +151,7 @@ pub fn init() -> State {
     let direction = direction_from_args();
     let palette = arg("--palette").and_then(|p| p.parse().ok()).filter(|p| *p <= 7).unwrap_or(0);
     // With no scene asked for, the fullest state: Home with history.
-    State { direction, layout: layout_from_args(), reach: false, screen: Screen::Home, palette, tasks: sample::everything(), stats: Some(sample::stats()), covers: HashMap::new(), logo: None, input: String::new(), cache: None }
+    State { direction, layout: layout_from_args(), reach: false, nav: Nav::Home, nav_open: false, screen: Screen::Home, palette, tasks: sample::everything(), stats: Some(sample::stats()), covers: HashMap::new(), logo: None, input: String::new(), cache: None }
 }
 
 /// Loads the sample covers. It waits for each to decode, so a headless
@@ -186,5 +203,10 @@ pub const SCENES: &[(&str, fn(&mut State))] = &[
     ("finished", |s| s.tasks = sample::finished()),
     ("failed", |s| s.tasks = sample::troubled()),
     ("everything", |_| {}),
-    ("reach", |s| s.reach = true),
+    ("reach", |s| {
+        s.reach = true;
+        s.nav = Nav::Settings;
+    }),
+    ("downloads", |s| s.nav = Nav::Downloads),
+    ("nav", |s| s.nav_open = true),
 ];
