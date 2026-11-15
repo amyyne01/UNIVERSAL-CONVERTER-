@@ -1,0 +1,3347 @@
+[
+ {
+  "input": "vitest",
+  "detect": {
+   "url": "https://vitest",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "./url-detector",
+  "detect": {
+   "url": "https://./url-detector",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "detectUrl — YouTube",
+  "detect": {
+   "url": "https://detectUrl — YouTube",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "recognises a watch?v= video and extracts the 11-char id",
+  "detect": {
+   "url": "https://recognises a watch?v= video and extracts the 11-char id",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+  "detect": {
+   "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+   "platform": "youtube",
+   "contentType": "video",
+   "id": "dQw4w9WgXcQ",
+   "isCollection": false,
+   "label": "YouTube video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "youtube",
+  "detect": {
+   "url": "https://youtube",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "video",
+  "detect": {
+   "url": "https://video",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "dQw4w9WgXcQ",
+  "detect": {
+   "url": "https://dQw4w9WgXcQ",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "YouTube video",
+  "detect": {
+   "url": "https://YouTube video",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "recognises youtu.be, /shorts/, /embed/ and /live/ forms",
+  "detect": {
+   "url": "https://recognises youtu.be, /shorts/, /embed/ and /live/ forms",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://youtu.be/dQw4w9WgXcQ",
+  "detect": {
+   "url": "https://youtu.be/dQw4w9WgXcQ",
+   "platform": "youtube",
+   "contentType": "video",
+   "id": "dQw4w9WgXcQ",
+   "isCollection": false,
+   "label": "YouTube video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://youtube.com/shorts/dQw4w9WgXcQ",
+  "detect": {
+   "url": "https://youtube.com/shorts/dQw4w9WgXcQ",
+   "platform": "youtube",
+   "contentType": "video",
+   "id": "dQw4w9WgXcQ",
+   "isCollection": false,
+   "label": "YouTube video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://www.youtube.com/embed/dQw4w9WgXcQ",
+  "detect": {
+   "url": "https://www.youtube.com/embed/dQw4w9WgXcQ",
+   "platform": "youtube",
+   "contentType": "video",
+   "id": "dQw4w9WgXcQ",
+   "isCollection": false,
+   "label": "YouTube video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://www.youtube.com/live/dQw4w9WgXcQ",
+  "detect": {
+   "url": "https://www.youtube.com/live/dQw4w9WgXcQ",
+   "platform": "youtube",
+   "contentType": "video",
+   "id": "dQw4w9WgXcQ",
+   "isCollection": false,
+   "label": "YouTube video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "treats a watch URL carrying a list= as a video, not a playlist",
+  "detect": {
+   "url": "https://treats a watch URL carrying a list= as a video, not a playlist",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=PLabc",
+  "detect": {
+   "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=PLabc",
+   "platform": "youtube",
+   "contentType": "video",
+   "id": "dQw4w9WgXcQ",
+   "isCollection": false,
+   "label": "YouTube video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "recognises a /playlist?list= collection",
+  "detect": {
+   "url": "https://recognises a /playlist?list= collection",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://www.youtube.com/playlist?list=PLabcDEF123",
+  "detect": {
+   "url": "https://www.youtube.com/playlist?list=PLabcDEF123",
+   "platform": "youtube",
+   "contentType": "playlist",
+   "id": "PLabcDEF123",
+   "isCollection": true,
+   "label": "YouTube playlist"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "playlist",
+  "detect": {
+   "url": "https://playlist",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "PLabcDEF123",
+  "detect": {
+   "url": "https://PLabcDEF123",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "detectUrl — Spotify",
+  "detect": {
+   "url": "https://detectUrl — Spotify",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "recognises the web notation",
+  "detect": {
+   "url": "https://recognises the web notation",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://open.spotify.com/track/6rqhFgbbKwnb9MLmUQDhG6",
+  "detect": {
+   "url": "https://open.spotify.com/track/6rqhFgbbKwnb9MLmUQDhG6",
+   "platform": "spotify",
+   "contentType": "track",
+   "id": "6rqhFgbbKwnb9MLmUQDhG6",
+   "isCollection": false,
+   "label": "Spotify track"
+  },
+  "spotify": {
+   "type": "track",
+   "id": "6rqhFgbbKwnb9MLmUQDhG6"
+  }
+ },
+ {
+  "input": "spotify",
+  "detect": {
+   "url": "https://spotify",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "track",
+  "detect": {
+   "url": "https://track",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "6rqhFgbbKwnb9MLmUQDhG6",
+  "detect": {
+   "url": "https://6rqhFgbbKwnb9MLmUQDhG6",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "recognises the uri notation",
+  "detect": {
+   "url": "https://recognises the uri notation",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "spotify:track:6rqhFgbbKwnb9MLmUQDhG6",
+  "detect": {
+   "url": "spotify:track:6rqhFgbbKwnb9MLmUQDhG6",
+   "platform": "spotify",
+   "contentType": "track",
+   "id": "6rqhFgbbKwnb9MLmUQDhG6",
+   "isCollection": false,
+   "label": "Spotify track"
+  },
+  "spotify": {
+   "type": "track",
+   "id": "6rqhFgbbKwnb9MLmUQDhG6"
+  }
+ },
+ {
+  "input": "tolerates the optional intl-xx segment",
+  "detect": {
+   "url": "https://tolerates the optional intl-xx segment",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://open.spotify.com/intl-fr/album/1DFixLWuPkv3KT3TnV35m3",
+  "detect": {
+   "url": "https://open.spotify.com/intl-fr/album/1DFixLWuPkv3KT3TnV35m3",
+   "platform": "spotify",
+   "contentType": "album",
+   "id": "1DFixLWuPkv3KT3TnV35m3",
+   "isCollection": true,
+   "label": "Spotify album"
+  },
+  "spotify": {
+   "type": "album",
+   "id": "1DFixLWuPkv3KT3TnV35m3"
+  }
+ },
+ {
+  "input": "album",
+  "detect": {
+   "url": "https://album",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "1DFixLWuPkv3KT3TnV35m3",
+  "detect": {
+   "url": "https://1DFixLWuPkv3KT3TnV35m3",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "marks playlists/albums as collections",
+  "detect": {
+   "url": "https://marks playlists/albums as collections",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M",
+  "detect": {
+   "url": "https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M",
+   "platform": "spotify",
+   "contentType": "playlist",
+   "id": "37i9dQZF1DXcBWIGoYBM5M",
+   "isCollection": true,
+   "label": "Spotify playlist"
+  },
+  "spotify": {
+   "type": "playlist",
+   "id": "37i9dQZF1DXcBWIGoYBM5M"
+  }
+ },
+ {
+  "input": "https://open.spotify.com/artist/0OdUWJ0sBjDrqHygGUXeCF",
+  "detect": {
+   "url": "https://open.spotify.com/artist/0OdUWJ0sBjDrqHygGUXeCF",
+   "platform": "spotify",
+   "contentType": "artist",
+   "id": "0OdUWJ0sBjDrqHygGUXeCF",
+   "isCollection": false,
+   "label": "Spotify artist"
+  },
+  "spotify": {
+   "type": "artist",
+   "id": "0OdUWJ0sBjDrqHygGUXeCF"
+  }
+ },
+ {
+  "input": "parseSpotifyUrl",
+  "detect": {
+   "url": "https://parseSpotifyUrl",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "parses both notations",
+  "detect": {
+   "url": "https://parses both notations",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://open.spotify.com/playlist/abc123",
+  "detect": {
+   "url": "https://open.spotify.com/playlist/abc123",
+   "platform": "spotify",
+   "contentType": "playlist",
+   "id": "abc123",
+   "isCollection": true,
+   "label": "Spotify playlist"
+  },
+  "spotify": {
+   "type": "playlist",
+   "id": "abc123"
+  }
+ },
+ {
+  "input": "abc123",
+  "detect": {
+   "url": "https://abc123",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "spotify:artist:xyz789",
+  "detect": {
+   "url": "spotify:artist:xyz789",
+   "platform": "spotify",
+   "contentType": "artist",
+   "id": "xyz789",
+   "isCollection": false,
+   "label": "Spotify artist"
+  },
+  "spotify": {
+   "type": "artist",
+   "id": "xyz789"
+  }
+ },
+ {
+  "input": "artist",
+  "detect": {
+   "url": "https://artist",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "xyz789",
+  "detect": {
+   "url": "https://xyz789",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://open.spotify.com/intl-pt/track/qwe456",
+  "detect": {
+   "url": "https://open.spotify.com/intl-pt/track/qwe456",
+   "platform": "spotify",
+   "contentType": "track",
+   "id": "qwe456",
+   "isCollection": false,
+   "label": "Spotify track"
+  },
+  "spotify": {
+   "type": "track",
+   "id": "qwe456"
+  }
+ },
+ {
+  "input": "qwe456",
+  "detect": {
+   "url": "https://qwe456",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "returns nulls for a non-Spotify url",
+  "detect": {
+   "url": "https://returns nulls for a non-Spotify url",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://youtube.com/watch?v=dQw4w9WgXcQ",
+  "detect": {
+   "url": "https://youtube.com/watch?v=dQw4w9WgXcQ",
+   "platform": "youtube",
+   "contentType": "video",
+   "id": "dQw4w9WgXcQ",
+   "isCollection": false,
+   "label": "YouTube video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "detectUrl — SoundCloud",
+  "detect": {
+   "url": "https://detectUrl — SoundCloud",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "recognises a track",
+  "detect": {
+   "url": "https://recognises a track",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://soundcloud.com/artist-name/some-track",
+  "detect": {
+   "url": "https://soundcloud.com/artist-name/some-track",
+   "platform": "soundcloud",
+   "contentType": "track",
+   "id": "some-track",
+   "isCollection": false,
+   "label": "SoundCloud track"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "soundcloud",
+  "detect": {
+   "url": "https://soundcloud",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "some-track",
+  "detect": {
+   "url": "https://some-track",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "recognises a /sets/ playlist as a collection",
+  "detect": {
+   "url": "https://recognises a /sets/ playlist as a collection",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://soundcloud.com/artist-name/sets/my-playlist",
+  "detect": {
+   "url": "https://soundcloud.com/artist-name/sets/my-playlist",
+   "platform": "soundcloud",
+   "contentType": "playlist",
+   "id": "my-playlist",
+   "isCollection": true,
+   "label": "SoundCloud playlist"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "unknown",
+  "detect": {
+   "url": "https://unknown",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "never claims profile sub-pages like /likes as tracks",
+  "detect": {
+   "url": "https://never claims profile sub-pages like /likes as tracks",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "likes",
+  "detect": {
+   "url": "https://likes",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "reposts",
+  "detect": {
+   "url": "https://reposts",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "followers",
+  "detect": {
+   "url": "https://followers",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "detectUrl — short-form video platforms",
+  "detect": {
+   "url": "https://detectUrl — short-form video platforms",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "recognises Instagram",
+  "detect": {
+   "url": "https://recognises Instagram",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://www.instagram.com/reel/Cabc123/",
+  "detect": {
+   "url": "https://www.instagram.com/reel/Cabc123/",
+   "platform": "instagram",
+   "contentType": "video",
+   "id": "Cabc123",
+   "isCollection": false,
+   "label": "Instagram video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "instagram",
+  "detect": {
+   "url": "https://instagram",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "recognises TikTok",
+  "detect": {
+   "url": "https://recognises TikTok",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://www.tiktok.com/@user/video/1234567890",
+  "detect": {
+   "url": "https://www.tiktok.com/@user/video/1234567890",
+   "platform": "tiktok",
+   "contentType": "video",
+   "id": "1234567890",
+   "isCollection": false,
+   "label": "TikTok video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "tiktok",
+  "detect": {
+   "url": "https://tiktok",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "recognises Facebook",
+  "detect": {
+   "url": "https://recognises Facebook",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://www.facebook.com/watch?v=1234567890",
+  "detect": {
+   "url": "https://www.facebook.com/watch?v=1234567890",
+   "platform": "facebook",
+   "contentType": "video",
+   "id": "1234567890",
+   "isCollection": false,
+   "label": "Facebook video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "facebook",
+  "detect": {
+   "url": "https://facebook",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "detectUrl — fallbacks",
+  "detect": {
+   "url": "https://detectUrl — fallbacks",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "recognises a direct media file by extension",
+  "detect": {
+   "url": "https://recognises a direct media file by extension",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://cdn.example.com/clips/video.mp4",
+  "detect": {
+   "url": "https://cdn.example.com/clips/video.mp4",
+   "platform": "direct",
+   "contentType": "video",
+   "isCollection": false,
+   "label": "Direct media"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "direct",
+  "detect": {
+   "url": "https://direct",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "Direct media",
+  "detect": {
+   "url": "https://Direct media",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "hands any other real address to the engine as generic",
+  "detect": {
+   "url": "https://hands any other real address to the engine as generic",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://example.org/watch/123456789",
+  "detect": {
+   "url": "https://example.org/watch/123456789",
+   "platform": "generic",
+   "contentType": "video",
+   "id": "example.org",
+   "isCollection": false,
+   "label": "example.org video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "generic",
+  "detect": {
+   "url": "https://generic",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "Link",
+  "detect": {
+   "url": "https://Link",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "example.org video",
+  "detect": {
+   "url": "https://example.org video",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "still reports unknown for input that is not a real address",
+  "detect": {
+   "url": "https://still reports unknown for input that is not a real address",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "best songs of 2026",
+  "detect": {
+   "url": "https://best songs of 2026",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "not a url",
+  "detect": {
+   "url": "https://not a url",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "spotify:weird:thing",
+  "detect": {
+   "url": "spotify:weird:thing",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "does not treat a non-http scheme as a generic link",
+  "detect": {
+   "url": "https://does not treat a non-http scheme as a generic link",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "file:///C:/Windows/System32/notes.txt",
+  "detect": {
+   "url": "file:///C:/Windows/System32/notes.txt",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "javascript:alert(1)",
+  "detect": {
+   "url": "javascript:alert(1)",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "detectUrl — normalisation",
+  "detect": {
+   "url": "https://detectUrl — normalisation",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "trims and prepends https:// when no scheme is present",
+  "detect": {
+   "url": "https://trims and prepends https:// when no scheme is present",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "  youtube.com/watch?v=dQw4w9WgXcQ  ",
+  "detect": {
+   "url": "https://youtube.com/watch?v=dQw4w9WgXcQ",
+   "platform": "youtube",
+   "contentType": "video",
+   "id": "dQw4w9WgXcQ",
+   "isCollection": false,
+   "label": "YouTube video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "detectUrl — non-core sources",
+  "detect": {
+   "url": "https://detectUrl — non-core sources",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://x.com/NASA/status/1234567890",
+  "detect": {
+   "url": "https://x.com/NASA/status/1234567890",
+   "platform": "twitter",
+   "contentType": "video",
+   "id": "1234567890",
+   "isCollection": false,
+   "label": "X / Twitter video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "twitter",
+  "detect": {
+   "url": "https://twitter",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "1234567890",
+  "detect": {
+   "url": "https://1234567890",
+   "platform": "generic",
+   "contentType": "video",
+   "id": "73.150.2.210",
+   "isCollection": false,
+   "label": "73.150.2.210 video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://twitter.com/i/web/status/99",
+  "detect": {
+   "url": "https://twitter.com/i/web/status/99",
+   "platform": "twitter",
+   "contentType": "video",
+   "id": "99",
+   "isCollection": false,
+   "label": "X / Twitter video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "99",
+  "detect": {
+   "url": "https://99",
+   "platform": "generic",
+   "contentType": "video",
+   "id": "0.0.0.99",
+   "isCollection": false,
+   "label": "0.0.0.99 video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://vimeo.com/76979871",
+  "detect": {
+   "url": "https://vimeo.com/76979871",
+   "platform": "vimeo",
+   "contentType": "video",
+   "id": "76979871",
+   "isCollection": false,
+   "label": "Vimeo video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "vimeo",
+  "detect": {
+   "url": "https://vimeo",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "76979871",
+  "detect": {
+   "url": "https://76979871",
+   "platform": "generic",
+   "contentType": "video",
+   "id": "4.150.158.159",
+   "isCollection": false,
+   "label": "4.150.158.159 video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://player.vimeo.com/video/76979871",
+  "detect": {
+   "url": "https://player.vimeo.com/video/76979871",
+   "platform": "vimeo",
+   "contentType": "video",
+   "id": "76979871",
+   "isCollection": false,
+   "label": "Vimeo video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://vimeo.com/channels/staffpicks/76979871",
+  "detect": {
+   "url": "https://vimeo.com/channels/staffpicks/76979871",
+   "platform": "vimeo",
+   "contentType": "video",
+   "id": "76979871",
+   "isCollection": false,
+   "label": "Vimeo video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://vimeo.com/showcase/1234567",
+  "detect": {
+   "url": "https://vimeo.com/showcase/1234567",
+   "platform": "vimeo",
+   "contentType": "playlist",
+   "id": "1234567",
+   "isCollection": true,
+   "label": "Vimeo playlist"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "1234567",
+  "detect": {
+   "url": "https://1234567",
+   "platform": "generic",
+   "contentType": "video",
+   "id": "0.18.214.135",
+   "isCollection": false,
+   "label": "0.18.214.135 video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://vimeo.com/album/1234567",
+  "detect": {
+   "url": "https://vimeo.com/album/1234567",
+   "platform": "vimeo",
+   "contentType": "playlist",
+   "id": "1234567",
+   "isCollection": true,
+   "label": "Vimeo playlist"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://vimeo.com/channels/staffpicks",
+  "detect": {
+   "url": "https://vimeo.com/channels/staffpicks",
+   "platform": "vimeo",
+   "contentType": "playlist",
+   "id": "staffpicks",
+   "isCollection": true,
+   "label": "Vimeo playlist"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "staffpicks",
+  "detect": {
+   "url": "https://staffpicks",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://www.twitch.tv/videos/2345678",
+  "detect": {
+   "url": "https://www.twitch.tv/videos/2345678",
+   "platform": "twitch",
+   "contentType": "video",
+   "id": "2345678",
+   "isCollection": false,
+   "label": "Twitch video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "twitch",
+  "detect": {
+   "url": "https://twitch",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "2345678",
+  "detect": {
+   "url": "https://2345678",
+   "platform": "generic",
+   "contentType": "video",
+   "id": "0.35.202.206",
+   "isCollection": false,
+   "label": "0.35.202.206 video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://clips.twitch.tv/FunnySlug-abc",
+  "detect": {
+   "url": "https://clips.twitch.tv/FunnySlug-abc",
+   "platform": "twitch",
+   "contentType": "video",
+   "id": "FunnySlug-abc",
+   "isCollection": false,
+   "label": "Twitch video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "FunnySlug-abc",
+  "detect": {
+   "url": "https://FunnySlug-abc",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://www.twitch.tv/chan/clip/Slug_1",
+  "detect": {
+   "url": "https://www.twitch.tv/chan/clip/Slug_1",
+   "platform": "twitch",
+   "contentType": "video",
+   "id": "Slug_1",
+   "isCollection": false,
+   "label": "Twitch video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "Slug_1",
+  "detect": {
+   "url": "https://Slug_1",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://www.twitch.tv/somechan/videos",
+  "detect": {
+   "url": "https://www.twitch.tv/somechan/videos",
+   "platform": "twitch",
+   "contentType": "playlist",
+   "id": "somechan",
+   "isCollection": true,
+   "label": "Twitch playlist"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "somechan",
+  "detect": {
+   "url": "https://somechan",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://artist.bandcamp.com/track/song-one",
+  "detect": {
+   "url": "https://artist.bandcamp.com/track/song-one",
+   "platform": "bandcamp",
+   "contentType": "track",
+   "id": "song-one",
+   "isCollection": false,
+   "label": "Bandcamp track"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "bandcamp",
+  "detect": {
+   "url": "https://bandcamp",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "song-one",
+  "detect": {
+   "url": "https://song-one",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://artist.bandcamp.com/album/record",
+  "detect": {
+   "url": "https://artist.bandcamp.com/album/record",
+   "platform": "bandcamp",
+   "contentType": "album",
+   "id": "record",
+   "isCollection": true,
+   "label": "Bandcamp album"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "record",
+  "detect": {
+   "url": "https://record",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://artist.bandcamp.com/music",
+  "detect": {
+   "url": "https://artist.bandcamp.com/music",
+   "platform": "bandcamp",
+   "contentType": "album",
+   "id": "artist",
+   "isCollection": true,
+   "label": "Bandcamp album"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://www.reddit.com/r/videos/comments/abc123/title/",
+  "detect": {
+   "url": "https://www.reddit.com/r/videos/comments/abc123/title/",
+   "platform": "reddit",
+   "contentType": "video",
+   "id": "abc123",
+   "isCollection": false,
+   "label": "Reddit video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "reddit",
+  "detect": {
+   "url": "https://reddit",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://www.dailymotion.com/video/x2mvxf6",
+  "detect": {
+   "url": "https://www.dailymotion.com/video/x2mvxf6",
+   "platform": "dailymotion",
+   "contentType": "video",
+   "id": "x2mvxf6",
+   "isCollection": false,
+   "label": "Dailymotion video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "dailymotion",
+  "detect": {
+   "url": "https://dailymotion",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "x2mvxf6",
+  "detect": {
+   "url": "https://x2mvxf6",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://dai.ly/x2mvxf6",
+  "detect": {
+   "url": "https://dai.ly/x2mvxf6",
+   "platform": "dailymotion",
+   "contentType": "video",
+   "id": "x2mvxf6",
+   "isCollection": false,
+   "label": "Dailymotion video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://www.dailymotion.com/playlist/x6hz",
+  "detect": {
+   "url": "https://www.dailymotion.com/playlist/x6hz",
+   "platform": "dailymotion",
+   "contentType": "playlist",
+   "id": "x6hz",
+   "isCollection": true,
+   "label": "Dailymotion playlist"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "x6hz",
+  "detect": {
+   "url": "https://x6hz",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://www.mixcloud.com/someuser/some-show/",
+  "detect": {
+   "url": "https://www.mixcloud.com/someuser/some-show/",
+   "platform": "mixcloud",
+   "contentType": "track",
+   "id": "some-show",
+   "isCollection": false,
+   "label": "Mixcloud track"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "mixcloud",
+  "detect": {
+   "url": "https://mixcloud",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "some-show",
+  "detect": {
+   "url": "https://some-show",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://www.mixcloud.com/someuser/",
+  "detect": {
+   "url": "https://www.mixcloud.com/someuser/",
+   "platform": "mixcloud",
+   "contentType": "playlist",
+   "id": "someuser",
+   "isCollection": true,
+   "label": "Mixcloud playlist"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "someuser",
+  "detect": {
+   "url": "https://someuser",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://rumble.com/v5abcd-some-title.html",
+  "detect": {
+   "url": "https://rumble.com/v5abcd-some-title.html",
+   "platform": "rumble",
+   "contentType": "video",
+   "id": "v5abcd-some-title.html",
+   "isCollection": false,
+   "label": "Rumble video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "rumble",
+  "detect": {
+   "url": "https://rumble",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "v5abcd-some-title.html",
+  "detect": {
+   "url": "https://v5abcd-some-title.html",
+   "platform": "generic",
+   "contentType": "video",
+   "id": "v5abcd-some-title.html",
+   "isCollection": false,
+   "label": "v5abcd-some-title.html video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "%s",
+  "detect": {
+   "url": "https://%s",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "labels with the display name",
+  "detect": {
+   "url": "https://labels with the display name",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://x.com/a/status/1",
+  "detect": {
+   "url": "https://x.com/a/status/1",
+   "platform": "twitter",
+   "contentType": "video",
+   "id": "1",
+   "isCollection": false,
+   "label": "X / Twitter video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "X / Twitter video",
+  "detect": {
+   "url": "https://X / Twitter video",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://twitch.tv.evil.com/videos/123",
+  "detect": {
+   "url": "https://twitch.tv.evil.com/videos/123",
+   "platform": "generic",
+   "contentType": "video",
+   "id": "twitch.tv.evil.com",
+   "isCollection": false,
+   "label": "twitch.tv.evil.com video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://evil.com/twitch.tv/videos/123",
+  "detect": {
+   "url": "https://evil.com/twitch.tv/videos/123",
+   "platform": "generic",
+   "contentType": "video",
+   "id": "evil.com",
+   "isCollection": false,
+   "label": "evil.com video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://notx.com/a/status/1",
+  "detect": {
+   "url": "https://notx.com/a/status/1",
+   "platform": "generic",
+   "contentType": "video",
+   "id": "notx.com",
+   "isCollection": false,
+   "label": "notx.com video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://x.com.evil.io/a/status/1",
+  "detect": {
+   "url": "https://x.com.evil.io/a/status/1",
+   "platform": "generic",
+   "contentType": "video",
+   "id": "x.com.evil.io",
+   "isCollection": false,
+   "label": "x.com.evil.io video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://vimeo.com.evil.io/76979871",
+  "detect": {
+   "url": "https://vimeo.com.evil.io/76979871",
+   "platform": "generic",
+   "contentType": "video",
+   "id": "vimeo.com.evil.io",
+   "isCollection": false,
+   "label": "vimeo.com.evil.io video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://evilbandcamp.com/track/x",
+  "detect": {
+   "url": "https://evilbandcamp.com/track/x",
+   "platform": "generic",
+   "contentType": "video",
+   "id": "evilbandcamp.com",
+   "isCollection": false,
+   "label": "evilbandcamp.com video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://bandcamp.com.evil.io/track/x",
+  "detect": {
+   "url": "https://bandcamp.com.evil.io/track/x",
+   "platform": "generic",
+   "contentType": "video",
+   "id": "bandcamp.com.evil.io",
+   "isCollection": false,
+   "label": "bandcamp.com.evil.io video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://evil.com/?u=https://vimeo.com/76979871",
+  "detect": {
+   "url": "https://evil.com/?u=https://vimeo.com/76979871",
+   "platform": "generic",
+   "contentType": "video",
+   "id": "evil.com",
+   "isCollection": false,
+   "label": "evil.com video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://fakemixcloud.com/u/show/",
+  "detect": {
+   "url": "https://fakemixcloud.com/u/show/",
+   "platform": "generic",
+   "contentType": "video",
+   "id": "fakemixcloud.com",
+   "isCollection": false,
+   "label": "fakemixcloud.com video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "lookalike %s stays generic",
+  "detect": {
+   "url": "https://lookalike %s stays generic",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "a bare Twitch channel (live) is not treated as a collection",
+  "detect": {
+   "url": "https://a bare Twitch channel (live) is not treated as a collection",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://www.twitch.tv/somechan",
+  "detect": {
+   "url": "https://www.twitch.tv/somechan",
+   "platform": "generic",
+   "contentType": "video",
+   "id": "www.twitch.tv",
+   "isCollection": false,
+   "label": "www.twitch.tv video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "",
+  "detect": {
+   "url": "https://",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "   ",
+  "detect": {
+   "url": "https://",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "buy me a coffee",
+  "detect": {
+   "url": "https://buy me a coffee",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "localhost",
+  "detect": {
+   "url": "https://localhost",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "http://localhost/x.mp4",
+  "detect": {
+   "url": "http://localhost/x.mp4",
+   "platform": "direct",
+   "contentType": "video",
+   "isCollection": false,
+   "label": "Direct media"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "ftp://example.com/a.mp4",
+  "detect": {
+   "url": "ftp://example.com/a.mp4",
+   "platform": "direct",
+   "contentType": "video",
+   "isCollection": false,
+   "label": "Direct media"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "example.com",
+  "detect": {
+   "url": "https://example.com",
+   "platform": "generic",
+   "contentType": "video",
+   "id": "example.com",
+   "isCollection": false,
+   "label": "example.com video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "EXAMPLE.COM/Path",
+  "detect": {
+   "url": "https://EXAMPLE.COM/Path",
+   "platform": "generic",
+   "contentType": "video",
+   "id": "example.com",
+   "isCollection": false,
+   "label": "example.com video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://example.com:8080/a?b#c",
+  "detect": {
+   "url": "https://example.com:8080/a?b#c",
+   "platform": "generic",
+   "contentType": "video",
+   "id": "example.com",
+   "isCollection": false,
+   "label": "example.com video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://1.2.3.4/v",
+  "detect": {
+   "url": "https://1.2.3.4/v",
+   "platform": "generic",
+   "contentType": "video",
+   "id": "1.2.3.4",
+   "isCollection": false,
+   "label": "1.2.3.4 video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://[::1]/v",
+  "detect": {
+   "url": "https://[::1]/v",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://user:pw@vimeo.com/123456",
+  "detect": {
+   "url": "https://user:pw@vimeo.com/123456",
+   "platform": "vimeo",
+   "contentType": "video",
+   "id": "123456",
+   "isCollection": false,
+   "label": "Vimeo video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://VIMEO.com/123456/abcdef0/",
+  "detect": {
+   "url": "https://VIMEO.com/123456/abcdef0/",
+   "platform": "vimeo",
+   "contentType": "video",
+   "id": "123456",
+   "isCollection": false,
+   "label": "Vimeo video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://vimeo.com/123456/zzz",
+  "detect": {
+   "url": "https://vimeo.com/123456/zzz",
+   "platform": "generic",
+   "contentType": "video",
+   "id": "vimeo.com",
+   "isCollection": false,
+   "label": "vimeo.com video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "﻿ https://youtu.be/dQw4w9WgXcQ  ",
+  "detect": {
+   "url": "https://youtu.be/dQw4w9WgXcQ",
+   "platform": "youtube",
+   "contentType": "video",
+   "id": "dQw4w9WgXcQ",
+   "isCollection": false,
+   "label": "YouTube video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://youtu.be/dQw4w9WgXcQ",
+  "detect": {
+   "url": "https://https://youtu.be/dQw4w9WgXcQ",
+   "platform": "youtube",
+   "contentType": "video",
+   "id": "dQw4w9WgXcQ",
+   "isCollection": false,
+   "label": "YouTube video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://tiKtok.com/@a/video/123",
+  "detect": {
+   "url": "https://tiKtok.com/@a/video/123",
+   "platform": "generic",
+   "contentType": "video",
+   "id": "tiktok.com",
+   "isCollection": false,
+   "label": "tiktok.com video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://www.youtube.com/watch?v=dQw4w9WgXc٠",
+  "detect": {
+   "url": "https://www.youtube.com/watch?v=dQw4w9WgXc٠",
+   "platform": "generic",
+   "contentType": "video",
+   "id": "www.youtube.com",
+   "isCollection": false,
+   "label": "www.youtube.com video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://youtube.com/playlist?x=1\nlist=PL123",
+  "detect": {
+   "url": "https://youtube.com/playlist?x=1\nlist=PL123",
+   "platform": "generic",
+   "contentType": "video",
+   "id": "youtube.com",
+   "isCollection": false,
+   "label": "youtube.com video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://youtube.com/playlist?x=1 list=PL123",
+  "detect": {
+   "url": "https://youtube.com/playlist?x=1 list=PL123",
+   "platform": "generic",
+   "contentType": "video",
+   "id": "youtube.com",
+   "isCollection": false,
+   "label": "youtube.com video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://youtube.com/playlist?mylist=PL123",
+  "detect": {
+   "url": "https://youtube.com/playlist?mylist=PL123",
+   "platform": "generic",
+   "contentType": "video",
+   "id": "youtube.com",
+   "isCollection": false,
+   "label": "youtube.com video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://youtube.com/playlist?a=1&list=PL-_9",
+  "detect": {
+   "url": "https://youtube.com/playlist?a=1&list=PL-_9",
+   "platform": "youtube",
+   "contentType": "playlist",
+   "id": "PL-_9",
+   "isCollection": true,
+   "label": "YouTube playlist"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://www.youtube.com/watch?feature=x&v=dQw4w9WgXcQ#t=1",
+  "detect": {
+   "url": "https://www.youtube.com/watch?feature=x&v=dQw4w9WgXcQ#t=1",
+   "platform": "youtube",
+   "contentType": "video",
+   "id": "dQw4w9WgXcQ",
+   "isCollection": false,
+   "label": "YouTube video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://www.youtube.com/watch?nov=dQw4w9WgXcQ",
+  "detect": {
+   "url": "https://www.youtube.com/watch?nov=dQw4w9WgXcQ",
+   "platform": "generic",
+   "contentType": "video",
+   "id": "www.youtube.com",
+   "isCollection": false,
+   "label": "www.youtube.com video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://www.youtube.com/embed/short",
+  "detect": {
+   "url": "https://www.youtube.com/embed/short",
+   "platform": "generic",
+   "contentType": "video",
+   "id": "www.youtube.com",
+   "isCollection": false,
+   "label": "www.youtube.com video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "spotify:track:4cOdK2wGLETKBW3PvgPWqT",
+  "detect": {
+   "url": "spotify:track:4cOdK2wGLETKBW3PvgPWqT",
+   "platform": "spotify",
+   "contentType": "track",
+   "id": "4cOdK2wGLETKBW3PvgPWqT",
+   "isCollection": false,
+   "label": "Spotify track"
+  },
+  "spotify": {
+   "type": "track",
+   "id": "4cOdK2wGLETKBW3PvgPWqT"
+  }
+ },
+ {
+  "input": "SPOTIFY:ALBUM:abc",
+  "detect": {
+   "url": "SPOTIFY:ALBUM:abc",
+   "platform": "spotify",
+   "contentType": "album",
+   "id": "abc",
+   "isCollection": true,
+   "label": "Spotify album"
+  },
+  "spotify": {
+   "type": "album",
+   "id": "abc"
+  }
+ },
+ {
+  "input": "https://open.spotify.com/intl-fr/artist/xyz?si=1",
+  "detect": {
+   "url": "https://open.spotify.com/intl-fr/artist/xyz?si=1",
+   "platform": "spotify",
+   "contentType": "artist",
+   "id": "xyz",
+   "isCollection": false,
+   "label": "Spotify artist"
+  },
+  "spotify": {
+   "type": "artist",
+   "id": "xyz"
+  }
+ },
+ {
+  "input": "https://open.spotify.com/episode/abc",
+  "detect": {
+   "url": "https://open.spotify.com/episode/abc",
+   "platform": "generic",
+   "contentType": "video",
+   "id": "open.spotify.com",
+   "isCollection": false,
+   "label": "open.spotify.com video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "ytsearch:artist - title",
+  "detect": {
+   "url": "ytsearch:artist - title",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "ytsearch:watch youtube.com/watch?v=dQw4w9WgXcQ",
+  "detect": {
+   "url": "ytsearch:watch youtube.com/watch?v=dQw4w9WgXcQ",
+   "platform": "youtube",
+   "contentType": "video",
+   "id": "dQw4w9WgXcQ",
+   "isCollection": false,
+   "label": "YouTube video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "ytsearch:some file.mp4",
+  "detect": {
+   "url": "ytsearch:some file.mp4",
+   "platform": "direct",
+   "contentType": "video",
+   "isCollection": false,
+   "label": "Direct media"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://soundcloud.com/a/likes",
+  "detect": {
+   "url": "https://soundcloud.com/a/likes",
+   "platform": "generic",
+   "contentType": "video",
+   "id": "soundcloud.com",
+   "isCollection": false,
+   "label": "soundcloud.com video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://soundcloud.com/a/likes2",
+  "detect": {
+   "url": "https://soundcloud.com/a/likes2",
+   "platform": "soundcloud",
+   "contentType": "track",
+   "id": "likes2",
+   "isCollection": false,
+   "label": "SoundCloud track"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://soundcloud.com/a/sets",
+  "detect": {
+   "url": "https://soundcloud.com/a/sets",
+   "platform": "generic",
+   "contentType": "video",
+   "id": "soundcloud.com",
+   "isCollection": false,
+   "label": "soundcloud.com video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://soundcloud.com/a/sets/b?x",
+  "detect": {
+   "url": "https://soundcloud.com/a/sets/b?x",
+   "platform": "soundcloud",
+   "contentType": "playlist",
+   "id": "b",
+   "isCollection": true,
+   "label": "SoundCloud playlist"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://soundcloud.com/a/TRACKS/",
+  "detect": {
+   "url": "https://soundcloud.com/a/TRACKS/",
+   "platform": "generic",
+   "contentType": "video",
+   "id": "soundcloud.com",
+   "isCollection": false,
+   "label": "soundcloud.com video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://soundcloud.com/a/b/c",
+  "detect": {
+   "url": "https://soundcloud.com/a/b/c",
+   "platform": "soundcloud",
+   "contentType": "track",
+   "id": "b",
+   "isCollection": false,
+   "label": "SoundCloud track"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://instagram.com/reels/Cx1/",
+  "detect": {
+   "url": "https://instagram.com/reels/Cx1/",
+   "platform": "instagram",
+   "contentType": "video",
+   "id": "Cx1",
+   "isCollection": false,
+   "label": "Instagram video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://instagram.com/stories/a/1",
+  "detect": {
+   "url": "https://instagram.com/stories/a/1",
+   "platform": "generic",
+   "contentType": "video",
+   "id": "instagram.com",
+   "isCollection": false,
+   "label": "instagram.com video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://www.tiktok.com/@user",
+  "detect": {
+   "url": "https://www.tiktok.com/@user",
+   "platform": "generic",
+   "contentType": "video",
+   "id": "www.tiktok.com",
+   "isCollection": false,
+   "label": "www.tiktok.com video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://vt.tiktok.com/ZS123/",
+  "detect": {
+   "url": "https://vt.tiktok.com/ZS123/",
+   "platform": "tiktok",
+   "contentType": "video",
+   "id": "ZS123",
+   "isCollection": false,
+   "label": "TikTok video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://www.tiktok.com/t/ZT9/",
+  "detect": {
+   "url": "https://www.tiktok.com/t/ZT9/",
+   "platform": "tiktok",
+   "contentType": "video",
+   "id": "ZT9",
+   "isCollection": false,
+   "label": "TikTok video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://m.facebook.com/watch/?v=123",
+  "detect": {
+   "url": "https://m.facebook.com/watch/?v=123",
+   "platform": "facebook",
+   "contentType": "video",
+   "id": "123",
+   "isCollection": false,
+   "label": "Facebook video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://fb.watch/abC1/",
+  "detect": {
+   "url": "https://fb.watch/abC1/",
+   "platform": "facebook",
+   "contentType": "video",
+   "id": "abC1",
+   "isCollection": false,
+   "label": "Facebook video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://facebook.com/profile",
+  "detect": {
+   "url": "https://facebook.com/profile",
+   "platform": "generic",
+   "contentType": "video",
+   "id": "facebook.com",
+   "isCollection": false,
+   "label": "facebook.com video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://x.com/i/web/status/99",
+  "detect": {
+   "url": "https://x.com/i/web/status/99",
+   "platform": "twitter",
+   "contentType": "video",
+   "id": "99",
+   "isCollection": false,
+   "label": "X / Twitter video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://mobile.twitter.com/a/status/12/photo/1",
+  "detect": {
+   "url": "https://mobile.twitter.com/a/status/12/photo/1",
+   "platform": "twitter",
+   "contentType": "video",
+   "id": "12",
+   "isCollection": false,
+   "label": "X / Twitter video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://twitch.tv.evil.com/videos/1",
+  "detect": {
+   "url": "https://twitch.tv.evil.com/videos/1",
+   "platform": "generic",
+   "contentType": "video",
+   "id": "twitch.tv.evil.com",
+   "isCollection": false,
+   "label": "twitch.tv.evil.com video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://evil.com/twitch.tv/videos/1",
+  "detect": {
+   "url": "https://evil.com/twitch.tv/videos/1",
+   "platform": "generic",
+   "contentType": "video",
+   "id": "evil.com",
+   "isCollection": false,
+   "label": "evil.com video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://www.twitch.tv/name",
+  "detect": {
+   "url": "https://www.twitch.tv/name",
+   "platform": "generic",
+   "contentType": "video",
+   "id": "www.twitch.tv",
+   "isCollection": false,
+   "label": "www.twitch.tv video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://www.twitch.tv/name/clips/",
+  "detect": {
+   "url": "https://www.twitch.tv/name/clips/",
+   "platform": "twitch",
+   "contentType": "playlist",
+   "id": "name",
+   "isCollection": true,
+   "label": "Twitch playlist"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://artist.bandcamp.com",
+  "detect": {
+   "url": "https://artist.bandcamp.com",
+   "platform": "bandcamp",
+   "contentType": "album",
+   "id": "artist",
+   "isCollection": true,
+   "label": "Bandcamp album"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://artist.bandcamp.com/music/",
+  "detect": {
+   "url": "https://artist.bandcamp.com/music/",
+   "platform": "bandcamp",
+   "contentType": "album",
+   "id": "artist",
+   "isCollection": true,
+   "label": "Bandcamp album"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://www.bandcamp.com/",
+  "detect": {
+   "url": "https://www.bandcamp.com/",
+   "platform": "generic",
+   "contentType": "video",
+   "id": "www.bandcamp.com",
+   "isCollection": false,
+   "label": "www.bandcamp.com video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://a.bandcamp.com/track/x?y",
+  "detect": {
+   "url": "https://a.bandcamp.com/track/x?y",
+   "platform": "bandcamp",
+   "contentType": "track",
+   "id": "x",
+   "isCollection": false,
+   "label": "Bandcamp track"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://old.reddit.com/r/a/comments/abc/t/",
+  "detect": {
+   "url": "https://old.reddit.com/r/a/comments/abc/t/",
+   "platform": "reddit",
+   "contentType": "video",
+   "id": "abc",
+   "isCollection": false,
+   "label": "Reddit video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://v.redd.it/xyz",
+  "detect": {
+   "url": "https://v.redd.it/xyz",
+   "platform": "reddit",
+   "contentType": "video",
+   "id": "xyz",
+   "isCollection": false,
+   "label": "Reddit video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://dai.ly/x8",
+  "detect": {
+   "url": "https://dai.ly/x8",
+   "platform": "dailymotion",
+   "contentType": "video",
+   "id": "x8",
+   "isCollection": false,
+   "label": "Dailymotion video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://www.dailymotion.com/embed/video/x9",
+  "detect": {
+   "url": "https://www.dailymotion.com/embed/video/x9",
+   "platform": "dailymotion",
+   "contentType": "video",
+   "id": "x9",
+   "isCollection": false,
+   "label": "Dailymotion video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://www.mixcloud.com/dj/set-1/",
+  "detect": {
+   "url": "https://www.mixcloud.com/dj/set-1/",
+   "platform": "mixcloud",
+   "contentType": "track",
+   "id": "set-1",
+   "isCollection": false,
+   "label": "Mixcloud track"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://www.mixcloud.com/dj/uploads/",
+  "detect": {
+   "url": "https://www.mixcloud.com/dj/uploads/",
+   "platform": "generic",
+   "contentType": "video",
+   "id": "www.mixcloud.com",
+   "isCollection": false,
+   "label": "www.mixcloud.com video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://www.mixcloud.com/discover/x/",
+  "detect": {
+   "url": "https://www.mixcloud.com/discover/x/",
+   "platform": "generic",
+   "contentType": "video",
+   "id": "www.mixcloud.com",
+   "isCollection": false,
+   "label": "www.mixcloud.com video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://www.mixcloud.com/dj",
+  "detect": {
+   "url": "https://www.mixcloud.com/dj",
+   "platform": "mixcloud",
+   "contentType": "playlist",
+   "id": "dj",
+   "isCollection": true,
+   "label": "Mixcloud playlist"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://www.mixcloud.com/discover",
+  "detect": {
+   "url": "https://www.mixcloud.com/discover",
+   "platform": "generic",
+   "contentType": "video",
+   "id": "www.mixcloud.com",
+   "isCollection": false,
+   "label": "www.mixcloud.com video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://rumble.com/v1abc-title.html",
+  "detect": {
+   "url": "https://rumble.com/v1abc-title.html",
+   "platform": "rumble",
+   "contentType": "video",
+   "id": "v1abc-title.html",
+   "isCollection": false,
+   "label": "Rumble video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://rumble.com/videos",
+  "detect": {
+   "url": "https://rumble.com/videos",
+   "platform": "generic",
+   "contentType": "video",
+   "id": "rumble.com",
+   "isCollection": false,
+   "label": "rumble.com video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://rumble.com/video-x",
+  "detect": {
+   "url": "https://rumble.com/video-x",
+   "platform": "rumble",
+   "contentType": "video",
+   "id": "video-x",
+   "isCollection": false,
+   "label": "Rumble video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://cdn.example.com/a.MP4?x=1",
+  "detect": {
+   "url": "https://cdn.example.com/a.MP4?x=1",
+   "platform": "direct",
+   "contentType": "video",
+   "isCollection": false,
+   "label": "Direct media"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://cdn.example.com/a.mp4x",
+  "detect": {
+   "url": "https://cdn.example.com/a.mp4x",
+   "platform": "generic",
+   "contentType": "video",
+   "id": "cdn.example.com",
+   "isCollection": false,
+   "label": "cdn.example.com video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "file:///c:/a.mkv",
+  "detect": {
+   "url": "file:///c:/a.mkv",
+   "platform": "direct",
+   "contentType": "video",
+   "isCollection": false,
+   "label": "Direct media"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "javascript:alert(1).mov",
+  "detect": {
+   "url": "javascript:alert(1).mov",
+   "platform": "direct",
+   "contentType": "video",
+   "isCollection": false,
+   "label": "Direct media"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://exa_mple.com/x",
+  "detect": {
+   "url": "https://exa_mple.com/x",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://xn--bcher-kva.example/x",
+  "detect": {
+   "url": "https://xn--bcher-kva.example/x",
+   "platform": "generic",
+   "contentType": "video",
+   "id": "xn--bcher-kva.example",
+   "isCollection": false,
+   "label": "xn--bcher-kva.example video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://bücher.example/x",
+  "detect": {
+   "url": "https://bücher.example/x",
+   "platform": "generic",
+   "contentType": "video",
+   "id": "xn--bcher-kva.example",
+   "isCollection": false,
+   "label": "xn--bcher-kva.example video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://example.com./x",
+  "detect": {
+   "url": "https://example.com./x",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com",
+  "detect": {
+   "url": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "https://youtu.be/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "detect": {
+   "url": "https://youtu.be/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "platform": "youtube",
+   "contentType": "video",
+   "id": "xxxxxxxxxxx",
+   "isCollection": false,
+   "label": "YouTube video"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ },
+ {
+  "input": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀youtu.be/dQw4w9WgXcQ",
+  "detect": {
+   "url": "https://😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+   "platform": "unknown",
+   "contentType": "unknown",
+   "isCollection": false,
+   "label": "Unknown link"
+  },
+  "spotify": {
+   "type": null,
+   "id": null
+  }
+ }
+]

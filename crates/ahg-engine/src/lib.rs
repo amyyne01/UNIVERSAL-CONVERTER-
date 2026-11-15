@@ -2,3 +2,4 @@
 
 pub mod state_machine;
 pub mod types;
+pub mod url_detector;
