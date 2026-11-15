@@ -143,3 +143,77 @@ fn the_proxy_setting_reaches_link_lookups() {
     assert!(args.contains("--proxy\nsocks5h://127.0.0.1:9050\n"), "{args}");
     core.shutdown();
 }
+
+// ── The schedule ────────────────────────────────────────────────────────────
+
+/// Save a schedule that is due this very minute, then stop: the next start
+/// finds a run it has to catch up on.
+fn with_a_schedule_due_now(dir: &Path, shutdown: bool) {
+    let now = ahg_engine::clock::LocalTime::now();
+    let (core, _rx) = start(dir, "", Plan::Premium);
+    let due = json!({ "scheduleEnabled": true, "scheduleTime": format!("{:02}:{:02}", now.hour, now.minute), "scheduleDays": [], "scheduleShutdown": shutdown });
+    assert_eq!(core.update_settings(due.as_object().unwrap()), Vec::<String>::new());
+    core.shutdown();
+}
+
+fn never_within(rx: &Receiver<CoreEvent>, time: Duration, unwanted: impl Fn(&CoreEvent) -> bool) {
+    let deadline = Instant::now() + time;
+    while let Ok(event) = rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+        assert!(!unwanted(&event), "saw {event:?}");
+    }
+}
+
+#[test]
+fn a_schedule_that_is_due_fires_at_startup_and_only_once_that_day() {
+    let dir = scratch("schedule");
+    with_a_schedule_due_now(&dir, false);
+
+    let (core, rx) = start(&dir, "", Plan::Premium);
+    wait_for(&rx, |e| *e == CoreEvent::ScheduleFired);
+    never_within(&rx, Duration::from_millis(500), |e| *e == CoreEvent::ShutdownRequested);
+    core.shutdown();
+
+    // D11: the day it fired is on disk, so a restart does not fire again.
+    let saved = fs::read_to_string(dir.join("userData").join("scheduler-state.json")).unwrap();
+    assert!(saved.contains("lastFiredDate"), "{saved}");
+    let (core, rx) = start(&dir, "", Plan::Premium);
+    never_within(&rx, Duration::from_millis(1500), |e| *e == CoreEvent::ScheduleFired);
+    core.shutdown();
+}
+
+#[test]
+fn the_schedule_does_not_fire_on_the_basic_plan() {
+    let dir = scratch("schedule-basic");
+    with_a_schedule_due_now(&dir, false);
+    let (core, rx) = start(&dir, "", Plan::Basic);
+    never_within(&rx, Duration::from_millis(1500), |e| *e == CoreEvent::ScheduleFired);
+    core.shutdown();
+}
+
+#[test]
+fn shutdown_after_a_scheduled_run_waits_for_the_queue_to_empty() {
+    let dir = scratch("schedule-shutdown");
+    with_a_schedule_due_now(&dir, true);
+    let media = dir.join("Downloads").join("a.mp3");
+    fs::write(&media, vec![0u8; 2048]).unwrap();
+    let script = format!("sleep 2000\nout [FILEPATH]{}\nexit 0\n", media.display());
+    let (core, rx) = start(&dir, &script, Plan::Premium);
+    let began = Instant::now();
+    core.start_download(&request()).unwrap();
+    wait_for(&rx, |e| *e == CoreEvent::ShutdownRequested);
+    assert!(began.elapsed() >= Duration::from_secs(2), "shutdown was requested while the download was still running");
+    assert_eq!(core.tasks()[0].progress.status, DownloadStatus::Done);
+    assert!(began.elapsed() < Duration::from_secs(8), "the request should follow the queue emptying, not the fallback timer");
+    core.shutdown();
+}
+
+#[test]
+fn shutdown_after_a_scheduled_run_with_nothing_to_download_comes_after_a_short_wait() {
+    let dir = scratch("schedule-empty");
+    with_a_schedule_due_now(&dir, true);
+    let (core, rx) = start(&dir, "", Plan::Premium);
+    let began = Instant::now();
+    wait_for(&rx, |e| *e == CoreEvent::ShutdownRequested);
+    assert!(began.elapsed() >= Duration::from_secs(9), "downloads get time to start before the PC is shut down");
+    core.shutdown();
+}

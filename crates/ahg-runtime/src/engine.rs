@@ -7,6 +7,7 @@
 //! touched from this one thread.
 use std::path::Path;
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
+use std::sync::Mutex;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -44,7 +45,7 @@ fn now_ms() -> u64 {
 
 pub struct Engine {
     tx: Sender<Msg>,
-    thread: Option<JoinHandle<()>>,
+    thread: Mutex<Option<JoinHandle<()>>>,
 }
 
 impl Engine {
@@ -56,7 +57,7 @@ impl Engine {
         queue.init_history(history_file, now_ms());
         let reports = forward_reports(tx.clone());
         let thread = thread::spawn(move || run(queue, downloader, rx, reports, notices));
-        Self { tx, thread: Some(thread) }
+        Self { tx, thread: Mutex::new(Some(thread)) }
     }
 
     /// Run `job` on the engine thread and wait for its answer.
@@ -134,15 +135,18 @@ impl Engine {
         self.ask(|q, _| (q.has_unfinished_work(), Vec::new())).unwrap_or(false)
     }
 
-    /// Stop every running download, save the history and end the thread.
-    /// Unfinished tasks stay in history and come back parked at the next start.
-    pub fn shutdown(mut self) {
-        self.stop();
+    /// True when the engine is running and has nothing left to do. A stopped
+    /// engine is not "drained": nothing may be concluded from it.
+    pub(crate) fn is_drained(&self) -> bool {
+        self.ask(|q, _| (q.has_unfinished_work(), Vec::new())).is_some_and(|busy| !busy)
     }
 
-    fn stop(&mut self) {
+    /// Stop every running download, save the history and end the thread.
+    /// Unfinished tasks stay in history and come back parked at the next start.
+    pub fn shutdown(&self) {
         let _ = self.tx.send(Msg::Shutdown);
-        if let Some(thread) = self.thread.take() {
+        let thread = self.thread.lock().unwrap_or_else(|e| e.into_inner()).take();
+        if let Some(thread) = thread {
             let _ = thread.join();
         }
     }
@@ -150,7 +154,7 @@ impl Engine {
 
 impl Drop for Engine {
     fn drop(&mut self) {
-        self.stop();
+        self.shutdown();
     }
 }
 
