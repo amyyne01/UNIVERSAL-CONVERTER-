@@ -140,14 +140,43 @@ pub enum Screen {
     Downloads,
 }
 
+/// One source's answer to a search (YouTube, SoundCloud or Spotify).
+pub enum Band {
+    /// Still asking: the preset draws its skeleton rows.
+    Loading,
+    Results(Vec<SearchResult>),
+    /// Answered with nothing.
+    Empty,
+    /// The source could not be reached; the band offers Retry.
+    Failed,
+}
+
+/// Where a Spotify track's match stands. Matching runs in the background
+/// while the track list is already on screen (D34).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Matched {
+    /// Still looking: skeleton or spinner on that row.
+    Matching,
+    Confirmed,
+    /// A best guess, with its confidence below 1.
+    BestGuess(f64),
+    /// No song found: this track will not download.
+    NoMatch,
+}
+
 /// What the field found after a paste or a search: the step between the
 /// empty field and a running download. It shows on Home, coming out of the field.
 pub enum Found {
     Nothing,
-    /// Words were typed: answers from YouTube, SoundCloud and Spotify, in that order.
-    Search { query: &'static str, results: [Vec<SearchResult>; 3] },
-    /// A playlist or album link: its tracks, to pick from.
-    Playlist(Playlist),
+    /// A link was pasted and its details are loading: the preset draws a skeleton.
+    LookingUp,
+    /// The lookup failed; the sentence to show.
+    LookupFailed(String),
+    /// Words were typed: one band per source, in the order YouTube, SoundCloud, Spotify.
+    Search { query: String, bands: [Band; 3] },
+    /// A playlist or album link: its tracks, to pick from. `matched` and
+    /// `selected` run parallel to `playlist.tracks`.
+    Playlist { playlist: Playlist, matched: Vec<Matched>, selected: Vec<bool> },
     /// One video or track: choose audio or video, format and quality, then download.
     Media(MediaMetadata),
 }
@@ -292,15 +321,36 @@ pub const SCENES: &[(&str, fn(&mut State))] = &[
     ("picker", |s| s.picker = true),
     ("search", |s| {
         s.input = sample::QUERY.into();
-        s.found = Found::Search { query: sample::QUERY, results: sample::search() };
+        s.found = Found::Search { query: sample::QUERY.into(), bands: sample::search().map(Band::Results) };
     }),
+    ("search-loading", |s| {
+        s.input = sample::QUERY.into();
+        s.found = Found::Search { query: sample::QUERY.into(), bands: [Band::Loading, Band::Loading, Band::Loading] };
+    }),
+    // One source answered, one found nothing, one could not be reached.
+    ("search-mixed", |s| {
+        let [youtube, _, _] = sample::search();
+        s.input = sample::QUERY.into();
+        s.found = Found::Search { query: sample::QUERY.into(), bands: [Band::Results(youtube), Band::Empty, Band::Failed] };
+    }),
+    ("looking-up", |s| {
+        s.input = "https://www.youtube.com/watch?v=example".into();
+        s.found = Found::LookingUp;
+    }),
+    ("lookup-failed", |s| {
+        s.input = "https://www.youtube.com/watch?v=example".into();
+        s.found = Found::LookupFailed(ahg_engine::downloader::errors::explain_error("ERROR: [youtube] example: Video unavailable. This video has been removed by the uploader"));
+    }),
+    // Matches at every stage: confirmed, a best guess, still matching, none found.
     ("playlist", |s| {
+        let playlist = sample::playlist();
+        let matched = (0..playlist.tracks.len()).map(|i| match i { 3 => Matched::BestGuess(0.9), 6 => Matched::NoMatch, 7.. => Matched::Matching, _ => Matched::Confirmed }).collect();
+        let selected = (0..playlist.tracks.len()).map(|i| i != 4 && i != 6).collect();
         s.input = "https://open.spotify.com/album/example".into();
-        s.found = Found::Playlist(sample::playlist());
+        s.found = Found::Playlist { playlist, matched, selected };
     }),
     ("media", |s| {
         s.input = "https://www.youtube.com/watch?v=example".into();
         s.found = Found::Media(sample::media());
     }),
-    ("nav-pinned", |s| s.nav_pinned = true),
 ];
