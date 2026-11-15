@@ -9,7 +9,7 @@ use super::model::{self, Group};
 use super::parts::{Line, art, button, checkbox, ghost, icon_button, label, meter, meter_held, mono, sans, stack};
 use super::theme::{Pal, source_color};
 use crate::copy;
-use crate::gate::{Screen, State};
+use crate::gate::{Nav, State};
 
 const INSTRUMENT: f32 = 220.0;
 /// A finished row's file takes more room than the meter: names are long.
@@ -35,7 +35,7 @@ pub fn view(s: &State, p: &Pal) -> El {
 fn header(tasks: &[DownloadTask], p: &Pal) -> El {
     let active = model::active_count(tasks);
     let all_paused = model::all_paused(tasks);
-    let mut left = stack(6.0)
+    let mut left = stack(8.0)
         .child(label(copy::DL_TITLE, sans(28.0, 500.0), p.text))
         .child(label(copy::active_and_total(active, tasks.len(), all_paused), mono(12.0, 400.0), p.muted));
     if tasks.len() >= 2 {
@@ -47,7 +47,7 @@ fn header(tasks: &[DownloadTask], p: &Pal) -> El {
             row()
                 .w(240.0)
                 .h(32.0)
-                .px(10.0)
+                .px(12.0)
                 .gap(8.0)
                 .center_y()
                 .radius(8.0)
@@ -56,7 +56,7 @@ fn header(tasks: &[DownloadTask], p: &Pal) -> El {
                 .mr(8.0)
                 .role("searchbox")
                 .label(copy::DL_SEARCH_ARIA)
-                .child(icon(&icons::SEARCH, 14.0).color(p.muted))
+                .child(icon(&icons::SEARCH, 16.0).color(p.muted))
                 .child(label(copy::DL_SEARCH_PLACEHOLDER, sans(13.0, 400.0), p.muted)),
         );
     }
@@ -110,24 +110,24 @@ fn strip(tasks: &[DownloadTask], p: &Pal) -> El {
         (copy::DL_FILTER_DONE, count(&|t| t.progress.status == St::Done)),
         (copy::DL_FILTER_FAILED, count(&|t| matches!(t.progress.status, St::Failed | St::Cancelled))),
     ];
-    let mut seg = row().padding(2.0).gap(2.0).radius(8.0).fill(p.deep).border(1.0, p.line).role("radiogroup").label(copy::DL_FILTER_ARIA);
+    let mut seg = row().padding(4.0).gap(4.0).radius(8.0).fill(p.deep).border(1.0, p.line).role("radiogroup").label(copy::DL_FILTER_ARIA);
     for (i, (name, n)) in filters.into_iter().enumerate() {
         let on = i == 0;
         seg = seg.child(
             row()
                 .h(28.0)
-                .px(10.0)
-                .gap(6.0)
+                .px(12.0)
+                .gap(8.0)
                 .center_y()
                 .radius(6.0)
                 .fill(if on { p.raised } else { Color::TRANSPARENT })
                 .hover(p.hover)
                 .cursor(rune::Cursor::Pointer)
                 .child(label(name, sans(13.0, if on { 500.0 } else { 400.0 }), if on { p.text } else { p.text2 }))
-                .child(label(n.to_string(), mono(11.5, 400.0), p.muted)),
+                .child(label(n.to_string(), mono(12.0, 400.0), p.muted)),
         );
     }
-    row().w_full().h(36.0).pl(16.0).gap(16.0).center_y().child(checkbox(p).label(copy::DL_SELECT_ALL_ARIA)).child(seg)
+    row().w_full().h(40.0).pl(16.0).gap(16.0).center_y().child(checkbox(p).label(copy::DL_SELECT_ALL_ARIA)).child(seg)
 }
 
 fn list(s: &State, p: &Pal) -> El {
@@ -185,8 +185,8 @@ fn group_header(g: Group, rows: &[&DownloadTask], tasks: &[DownloadTask], p: &Pa
         .center_y()
         .fill(p.deep.alpha(0.5))
         .border_sides([if g == Group::InProgress { 0.0 } else { 1.0 }, 0.0, 1.0, 0.0], p.line)
-        .child(line.one(sans(12.5, 400.0)))
-        .child(label(rows.len().to_string(), mono(11.5, 400.0), p.muted))
+        .child(line.one(sans(13.0, 400.0)))
+        .child(label(rows.len().to_string(), mono(12.0, 400.0), p.muted))
         .child(spacer());
     let live = tasks.iter().filter(|t| model::is_live(t)).count();
     if g == Group::InProgress && live > 0 {
@@ -194,11 +194,11 @@ fn group_header(g: Group, rows: &[&DownloadTask], tasks: &[DownloadTask], p: &Pa
         let figure = if speed.is_empty() { live.to_string() } else { format!("{live}{}", copy::row_dot_part(&speed)) };
         band = band.child(
             row()
-                .gap(6.0)
+                .gap(8.0)
                 .center_y()
                 .label(copy::transferring_aria(live, &speed))
-                .child(icon(&icons::DOWNLOAD, 13.0).color(p.accent_ink))
-                .child(label(figure, mono(11.5, 500.0), p.text2)),
+                .child(icon(&icons::DOWNLOAD, 16.0).color(p.accent_ink))
+                .child(label(figure, mono(12.0, 500.0), p.text2)),
         );
     }
     band
@@ -212,11 +212,11 @@ fn empty_row(p: &Pal) -> El {
         .gap(12.0)
         .center_y()
         .child(el().w(44.0))
-        .child(el().size(40.0, 40.0).radius(8.0).fill(p.raised).center().child(icon(&icons::DOWNLOAD, 18.0).color(p.muted)))
-        .child(stack(2.0).grow(1.0).child(label(copy::EMPTY_NONE_TITLE, sans(14.0, 500.0), p.text)).child(label(copy::EMPTY_NONE_BODY, sans(12.5, 400.0), p.text2)))
+        .child(el().size(40.0, 40.0).radius(8.0).fill(p.raised).center().child(icon(&icons::DOWNLOAD, 16.0).color(p.muted)))
+        .child(stack(4.0).grow(1.0).child(label(copy::EMPTY_NONE_TITLE, sans(14.0, 500.0), p.text)).child(label(copy::EMPTY_NONE_BODY, sans(13.0, 400.0), p.text2)))
         // The idle channel: the meter's well, every segment dark until something comes in.
-        .child(stack(0.0).w(INSTRUMENT).h(48.0).px(10.0).justify_center().radius(6.0).fill(p.deep).border(1.0, p.line).child(meter(0.0, SEGMENTS, None, 8.0, 2.0, p.accent, p.unlit)))
-        .child(row().w(STATE_COL + ACTIONS + 12.0).justify_end().child(button(None, copy::EMPTY_NONE_ACTION, p.text, p).on_press(|s: &mut State| s.screen = Screen::Home)))
+        .child(stack(0.0).w(INSTRUMENT).h(48.0).px(12.0).justify_center().radius(6.0).fill(p.deep).border(1.0, p.line).child(meter(0.0, SEGMENTS, None, 8.0, 2.0, p.accent, p.unlit)))
+        .child(row().w(STATE_COL + ACTIONS + 12.0).justify_end().child(button(None, copy::EMPTY_NONE_ACTION, p.text, p).on_press(|s: &mut State| s.nav = Nav::Home)))
 }
 
 fn task_row(s: &State, t: &DownloadTask, rule_above: bool, p: &Pal) -> El {
@@ -278,10 +278,10 @@ fn title_block(t: &DownloadTask, p: &Pal) -> El {
             detail = detail.add(&copy::row_dot_part(""), p.muted).fig(&part, p.muted);
         }
     }
-    let style = sans(12.5, 400.0).lh(16.0);
+    let style = sans(13.0, 400.0).lh(16.0);
     let detail = if wraps { detail.wrap(style).max_lines(2).min_w(0.0) } else { detail.one(style) };
     let detail = if t.progress.error.is_empty() { detail } else { detail.help(t.progress.error.clone()) };
-    stack(3.0).grow(1.0).child(title).child(detail)
+    stack(4.0).grow(1.0).child(title).child(detail)
 }
 
 /// `[playlist position] · [duration] · [size] · [format]`, empty parts dropped.
@@ -308,14 +308,14 @@ fn instrument(t: &DownloadTask, p: &Pal) -> Option<El> {
     let st = pr.status;
     if st == St::Done {
         let file = model::file_name(&pr.filename);
-        let format_tag = el().h(20.0).px(6.0).center().radius(4.0).border(1.0, p.line_strong).child(label(t.format.to_uppercase(), mono(10.5, 500.0), p.text2));
+        let format_tag = el().h(20.0).px(8.0).center().radius(4.0).border(1.0, p.line_strong).child(label(t.format.to_uppercase(), mono(11.0, 500.0), p.text2));
         return Some(
             row()
                 .w(OWNED)
-                .gap(10.0)
+                .gap(12.0)
                 .center_y()
                 .child(format_tag)
-                .child(stack(2.0).grow(1.0).child(label(file, mono(12.0, 500.0), p.text).single_line().truncate_middle().min_w(0.0)).child(label(model::folder(&pr.filename), mono(11.0, 400.0), p.muted).single_line().truncate_middle().min_w(0.0)))
+                .child(stack(4.0).grow(1.0).child(label(file, mono(12.0, 500.0), p.text).single_line().truncate_middle().min_w(0.0)).child(label(model::folder(&pr.filename), mono(11.0, 400.0), p.muted).single_line().truncate_middle().min_w(0.0)))
                 .help(pr.filename.clone()),
         );
     }
@@ -334,10 +334,10 @@ fn instrument(t: &DownloadTask, p: &Pal) -> Option<El> {
     let counter = if t.duration > 0.0 { label(model::timecode(t.duration * frac), mono(13.0, 500.0), ink) } else { el().h(16.0) };
     // The display window of the desk: a recessed well the counter and meter sit in.
     Some(
-        stack(6.0)
+        stack(4.0)
             .w(INSTRUMENT)
             .h(48.0)
-            .px(10.0)
+            .px(12.0)
             .justify_center()
             .radius(6.0)
             .fill(p.deep)
@@ -349,10 +349,10 @@ fn instrument(t: &DownloadTask, p: &Pal) -> Option<El> {
 
 fn state_col(t: &DownloadTask, p: &Pal) -> El {
     let pr = &t.progress;
-    let c = col().w(STATE_COL).items_end().gap(3.0);
+    let c = col().w(STATE_COL).items_end().gap(4.0);
     if pr.status == St::Downloading {
         let pct = format!("{}%", pr.percent.clamp(0.0, 100.0).round());
-        return c.child(label(pct, mono(15.0, 500.0), p.text)).child(label(copy::rate_line(pr.speed, pr.eta), mono(11.0, 400.0), p.muted).align(Align::End));
+        return c.child(label(pct, mono(16.0, 500.0), p.text)).child(label(copy::rate_line(pr.speed, pr.eta), mono(11.0, 400.0), p.muted).align(Align::End));
     }
     let (i, word, tone): (&'static rune::Icon, &str, Color) = match pr.status {
         St::Queued => (&icons::CLOCK, copy::STATE_QUEUED, p.muted),
@@ -367,7 +367,7 @@ fn state_col(t: &DownloadTask, p: &Pal) -> El {
         St::Failed => (&icons::ALERT, copy::STATE_FAILED, p.error),
         St::Cancelled | St::Downloading => (&icons::CANCEL, copy::STATE_CANCELED, p.muted),
     };
-    c.child(row().gap(6.0).center_y().child(icon(i, 14.0).color(tone)).child(label(word, sans(13.0, 500.0), tone)))
+    c.child(row().gap(8.0).center_y().child(icon(i, 16.0).color(tone)).child(label(word, sans(13.0, 500.0), tone)))
 }
 
 fn actions(t: &DownloadTask, p: &Pal) -> El {

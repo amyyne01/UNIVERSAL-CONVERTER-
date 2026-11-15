@@ -9,13 +9,8 @@ use super::model;
 use super::parts::{Line, art, dot, keycap, label, meter, mono, platform_icon, sans, stack};
 use super::theme::{Pal, source_color};
 use crate::copy;
-use crate::gate::{Screen, State};
-
-/// The output folder the rest caption names. The shared state carries no
-/// settings, so this is the folder the prepared downloads were saved in.
-const OUTPUT_DIR: &str = "C:\\Users\\Alex\\Music";
-/// The saved default audio format (Electron prints `MP3` when unset).
-const AUDIO_FORMAT: &str = "mp3";
+use crate::gate::{Nav, State};
+use model::{AUDIO_FORMAT, OUTPUT_DIR};
 
 pub fn view(s: &State, p: &Pal) -> El {
     let active = model::active_count(&s.tasks);
@@ -56,7 +51,7 @@ fn in_flight(n: usize, p: &Pal) -> El {
     row()
         .h(32.0)
         .pl(12.0)
-        .pr(10.0)
+        .pr(12.0)
         .gap(8.0)
         .center_y()
         .radius(16.0)
@@ -66,16 +61,16 @@ fn in_flight(n: usize, p: &Pal) -> El {
         .cursor(rune::Cursor::Pointer)
         .focusable(true)
         .role("button")
-        .child(dot(p.accent, 7.0))
+        .child(dot(p.accent, 8.0))
         .child(Line::new().fig(&n.to_string(), p.text).add(copy::HOME_IN_FLIGHT_SUFFIX, p.text2).one(sans(13.0, 500.0)))
-        .child(icon(&icons::FORWARD, 14.0).color(p.muted))
-        .on_press(|s: &mut State| s.screen = Screen::Downloads)
+        .child(icon(&icons::FORWARD, 16.0).color(p.muted))
+        .on_press(|s: &mut State| s.nav = Nav::Downloads)
 }
 
 /// The input of the desk: a jack, the line, the one filled button, and under
 /// them the input's level, every segment dark until a link comes in.
 fn field(input: &str, p: &Pal) -> El {
-    let jack = el().size(40.0, 40.0).radius(8.0).fill(p.deep).border(1.0, p.line).center().child(icon(&icons::LINK, 18.0).color(if input.is_empty() { p.muted } else { p.accent_ink }));
+    let jack = el().size(40.0, 40.0).radius(8.0).fill(p.deep).border(1.0, p.line).center().child(icon(&icons::LINK, 16.0).color(if input.is_empty() { p.muted } else { p.accent_ink }));
     let go = row()
         .h(44.0)
         .pl(16.0)
@@ -108,7 +103,7 @@ fn field(input: &str, p: &Pal) -> El {
 /// The rest-state status line (reading 8).
 fn status(p: &Pal) -> El {
     let left = row()
-        .gap(6.0)
+        .gap(8.0)
         .center_y()
         .min_w(0.0)
         .child(Line::new().add(&copy::rest_saves_as(AUDIO_FORMAT), p.text2).add(OUTPUT_DIR, p.text).one(sans(13.0, 400.0)).help(OUTPUT_DIR))
@@ -127,7 +122,7 @@ fn works_with(p: &Pal) -> El {
     let chip = |source: SourcePlatform, name: &'static str| {
         row()
             .h(32.0)
-            .px(10.0)
+            .px(12.0)
             .gap(8.0)
             .center_y()
             .radius(8.0)
@@ -154,11 +149,11 @@ fn works_with(p: &Pal) -> El {
 }
 
 fn cell(title: &str, aside: Option<El>, body: El, p: &Pal) -> El {
-    let mut head = row().w_full().center_y().child(label(title, sans(15.0, 500.0), p.text)).child(spacer());
+    let mut head = row().w_full().center_y().child(label(title, sans(16.0, 500.0), p.text)).child(spacer());
     if let Some(aside) = aside {
         head = head.child(aside);
     }
-    col().radius(12.0).fill(p.surface).border(1.0, p.line).padding(20.0).gap(18.0).min_w(0.0).child(head).child(body)
+    col().radius(12.0).fill(p.surface).border(1.0, p.line).padding(20.0).gap(16.0).min_w(0.0).child(head).child(body)
 }
 
 /// The next of 1, 2, 5 times a power of ten at or above `v`.
@@ -179,7 +174,7 @@ fn speed_cell(tasks: &[DownloadTask], p: &Pal) -> El {
     let ceil = scale_for(now.max(1.0));
     let figure = stack(4.0)
         .w(160.0)
-        .child(label(copy::CELL_SPEED, sans(15.0, 500.0), p.text).mb(8.0))
+        .child(label(copy::CELL_SPEED, sans(16.0, 500.0), p.text).mb(8.0))
         .child(label(copy::speed_now(&copy::format_bytes(now)), mono(22.0, 500.0), p.text))
         .child(label(copy::speed_scale(&copy::format_bytes(ceil)), mono(11.0, 400.0), p.muted));
     let level = meter(now / ceil, 64, None, 16.0, 3.0, p.accent, p.unlit);
@@ -209,7 +204,7 @@ fn month_cell(stats: Option<&DownloadStats>, p: &Pal) -> El {
             Some(m) => copy::month_last_month_kept(m.files as u64, &copy::format_bytes(m.bytes)),
             None => copy::MONTH_NOTHING_YET_NO_PREV.to_string(),
         };
-        stack(6.0).child(label(copy::MONTH_NOTHING_YET, sans(15.0, 500.0), p.text)).child(label(second, sans(13.0, 400.0), p.text2))
+        stack(8.0).child(label(copy::MONTH_NOTHING_YET, sans(16.0, 500.0), p.text)).child(label(second, sans(13.0, 400.0), p.text2))
     } else {
         let ending = match prev {
             Some(m) => {
@@ -220,11 +215,11 @@ fn month_cell(stats: Option<&DownloadStats>, p: &Pal) -> El {
             None => copy::MONTH_FIRST_ON_RECORD.to_string(),
         };
         let counter = row()
-            .gap(10.0)
+            .gap(12.0)
             .items_end()
             .child(label(files.to_string(), mono(60.0, 400.0).tracking(-2.0).lh(60.0), p.text))
-            .child(label(copy::file_word(files), sans(16.0, 400.0), p.text2).pb(6.0));
-        let mut b = stack(16.0).child(stack(10.0).child(counter).child(Line::new().fig(&copy::format_bytes(cur.bytes), p.text).add(&ending, p.text2).wrap(sans(13.0, 400.0))));
+            .child(label(copy::file_word(files), sans(16.0, 400.0), p.text2).pb(8.0));
+        let mut b = stack(16.0).child(stack(12.0).child(counter).child(Line::new().fig(&copy::format_bytes(cur.bytes), p.text).add(&ending, p.text2).wrap(sans(13.0, 400.0))));
         if let Some(m) = prev {
             let top = cur.files.max(m.files);
             b = b.child(
@@ -242,7 +237,7 @@ fn month_cell(stats: Option<&DownloadStats>, p: &Pal) -> El {
 
 fn month_bar(m: &MonthBucket, top: f64, color: Color, p: &Pal) -> El {
     let frac = if top > 0.0 { (m.files / top).max(0.03) } else { 0.0 };
-    stack(6.0)
+    stack(8.0)
         .w_full()
         .child(row().w_full().child(label(model::month_name(&m.month), sans(12.0, 400.0), p.text2)).child(spacer()).child(label((m.files as u64).to_string(), mono(12.0, 500.0), p.text)))
         .child(meter(frac, 48, None, 8.0, 2.0, color, p.unlit))
@@ -282,7 +277,7 @@ fn split_cell(stats: Option<&DownloadStats>, p: &Pal) -> El {
     if total == 0 {
         return cell(copy::CELL_WHERE_FROM, None, label(copy::SPLIT_EMPTY, sans(13.0, 400.0), p.text2).wrap(), p);
     }
-    let mut rows = stack(14.0).max_w(560.0);
+    let mut rows = stack(16.0).max_w(560.0);
     for (i, (source, name, n)) in groups.iter().enumerate() {
         let c = source.map_or(p.muted, |s| source_color(p, s));
         let lead = i == 0;
@@ -290,7 +285,7 @@ fn split_cell(stats: Option<&DownloadStats>, p: &Pal) -> El {
         let figures = copy::split_row_figures(pct, *n);
         let (pct_part, count_part) = figures.split_at(figures.find(' ').unwrap_or(figures.len()));
         rows = rows.child(
-            stack(6.0)
+            stack(8.0)
                 .w_full()
                 .child(
                     row()
@@ -310,13 +305,13 @@ fn split_cell(stats: Option<&DownloadStats>, p: &Pal) -> El {
 
 fn recent_cell(s: &State, done: &[&DownloadTask], p: &Pal) -> El {
     let view_all = row()
-        .gap(6.0)
+        .gap(8.0)
         .center_y()
         .cursor(rune::Cursor::Pointer)
         .role("button")
         .child(label(copy::CELL_RECENT_VIEW_ALL, sans(13.0, 500.0), p.text2))
-        .child(icon(&icons::FORWARD, 14.0).color(p.text2))
-        .on_press(|s: &mut State| s.screen = Screen::Downloads);
+        .child(icon(&icons::FORWARD, 16.0).color(p.text2))
+        .on_press(|s: &mut State| s.nav = Nav::Downloads);
     // Under 1500 points of content: five columns, the poster takes two, four tiles at most.
     let mut grid = row().w_full().gap(12.0).items_start();
     let shown = done.len().min(4);
@@ -334,7 +329,7 @@ fn title_of(t: &DownloadTask) -> &str {
 }
 
 fn duration_chip(t: &DownloadTask, p: &Pal) -> Option<El> {
-    (t.duration > 0.0).then(|| el().h(20.0).px(6.0).center().radius(4.0).fill(p.media_scrim).child(label(copy::format_duration(t.duration), mono(11.0, 500.0), p.on_media)).pin(None, Some(8.0), Some(8.0), None))
+    (t.duration > 0.0).then(|| el().h(20.0).px(8.0).center().radius(4.0).fill(p.media_scrim).child(label(copy::format_duration(t.duration), mono(11.0, 500.0), p.on_media)).pin(None, Some(8.0), Some(8.0), None))
 }
 
 const ART_H: f32 = 104.0;

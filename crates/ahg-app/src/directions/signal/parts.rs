@@ -89,7 +89,7 @@ pub fn meter_held(frac: f64, n: usize, seg: Option<f32>, h: f32, gap: f32, lit: 
 
 /// A key as printed on the board.
 pub fn keycap(key: &str, p: &Pal) -> El {
-    el().h(20.0).px(6.0).center().radius(4.0).fill(p.raised).border(1.0, p.line_strong).child(label(key, mono(11.0, 500.0), p.text2))
+    el().h(20.0).px(8.0).center().radius(4.0).fill(p.raised).border(1.0, p.line_strong).child(label(key, mono(11.0, 500.0), p.text2))
 }
 
 /// A square icon button whose label is its tooltip.

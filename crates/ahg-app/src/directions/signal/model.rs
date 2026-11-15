@@ -5,6 +5,12 @@ use ahg_engine::types::{DownloadStatus as St, DownloadTask, ErrorCode, SourcePla
 
 use crate::copy;
 
+/// Stand-in settings values: the shared state carries no settings, so Home and
+/// Settings read these. The folder is the one the prepared downloads were saved in.
+pub const OUTPUT_DIR: &str = "C:\\Users\\Alex\\Music";
+/// The saved default audio format (Electron prints `MP3` when unset).
+pub const AUDIO_FORMAT: &str = "mp3";
+
 pub fn is_active(t: &DownloadTask) -> bool {
     !matches!(t.progress.status, St::Done | St::Failed | St::Cancelled)
 }
