@@ -11,6 +11,9 @@
 #[allow(dead_code)]
 mod copy;
 mod directions;
+// Shared by every preset; they move onto it as each is next touched.
+#[allow(dead_code)]
+mod format;
 mod gate;
 mod layouts;
 mod picker;

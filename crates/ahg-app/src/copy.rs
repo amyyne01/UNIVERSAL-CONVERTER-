@@ -616,3 +616,5 @@ pub fn rate_line(bps: f64, eta_secs: f64) -> String {
 
 // ── Settings: its own file, shared by all six presets.
 pub mod settings;
+// ── The after-paste step (what the field found), shared by all six presets.
+pub mod found;
