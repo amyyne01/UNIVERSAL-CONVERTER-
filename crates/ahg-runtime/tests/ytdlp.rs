@@ -255,3 +255,27 @@ fn a_cancel_during_the_search_calls_the_download_off() {
     assert!(rx.recv_timeout(Duration::from_secs(4)).is_err(), "a cancelled download reports nothing");
     assert_eq!(runs(&ran), 0, "the download itself must never have started");
 }
+
+/// D10, an approved difference from Electron 1.6.0: the proxy from Settings
+/// also covers link lookups, search and the Spotify bridge's search. Electron
+/// passes it to the download only.
+#[test]
+fn the_proxy_also_covers_lookups_and_searches() {
+    let dir = scratch("proxy");
+    let mut y = ytdlp(&dir, "out {\"id\":\"a\",\"title\":\"A\"}\nexit 0\n", "");
+    let args_of = |dir: &Path| fs::read_to_string(dir.join("args.txt.json")).unwrap();
+
+    y.fetch_metadata("https://youtu.be/dQw4w9WgXcQ").unwrap();
+    assert!(!args_of(&dir).contains("--proxy"), "no proxy is set yet");
+
+    y.set_proxy(Some("socks5h://127.0.0.1:9050"));
+    y.fetch_metadata("https://youtu.be/dQw4w9WgXcQ").unwrap();
+    assert!(args_of(&dir).starts_with("--socket-timeout\n20\n--retries\n3\n--proxy\nsocks5h://127.0.0.1:9050\n--dump-json"), "{}", args_of(&dir));
+    y.search_youtube("some song").unwrap();
+    assert!(args_of(&dir).contains("--proxy\nsocks5h://127.0.0.1:9050\n"));
+
+    // An empty setting means no proxy.
+    y.set_proxy(Some(""));
+    y.search_soundcloud("some song").unwrap();
+    assert!(!args_of(&dir).contains("--proxy"));
+}

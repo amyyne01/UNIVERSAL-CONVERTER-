@@ -99,22 +99,30 @@ pub struct YtDlp {
     bins: Bins,
     env: Vec<(String, String)>,
     metadata_timeout: Duration,
+    /// The proxy from Settings, for lookups and searches. The download gets
+    /// its proxy through the task's extras.
+    proxy: Option<String>,
 }
 
 impl YtDlp {
     /// A yt-dlp at a known path, with ffmpeg if there is one.
     pub fn new(ytdlp: PathBuf, ffmpeg: Option<String>) -> Self {
-        Self { bins: Bins::Fixed(ytdlp, ffmpeg), env: Vec::new(), metadata_timeout: METADATA_TIMEOUT }
+        Self { bins: Bins::Fixed(ytdlp, ffmpeg), env: Vec::new(), metadata_timeout: METADATA_TIMEOUT, proxy: None }
     }
 
     /// A yt-dlp looked up through `tools` on every use, so an engine update is picked up.
     pub fn from_tools(tools: Arc<Tools>) -> Self {
-        Self { bins: Bins::Found(tools), env: Vec::new(), metadata_timeout: METADATA_TIMEOUT }
+        Self { bins: Bins::Found(tools), env: Vec::new(), metadata_timeout: METADATA_TIMEOUT, proxy: None }
     }
 
     /// An extra environment variable for every process started.
     pub fn env(&mut self, key: &str, value: &str) {
         self.env.push((key.to_owned(), value.to_owned()));
+    }
+
+    /// D10: route lookups and searches through this proxy. `None` or empty is direct.
+    pub fn set_proxy(&mut self, proxy: Option<&str>) {
+        self.proxy = proxy.filter(|p| !p.is_empty()).map(str::to_owned);
     }
 
     pub fn set_metadata_timeout(&mut self, limit: Duration) {
@@ -157,7 +165,11 @@ impl YtDlp {
         // The socket timeout bounds a stalled connection, and the retries let
         // yt-dlp ride out a hiccup itself.
         let mut cmd = self.command(&bin);
-        cmd.args(["--socket-timeout", "20", "--retries", "3"]).args(args);
+        cmd.args(["--socket-timeout", "20", "--retries", "3"]);
+        if let Some(proxy) = &self.proxy {
+            cmd.args(["--proxy", proxy]);
+        }
+        cmd.args(args);
         let mut child = cmd.spawn().map_err(|e| e.to_string())?;
         let pid = child.id();
         let chunks = read_output(&mut child);
