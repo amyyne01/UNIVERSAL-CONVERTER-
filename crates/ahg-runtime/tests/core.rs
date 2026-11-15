@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 use ahg_engine::queue::Event;
 use ahg_engine::tier::Plan;
 use ahg_engine::types::{DownloadStatus, VideoQuality};
-use ahg_runtime::core::{Core, CoreEvent, Outside, Paths, Shown, TrackMatch};
+use ahg_runtime::core::{CookiesImport, Core, CoreEvent, Outside, Paths, Shown, TrackMatch};
 use ahg_runtime::ytdlp::YtDlp;
 use serde_json::{Value, json};
 
@@ -608,5 +608,55 @@ fn only_media_inside_the_download_folder_is_shown_or_opened() {
 
     let asked = desktop.0.lock().unwrap().clone();
     assert_eq!(asked, [format!("reveal {}", at("song.mp3")), format!("open {}", at("song.mp3")), format!("open {}", at("broken.mp3")), format!("reveal {}", at("tool.exe"))]);
+    core.shutdown();
+}
+
+// ── Importing a cookies file (`cookies:import`, ipc.test.ts :481-:501) ──────
+
+const COOKIE_ROW: &str = ".youtube.com\tTRUE\t/\tTRUE\t1893456000\tSID\tsecret-value";
+
+#[test]
+fn a_cookies_file_is_copied_into_the_apps_data_and_used_for_downloads() {
+    let dir = scratch("cookies");
+    let (core, _rx) = start(&dir, "", Plan::Premium);
+    assert!(core.may_import_cookies());
+    let good = dir.join("c.txt");
+    fs::write(&good, format!("# Netscape HTTP Cookie File\n{COOKIE_ROW}\n")).unwrap();
+    assert_eq!(core.import_cookies(Some(&good)), CookiesImport::Ok);
+    let saved = dir.join("userData").join("cookies.txt");
+    assert!(fs::read_to_string(&saved).unwrap().contains(COOKIE_ROW));
+    // A download now passes the file to yt-dlp.
+    let task = core.start_download(&request()).unwrap();
+    assert_eq!(task.extras.as_ref().and_then(|x| x.cookies_file.clone()).as_deref(), Some(saved.to_string_lossy().as_ref()));
+    core.shutdown();
+}
+
+#[test]
+fn a_file_that_is_not_a_cookies_file_is_refused_without_saying_why() {
+    let dir = scratch("cookiesbad");
+    let (core, _rx) = start(&dir, "", Plan::Premium);
+    let not_cookies = dir.join("notes.txt");
+    fs::write(&not_cookies, "just some notes\nnothing like cookies\n").unwrap();
+    let huge = dir.join("huge.txt");
+    fs::write(&huge, format!("# Netscape HTTP Cookie File\n{}", format!("{COOKIE_ROW}\n").repeat(40_000))).unwrap();
+    assert!(fs::metadata(&huge).unwrap().len() > 2 * 1024 * 1024);
+    for bad in [dir.join("nope.txt"), dir.clone(), not_cookies, huge] {
+        assert_eq!(core.import_cookies(Some(&bad)), CookiesImport::Invalid, "{}", bad.display());
+    }
+    // The dialog was closed without choosing.
+    assert_eq!(core.import_cookies(None), CookiesImport::Cancelled);
+    assert!(!dir.join("userData").join("cookies.txt").exists());
+    core.shutdown();
+}
+
+#[test]
+fn the_basic_plan_cannot_import_cookies() {
+    let dir = scratch("cookiesbasic");
+    let (core, _rx) = start(&dir, "", Plan::Basic);
+    assert!(!core.may_import_cookies(), "the interface offers the upgrade instead of a file dialog");
+    let good = dir.join("c.txt");
+    fs::write(&good, format!("# Netscape HTTP Cookie File\n{COOKIE_ROW}\n")).unwrap();
+    assert_eq!(core.import_cookies(Some(&good)), CookiesImport::Premium);
+    assert!(!dir.join("userData").join("cookies.txt").exists());
     core.shutdown();
 }

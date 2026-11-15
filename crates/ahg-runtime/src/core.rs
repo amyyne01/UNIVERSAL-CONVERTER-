@@ -17,12 +17,12 @@ use ahg_engine::log::init_log;
 use ahg_engine::queue::{Event, new_task_id};
 use ahg_engine::scheduler::{Fire, POLL_MS, ScheduleConfig, Scheduler};
 use ahg_engine::stats::{DownloadStats, StatsStore, stats_file_path};
-use ahg_engine::tier::{Plan, clamp_concurrency};
+use ahg_engine::tier::{BASIC_LIMITS, Plan, clamp_concurrency};
 use ahg_engine::updater::UpdateState;
 use ahg_engine::ytdlp_updater::YtdlpStatus;
 use ahg_engine::downloader::bridge::{CONFIRMED, SongMatch, match_song, song_query, song_rows, song_url};
 use ahg_engine::types::{DownloadTask, MediaMetadata, SearchResult, Track};
-use ahg_engine::validate::{media_url_arg, openable, revealable};
+use ahg_engine::validate::{MAX_COOKIES_BYTES, is_netscape_cookies, media_url_arg, openable, revealable};
 use serde_json::{Map, Value, json};
 
 use crate::app_update::AppUpdater;
@@ -116,6 +116,18 @@ pub enum Shown {
     Missing,
     /// No path was given: the download recorded none.
     NoPath,
+}
+
+/// How importing a cookies file went (`CookiesImportResult`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CookiesImport {
+    Ok,
+    /// The plan does not include cookies.
+    Premium,
+    /// No file was chosen.
+    Cancelled,
+    /// Not a readable cookies file. Deliberately no more detail than that.
+    Invalid,
 }
 
 /// What the playlist preview learns about one Spotify track (D34).
@@ -465,6 +477,29 @@ impl Core {
         self.hold_unconfirmed.store(hold, Ordering::SeqCst);
         let _ = write_file_atomic(&own_settings_file(&self.paths.user_data), &json!({ "holdUnconfirmed": hold }).to_string());
         let _ = self.events.send(CoreEvent::SettingsChanged);
+    }
+
+    // ── Cookies ─────────────────────────────────────────────────────────────
+
+    /// Whether the plan includes importing cookies. The interface asks before
+    /// it shows a file dialog, and offers the upgrade instead when it does not.
+    pub fn may_import_cookies(&self) -> bool {
+        BASIC_LIMITS.cookies || (self.plan)() == Plan::Premium
+    }
+
+    /// Copy the cookies file the user chose (`None`: they chose none) into
+    /// the app's data, where downloads pick it up. It holds login cookies, so
+    /// neither its content nor its path is ever logged or reported.
+    pub fn import_cookies(&self, chosen: Option<&std::path::Path>) -> CookiesImport {
+        if !self.may_import_cookies() {
+            return CookiesImport::Premium;
+        }
+        let Some(file) = chosen else { return CookiesImport::Cancelled };
+        let small_file = std::fs::metadata(file).is_ok_and(|m| m.is_file() && m.len() <= MAX_COOKIES_BYTES as u64);
+        let text = small_file.then(|| std::fs::read_to_string(file).ok()).flatten().filter(|text| is_netscape_cookies(text));
+        let Some(text) = text else { return CookiesImport::Invalid };
+        let saved = std::fs::create_dir_all(&self.paths.user_data).and_then(|()| write_file_atomic(&self.paths.user_data.join("cookies.txt"), &text));
+        if saved.is_ok() { CookiesImport::Ok } else { CookiesImport::Invalid }
     }
 
     // ── Finished files ──────────────────────────────────────────────────────
