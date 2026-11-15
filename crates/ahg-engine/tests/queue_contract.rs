@@ -66,3 +66,37 @@ fn a_match_from_a_superseded_attempt_is_ignored() {
     queue.on_match(&id, first, "https://stale.example/x", 0.5);
     assert_eq!(queue.all_tasks()[0].matched_url, None);
 }
+
+fn log_lines(effects: &[Effect]) -> Vec<String> {
+    effects.iter().filter_map(|e| if let Effect::Log { message, .. } = e { Some(message.clone()) } else { None }).collect()
+}
+
+/// The log is what a user sends when asking for help, so a failure line names
+/// the task, the site and the reason, and never the link or anything in it.
+#[test]
+fn a_failure_is_logged_with_the_site_and_the_reason_but_never_the_link() {
+    let mut queue = Queue::new();
+    queue.set_max_slots(1.0, T0);
+    let url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=PRIVATE&token=secret";
+    let init = TaskInit { url: Some(url.into()), source: Some(SourcePlatform::Youtube), ..Default::default() };
+    let effects = queue.enqueue(create_task(&init, "task_a".into(), T0), T0);
+    let (id, attempt) = started(&effects).pop().unwrap();
+
+    let lines = log_lines(&queue.on_error(&id, attempt, &format!("ERROR: [youtube] dQw4w9WgXcQ: Video unavailable. See {url}"), T0 + 10));
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    let line = &lines[0];
+    assert!(line.contains("failed") && line.contains("task_a") && line.contains("host=www.youtube.com"), "{line}");
+    assert!(line.contains("code="), "{line}");
+    for leak in ["?", "https://", "PRIVATE", "secret"] {
+        assert!(!line.contains(leak), "the log line leaks {leak:?}: {line}");
+    }
+}
+
+#[test]
+fn a_failure_that_will_be_retried_is_logged_as_retrying_not_as_failed() {
+    let mut queue = Queue::new();
+    let (id, attempt) = one_running_task(&mut queue);
+    let lines = log_lines(&queue.on_error(&id, attempt, "ERROR: unable to download video data: The read operation timed out", T0 + 10));
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    assert!(lines[0].contains("retrying") && !lines[0].contains("failed"), "{}", lines[0]);
+}
