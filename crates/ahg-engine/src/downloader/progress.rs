@@ -291,6 +291,15 @@ pub struct OutputScan {
     error_out: String,
     stderr_buf: String,
     stdout_buf: String,
+    count_items: bool,
+}
+
+/// The item number and total from yt-dlp's "[download] Downloading item 3 of 12".
+pub fn playlist_item(line: &str) -> Option<(f64, f64)> {
+    let rest = line.strip_prefix("[download] Downloading item ")?;
+    let (index, total) = rest.trim_end_matches('\r').split_once(" of ")?;
+    let number = |s: &str| (!s.is_empty() && s.bytes().all(|b| b.is_ascii_digit())).then(|| s.parse::<f64>().ok()).flatten();
+    Some((number(index)?, number(total)?))
 }
 
 impl Default for OutputScan {
@@ -310,7 +319,15 @@ impl OutputScan {
             error_out: String::new(),
             stderr_buf: String::new(),
             stdout_buf: String::new(),
+            count_items: false,
         }
+    }
+
+    /// D31: record which item of a collection is downloading, and emit the
+    /// change. Electron 1.x never fills these in; the app turns this on.
+    pub fn with_item_counts(mut self) -> Self {
+        self.count_items = true;
+        self
     }
 
     pub fn progress(&self) -> &DownloadProgress {
@@ -323,7 +340,12 @@ impl OutputScan {
         }
         let r = parse_line(line, &mut self.progress, self.last_percent);
         self.last_percent = r.last_percent;
-        if r.emit {
+        let item = if self.count_items { playlist_item(line) } else { None };
+        if let Some((index, total)) = item {
+            self.progress.playlist_index = index;
+            self.progress.playlist_total = total;
+        }
+        if r.emit || item.is_some() {
             events.push(self.progress.clone());
         }
         // Only yt-dlp's own ERROR: lines: the word alone also appears in titles.
