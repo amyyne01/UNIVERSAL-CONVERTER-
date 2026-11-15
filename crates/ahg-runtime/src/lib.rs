@@ -3,4 +3,5 @@
 //! (`ahg-engine`) holds the logic and has no threads or processes of its own.
 
 pub mod download;
+pub mod engine;
 pub mod proc;
