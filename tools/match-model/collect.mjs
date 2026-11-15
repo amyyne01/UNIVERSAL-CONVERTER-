@@ -5,6 +5,10 @@
 // candidates. Metadata only: nothing is downloaded. Output is one JSON line per
 // track in data/examples.jsonl, and a rerun skips tracks already there.
 //
+// A later batch takes different songs: MATCH_BATCH=2 writes examples-2.jsonl
+// and leaves out every song an earlier batch holds. `--fill` looks up the
+// videos train.mjs listed in data/needed-lookups.json (its scorers' own picks).
+//
 // It uses the Electron app's own credential-free Spotify reader, from the
 // Electron checkout (`../converter-electron` by default, or AHG_ELECTRON; see
 // scripts/rust-golden.mjs for how to set that up). Run from this checkout's root:
@@ -18,7 +22,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '..', '..');
 const DATA = path.join(HERE, 'data');
-const OUT = path.join(DATA, 'examples.jsonl');
+const BATCH = Number(process.env.MATCH_BATCH ?? 1);
+const OUT = path.join(DATA, BATCH === 1 ? 'examples.jsonl' : `examples-${BATCH}.jsonl`);
 const YTDLP = path.join(ROOT, 'bin', 'yt-dlp.exe');
 const TARGET = Number(process.env.MATCH_TRACKS ?? 500);
 const WORKERS = 3;
@@ -38,8 +43,10 @@ register('data:text/javascript,' + encodeURIComponent(
   `export async function resolve(s, c, n) { return s === 'electron' ? { url: 'data:text/javascript,export const app={};export default {};', shortCircuit: true } : n(s, c); }`));
 const ELECTRON = path.resolve(process.env.AHG_ELECTRON ?? path.join(ROOT, '..', 'converter-electron'));
 const { SpotifyHandler } = await import(pathToFileURL(path.join(ELECTRON, 'dist-electron', 'electron', 'spotify.js')).href);
+const { scoreCandidates } = await import(pathToFileURL(path.join(ELECTRON, 'dist-electron', 'electron', 'downloader.js')).href);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const readLines = (file) => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
 
 /** Runs yt-dlp in inspect mode and returns its JSON records (empty on failure or timeout). */
 function ytJson(args, timeoutMs = 60_000) {
@@ -65,6 +72,38 @@ const rich = (j) => ({
   artist: j.artist ?? null, track: j.track ?? null, album: j.album ?? null, creator: j.creator ?? null, releaseYear: j.release_year ?? null,
   categories: j.categories ?? [], artTrack: /Provided to YouTube by/i.test(j.description ?? ''), viewCount: j.view_count ?? null,
 });
+const lookup = async (id) => (await ytJson(['--no-playlist', '--', `https://www.youtube.com/watch?v=${id}`]))[0];
+
+/** Run `job` over `items`, a few at a time, pausing between calls. */
+async function paced(items, job) {
+  let next = 0;
+  let finished = 0;
+  await Promise.all(Array.from({ length: WORKERS }, async () => {
+    for (;;) {
+      const item = items[next++];
+      if (!item) return;
+      await job(item);
+      if (++finished % 10 === 0) console.log(`${finished}/${items.length}`);
+      await sleep(PAUSE_MS);
+    }
+  }));
+  return finished;
+}
+
+fs.mkdirSync(DATA, { recursive: true });
+
+if (process.argv.includes('--fill')) {
+  const EXTRA = path.join(DATA, 'lookups-extra.jsonl');
+  const have = new Set(readLines(EXTRA).map((l) => `${l.trackId} ${l.lookup.id}`));
+  const todo = readLines(path.join(DATA, 'needed-lookups.json')).flat().filter((n) => !have.has(`${n.trackId} ${n.id}`));
+  console.log(`${todo.length} videos to look up`);
+  await paced(todo, async ({ trackId, id }) => {
+    const j = await lookup(id);
+    if (j) fs.appendFileSync(EXTRA, JSON.stringify({ trackId, lookup: rich(j) }) + '\n');
+  });
+  console.log('done');
+  process.exit(0);
+}
 
 async function example(track) {
   const clean = (s) => String(s ?? '').replace(/"/g, '').trim();
@@ -73,12 +112,19 @@ async function example(track) {
     ytJson(['--flat-playlist', `ytsearch10:${query}`]),
     ytJson(['--flat-playlist', '--playlist-end', '5', `https://music.youtube.com/search?q=${encodeURIComponent(query)}#songs`]),
   ]);
-  // Full lookups are the slow part (several seconds each), so only the leaders get one.
-  const leaders = [...new Set([...songs.slice(0, 1), ...plain.slice(0, 2)].map((j) => j.id).filter(Boolean))];
+  // Full lookups are the slow part (several seconds each), so not every candidate gets one:
+  // the first three songs (they carry music metadata, so they give verdicts both ways),
+  // the first two plain results, the Electron scorer's own pick, and one of the rest,
+  // so the labelled candidates are not only the leaders.
+  const hand = scoreCandidates({ ...track, thumbnailUrl: '', trackNumber: 0 },
+    plain.map((j) => ({ ...flat(j), duration: j.duration ?? 0, thumbnailUrl: '', source: 'youtube' })))[0]?.candidate.id;
+  const rest = [...songs.slice(3), ...plain.slice(2)];
+  const other = rest[[...track.id].reduce((sum, ch) => sum + ch.charCodeAt(0), 0) % (rest.length || 1)]?.id;
+  const leaders = [...new Set([...songs.slice(0, 3).map((j) => j.id), ...plain.slice(0, 2).map((j) => j.id), hand, other].filter(Boolean))];
   const lookups = {};
   for (const id of leaders) {
     await sleep(PAUSE_MS);
-    const [j] = await ytJson(['--no-playlist', '--', `https://www.youtube.com/watch?v=${id}`]);
+    const j = await lookup(id);
     if (j) lookups[id] = rich(j);
   }
   return {
@@ -87,8 +133,11 @@ async function example(track) {
   };
 }
 
-fs.mkdirSync(DATA, { recursive: true });
-const done = new Set(fs.existsSync(OUT) ? fs.readFileSync(OUT, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l).track.id) : []);
+const done = new Set(readLines(OUT).map((l) => l.track.id));
+// Songs another batch holds, by id and by artist plus name: the same recording can sit under two Spotify ids.
+const songKey = (t) => `${t.artist} | ${String(t.name).split(' - ')[0]}`.toLowerCase();
+const elsewhere = new Set(fs.readdirSync(DATA).filter((f) => /^examples(-\d+)?\.jsonl$/.test(f) && path.join(DATA, f) !== OUT)
+  .flatMap((f) => readLines(path.join(DATA, f))).flatMap((l) => [l.track.id, songKey(l.track)]));
 
 // An even sample from each playlist, so no genre dominates.
 const spotify = new SpotifyHandler();
@@ -99,11 +148,12 @@ const sources = [];
 for (const id of PLAYLISTS) {
   try {
     const p = await spotify.fetchPlaylist(id);
-    const step = Math.max(1, Math.floor(p.tracks.length / perList));
+    const fresh = p.tracks.filter((t) => t?.id && !elsewhere.has(t.id) && !elsewhere.has(songKey(t)));
+    const step = Math.max(1, Math.floor(fresh.length / perList));
     let taken = 0;
-    for (let i = 0; i < p.tracks.length && taken < perList; i += step) {
-      const t = p.tracks[i];
-      if (!t?.id || !t.name || !t.durationMs || seen.has(t.id)) continue;
+    for (let i = 0; i < fresh.length && taken < perList; i += step) {
+      const t = fresh[i];
+      if (!t.name || !t.durationMs || seen.has(t.id)) continue;
       seen.add(t.id);
       tracks.push({ ...t, playlist: p.name });
       taken++;
@@ -114,28 +164,18 @@ for (const id of PLAYLISTS) {
   }
   await sleep(400);
 }
-fs.writeFileSync(path.join(DATA, 'sources.txt'), sources.join('\n') + '\n');
+fs.writeFileSync(path.join(DATA, BATCH === 1 ? 'sources.txt' : `sources-${BATCH}.txt`), sources.join('\n') + '\n');
 const todo = tracks.slice(0, TARGET).filter((t) => !done.has(t.id));
 console.log(`${tracks.length} tracks sampled from ${sources.filter((s) => !s.endsWith('unavailable')).length} playlists; ${done.size} already collected; ${todo.length} to do`);
 
-let next = 0;
-let finished = 0;
-async function worker() {
-  for (;;) {
-    const t = todo[next++];
-    if (!t) return;
-    try {
-      const ex = await example(t);
-      ex.playlist = t.playlist;
-      fs.appendFileSync(OUT, JSON.stringify(ex) + '\n');
-    } catch (e) {
-      console.log(`skipped ${t.artist} - ${t.name}: ${String(e.message).slice(0, 80)}`);
-    }
-    finished++;
-    if (finished % 10 === 0) console.log(`${finished}/${todo.length}`);
-    await sleep(PAUSE_MS);
+const finished = await paced(todo, async (t) => {
+  try {
+    const ex = await example(t);
+    ex.playlist = t.playlist;
+    fs.appendFileSync(OUT, JSON.stringify(ex) + '\n');
+  } catch (e) {
+    console.log(`skipped ${t.artist} - ${t.name}: ${String(e.message).slice(0, 80)}`);
   }
-}
-await Promise.all(Array.from({ length: WORKERS }, worker));
+});
 console.log(`done: ${done.size + finished} examples in ${OUT}`);
 process.exit(0);

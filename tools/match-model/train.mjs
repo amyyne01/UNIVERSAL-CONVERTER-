@@ -1,14 +1,19 @@
-// Trains and compares scorers for the Spotify bridge on data/examples.jsonl.
+// Trains and compares scorers for the Spotify bridge on data/examples*.jsonl.
 //
-// Three scorers are compared on tracks none of them was fitted to:
+// Scorers compared on songs none of them was fitted to:
 //   - the hand-set scorer the Electron app ships (its own scoreCandidates),
+//   - taking the first result of each search,
 //   - a single-layer weighted model (logistic regression),
 //   - a small network with one hidden layer.
 //
-// A candidate's label comes from YouTube's own metadata for that video (a full
-// lookup), compared with the Spotify track. Only looked-up candidates have a
-// label. Labels are a rule over richer data than the scorers see, not a human
-// verdict; the numbers below mean "agrees with YouTube's metadata".
+// A candidate's label comes from the music metadata YouTube attaches to a
+// video (track, artist: fields no scorer sees), found by a full lookup and
+// compared with the Spotify track. A video without that metadata has no label:
+// its title would be the only evidence, and the scorers read the title too.
+// The length of the video is the one thing labels and scorers share, so the
+// models are also fitted without it, to show how much rests on it.
+// Labels are a rule, not a human verdict; the numbers mean "agrees with
+// YouTube's music metadata".
 //
 // Run from this checkout's root (plain Node is fine, nothing here depends on its version):
 //   node tools/match-model/train.mjs
@@ -19,7 +24,18 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ELECTRON = path.resolve(process.env.AHG_ELECTRON ?? path.join(HERE, '..', '..', '..', 'converter-electron'));
-const examples = fs.readFileSync(path.join(HERE, 'data', 'examples.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+const DATA = path.join(HERE, 'data');
+const lines = (file) => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
+// Every batch: examples.jsonl, examples-2.jsonl, ...
+const examples = fs.readdirSync(DATA).filter((f) => /^examples(-\d+)?\.jsonl$/.test(f)).sort().flatMap((f) => lines(path.join(DATA, f)));
+// Lookups made afterwards for the scorers' own picks (collect.mjs --fill).
+const extra = new Map(lines(path.join(DATA, 'lookups-extra.jsonl')).map(({ trackId, lookup }) => [`${trackId} ${lookup.id}`, lookup]));
+for (const ex of examples) {
+  for (const c of [...ex.songs, ...ex.plain]) {
+    const found = extra.get(`${ex.track.id} ${c.id}`);
+    if (found) ex.lookups[c.id] = found;
+  }
+}
 
 // ── Text helpers ────────────────────────────────────────────────────────────
 const norm = (s) => String(s ?? '').toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '')
@@ -35,19 +51,19 @@ const overlap = (want, have) => {
   return w.filter((t) => h.has(t)).length / w.length;
 };
 
-// ── Labels, from the full lookup of a candidate ─────────────────────────────
-/** 1 = this video is the track, 0 = it is not, null = cannot tell from metadata. */
+// ── Labels, from the music metadata of a looked-up candidate ────────────────
+/** 1 = this video is the track, 0 = it is not, null = the metadata cannot tell. */
 function label(track, look) {
-  if (!look || look.duration == null) return null;
+  if (!look || look.duration == null || !look.track || !(look.artist || look.creator)) return null;
   const diff = Math.abs(look.duration - track.durationMs / 1000);
-  const name = baseName(track.name);
-  const titleSays = overlap(name, look.track ?? look.title) >= 0.99;
-  const who = [look.artist, look.creator, look.uploader, look.channel, look.title].filter(Boolean).join(' ');
-  const artistSays = track.artists.some((a) => overlap(a, who) >= 0.99) || overlap(track.artist, who) >= 0.99;
-  const wrongVersion = BAD.some((k) => tokens(look.title).includes(k) && !tokens(track.name).includes(k));
-  if (diff > 12 || !titleSays || wrongVersion) return 0;
-  if (!artistSays) return null;
-  return diff <= 3 ? 1 : null;
+  const name = overlap(baseName(track.name), look.track) >= 0.99;
+  const artist = track.artists.some((a) => overlap(a, `${look.artist ?? ''} ${look.creator ?? ''}`) >= 0.99);
+  // Same song by the same artist: the length says whether it is this recording.
+  if (name && artist) return diff <= 3 ? 1 : diff > 12 ? 0 : null;
+  // A different name alone may be a translation; it counts with a second disagreement.
+  if (!name && (!artist || diff > 3)) return 0;
+  if (name && !artist && diff > 12) return 0;
+  return null;
 }
 
 // ── Features, from what the two flat searches give for free ─────────────────
@@ -77,6 +93,9 @@ function features(track, cand, rank, fromSongs) {
     Math.min(1, Math.max(0, titleTokens.length - tokens(name).length - tokens(artist).length) / 8),
   ];
 }
+/** Feature positions that carry the video's length. */
+const LENGTH = ['hasDuration', 'durationClose', 'durationFar'].map((f) => FEATURES.indexOf(f));
+const noLength = (x) => x.map((v, i) => (LENGTH.includes(i) ? 0 : v));
 
 // One row per candidate of every track; `y` is null where there was no lookup or no verdict.
 const tracks = examples.map((ex) => {
@@ -87,12 +106,16 @@ const tracks = examples.map((ex) => {
   return { ex, rows: cands.map(({ c, rank, fromSongs }) => ({ id: c.id, fromSongs, x: features(ex.track, c, rank, fromSongs), y: label(ex.track, ex.lookups[c.id]) })) };
 }).filter((t) => t.rows.length);
 
-// ── A fixed split by track, so no track is in both halves ───────────────────
+// ── A fixed split by song, so no song is in both halves ─────────────────────
+// The same recording can sit under two Spotify ids; artist plus name keeps both on one side.
 let seed = 20261115;
 const random = () => { seed = (seed * 48271) % 2147483647; return seed / 2147483647; };
-const order = tracks.map((t, i) => [random(), i]).sort((a, b) => a[0] - b[0]).map(([, i]) => tracks[i]);
+const songKey = (t) => `${norm(t.ex.track.artist)}|${norm(baseName(t.ex.track.name))}`;
+const songs = new Map();
+for (const t of tracks) songs.set(songKey(t), [...(songs.get(songKey(t)) ?? []), t]);
+const order = [...songs.values()].map((group) => [random(), group]).sort((a, b) => a[0] - b[0]).map(([, group]) => group);
 const cut = Math.floor(order.length * 0.8);
-const [trainSet, testSet] = [order.slice(0, cut), order.slice(cut)];
+const [trainSet, testSet] = [order.slice(0, cut).flat(), order.slice(cut).flat()];
 const labelled = (set) => set.flatMap((t) => t.rows.filter((r) => r.y !== null));
 
 // ── Models ──────────────────────────────────────────────────────────────────
@@ -139,7 +162,6 @@ register('data:text/javascript,' + encodeURIComponent(
   `export async function resolve(s, c, n) { return s === 'electron' ? { url: 'data:text/javascript,export const app={};export default {};', shortCircuit: true } : n(s, c); }`));
 const { scoreCandidates } = await import(pathToFileURL(path.join(ELECTRON, 'dist-electron', 'electron', 'downloader.js')).href);
 function handPick(t) {
-  if (!scoreCandidates) return null;
   const track = { ...t.ex.track, thumbnailUrl: '', trackNumber: 0 };
   const cands = t.ex.plain.map((c) => ({ id: c.id, title: c.title, uploader: c.uploader, duration: c.duration ?? 0, thumbnailUrl: '', url: c.url, source: 'youtube' }));
   const best = scoreCandidates(track, cands)[0];
@@ -147,21 +169,12 @@ function handPick(t) {
 }
 
 // ── Evaluation ──────────────────────────────────────────────────────────────
-/** For each track: is the scorer's first choice a confirmed match? */
-function judge(name, set, pick) {
-  let right = 0, wrong = 0, unknown = 0, none = 0;
-  for (const t of set) {
-    const r = pick(t);
-    if (!r) none++; else if (r.y === 1) right++; else if (r.y === 0) wrong++; else unknown++;
-  }
-  const known = right + wrong;
-  return { scorer: name, tracks: set.length, right, wrong, noVerdict: unknown, noPick: none, accuracyWhereKnown: known ? +(right / known).toFixed(3) : null };
-}
-const best = (model) => (t) => t.rows.reduce((a, r) => (model.score(r.x) > model.score(a.x) ? r : a));
+const first = (fromSongs) => (t) => t.rows.find((r) => r.fromSongs === fromSongs) ?? null;
+const best = (model, view = (x) => x) => (t) => t.rows.reduce((a, r) => (model.score(view(r.x)) > model.score(view(a.x)) ? r : a));
 /** How well the score separates confirmed matches from confirmed non-matches. */
-function separation(model, rows) {
-  const pos = rows.filter((r) => r.y === 1).map((r) => model.score(r.x));
-  const neg = rows.filter((r) => r.y === 0).map((r) => model.score(r.x));
+function separation(model, rows, view = (x) => x) {
+  const pos = rows.filter((r) => r.y === 1).map((r) => model.score(view(r.x)));
+  const neg = rows.filter((r) => r.y === 0).map((r) => model.score(view(r.x)));
   if (!pos.length || !neg.length) return null;
   let wins = 0;
   for (const p of pos) for (const q of neg) wins += p > q ? 1 : p === q ? 0.5 : 0;
@@ -170,21 +183,56 @@ function separation(model, rows) {
 
 const trainRows = labelled(trainSet);
 const testRows = labelled(testSet);
+if (!trainRows.some((r) => r.y === 1) || !trainRows.some((r) => r.y === 0)) throw new Error('nothing to learn from: the training half needs both matches and non-matches');
+const blind = (rows) => rows.map((r) => ({ ...r, x: noLength(r.x) }));
 const logistic = fitLogistic(trainRows);
 const network = fitNetwork(trainRows);
+const logisticBlind = fitLogistic(blind(trainRows));
+const networkBlind = fitNetwork(blind(trainRows));
+
+const SCORERS = [
+  ['hand-set (Electron)', handPick],
+  ['first YouTube Music song', first(true)],
+  ['first plain result', first(false)],
+  ['single-layer', best(logistic)],
+  ['network', best(network)],
+  ['single-layer, no length', best(logisticBlind, noLength)],
+  ['network, no length', best(networkBlind, noLength)],
+];
+
+// A pick that was never looked up has no verdict. List those, so
+// `collect.mjs --fill` can look them up and the next run judges every scorer.
+const picks = testSet.map((t) => SCORERS.map(([, pick]) => pick(t)));
+const needed = new Map();
+testSet.forEach((t, i) => {
+  for (const r of picks[i]) if (r && !t.ex.lookups[r.id]) needed.set(`${t.ex.track.id} ${r.id}`, { trackId: t.ex.track.id, id: r.id });
+});
+fs.writeFileSync(path.join(DATA, 'needed-lookups.json'), JSON.stringify([...needed.values()]));
+
+/** Every scorer on the same tracks: those where each one's pick has a verdict. */
+const judged = picks.filter((row) => row.every((r) => r && r.y !== null));
+const table = SCORERS.map(([name], i) => {
+  const own = picks.map((row) => row[i]);
+  const right = judged.filter((row) => row[i].y === 1).length;
+  return {
+    scorer: name,
+    right, wrong: judged.length - right, accuracy: judged.length ? +(right / judged.length).toFixed(3) : null,
+    'own right': own.filter((r) => r?.y === 1).length, 'own wrong': own.filter((r) => r?.y === 0).length,
+    'no verdict': own.filter((r) => r && r.y === null).length, 'no pick': own.filter((r) => !r).length,
+  };
+});
 
 const count = (rows) => ({ rows: rows.length, matches: rows.filter((r) => r.y === 1).length, nonMatches: rows.filter((r) => r.y === 0).length });
 console.log(`tracks: ${tracks.length} (train ${trainSet.length}, test ${testSet.length})`);
 console.log('labelled candidates, train:', count(trainRows), 'test:', count(testRows));
 const allLooked = tracks.flatMap((t) => t.rows.filter((r) => t.ex.lookups[r.id]));
 console.log(`looked-up candidates with no verdict: ${allLooked.filter((r) => r.y === null).length} of ${allLooked.length}`);
-console.table([
-  judge('hand-set (Electron)', testSet, handPick),
-  judge('first YouTube Music song', testSet, (t) => t.rows.find((r) => r.fromSongs) ?? null),
-  judge('first plain result', testSet, (t) => t.rows.find((r) => !r.fromSongs) ?? null),
-  judge('single-layer', testSet, best(logistic)),
-  judge('network', testSet, best(network)),
-]);
-console.log('separation on held-out candidates (1 = perfect, 0.5 = chance):', { singleLayer: separation(logistic, testRows), network: separation(network, testRows) });
+console.log(`picks still to look up: ${needed.size} (run collect.mjs --fill, then this again)`);
+console.log(`"right/wrong/accuracy": the ${judged.length} of ${testSet.length} held-out tracks where every scorer's pick has a verdict. "own": each scorer over all its picks.`);
+console.table(table);
+console.log('separation on held-out candidates (1 = perfect, 0.5 = chance):', {
+  singleLayer: separation(logistic, testRows), network: separation(network, testRows),
+  singleLayerNoLength: separation(logisticBlind, testRows, noLength), networkNoLength: separation(networkBlind, testRows, noLength),
+});
 console.log('single-layer weights:', Object.fromEntries(FEATURES.map((f, i) => [f, +logistic.w[i].toFixed(2)])));
-fs.writeFileSync(path.join(HERE, 'data', 'models.json'), JSON.stringify({ features: FEATURES, logistic: logistic.w, network: { w1: network.w1, w2: network.w2 }, tracks: tracks.length }, null, 1));
+fs.writeFileSync(path.join(DATA, 'models.json'), JSON.stringify({ features: FEATURES, logistic: logistic.w, network: { w1: network.w1, w2: network.w2 }, tracks: tracks.length }, null, 1));
