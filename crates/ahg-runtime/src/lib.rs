@@ -4,5 +4,6 @@
 
 pub mod download;
 pub mod engine;
+pub mod http;
 pub mod proc;
 pub mod ytdlp;

@@ -6,3 +6,8 @@ edition.workspace = true
 [dependencies]
 ahg-engine = { path = "../ahg-engine" }
 serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }
+ureq = { version = "3", default-features = false, features = ["native-tls", "gzip", "socks-proxy"] }
+
+[features]
+# The entitlement layer; its source is not published.
+license = ["ahg-engine/license"]
