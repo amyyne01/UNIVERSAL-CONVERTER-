@@ -200,6 +200,8 @@ pub struct Queue {
     recently_cancelled: HashMap<String, u64>,
     /// Which task object each started download belongs to.
     attempts: HashMap<u64, Key>,
+    /// The attempt each task object is currently running under.
+    current: HashMap<Key, u64>,
     next_attempt: u64,
     now: u64,
     out: Vec<Effect>,
@@ -231,6 +233,7 @@ impl Queue {
             retry_timers: IndexMap::new(),
             recently_cancelled: HashMap::new(),
             attempts: HashMap::new(),
+            current: HashMap::new(),
             next_attempt: 0,
             now: 0,
             out: Vec::new(),
@@ -264,6 +267,7 @@ impl Queue {
         self.tasks.retain(|k, _| live.contains(k));
         let tasks = &self.tasks;
         self.attempts.retain(|_, k| tasks.contains_key(k));
+        self.current.retain(|k, _| tasks.contains_key(k));
     }
 
     fn insert(&mut self, task: DownloadTask) -> Key {
@@ -722,15 +726,28 @@ impl Queue {
             self.task_mut(key).error_code = None;
             self.next_attempt += 1;
             self.attempts.insert(self.next_attempt, key);
+            self.current.insert(key, self.next_attempt);
             self.out.push(Effect::Download { task: self.task(key).clone(), attempt: self.next_attempt });
         }
     }
 
     /// The task object a callback belongs to, if that object is the one
-    /// holding the slot. A late callback from a killed or finished process is refused.
+    /// holding the slot and `attempt` is its current attempt. A late callback
+    /// from a killed or finished process is refused. Pause then resume restarts
+    /// the same object, so the object alone would not tell the two attempts apart.
     fn admitted(&self, id: &str, attempt: u64) -> Option<Key> {
         let key = *self.attempts.get(&attempt)?;
-        (self.active.get(id) == Some(&key)).then_some(key)
+        (self.active.get(id) == Some(&key) && self.current.get(&key) == Some(&attempt)).then_some(key)
+    }
+
+    /// The Spotify bridge picked the video to download for this attempt.
+    /// `confidence` is between 0 and 1.
+    pub fn on_match(&mut self, id: &str, attempt: u64, matched_url: &str, confidence: f64) {
+        if let Some(key) = self.admitted(id, attempt) {
+            let task = self.task_mut(key);
+            task.matched_url = Some(matched_url.to_owned());
+            task.match_confidence = Some(confidence);
+        }
     }
 
     pub fn on_progress(&mut self, id: &str, attempt: u64, p: DownloadProgress, now: u64) -> Vec<Effect> {

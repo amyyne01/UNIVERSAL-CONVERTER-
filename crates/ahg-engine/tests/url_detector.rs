@@ -11,6 +11,7 @@ fn cases() -> Vec<Value> {
 #[test]
 fn detect_url_matches_electron_for_every_golden_input() {
     let mut wrong = Vec::new();
+    assert!(cases().len() > 200, "the golden file has too few cases");
     for c in cases() {
         let input = c["input"].as_str().unwrap();
         let got = serde_json::to_value(detect_url(input)).unwrap();
