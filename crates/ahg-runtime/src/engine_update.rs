@@ -35,6 +35,13 @@ pub trait Fetch: Send + Sync {
     fn get(&self, request: &Request) -> Option<Fetched>;
 }
 
+/// One transport may serve both updaters.
+impl<T: Fetch + ?Sized> Fetch for std::sync::Arc<T> {
+    fn get(&self, request: &Request) -> Option<Fetched> {
+        (**self).get(request)
+    }
+}
+
 type Version = Box<dyn Fn() -> String + Send + Sync>;
 type Swapped = Box<dyn Fn() + Send + Sync>;
 type Notify = Box<dyn Fn(Event) + Send + Sync>;

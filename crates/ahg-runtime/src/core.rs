@@ -18,12 +18,14 @@ use ahg_engine::queue::{Event, new_task_id};
 use ahg_engine::scheduler::{Fire, POLL_MS, ScheduleConfig, Scheduler};
 use ahg_engine::stats::{DownloadStats, StatsStore, stats_file_path};
 use ahg_engine::tier::{Plan, clamp_concurrency};
+use ahg_engine::updater::UpdateState;
 use ahg_engine::ytdlp_updater::YtdlpStatus;
 use ahg_engine::downloader::bridge::{CONFIRMED, SongMatch, match_song, song_query, song_rows, song_url};
 use ahg_engine::types::{DownloadTask, MediaMetadata, SearchResult, Track};
 use ahg_engine::validate::media_url_arg;
 use serde_json::{Map, Value, json};
 
+use crate::app_update::AppUpdater;
 use crate::download::{Downloader, SongSearch};
 use crate::engine_update::{EngineUpdater, Fetch};
 use crate::engine::{Engine, Notice};
@@ -47,6 +49,10 @@ pub enum CoreEvent {
     SettingsChanged,
     /// The raw error text of a failed download.
     DownloadFailed(String),
+    /// The app's own updater has news, as the engine names it: `update:available`
+    /// (`version`), `update:not-available`, `update:progress` (`percent`),
+    /// `update:downloaded` (`version`) or `update:error` (`message`).
+    Update { channel: &'static str, payload: Value },
     /// The yt-dlp updater's state changed: `current`, `latest`, `state`
     /// ("idle", "checking", "available", "uptodate", "downloading", "updated",
     /// "error") and, on an error, `message`.
@@ -129,6 +135,7 @@ pub struct Core {
     hold_unconfirmed: Arc<AtomicBool>,
     remembered: Mutex<HashMap<String, SongMatch>>,
     engine_updater: Arc<EngineUpdater>,
+    app_updater: AppUpdater,
 }
 
 impl Core {
@@ -144,16 +151,22 @@ impl Core {
     /// `start`, with the YouTube Music song search given: the real one, or a
     /// stand-in for tests.
     pub fn start_with_search(paths: Paths, ytdlp: Arc<YtDlp>, plan: PlanSource, events: Sender<CoreEvent>, song_search: SongSearch) -> Self {
-        Self::start_with(paths, ytdlp, plan, events, song_search, Box::new(crate::http::Releases))
+        Self::start_with(paths, ytdlp, plan, events, song_search, Arc::new(crate::http::Releases))
     }
 
     /// `start`, with everything that reaches the network given.
-    pub fn start_with(paths: Paths, ytdlp: Arc<YtDlp>, plan: PlanSource, events: Sender<CoreEvent>, song_search: SongSearch, releases: Box<dyn Fetch>) -> Self {
+    pub fn start_with(paths: Paths, ytdlp: Arc<YtDlp>, plan: PlanSource, events: Sender<CoreEvent>, song_search: SongSearch, releases: Arc<dyn Fetch>) -> Self {
+        let app_updater = {
+            let tell = events.clone();
+            AppUpdater::new(&paths.user_data.join("updates"), env!("CARGO_PKG_VERSION"), Box::new(releases.clone()), Box::new(move |event| drop(tell.send(CoreEvent::Update { channel: event.channel, payload: event.payload }))))
+        };
+        // Whatever an earlier run staged is stale now, applied or not.
+        app_updater.cleanup();
         let engine_updater = {
             let (version, found, tell) = (ytdlp.clone(), ytdlp.clone(), events.clone());
             Arc::new(EngineUpdater::new(
                 &paths.user_data.join("bin").to_string_lossy(),
-                releases,
+                Box::new(releases),
                 Box::new(move || version.version()),
                 Box::new(move || found.reset_cache()),
                 Box::new(move |event| drop(tell.send(CoreEvent::EngineStatus(event.payload)))),
@@ -248,7 +261,7 @@ impl Core {
                 }
             })
         };
-        let core = Self { paths, config, stats, ytdlp, plan, engine, events, stop, dispatcher: Some(dispatcher), song_search, hold_unconfirmed, remembered, engine_updater };
+        let core = Self { paths, config, stats, ytdlp, plan, engine, events, stop, dispatcher: Some(dispatcher), song_search, hold_unconfirmed, remembered, engine_updater, app_updater };
         core.sync();
         core
     }
@@ -428,6 +441,34 @@ impl Core {
         self.hold_unconfirmed.store(hold, Ordering::SeqCst);
         let _ = write_file_atomic(&own_settings_file(&self.paths.user_data), &json!({ "holdUnconfirmed": hold }).to_string());
         let _ = self.events.send(CoreEvent::SettingsChanged);
+    }
+
+    // ── The app's own updates ───────────────────────────────────────────────
+
+    /// Where the app's own update stands.
+    pub fn update_status(&self) -> UpdateState {
+        self.app_updater.status()
+    }
+
+    /// Ask whether a newer version of the app exists. Slow: call it from a
+    /// worker thread.
+    pub fn check_update(&self) -> UpdateState {
+        self.app_updater.check()
+    }
+
+    /// Download the available version and verify it; progress arrives as
+    /// events. `Err` when there is nothing to download. Slow: call it from a
+    /// worker thread.
+    pub fn download_update(&self) -> Result<UpdateState, String> {
+        self.app_updater.download()
+    }
+
+    /// Put the downloaded version in place of `target_exe`, the running app
+    /// (`std::env::current_exe()` in the real app). The caller then shuts the
+    /// core down, starts `target_exe` again and exits; at its next start it
+    /// calls `app_update::remove_spare`. The core never ends the process.
+    pub fn install_update(&self, target_exe: &std::path::Path) -> Result<(), String> {
+        self.app_updater.install(target_exe)
     }
 
     // ── Keeping yt-dlp current ──────────────────────────────────────────────

@@ -1,5 +1,7 @@
 //! The app core end to end, with the scripted stand-in for yt-dlp: settings,
 //! plan, queue and statistics working together. Nothing touches the network.
+mod common;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -473,7 +475,7 @@ fn start_with_release(dir: &Path, script: &str) -> (Core, Receiver<CoreEvent>) {
     ytdlp.env("FAKE_YTDLP_SCRIPT", dir.join("script.txt").to_str().unwrap());
     let (tx, rx) = channel();
     let paths = Paths { user_data: dir.join("userData"), downloads: dir.join("Downloads").to_string_lossy().into_owned() };
-    let core = Core::start_with(paths, Arc::new(ytdlp), Box::new(|| Plan::Premium), tx, Arc::new(|_: &str| None), Box::new(OneRelease { binary: b"MZ a newer yt-dlp".to_vec() }));
+    let core = Core::start_with(paths, Arc::new(ytdlp), Box::new(|| Plan::Premium), tx, Arc::new(|_: &str| None), Arc::new(OneRelease { binary: b"MZ a newer yt-dlp".to_vec() }));
     (core, rx)
 }
 
@@ -514,5 +516,45 @@ fn a_download_that_fails_like_an_outdated_yt_dlp_updates_it_unless_that_is_switc
     wait_for(&rx, |e| matches!(e, CoreEvent::DownloadFailed(_)));
     never_within(&rx, Duration::from_millis(800), |e| matches!(e, CoreEvent::EngineStatus(_)));
     assert!(!dir.join("userData").join("bin").join("yt-dlp.exe").exists());
+    core.shutdown();
+}
+
+// ── The app's own updates, through the core ─────────────────────────────────
+
+#[test]
+fn the_core_finds_downloads_and_installs_a_newer_version_of_the_app() {
+    const FEED: &str = "https://api.github.com/repos/amyyne01/UNIVERSAL-CONVERTER-/releases/latest";
+    const EXE: &str = "https://github.com/amyyne01/UNIVERSAL-CONVERTER-/releases/download/v9.9.9/AHG-Converter.exe";
+    const SUMS: &str = "https://github.com/amyyne01/UNIVERSAL-CONVERTER-/releases/download/v9.9.9/SHA256SUMS.txt";
+    let new_exe = b"MZ version 9.9.9 of the app".to_vec();
+    let feed = json!({ "tag_name": "v9.9.9", "assets": [{ "name": "AHG-Converter.exe", "browser_download_url": EXE }, { "name": "SHA256SUMS.txt", "browser_download_url": SUMS }] }).to_string();
+    let net = common::Net::default().with(FEED, 200, feed.as_bytes()).with(EXE, 200, &new_exe).with(SUMS, 200, format!("{}  AHG-Converter.exe\n", common::sha(&new_exe)).as_bytes());
+
+    let dir = scratch("appupdate");
+    // Something an earlier run staged: it is dropped when the core starts.
+    fs::create_dir_all(dir.join("userData").join("updates")).unwrap();
+    fs::write(dir.join("userData").join("updates").join("stale.exe"), b"x").unwrap();
+    fs::write(dir.join("script.txt"), "").unwrap();
+    let (tx, rx) = channel();
+    let paths = Paths { user_data: dir.join("userData"), downloads: dir.join("Downloads").to_string_lossy().into_owned() };
+    let core = Core::start_with(paths, Arc::new(YtDlp::new(PathBuf::from(FAKE), None)), Box::new(|| Plan::Premium), tx, Arc::new(|_: &str| None), Arc::new(net));
+    assert!(!dir.join("userData").join("updates").join("stale.exe").exists());
+
+    assert_eq!(core.update_status().phase, "idle");
+    assert_eq!(core.install_update(&dir.join("AHG-Converter.exe")).unwrap_err(), "Update refused: nothing downloaded to install");
+    let found = core.check_update();
+    assert_eq!((found.phase, found.version.as_deref()), ("available", Some("9.9.9")));
+    assert_eq!(core.download_update().unwrap().phase, "ready");
+
+    // The app's own EXE, standing in a scratch folder.
+    let target = dir.join("AHG-Converter.exe");
+    fs::write(&target, b"MZ the version that is running").unwrap();
+    core.install_update(&target).unwrap();
+    assert_eq!(fs::read(&target).unwrap(), new_exe);
+
+    let channels: Vec<&str> = rx.try_iter().filter_map(|e| if let CoreEvent::Update { channel, .. } = e { Some(channel) } else { None }).collect();
+    assert_eq!(channels.first(), Some(&"update:available"));
+    assert_eq!(channels.last(), Some(&"update:downloaded"));
+    assert!(channels.contains(&"update:progress"));
     core.shutdown();
 }
