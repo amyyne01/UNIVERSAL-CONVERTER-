@@ -359,12 +359,22 @@ pub fn match_song(track: &Track, rows: &[SongHit]) -> Option<SongMatch> {
     })
 }
 
-/// A match named from outside (a request, a saved task) is only used when it
-/// is a plain YouTube address: it becomes an argument to yt-dlp.
+/// A match named from outside (a request, a saved task, the list of
+/// remembered choices) is only used when it is the address of one YouTube
+/// video: it becomes an argument to yt-dlp, and a playlist address would
+/// download a whole list.
 pub fn song_url(url: &str) -> Option<&str> {
     let parsed = url::Url::parse(crate::validate::media_url_arg(url).ok()?).ok()?;
-    let host = parsed.host_str()?;
-    (parsed.scheme() == "https" && ["music.youtube.com", "www.youtube.com", "youtube.com", "youtu.be"].contains(&host)).then_some(url)
+    if parsed.scheme() != "https" {
+        return None;
+    }
+    let is_id = |id: &str| id.len() >= 6 && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_');
+    let one_video = match parsed.host_str()? {
+        "music.youtube.com" | "www.youtube.com" | "youtube.com" => parsed.path() == "/watch" && parsed.query_pairs().any(|(key, id)| key == "v" && is_id(&id)),
+        "youtu.be" => is_id(parsed.path().trim_start_matches('/')),
+        _ => false,
+    };
+    one_video.then_some(url)
 }
 
 // ── Naming and tagging the file ─────────────────────────────────────────────
@@ -372,9 +382,10 @@ pub fn song_url(url: &str) -> Option<&str> {
 /// D34: a Spotify download is named and tagged from the Spotify track, not
 /// from the video it was matched to. Adds to `args` (as built for the task,
 /// the link last): the tags, when tags are embedded at all, and the file name
-/// "Artist - Name", unless the task or a naming template already names it.
+/// "Artist - Name", unless a naming template or a title chosen on purpose
+/// already names it.
 pub fn name_and_tag_from_spotify(task: &crate::types::DownloadTask, args: &mut Vec<String>) {
-    use crate::downloader::args::{named_after_the_video, sanitize};
+    use crate::downloader::args::{replaceable_stem, sanitize};
     let Some(track) = &task.track else { return };
     if args.is_empty() {
         return;
@@ -386,15 +397,15 @@ pub fn name_and_tag_from_spotify(task: &crate::types::DownloadTask, args: &mut V
         let flags: Vec<String> = tags.iter().filter_map(|(field, text)| fixed_tag(field, text)).flat_map(|tag| ["--parse-metadata".to_owned(), tag]).collect();
         add_options(args, flags);
     }
-    if named_after_the_video(task) {
+    if let Some(old) = replaceable_stem(task, &track.name) {
         let artist = if track.artist.is_empty() { track.artists.first().map_or("", String::as_str) } else { &track.artist };
         let both = if artist.is_empty() { track.name.clone() } else { format!("{artist} - {}", track.name) };
         // "%" is doubled so yt-dlp fills nothing into the name.
         let stem = sanitize(&both).replace('%', "%%");
         if let Some(output) = args.iter().position(|a| a == "-o").and_then(|at| args.get_mut(at + 1))
-            && let Some(at) = output.rfind("%(title)s").filter(|_| !stem.is_empty())
+            && let Some(at) = output.rfind(&old).filter(|_| !stem.is_empty())
         {
-            output.replace_range(at..at + "%(title)s".len(), &stem);
+            output.replace_range(at..at + old.len(), &stem);
         }
     }
 }

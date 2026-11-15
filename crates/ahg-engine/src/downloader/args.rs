@@ -231,10 +231,20 @@ fn video_selector(quality: VideoQuality, container: VideoContainer, codec: Video
 }
 
 /// A user template, or "" when it could leave the output folder.
-/// True when the file would be named after the video's own title: a single
-/// item with no name of its own and no naming template from Settings.
-pub(crate) fn named_after_the_video(task: &DownloadTask) -> bool {
-    !task.is_playlist && safe_template(&merge_extras(task.extras.as_ref()).output_template).is_empty() && sanitize(&task.title).is_empty()
+/// The stem the file name was built with ("%(title)s", or the task's own
+/// title), when it is one a Spotify track may replace with its own name: a
+/// single item, no naming template from Settings, and a title that is empty
+/// or just the track's bare name (what a playlist preview sends).
+pub(crate) fn replaceable_stem(task: &DownloadTask, track_name: &str) -> Option<String> {
+    if task.is_playlist || !safe_template(&merge_extras(task.extras.as_ref()).output_template).is_empty() {
+        return None;
+    }
+    let title = sanitize(&task.title);
+    if title.is_empty() {
+        Some("%(title)s".to_owned())
+    } else {
+        (title == sanitize(track_name)).then_some(title)
+    }
 }
 
 fn safe_template(template: &str) -> String {

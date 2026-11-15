@@ -84,6 +84,19 @@ fn last_fired_date(file: &std::path::Path) -> String {
     saved.as_ref().and_then(|v| v["lastFiredDate"].as_str()).unwrap_or_default().to_owned()
 }
 
+/// What the playlist preview learns about one Spotify track (D34).
+#[derive(Debug, Clone, PartialEq)]
+pub enum TrackMatch {
+    /// This YouTube Music song is the track; its confidence says how surely.
+    Found(SongMatch),
+    /// The search answered and no song agrees. The download will still try
+    /// ordinary videos.
+    NoSong,
+    /// The search could not be reached or gave nothing readable: not "no
+    /// match", and worth asking again.
+    Unreachable,
+}
+
 /// Which plan the user is on right now. Asked on every request, so an
 /// activation or a revocation takes effect at once.
 pub type PlanSource = Box<dyn Fn() -> Plan + Send + Sync>;
@@ -331,15 +344,17 @@ impl Core {
 
     /// D34, for the playlist preview: the YouTube Music song that is this
     /// Spotify track, if the song search has one that agrees. About half a
-    /// second on the network: call it from a worker thread. `None` is not a
-    /// failure; the download still tries its fallbacks.
-    pub fn match_track(&self, track: &Track) -> Option<SongMatch> {
+    /// second on the network: call it from a worker thread.
+    pub fn match_track(&self, track: &Track) -> TrackMatch {
         // What the user chose for this track before stands, and is theirs to change.
         if let Some(chosen) = lock(&self.remembered).get(&track.id) {
-            return Some(SongMatch { confidence: CONFIRMED, ..chosen.clone() });
+            return TrackMatch::Found(SongMatch { confidence: CONFIRMED, ..chosen.clone() });
         }
-        let response = (self.song_search)(&song_query(track))?;
-        match_song(track, &song_rows(&response))
+        let rows = (self.song_search)(&song_query(track)).map(|response| song_rows(&response)).unwrap_or_default();
+        if rows.is_empty() {
+            return TrackMatch::Unreachable;
+        }
+        match_song(track, &rows).map_or(TrackMatch::NoSong, TrackMatch::Found)
     }
 
     /// D34: the user picked this song for the Spotify track `track_id`. It is

@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use ahg_engine::queue::Event;
 use ahg_engine::tier::Plan;
 use ahg_engine::types::{DownloadStatus, VideoQuality};
-use ahg_runtime::core::{Core, CoreEvent, Paths};
+use ahg_runtime::core::{Core, CoreEvent, Paths, TrackMatch};
 use ahg_runtime::ytdlp::YtDlp;
 use serde_json::{Value, json};
 
@@ -259,20 +259,23 @@ fn the_preview_can_ask_for_one_tracks_match() {
     let response = json!({ "contents": [{ "musicResponsiveListItemRenderer": {
         "flexColumns": [column("The Song"), column("Artist • The Album • 3:20")], "playlistItemData": { "videoId": "right000001" } } }] })
     .to_string();
-    let search: ahg_runtime::download::SongSearch = Arc::new(move |query: &str| (query == "Artist - The Song").then(|| response.clone()));
+    let search: ahg_runtime::download::SongSearch = Arc::new(move |query: &str| (!query.contains("Offline")).then(|| response.clone()));
     let (tx, _rx) = channel();
     let paths = Paths { user_data: dir.join("userData"), downloads: dir.join("Downloads").to_string_lossy().into_owned() };
     let core = Core::start_with_search(paths, Arc::new(ytdlp), Box::new(|| Plan::Premium), tx, search);
 
     let track: Track = serde_json::from_value(json!({ "id": "t1", "name": "The Song", "artist": "Artist", "artists": ["Artist"], "album": "The Album", "trackNumber": 1, "durationMs": 200000, "thumbnailUrl": "" })).unwrap();
-    let found = core.match_track(&track).expect("the song agrees with the track");
+    let TrackMatch::Found(found) = core.match_track(&track) else { panic!("the song agrees with the track") };
     assert_eq!(found.url, "https://music.youtube.com/watch?v=right000001");
     assert_eq!((found.title.as_str(), found.artist.as_str(), found.album.as_str(), found.duration), ("The Song", "Artist", "The Album", Some(200.0)));
     assert_eq!(found.confidence, 1.0);
 
-    // Nothing agrees, or the search cannot be reached: no match to show. The download still tries its fallbacks.
+    // No song agrees: the preview says so. The download still tries its fallbacks.
     let other = Track { name: "Another Song".into(), ..track.clone() };
-    assert!(core.match_track(&other).is_none());
+    assert_eq!(core.match_track(&other), TrackMatch::NoSong);
+    // The search could not be reached: that is not "no match", and is worth trying again.
+    let offline = Track { name: "Offline".into(), ..track.clone() };
+    assert_eq!(core.match_track(&offline), TrackMatch::Unreachable);
     core.shutdown();
 }
 
@@ -296,7 +299,7 @@ fn a_real_spotify_track_is_matched_and_downloaded() {
     let mut spotify = Spotify::new(SpotifyHttp::new(Http::new(None)), Box::new(system_now_ms));
     let track = spotify.fetch_track("https://open.spotify.com/track/0ofHAoxe9vBkTCp2UQIavz").ok().flatten().expect("the track should load");
     println!("spotify: {} - {} ({} s, explicit {:?})", track.artist, track.name, track.duration_ms / 1000.0, track.explicit);
-    let found = core.match_track(&track).expect("YouTube Music should have this song");
+    let TrackMatch::Found(found) = core.match_track(&track) else { panic!("YouTube Music should have this song") };
     println!("match: {} / {} / {} ({:?} s), confidence {}, {}", found.title, found.artist, found.album, found.duration, found.confidence, found.url);
     assert_eq!(found.confidence, 1.0);
 
@@ -388,7 +391,7 @@ fn a_chosen_match_is_remembered_for_that_track_and_used_from_then_on() {
     let chosen = SongMatch { url: "https://www.youtube.com/watch?v=mine0000001".into(), title: "The Song (the one I wanted)".into(), artist: "Artist".into(), album: String::new(), duration: Some(201.0), explicit: false, confidence: 0.4 };
 
     let (core, _rx) = begin(&dir);
-    assert!(core.match_track(&track).is_none());
+    assert_eq!(core.match_track(&track), TrackMatch::Unreachable);
     assert!(core.remember_match("t1", &chosen));
     // An address that is not YouTube's is refused: it would be handed to yt-dlp.
     assert!(!core.remember_match("t2", &SongMatch { url: "https://evil.example/x".into(), ..chosen.clone() }));
@@ -397,7 +400,7 @@ fn a_chosen_match_is_remembered_for_that_track_and_used_from_then_on() {
 
     let (core, _rx) = begin(&dir);
     let before = searches.load(Ordering::SeqCst);
-    let found = core.match_track(&track).expect("the choice was saved");
+    let TrackMatch::Found(found) = core.match_track(&track) else { panic!("the choice was saved") };
     assert_eq!((found.url.as_str(), found.title.as_str()), (chosen.url.as_str(), chosen.title.as_str()));
     assert_eq!(found.confidence, 1.0, "the user's own choice is a confirmed match");
     assert_eq!(searches.load(Ordering::SeqCst), before, "a remembered match needs no search");
@@ -411,10 +414,10 @@ fn a_chosen_match_is_remembered_for_that_track_and_used_from_then_on() {
     assert_eq!(named.matched_url.as_deref(), Some("https://music.youtube.com/watch?v=other000001"));
 
     core.forget_match("t1");
-    assert!(core.match_track(&track).is_none());
+    assert_eq!(core.match_track(&track), TrackMatch::Unreachable);
     core.shutdown();
     let (core, _rx) = begin(&dir);
-    assert!(core.match_track(&track).is_none(), "forgetting is saved too");
+    assert_eq!(core.match_track(&track), TrackMatch::Unreachable, "forgetting is saved too");
     core.shutdown();
 }
 

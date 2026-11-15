@@ -306,3 +306,38 @@ fn the_length_ffmpeg_reports_for_a_file_is_read() {
     assert_eq!(media_seconds("no such file"), None);
     assert_eq!(media_seconds(""), None);
 }
+
+/// A playlist's tracks are queued one by one with the track's bare name as
+/// the title (the shape the playlist preview sends). They get the same file
+/// name as a lone track, and the playlist's folder if it has one.
+#[test]
+fn a_track_queued_from_a_playlist_is_named_like_any_other() {
+    let args = spotify_args(json!({}), "Dreams - 2004 Remaster", true);
+    assert_eq!(output(&args), "C:\\Music\\Fleetwood Mac - Dreams - 2004 Remaster.%(ext)s");
+    // A title that is not just the track's name was chosen on purpose, and stays.
+    assert_eq!(output(&spotify_args(json!({}), "Dreams (my edit)", true)), "C:\\Music\\Dreams (my edit).%(ext)s");
+}
+
+/// A remembered or requested match becomes an argument to yt-dlp, so it must
+/// name one video: a playlist address would download a whole list.
+#[test]
+fn only_the_address_of_a_single_youtube_video_is_accepted_as_a_match() {
+    use ahg_engine::downloader::bridge::song_url;
+    for good in ["https://music.youtube.com/watch?v=swJOIjjW69U", "https://www.youtube.com/watch?v=swJOIjjW69U&list=PL123", "https://youtube.com/watch?v=swJOIjjW69U", "https://youtu.be/swJOIjjW69U"] {
+        assert_eq!(song_url(good), Some(good), "{good}");
+    }
+    for bad in [
+        "https://music.youtube.com/playlist?list=PL123",
+        "https://www.youtube.com/watch?list=PL123",
+        "https://www.youtube.com/watch?v=",
+        "https://www.youtube.com/@channel/videos",
+        "https://youtu.be/",
+        "https://www.youtube.com/results?search_query=x",
+        "http://www.youtube.com/watch?v=swJOIjjW69U",
+        "https://evil.example/watch?v=swJOIjjW69U",
+        "ytsearch1:anything",
+        "--exec=calc",
+    ] {
+        assert_eq!(song_url(bad), None, "{bad}");
+    }
+}
