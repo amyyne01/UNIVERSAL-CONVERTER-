@@ -5,6 +5,8 @@ pub mod clipboard_watch;
 pub mod clock;
 pub mod config;
 pub mod downloader;
+#[cfg(feature = "license")]
+pub mod license;
 pub mod log;
 pub mod presence;
 pub mod protocol;

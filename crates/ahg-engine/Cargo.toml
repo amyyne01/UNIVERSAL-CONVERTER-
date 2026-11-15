@@ -10,4 +10,9 @@ indexmap = "2.14.2"
 regex = "1.13.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }
+sha2 = "0.11.1"
 url = "2.5.8"
+
+[features]
+# The entitlement layer. Its source is not published, so it is off by default.
+license = []
