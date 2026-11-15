@@ -10,7 +10,7 @@ use serde_json::{Map, Value, json};
 use crate::queue::{TaskInit, create_task};
 use crate::text::js_len;
 use crate::tier::{BASIC_LIMITS, Plan, clamp_audio_quality, clamp_extras, clamp_format, clamp_video_quality};
-use crate::types::{DownloadTask, PartialExtras, SourcePlatform, Track, VideoQuality};
+use crate::types::{AUDIO_ONLY_SOURCES, DownloadTask, PartialExtras, SourcePlatform, Track, VideoQuality};
 use crate::validate::{media_url_arg, playlist_items_arg};
 
 const MAX_URL: usize = 2048;
@@ -130,7 +130,19 @@ pub fn build_task(
     let flag = |key: &str| config.get(key).is_some_and(truthy);
     let basic = plan == Plan::Basic;
 
-    let format = opt_text(req.get("format"), 16)?.unwrap_or_else(|| setting("defaultFormat"));
+    let source: Option<SourcePlatform> = opt_choice(req.get("source"), "source")?;
+    // D1: a request with no audio/video choice (the clipboard offer, the hotkey,
+    // an ahg:// link) takes the platform's normal one, as a link pasted into its
+    // tab does: music sources are audio, the rest MP4 video. A stated choice stands.
+    let by_platform = source.filter(|_| !req.contains_key("isAudioOnly"));
+    let is_audio_only = match by_platform {
+        Some(source) => Some(AUDIO_ONLY_SOURCES.contains(&source)),
+        None => opt_bool(req.get("isAudioOnly")),
+    };
+    let format = match (by_platform, is_audio_only) {
+        (Some(_), Some(false)) => "mp4".to_owned(),
+        _ => opt_text(req.get("format"), 16)?.unwrap_or_else(|| setting("defaultFormat")),
+    };
     let quality = opt_text(req.get("quality"), 16)?.unwrap_or_else(|| setting("defaultQuality"));
     let video_quality: VideoQuality = match opt_choice(req.get("videoQuality"), "videoQuality")? {
         Some(q) => q,
@@ -145,14 +157,12 @@ pub fn build_task(
         Some(_) => return Err(BAD_TEXT.into()),
     }
     .to_owned();
-    let source: Option<SourcePlatform> = opt_choice(req.get("source"), "source")?;
     let playlist_items = match req.get("playlistItems") {
         Some(items) if !basic => Some(
             playlist_items_arg(items.as_str().ok_or("Invalid input: playlistItems")?)?.to_owned(),
         ),
         _ => None,
     };
-    let is_audio_only = opt_bool(req.get("isAudioOnly"));
     let playlist_name = opt_text(req.get("playlistName"), 512)?;
     let title = opt_text(req.get("title"), 512)?;
     let thumbnail_url = opt_text(req.get("thumbnailUrl"), MAX_URL)?;

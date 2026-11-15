@@ -41,6 +41,10 @@ pub enum SourcePlatform {
     Unknown,
 }
 
+/// Sources that only ever give audio (`AUDIO_ONLY_SOURCES`).
+pub const AUDIO_ONLY_SOURCES: [SourcePlatform; 4] =
+    [SourcePlatform::Spotify, SourcePlatform::Soundcloud, SourcePlatform::Bandcamp, SourcePlatform::Mixcloud];
+
 impl SourcePlatform {
     /// Display name, as in `PLATFORM_LABEL` / `MORE_SOURCE_LABELS`.
     pub fn label(self) -> &'static str {
