@@ -101,18 +101,18 @@ pub struct YtDlp {
     metadata_timeout: Duration,
     /// The proxy from Settings, for lookups and searches. The download gets
     /// its proxy through the task's extras.
-    proxy: Option<String>,
+    proxy: Mutex<Option<String>>,
 }
 
 impl YtDlp {
     /// A yt-dlp at a known path, with ffmpeg if there is one.
     pub fn new(ytdlp: PathBuf, ffmpeg: Option<String>) -> Self {
-        Self { bins: Bins::Fixed(ytdlp, ffmpeg), env: Vec::new(), metadata_timeout: METADATA_TIMEOUT, proxy: None }
+        Self { bins: Bins::Fixed(ytdlp, ffmpeg), env: Vec::new(), metadata_timeout: METADATA_TIMEOUT, proxy: Mutex::new(None) }
     }
 
     /// A yt-dlp looked up through `tools` on every use, so an engine update is picked up.
     pub fn from_tools(tools: Arc<Tools>) -> Self {
-        Self { bins: Bins::Found(tools), env: Vec::new(), metadata_timeout: METADATA_TIMEOUT, proxy: None }
+        Self { bins: Bins::Found(tools), env: Vec::new(), metadata_timeout: METADATA_TIMEOUT, proxy: Mutex::new(None) }
     }
 
     /// An extra environment variable for every process started.
@@ -121,8 +121,8 @@ impl YtDlp {
     }
 
     /// D10: route lookups and searches through this proxy. `None` or empty is direct.
-    pub fn set_proxy(&mut self, proxy: Option<&str>) {
-        self.proxy = proxy.filter(|p| !p.is_empty()).map(str::to_owned);
+    pub fn set_proxy(&self, proxy: Option<&str>) {
+        *self.proxy.lock().unwrap_or_else(|e| e.into_inner()) = proxy.filter(|p| !p.is_empty()).map(str::to_owned);
     }
 
     pub fn set_metadata_timeout(&mut self, limit: Duration) {
@@ -166,7 +166,7 @@ impl YtDlp {
         // yt-dlp ride out a hiccup itself.
         let mut cmd = self.command(&bin);
         cmd.args(["--socket-timeout", "20", "--retries", "3"]);
-        if let Some(proxy) = &self.proxy {
+        if let Some(proxy) = self.proxy.lock().unwrap_or_else(|e| e.into_inner()).as_deref() {
             cmd.args(["--proxy", proxy]);
         }
         cmd.args(args);
