@@ -244,6 +244,11 @@ fn the_real_spotify_states_which_tracks_are_explicit() {
     let clean = calm.tracks.iter().filter(|t| t.explicit == Some(false)).count();
     println!("{} calm tracks, {clean} stated as not explicit", calm.tracks.len());
     assert!(clean * 10 >= calm.tracks.len() * 9, "{clean} of {}", calm.tracks.len());
+    // An album goes through a different response: Kendrick Lamar, "DAMN.".
+    let album = spotify.fetch_album("4eLPsYPBmXABThSJ821sqY").ok().flatten().expect("the album should load");
+    let (stated, dirty) = (album.tracks.iter().filter(|t| t.explicit.is_some()).count(), album.tracks.iter().filter(|t| t.explicit == Some(true)).count());
+    println!("album: {} tracks, {stated} state the flag, {dirty} explicit", album.tracks.len());
+    assert!(stated == album.tracks.len() && dirty > 0, "{stated} of {} stated, {dirty} explicit", album.tracks.len());
     // The same track read on its own says the same.
     let alone = spotify.fetch_track(&format!("https://open.spotify.com/track/{}", explicit[0].id)).ok().flatten().expect("the track should load");
     assert_eq!(alone.explicit, Some(true), "{} read alone", alone.name);
