@@ -279,3 +279,12 @@ fn the_proxy_also_covers_lookups_and_searches() {
     y.search_soundcloud("some song").unwrap();
     assert!(!args_of(&dir).contains("--proxy"));
 }
+
+/// A shipped build never falls back to whatever `yt-dlp` is on the system path.
+#[test]
+fn a_shipped_build_does_not_run_a_yt_dlp_found_on_the_system_path() {
+    let dir = scratch("nopath");
+    // The folder holding the stand-in is put on the path of a strict search that has no tool folders.
+    let tools = Tools::strict(vec![dir.clone()]);
+    assert_eq!(tools.ytdlp(), None, "nothing in the app's folders means no yt-dlp, whatever the system has");
+}

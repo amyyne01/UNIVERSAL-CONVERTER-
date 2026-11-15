@@ -58,15 +58,25 @@ pub fn unpack_tools(user_data: &Path, bundle: &str, files: &[(&str, &[u8])]) -> 
 }
 
 /// Where to look for the tools, first match wins: the folder a self-updated
-/// yt-dlp lands in, then the unpacked bundle, then a `bin` folder beside the
-/// program and one in the working directory (both for development).
+/// yt-dlp lands in, then the unpacked bundle. A development build also looks
+/// in a `bin` folder beside the program and in the working directory.
 pub fn tool_dirs(user_data: &Path, unpacked: &Path) -> Vec<PathBuf> {
+    tool_dirs_for(user_data, unpacked, cfg!(debug_assertions))
+}
+
+/// `tool_dirs`, with the kind of build stated. A shipped build (`development`
+/// false) searches only the app's own data folder: a `bin` folder beside the
+/// program or in the current folder could have been put there by someone
+/// else, and whatever `yt-dlp.exe` it held would be run.
+pub fn tool_dirs_for(user_data: &Path, unpacked: &Path, development: bool) -> Vec<PathBuf> {
     let mut dirs = vec![user_data.join("bin"), unpacked.to_owned()];
-    if let Some(beside) = std::env::current_exe().ok().and_then(|exe| exe.parent().map(|p| p.join("bin"))) {
-        dirs.push(beside);
-    }
-    if let Ok(cwd) = std::env::current_dir() {
-        dirs.push(cwd.join("bin"));
+    if development {
+        if let Some(beside) = std::env::current_exe().ok().and_then(|exe| exe.parent().map(|p| p.join("bin"))) {
+            dirs.push(beside);
+        }
+        if let Ok(cwd) = std::env::current_dir() {
+            dirs.push(cwd.join("bin"));
+        }
     }
     dirs
 }

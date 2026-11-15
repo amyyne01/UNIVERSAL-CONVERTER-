@@ -87,3 +87,15 @@ fn a_bundle_name_cannot_escape_the_tools_folder() {
     assert!(unpack_tools(&user_data, "..\\evil", &FILES).is_err());
     assert!(unpack_tools(&user_data, "2.0.0", &[("..\\evil.exe", b"x")]).is_err());
 }
+
+/// A shipped build must only ever run tools from the app's own data folder.
+/// A `bin` folder beside the program or in the current folder could be planted
+/// by someone else, so those are for development builds only.
+#[test]
+fn a_shipped_build_looks_only_in_the_apps_own_folders() {
+    use ahg_runtime::unpack::tool_dirs_for;
+    let user_data = scratch("search");
+    let tools = user_data.join("tools").join("2.0.0");
+    assert_eq!(tool_dirs_for(&user_data, &tools, false), vec![user_data.join("bin"), tools.clone()]);
+    assert!(tool_dirs_for(&user_data, &tools, true).len() > 2, "a development build may also use a local bin folder");
+}

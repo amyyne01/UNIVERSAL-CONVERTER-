@@ -49,22 +49,32 @@ pub struct Tools {
     /// Folders to look in, first match wins. The folder a self-updated yt-dlp
     /// lands in comes first, then the bundled copy.
     dirs: Vec<PathBuf>,
+    /// Whether a `yt-dlp` found on the system path may be used when the
+    /// folders hold none. Never in a shipped build: the path is not the app's.
+    allow_path: bool,
     ytdlp: Mutex<Option<PathBuf>>,
     ffmpeg: Mutex<Option<String>>,
 }
 
 impl Tools {
+    /// In a development build a `yt-dlp` on the system path is the last resort.
     pub fn new(dirs: Vec<PathBuf>) -> Self {
-        Self { dirs, ytdlp: Mutex::new(None), ffmpeg: Mutex::new(None) }
+        Self { dirs, allow_path: cfg!(debug_assertions), ytdlp: Mutex::new(None), ffmpeg: Mutex::new(None) }
+    }
+
+    /// Only the given folders, as a shipped build searches.
+    pub fn strict(dirs: Vec<PathBuf>) -> Self {
+        Self { dirs, allow_path: false, ytdlp: Mutex::new(None), ffmpeg: Mutex::new(None) }
     }
 
     pub fn ytdlp(&self) -> Option<PathBuf> {
         let mut cached = self.ytdlp.lock().unwrap_or_else(|e| e.into_inner());
         if cached.is_none() {
             let found = self.dirs.iter().map(|d| d.join(exe("yt-dlp"))).find(|c| c.exists() && version_of(c).is_some());
-            // The bare command on PATH is the last resort, and is validated too,
-            // so a missing binary is a clear error and not a failed spawn later.
-            *cached = found.or_else(|| version_of(Path::new("yt-dlp")).map(|_| PathBuf::from("yt-dlp")));
+            // In development the bare command on the system path is the last
+            // resort, and is validated too.
+            let on_path = || version_of(Path::new("yt-dlp")).map(|_| PathBuf::from("yt-dlp"));
+            *cached = found.or_else(|| if self.allow_path { on_path() } else { None });
         }
         cached.clone()
     }
