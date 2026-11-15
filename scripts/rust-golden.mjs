@@ -6,7 +6,7 @@
 // `Electron-version` branch, by default the folder `../converter-electron` beside this one
 // (set AHG_ELECTRON to use another). Set that checkout up once:
 //
-//   git worktree add ../converter-electron Electron-version
+//   git clone --single-branch --branch Electron-version https://github.com/amyyne01/UNIVERSAL-CONVERTER-.git ../converter-electron
 //   cd ../converter-electron && npm ci && npm run build:electron
 //
 // Then run this from the root of this checkout, under ELECTRON'S OWN Node,
