@@ -183,3 +183,25 @@ fn the_real_clock_gives_a_plausible_local_time() {
     assert!(now.year >= 2026 && (1..=12).contains(&now.month) && (1..=31).contains(&now.day));
     assert!(now.hour < 24 && now.minute < 60 && now.weekday < 7);
 }
+
+/// D11, an approved difference from Electron 1.6.0: the scheduler remembers
+/// the day it last fired across a restart, so it cannot fire twice in one day.
+#[test]
+fn a_restart_inside_the_window_does_not_fire_the_schedule_again() {
+    let cfg = ScheduleConfig { enabled: true, time: "03:00".into(), days: Vec::new(), shutdown: false };
+    let at = |hour, minute, day| LocalTime { year: 2026, month: 1, day, hour, minute, weekday: 4 };
+
+    let mut first_run = Scheduler::default();
+    assert_eq!(first_run.poll(&cfg, true, &at(3, 0, 15)), Fire::Trigger { shutdown: false });
+    assert_eq!(first_run.last_fired_date(), "2026-01-15");
+
+    // The app is restarted twenty minutes later, still inside the hour after 03:00.
+    let mut after_restart = Scheduler::restored(first_run.last_fired_date());
+    assert_eq!(after_restart.poll(&cfg, true, &at(3, 20, 15)), Fire::None);
+    // The next day it fires as usual.
+    assert_eq!(after_restart.poll(&cfg, true, &at(3, 0, 16)), Fire::Trigger { shutdown: false });
+
+    // Without the remembered day (what Electron does) it would have fired again.
+    assert_eq!(Scheduler::default().poll(&cfg, true, &at(3, 20, 15)), Fire::Trigger { shutdown: false });
+    assert_eq!(Scheduler::default().last_fired_date(), "");
+}

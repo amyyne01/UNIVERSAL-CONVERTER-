@@ -43,6 +43,18 @@ pub struct Scheduler {
 }
 
 impl Scheduler {
+    /// A scheduler that already fired on `last_fired_date` ("YYYY-MM-DD", or
+    /// empty for never). D11: the caller saves `last_fired_date()` after each
+    /// trigger and restores it at startup, so a restart cannot fire twice in a day.
+    pub fn restored(last_fired_date: &str) -> Self {
+        Self { last_fired_date: last_fired_date.to_owned() }
+    }
+
+    /// The day of the last trigger, "YYYY-MM-DD", or empty if there was none.
+    pub fn last_fired_date(&self) -> &str {
+        &self.last_fired_date
+    }
+
     /// One check, for the minute timer and for startup alike. A window, not an
     /// exact minute: a poll delayed past the target still catches the run, and
     /// the once-a-day gate stops it repeating.
