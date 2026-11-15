@@ -319,6 +319,11 @@ fn a_real_spotify_track_is_matched_and_downloaded() {
     println!("tags: title {:?}, artist {:?}, album {:?}, track {:?}, date {:?}", tag("title"), tag("artist"), tag("album"), tag("track"), tag("date"));
     assert_eq!(tag("title").as_deref(), Some(track.name.as_str()));
     assert_eq!(tag("artist").as_deref(), Some("Fleetwood Mac"));
+    // The file says where it came from.
+    let comment = tag("comment").unwrap_or_default();
+    println!("comment: {comment}");
+    let video_id = found.url.rsplit('=').next().unwrap();
+    assert!(comment.starts_with("Source: ") && comment.contains(video_id), "{comment}");
     // A single track's page names no album, so that tag is left to YouTube's own.
     assert!(track.album.is_empty() || tag("album").as_deref() == Some(track.album.as_str()));
     assert!(tag("album").is_some_and(|album| !album.is_empty()));

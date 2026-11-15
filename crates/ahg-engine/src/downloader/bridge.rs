@@ -384,10 +384,7 @@ pub fn name_and_tag_from_spotify(task: &crate::types::DownloadTask, args: &mut V
         let number = if track.track_number >= 1.0 { format!("{}", track.track_number as u64) } else { String::new() };
         let tags = [("title", track.name.as_str()), ("artist", &artists), ("album", &track.album), ("track", &number), ("date", track.album_year.as_deref().unwrap_or(""))];
         let flags: Vec<String> = tags.iter().filter_map(|(field, text)| fixed_tag(field, text)).flat_map(|tag| ["--parse-metadata".to_owned(), tag]).collect();
-        // Before the link, and before the "--" that ends the options if there is one.
-        let link = args.len() - 1;
-        let at = if link > 0 && args[link - 1] == "--" { link - 1 } else { link };
-        args.splice(at..at, flags);
+        add_options(args, flags);
     }
     if named_after_the_video(task) {
         let artist = if track.artist.is_empty() { track.artists.first().map_or("", String::as_str) } else { &track.artist };
@@ -400,6 +397,23 @@ pub fn name_and_tag_from_spotify(task: &crate::types::DownloadTask, args: &mut V
             output.replace_range(at..at + "%(title)s".len(), &stem);
         }
     }
+}
+
+/// Puts options before the link, and before the "--" that ends the options
+/// if there is one: after it yt-dlp reads everything as a link.
+fn add_options(args: &mut Vec<String>, options: Vec<String>) {
+    let Some(link) = args.len().checked_sub(1) else { return };
+    let at = if link > 0 && args[link - 1] == "--" { link - 1 } else { link };
+    args.splice(at..at, options);
+}
+
+/// D34: the file's comment tag names the video it was made from, and says so
+/// when the match was a guess. Once the file is on disk the app's own mark is
+/// no longer beside it. yt-dlp fills in the video's title and address itself.
+/// Call it only when tags are embedded.
+pub fn note_the_source(args: &mut Vec<String>, confidence: f64) {
+    let guess = if confidence >= CONFIRMED { "" } else { "Best guess, not a confirmed match. " };
+    add_options(args, vec!["--parse-metadata".to_owned(), format!("{guess}Source\\: %(title)s (%(webpage_url)s):%(meta_comment)s")]);
 }
 
 /// `--parse-metadata` value that sets a tag to this exact text, or `None` for

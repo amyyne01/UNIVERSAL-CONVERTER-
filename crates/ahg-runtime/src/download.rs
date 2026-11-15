@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use ahg_engine::downloader::args::build_ytdlp_args;
-use ahg_engine::downloader::bridge::{CONFIRMED, GUESS_CEILING, GUESS_FLOOR, Lookup, NO_CONFIRMED_MATCH, NO_MATCH_FOUND, name_and_tag_from_spotify, Verdict, match_song, song_query, song_rows, song_search_page, song_url, verify};
+use ahg_engine::downloader::bridge::{CONFIRMED, GUESS_CEILING, GUESS_FLOOR, Lookup, NO_CONFIRMED_MATCH, NO_MATCH_FOUND, name_and_tag_from_spotify, note_the_source, Verdict, match_song, song_query, song_rows, song_search_page, song_url, verify};
 use ahg_engine::downloader::metadata::search_results;
 use ahg_engine::downloader::progress::{Outcome, OutputScan};
 use ahg_engine::downloader::score::score_candidates;
@@ -221,6 +221,9 @@ fn run(ytdlp: &YtDlp, task: &DownloadTask, attempt: u64, active: &Active, killed
         let matched = found.is_some();
         let confirmed = found.as_ref().is_some_and(|(_, confidence)| *confidence >= CONFIRMED);
         if let Some((url, confidence)) = found {
+            if song_search.is_some() && task.embed_metadata {
+                note_the_source(&mut args, confidence);
+            }
             send(Report::Match { id: id.to_owned(), attempt, url, confidence });
         }
         if song_search.is_some() {

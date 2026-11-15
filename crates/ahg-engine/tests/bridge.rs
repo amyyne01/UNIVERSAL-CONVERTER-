@@ -273,3 +273,24 @@ fn among_songs_that_agree_the_one_from_the_same_album_is_taken() {
     let pick = pick_row(&wanted("Rumours"), &mixed, Some(true)).unwrap();
     assert_eq!((pick.index, pick.explicit_agrees), (1, true));
 }
+
+/// The file itself says which video it came from, and whether that was a
+/// guess: once it is on disk the app's own mark is no longer beside it.
+#[test]
+fn the_file_notes_the_video_it_came_from_and_whether_that_was_a_guess() {
+    use ahg_engine::downloader::bridge::note_the_source;
+    let mut confirmed = spotify_args(json!({}), "", true);
+    note_the_source(&mut confirmed, 1.0);
+    // yt-dlp fills in the video's own title and address.
+    assert_eq!(tags(&confirmed).last().copied(), Some("Source\\: %(title)s (%(webpage_url)s):%(meta_comment)s"));
+
+    let mut guess = spotify_args(json!({}), "", true);
+    note_the_source(&mut guess, 0.9);
+    assert_eq!(tags(&guess).last().copied(), Some("Best guess, not a confirmed match. Source\\: %(title)s (%(webpage_url)s):%(meta_comment)s"));
+
+    for args in [&confirmed, &guess] {
+        let end_of_options = args.iter().position(|a| a == "--").unwrap();
+        assert!(args.iter().rposition(|a| a == "--parse-metadata").unwrap() < end_of_options);
+        assert_eq!(args.last().unwrap(), "https://open.spotify.com/track/abc");
+    }
+}
