@@ -28,6 +28,9 @@ export const SOURCE_PLATFORMS = [
 ] as const;
 export type SourcePlatform = (typeof SOURCE_PLATFORMS)[number];
 
+/** Sources that are music first: a link with no audio/video choice defaults to audio. */
+export const AUDIO_ONLY_SOURCES: ReadonlySet<SourcePlatform> = new Set<SourcePlatform>(['spotify', 'soundcloud', 'bandcamp', 'mixcloud']);
+
 /** Display names of the non-core sources (one home; main and renderer both read it). */
 export const MORE_SOURCE_LABELS = {
   twitter: 'X / Twitter',

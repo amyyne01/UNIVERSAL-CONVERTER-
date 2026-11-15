@@ -55,6 +55,12 @@ describe('confineToRoot', () => {
   it('rejects a UNC path', () => {
     expect(confineToRoot('\\\\server\\share\\x.mp3', ROOT)).toBeNull();
   });
+
+  it('accepts a file inside a drive-root output folder', () => {
+    expect(confineToRoot('D:\\song.mp3', 'D:\\')).toBe('D:\\song.mp3');
+    expect(confineToRoot('sub\\song.mp3', 'D:\\')).toBe('D:\\sub\\song.mp3');
+    expect(confineToRoot('C:\\Windows\\cmd.exe', 'D:\\')).toBeNull();
+  });
 });
 
 // Seam #45 — the secure() IPC wrapper: sender attestation + per-channel rate limit.

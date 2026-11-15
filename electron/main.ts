@@ -2,7 +2,7 @@ import { app, BrowserWindow, Menu, clipboard, Notification, nativeTheme } from '
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { createWindow, getMainWindow } from './window.js';
-import { registerIpcHandlers } from './ipc.js';
+import { registerIpcHandlers, buildDownloadTask } from './ipc.js';
 import { ConfigManager } from './config.js';
 import { Downloader } from './downloader.js';
 import { SpotifyHandler } from './spotify.js';
@@ -11,9 +11,9 @@ import { StatsStore, statsFilePath } from './stats.js';
 import { loadSecrets, type Secrets } from './secrets.js';
 import { detectUrl } from './url-detector.js';
 import {
-  setDownloader, createTask, enqueueTask,
+  setDownloader, enqueueTask,
   getRecentDownloads, onQueueChange, pauseAllDownloads, resumeAllDownloads,
-  initHistory, flushHistory, hasUnfinishedWork, onDownloadFailure, onDownloadCompleted, getAllTasks,
+  initHistory, stopForQuit, hasUnfinishedWork, onDownloadFailure, onDownloadCompleted, getAllTasks,
 } from './queue.js';
 import { downloadFeedback } from './feedback.js';
 import { initTray } from './tray.js';
@@ -33,6 +33,8 @@ let tray: { update(): void; destroy(): void } | null = null;
 let presence: DiscordPresence | null = null;
 let scheduler: Scheduler | null = null;
 let clipboardWatcher: ClipboardWatcher | null = null;
+let appLicense: LicenseManager | null = null; // set at boot; the hotkey path needs them outside whenReady
+let appSpotify: SpotifyHandler | null = null;
 let lastHotkey = '';
 // Set when a scheduled run with "shutdown after" fires; the OS shutdown is armed
 // and only executed once the queue actually drains (not 60s after it starts).
@@ -86,26 +88,34 @@ function toggleWindow(): void {
 }
 
 // §14: read the clipboard, classify with the same cascade as the UI, and if it's a
-// known link create+enqueue a task with config defaults and bring the window forward.
-function pasteAndDownload(): void {
-  if (!config) return;
+// known link queue it through the SAME builder download:start uses (tier clamps,
+// playlist cap, config extras, the platform's audio/video default) and bring the
+// window forward.
+async function pasteAndDownload(): Promise<void> {
+  if (!config || !appLicense) return;
   const text = clipboard.readText().trim();
   if (!text) return;
   const det = detectUrl(text);
   if (det.platform === 'unknown') return;
-  enqueueTask(createTask({
-    url: det.url,
-    source: det.platform,
-    isPlaylist: det.isCollection,
-    outputDir: config.get('outputDir'),
-    format: config.get('defaultFormat'),
-    quality: config.get('defaultQuality'),
-    videoQuality: config.get('defaultVideoQuality'),
-    embedThumbnail: config.get('embedThumbnail'),
-    embedMetadata: config.get('embedMetadata'),
-    skipExisting: config.get('skipExisting'),
-  }));
-  showWindow();
+  try {
+    // Spotify audio is bridged from its scraped track; a collection needs the
+    // preview flow, so (like batch paste) it is not queued blind.
+    let track;
+    if (det.platform === 'spotify') {
+      if (det.isCollection) return;
+      track = (await appSpotify?.fetchTrack(det.url)) ?? undefined;
+      if (!track) return;
+    }
+    enqueueTask(buildDownloadTask(config, appLicense, {
+      url: det.url,
+      source: det.platform,
+      isPlaylist: det.isCollection,
+      track,
+    }));
+    showWindow();
+  } catch (e) {
+    logLine('error', `pasteAndDownload: ${errText(e)}`);
+  }
 }
 
 // ponytail: presence counts are derived from the recent window (cap ~8); exact
@@ -283,8 +293,10 @@ app.whenReady().then(() => {
   const downloader = new Downloader();
   setDownloader(downloader);
   const spotify = new SpotifyHandler();
+  appSpotify = spotify;
   const secrets = loadSecrets();
   const license = new LicenseManager(secrets);
+  appLicense = license;
   const updater = new Updater({ getWindow: () => getMainWindow() });
   // Clear anything a previous run staged. If the swap succeeded the file is already
   // gone (the script moves it); if it failed, a stale half-download is worse than
@@ -354,7 +366,7 @@ app.whenReady().then(() => {
 app.on('before-quit', () => {
   logLine('info', 'before-quit');
   config?.saveNow();
-  flushHistory();
+  stopForQuit(); // kills yt-dlp/ffmpeg trees, then flushes history (tasks stay interrupted, not cancelled)
   unregisterAllHotkeys();
   presence?.stop();
   scheduler?.stop();

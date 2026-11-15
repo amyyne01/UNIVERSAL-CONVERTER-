@@ -765,6 +765,25 @@ describe('history persistence', () => {
     expect(writeFileSyncMock.mock.calls[0][1]).toContain('"taskId":"z"');
   });
 
+  // D2: quitting used to leave yt-dlp/ffmpeg running. Stop the process trees but
+  // leave the rows un-cancelled, so the next launch parks them as interrupted
+  // and yt-dlp resumes the kept .part files.
+  it('stopForQuit kills the running processes and saves the task as interrupted, not cancelled', () => {
+    Q.initHistory('C:\\hist.json');
+    const [a] = enqueueMany(1);
+    Q.stopForQuit();
+    expect(dl.cancelAll).toHaveBeenCalledTimes(1);
+    expect(statusOf(a.taskId)).not.toBe('cancelled');
+    const saved = JSON.parse(writeFileSyncMock.mock.calls.at(-1)![1] as string);
+    expect(saved.find((t: { taskId: string }) => t.taskId === a.taskId).progress.status).not.toBe('cancelled');
+    existsSyncMock.mockReturnValue(true);
+    readFileSyncMock.mockReturnValue(JSON.stringify(saved));
+    Q.initHistory('C:\\hist.json');
+    const again = Q.getAllTasks().find((t) => t.taskId === a.taskId)!;
+    expect(again.progress.status).toBe('paused');
+    expect(again.interrupted).toBe(true);
+  });
+
   it('evicts the oldest terminal entry once HISTORY_CAP is exceeded', () => {
     existsSyncMock.mockReturnValue(true);
     readFileSyncMock.mockReturnValue(JSON.stringify(

@@ -125,6 +125,14 @@ export function flushHistory(): void {
   try { writeFileAtomic(historyFile, JSON.stringify([...history.values()])); } catch { /* best-effort */ }
 }
 
+/** App quit: stop every running process tree (the same kill cancel uses) but leave
+ *  the tasks and their partial files alone — a killed process emits nothing, so the
+ *  saved rows stay non-terminal and initHistory parks them as interrupted. */
+export function stopForQuit(): void {
+  downloader?.cancelAll();
+  flushHistory();
+}
+
 function schedulePersist(): void {
   if (!historyFile || persistTimer) return;
   persistTimer = later(() => {

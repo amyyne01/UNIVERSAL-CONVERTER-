@@ -287,6 +287,31 @@ describe('registerIpcHandlers', () => {
     expect(task.taskId).toBe('mock-task');
   });
 
+  // D1: a link that arrives without an audio/video choice (clipboard offer, hotkey,
+  // ahg:// link) takes the platform's normal one, like a link pasted into its tab.
+  it('download:start with no audio/video choice: video links become mp4 video, music links stay audio', async () => {
+    const { createTask } = await import('./queue.js');
+    const start = handlers.get('download:start')!;
+    start(evt(), { url: 'https://youtu.be/abc', source: 'youtube', format: 'mp3' });
+    expect(vi.mocked(createTask).mock.calls.at(-1)![0]).toMatchObject({ isAudioOnly: false, format: 'mp4' });
+    start(evt(), { url: 'https://soundcloud.com/a/b', source: 'soundcloud' });
+    expect(vi.mocked(createTask).mock.calls.at(-1)![0]).toMatchObject({ isAudioOnly: true, format: 'mp3' });
+    start(evt(), { url: 'https://youtu.be/abc', source: 'youtube', isAudioOnly: true, format: 'mp3' });
+    expect(vi.mocked(createTask).mock.calls.at(-1)![0]).toMatchObject({ isAudioOnly: true, format: 'mp3' });
+  });
+
+  it('buildDownloadTask (the hotkey path) applies the same clamps, playlist cap and extras as download:start', async () => {
+    const { createTask } = await import('./queue.js');
+    const { buildDownloadTask } = await import('./ipc.js');
+    license.getPlan.mockReturnValue('basic');
+    buildDownloadTask(config as never, license as never, { url: 'https://youtube.com/playlist?list=PL1', source: 'youtube', isPlaylist: true });
+    expect(vi.mocked(createTask).mock.calls.at(-1)![0]).toMatchObject({
+      isAudioOnly: false,
+      playlistLimit: BASIC_LIMITS.maxCollectionTracks,
+      extras: expect.any(Object),
+    });
+  });
+
   // Tier enforcement is a boundary concern: the renderer locks these controls,
   // but a stale or tampered renderer must still be clamped here, not rejected —
   // a clamped download works, a rejected one just fails.

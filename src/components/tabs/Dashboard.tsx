@@ -29,6 +29,7 @@ import { revealFile } from '@/lib/reveal';
 import type {
   DownloadStatus, DownloadTask, MonthBucket, SourcePlatform,
 } from '@shared/types';
+import { AUDIO_ONLY_SOURCES } from '@shared/types';
 
 // ponytail: color-mix wraps CSS var refs so alpha suffixes (`var(...)40`) don't land in CSS
 const alpha = (color: string, pct: number) =>
@@ -57,8 +58,6 @@ const PLATFORM_COLOR: Record<string, string> = {
 // Terminal statuses: not counted as "active"
 const TERMINAL = new Set<DownloadStatus>(['done', 'failed', 'cancelled']);
 
-/** Sources that are music first: a pasted link defaults to audio. */
-const AUDIO_SOURCES = new Set<SourcePlatform>(['spotify', 'soundcloud', 'bandcamp', 'mixcloud']);
 const NOT_SUPPORTED = 'This site isn’t supported. Paste a link from YouTube, Spotify, SoundCloud, Vimeo and more.';
 
 /** 'YYYY-MM' → "August". Built from parts: `new Date('2026-08')` parses as UTC
@@ -607,7 +606,7 @@ export function Dashboard() {
           track = (await window.electronAPI.spotify.fetchTrack(u)) ?? undefined;
           if (!track) continue; // collections go through the preview flow, not batch
         }
-        const audioOnly = AUDIO_SOURCES.has(det.platform);
+        const audioOnly = AUDIO_ONLY_SOURCES.has(det.platform);
         const task = await window.electronAPI.download.start({
           url: det.url,
           source: det.platform,

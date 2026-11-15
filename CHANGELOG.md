@@ -1,3 +1,16 @@
+# AHG Universal Converter 1.6.1
+
+**A small fix-up release: quick downloads behave like the rest of the app, and quitting really stops everything.**
+
+## What's fixed
+
+- **Quick downloads pick the right format.** A link you grab with the global hotkey, the "link copied" offer or an `ahg://` link used to be saved as audio every time. Video links now download as video and music links as audio, with your usual quality, limits and extras, exactly as if you had pasted the link into its tab.
+- **Spotify links from the hotkey and the "link copied" offer now work.** A track is matched and downloaded; a playlist or album opens in the Spotify tab with the link filled in, ready to preview.
+- **Quitting stops your downloads.** Closing the app used to leave downloads running in the background. They now stop when you quit, keep what was already saved, and wait for you as "interrupted" next time.
+- **The restart prompt comes back.** If you closed the update window while an update was downloading, the app never offered to restart. It now does as soon as the download finishes.
+- **"Open file" and "Show in folder" work when your download folder is a whole drive** such as `D:\`.
+- **Safer updates.** The updater now refuses an update file with an unexpected name.
+
 # AHG Universal Converter 1.6.0
 
 **A calmer, clearer app: labelled navigation, undo for cancels, a next step for every failure, and a cleaner look throughout.**

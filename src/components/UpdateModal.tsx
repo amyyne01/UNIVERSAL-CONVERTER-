@@ -45,7 +45,8 @@ export function UpdateModal() {
       window.electronAPI.onUpdateAvailable(({ version }) => merge({ phase: 'available', version })),
       window.electronAPI.onUpdateNotAvailable(() => merge({ phase: 'uptodate' })),
       window.electronAPI.onUpdateProgress(({ percent }) => merge({ phase: 'downloading', percent })),
-      window.electronAPI.onUpdateDownloaded(({ version }) => merge({ phase: 'ready', version })),
+      // A dismissal made while the bytes were moving must not swallow this prompt.
+      window.electronAPI.onUpdateDownloaded(({ version }) => { setDismissed(false); merge({ phase: 'ready', version }); }),
       window.electronAPI.onUpdateError(({ message }) => merge({ phase: 'error', message })),
     ];
     void window.electronAPI.update.state().then((s) => {

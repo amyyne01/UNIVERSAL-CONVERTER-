@@ -13,7 +13,9 @@ import { pathToFileURL } from 'node:url';
 export function confineToRoot(candidate: string, root: string): string | null {
   const absRoot = path.resolve(root);
   const abs = path.resolve(absRoot, candidate);
-  if (abs !== absRoot && !abs.startsWith(absRoot + path.sep)) return null;
+  // A drive root ("D:\") already ends with the separator.
+  const prefix = absRoot.endsWith(path.sep) ? absRoot : absRoot + path.sep;
+  if (abs !== absRoot && !abs.startsWith(prefix)) return null;
   return abs;
 }
 

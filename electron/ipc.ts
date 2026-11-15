@@ -21,7 +21,7 @@ import type { Updater } from './updater.js';
 import type { YtdlpUpdater } from './ytdlp-updater.js';
 import type { AppConfig, CookiesImportResult, DownloadTask, RevealResult, Track, VideoQuality } from '../shared/types.js';
 import {
-  SOURCE_PLATFORMS, VIDEO_QUALITIES, BASIC_LIMITS,
+  SOURCE_PLATFORMS, AUDIO_ONLY_SOURCES, VIDEO_QUALITIES, BASIC_LIMITS,
   clampAudioQuality, clampConcurrency, clampFormat, clampVideoQuality, clampExtras,
 } from '../shared/types.js';
 
@@ -89,6 +89,111 @@ const RATE_URL = 300;
 // of 20 links silently lost the last 10).
 const RATE_DOWNLOAD = 300;
 
+/** The one place a download request becomes a task: boundary validation, plan clamps,
+ *  playlist cap and config-sourced extras. `download:start` and the main-process entry
+ *  points (global hotkey) both go through it. */
+export function buildDownloadTask(config: ConfigManager, license: LicenseManager, taskData: Partial<DownloadTask>): DownloadTask {
+  if (typeof taskData !== 'object' || taskData === null) throw new Error('Invalid input: expected a task object');
+  // Validate every renderer-supplied field that reaches the engine (not just url).
+  // Strings are length-bounded; enums are whitelisted; booleans coerced. Anything
+  // malformed is rejected at the boundary instead of throwing deep in spawn().
+  const optStr = (v: unknown, max = 512): string | undefined =>
+    v === undefined ? undefined : str(v, max);
+  const optBool = (v: unknown): boolean | undefined =>
+    v === undefined ? undefined : Boolean(v);
+  const enumOf = <T extends string>(v: unknown, allowed: readonly T[], field: string): T | undefined => {
+    if (v === undefined) return undefined;
+    if (typeof v !== 'string' || !allowed.includes(v as T)) throw new Error(`Invalid input: ${field}`);
+    return v as T;
+  };
+  // The scraped Spotify track drives the ytsearch query + file tagging, so it
+  // crosses into spawn/tagging too — rebuild it from bounded fields (drops any
+  // extraneous/prototype-polluting keys) rather than trusting it wholesale.
+  const validateTrack = (v: unknown): Track => {
+    if (typeof v !== 'object' || v === null) throw new Error('Invalid input: track');
+    const t = v as Record<string, unknown>;
+    return {
+      id: optStr(t.id, 256) ?? '',
+      name: str(t.name, 512),
+      artist: str(t.artist, 512),
+      artists: Array.isArray(t.artists) ? t.artists.slice(0, MAX_ARTISTS).map((a) => str(a, 512)) : [],
+      album: optStr(t.album, 512) ?? '',
+      albumYear: optStr(t.albumYear, 16),
+      trackNumber: typeof t.trackNumber === 'number' ? t.trackNumber : 0,
+      durationMs: typeof t.durationMs === 'number' ? t.durationMs : 0,
+      thumbnailUrl: optStr(t.thumbnailUrl, MAX_URL) ?? '',
+      spotifyUrl: optStr(t.spotifyUrl, MAX_URL),
+    };
+  };
+  // Tier enforcement lives HERE, not in the renderer: the UI locks premium
+  // controls, but the boundary is what actually decides what runs. Basic input
+  // is clamped down to the free ceiling rather than rejected, so a stale/edited
+  // renderer degrades to a working download instead of a failed one.
+  const plan = license.getPlan();
+  const basic = plan === 'basic';
+  const source = enumOf(taskData.source, SOURCE_PLATFORMS, 'source');
+  // No audio/video choice (clipboard offer, hotkey, ahg:// link): take the platform's
+  // normal one, as a link pasted into its tab does — music sources are audio, the rest
+  // mp4 video. An explicit choice from the renderer is never overridden.
+  const byPlatform = taskData.isAudioOnly === undefined && source !== undefined;
+  const isAudioOnly = byPlatform ? AUDIO_ONLY_SOURCES.has(source) : optBool(taskData.isAudioOnly);
+  const format = byPlatform && !isAudioOnly ? 'mp4' : optStr(taskData.format, 16) ?? config.get('defaultFormat');
+  const quality = optStr(taskData.quality, 16) ?? config.get('defaultQuality');
+  const videoQuality: VideoQuality =
+    enumOf(taskData.videoQuality, VIDEO_QUALITIES, 'videoQuality') ?? config.get('defaultVideoQuality');
+  const isPlaylist = optBool(taskData.isPlaylist);
+
+  // outputDir is NEVER taken from the renderer — always the dialog-chosen config
+  // dir — so a compromised renderer can't redirect writes to an arbitrary path.
+  const task = createTask({
+    url: mediaUrlArg(taskData.url ?? ''),
+    source,
+    outputDir: config.get('outputDir'),
+    format: clampFormat(format, plan),
+    quality: clampAudioQuality(quality, plan),
+    videoQuality: clampVideoQuality(videoQuality, plan),
+    ...(basic && isPlaylist ? { playlistLimit: BASIC_LIMITS.maxCollectionTracks } : {}),
+    ...(!basic && taskData.playlistItems !== undefined ? { playlistItems: playlistItemsArg(taskData.playlistItems) } : {}),
+    isAudioOnly,
+    isPlaylist,
+    playlistName: optStr(taskData.playlistName),
+    title: optStr(taskData.title),
+    thumbnailUrl: optStr(taskData.thumbnailUrl, MAX_URL),
+    duration: typeof taskData.duration === 'number' ? taskData.duration : undefined,
+    uploader: optStr(taskData.uploader),
+    embedThumbnail: optBool(taskData.embedThumbnail) ?? config.get('embedThumbnail'),
+    embedMetadata: optBool(taskData.embedMetadata) ?? config.get('embedMetadata'),
+    skipExisting: optBool(taskData.skipExisting) ?? config.get('skipExisting'),
+    // Extras come from CONFIG, never from the renderer — they carry a proxy, a
+    // cookie-jar browser and an output template, all of which reach spawn(), and
+    // the renderer has no business naming any of them. Clamped by plan here for
+    // the same reason format/quality are: the UI locks the controls, but the
+    // boundary is what decides what actually runs.
+    extras: clampExtras({
+      subtitleMode: config.get('subtitleMode'),
+      subtitleLangs: config.get('subtitleLangs'),
+      subtitleAuto: config.get('subtitleAuto'),
+      embedChapters: config.get('embedChapters'),
+      splitChapters: config.get('splitChapters'),
+      sponsorBlock: config.get('sponsorBlock'),
+      sponsorBlockCategories: config.get('sponsorBlockCategories'),
+      writeThumbnail: config.get('writeThumbnail'),
+      writeInfoJson: config.get('writeInfoJson'),
+      writeDescription: config.get('writeDescription'),
+      videoContainer: config.get('videoContainer'),
+      videoCodec: config.get('videoCodec'),
+      cookieBrowser: config.get('cookieBrowser'),
+      // The imported file's location is fixed (userData), never renderer-named.
+      cookiesFile: existsSync(cookiesPath()) ? cookiesPath() : '',
+      outputTemplate: config.get('outputTemplate'),
+      rateLimit: config.get('rateLimit'),
+      proxy: config.get('proxy'),
+    }, plan),
+    ...(taskData.track !== undefined ? { track: validateTrack(taskData.track) } : {}),
+  });
+  return task;
+}
+
 export function registerIpcHandlers(config: ConfigManager, downloader: Downloader, spotify: SpotifyHandler, license: LicenseManager, updater: Updater, ytdlp: YtdlpUpdater, stats: StatsStore): void {
   // Route EVERY channel through secure(): sender attestation + a per-channel rate
   // budget run before the handler. Additive — no channel's args/returns change.
@@ -155,98 +260,7 @@ export function registerIpcHandlers(config: ConfigManager, downloader: Downloade
 
   // ── download:* ──────────────────────────────────────────────────────────────
   handle('download:start', RATE_DOWNLOAD, (_e, taskData: Partial<DownloadTask>): DownloadTask => {
-    if (typeof taskData !== 'object' || taskData === null) throw new Error('Invalid input: expected a task object');
-    // Validate every renderer-supplied field that reaches the engine (not just url).
-    // Strings are length-bounded; enums are whitelisted; booleans coerced. Anything
-    // malformed is rejected at the boundary instead of throwing deep in spawn().
-    const optStr = (v: unknown, max = 512): string | undefined =>
-      v === undefined ? undefined : str(v, max);
-    const optBool = (v: unknown): boolean | undefined =>
-      v === undefined ? undefined : Boolean(v);
-    const enumOf = <T extends string>(v: unknown, allowed: readonly T[], field: string): T | undefined => {
-      if (v === undefined) return undefined;
-      if (typeof v !== 'string' || !allowed.includes(v as T)) throw new Error(`Invalid input: ${field}`);
-      return v as T;
-    };
-    // The scraped Spotify track drives the ytsearch query + file tagging, so it
-    // crosses into spawn/tagging too — rebuild it from bounded fields (drops any
-    // extraneous/prototype-polluting keys) rather than trusting it wholesale.
-    const validateTrack = (v: unknown): Track => {
-      if (typeof v !== 'object' || v === null) throw new Error('Invalid input: track');
-      const t = v as Record<string, unknown>;
-      return {
-        id: optStr(t.id, 256) ?? '',
-        name: str(t.name, 512),
-        artist: str(t.artist, 512),
-        artists: Array.isArray(t.artists) ? t.artists.slice(0, MAX_ARTISTS).map((a) => str(a, 512)) : [],
-        album: optStr(t.album, 512) ?? '',
-        albumYear: optStr(t.albumYear, 16),
-        trackNumber: typeof t.trackNumber === 'number' ? t.trackNumber : 0,
-        durationMs: typeof t.durationMs === 'number' ? t.durationMs : 0,
-        thumbnailUrl: optStr(t.thumbnailUrl, MAX_URL) ?? '',
-        spotifyUrl: optStr(t.spotifyUrl, MAX_URL),
-      };
-    };
-    // Tier enforcement lives HERE, not in the renderer: the UI locks premium
-    // controls, but the boundary is what actually decides what runs. Basic input
-    // is clamped down to the free ceiling rather than rejected, so a stale/edited
-    // renderer degrades to a working download instead of a failed one.
-    const plan = license.getPlan();
-    const basic = plan === 'basic';
-    const format = optStr(taskData.format, 16) ?? config.get('defaultFormat');
-    const quality = optStr(taskData.quality, 16) ?? config.get('defaultQuality');
-    const videoQuality: VideoQuality =
-      enumOf(taskData.videoQuality, VIDEO_QUALITIES, 'videoQuality') ?? config.get('defaultVideoQuality');
-    const isPlaylist = optBool(taskData.isPlaylist);
-
-    // outputDir is NEVER taken from the renderer — always the dialog-chosen config
-    // dir — so a compromised renderer can't redirect writes to an arbitrary path.
-    const task = createTask({
-      url: mediaUrlArg(taskData.url ?? ''),
-      source: enumOf(taskData.source, SOURCE_PLATFORMS, 'source'),
-      outputDir: config.get('outputDir'),
-      format: clampFormat(format, plan),
-      quality: clampAudioQuality(quality, plan),
-      videoQuality: clampVideoQuality(videoQuality, plan),
-      ...(basic && isPlaylist ? { playlistLimit: BASIC_LIMITS.maxCollectionTracks } : {}),
-      ...(!basic && taskData.playlistItems !== undefined ? { playlistItems: playlistItemsArg(taskData.playlistItems) } : {}),
-      isAudioOnly: optBool(taskData.isAudioOnly),
-      isPlaylist,
-      playlistName: optStr(taskData.playlistName),
-      title: optStr(taskData.title),
-      thumbnailUrl: optStr(taskData.thumbnailUrl, MAX_URL),
-      duration: typeof taskData.duration === 'number' ? taskData.duration : undefined,
-      uploader: optStr(taskData.uploader),
-      embedThumbnail: optBool(taskData.embedThumbnail) ?? config.get('embedThumbnail'),
-      embedMetadata: optBool(taskData.embedMetadata) ?? config.get('embedMetadata'),
-      skipExisting: optBool(taskData.skipExisting) ?? config.get('skipExisting'),
-      // Extras come from CONFIG, never from the renderer — they carry a proxy, a
-      // cookie-jar browser and an output template, all of which reach spawn(), and
-      // the renderer has no business naming any of them. Clamped by plan here for
-      // the same reason format/quality are: the UI locks the controls, but the
-      // boundary is what decides what actually runs.
-      extras: clampExtras({
-        subtitleMode: config.get('subtitleMode'),
-        subtitleLangs: config.get('subtitleLangs'),
-        subtitleAuto: config.get('subtitleAuto'),
-        embedChapters: config.get('embedChapters'),
-        splitChapters: config.get('splitChapters'),
-        sponsorBlock: config.get('sponsorBlock'),
-        sponsorBlockCategories: config.get('sponsorBlockCategories'),
-        writeThumbnail: config.get('writeThumbnail'),
-        writeInfoJson: config.get('writeInfoJson'),
-        writeDescription: config.get('writeDescription'),
-        videoContainer: config.get('videoContainer'),
-        videoCodec: config.get('videoCodec'),
-        cookieBrowser: config.get('cookieBrowser'),
-        // The imported file's location is fixed (userData), never renderer-named.
-        cookiesFile: existsSync(cookiesPath()) ? cookiesPath() : '',
-        outputTemplate: config.get('outputTemplate'),
-        rateLimit: config.get('rateLimit'),
-        proxy: config.get('proxy'),
-      }, plan),
-      ...(taskData.track !== undefined ? { track: validateTrack(taskData.track) } : {}),
-    });
+    const task = buildDownloadTask(config, license, taskData);
     enqueueTask(task);
     return task;
   });

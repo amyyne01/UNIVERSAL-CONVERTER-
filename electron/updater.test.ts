@@ -157,6 +157,21 @@ describe('Updater.check', () => {
     expect(of('update:available')).toHaveLength(0);
   });
 
+  it('refuses an asset whose name is not a plain file name, before downloading anything', async () => {
+    for (const name of ['..\\evil.exe', 'sub/evil.exe', 'C:evil.exe', 'CON.exe']) {
+      const feed = release({
+        assets: [
+          { name, browser_download_url: ASSET_URL },
+          { name: 'SHA256SUMS.txt', browser_download_url: SUMS_URL },
+        ],
+      });
+      const { updater, of } = make({ fetchFn: stubFetch({ feed }) as never });
+      await updater.check();
+      expect(of('update:error')[0]?.payload.message).toMatch(/unsafe asset name/);
+      expect(of('update:available')).toHaveLength(0);
+    }
+  });
+
   it('refuses when a trusted URL redirects to an untrusted host', async () => {
     const fetchFn = vi.fn(async () => ({ ok: true, status: 200, url: 'https://evil.example/feed.json', json: async () => release() }));
     const { updater, of } = make({ fetchFn: fetchFn as never });

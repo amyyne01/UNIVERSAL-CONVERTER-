@@ -23,17 +23,29 @@ export function ClipboardOffer() {
 
   const download = () => {
     if (!offer) return;
-    void window.electronAPI.download
-      .start(buildDownloadRequest(config, {
+    void (async () => {
+      // Spotify needs its scraped track to drive the ytsearch bridge. A playlist
+      // or album has none, and a track may fail to load: those are handed to the
+      // Spotify tab with the link filled in, as an ahg:// link is.
+      let track;
+      if (offer.platform === 'spotify') {
+        if (!offer.isCollection) track = (await window.electronAPI.spotify.fetchTrack(offer.url).catch(() => null)) ?? undefined;
+        if (!track) {
+          const store = useAppStore.getState();
+          store.setCurrentPlaylist(null);
+          store.setPendingInput(offer.url);
+          return setActiveTab('spotify');
+        }
+      }
+      const task = await window.electronAPI.download.start(buildDownloadRequest(config, {
         url: offer.url,
         source: offer.platform,
         isPlaylist: offer.isCollection,
-      }))
-      .then((task) => {
-        addDownload(task);
-        setActiveTab('queue');
-      })
-      .catch(() => {});
+        track,
+      }));
+      addDownload(task);
+      setActiveTab('queue');
+    })().catch(() => {});
     dismiss();
   };
 

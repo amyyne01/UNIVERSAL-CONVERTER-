@@ -44,6 +44,17 @@ export function isTrustedReleaseHost(urlStr: string, base = GITHUB_BASE): boolea
   }
 }
 
+/** True for a name that can only ever be a file inside the folder it is joined
+ *  to: no separators, drive colon, wildcard, control character, trailing dot or
+ *  space, and not a Windows device name. The asset name comes from the network
+ *  and becomes part of the path the download is written to. */
+export function isPlainFileName(name: string): boolean {
+  if (!name || name === '.' || name === '..') return false;
+  // eslint-disable-next-line no-control-regex
+  if (/[/\\:*?"<>|\u0000-\u001f\u007f-\u009f]/.test(name) || /[. ]$/.test(name)) return false;
+  return !/^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i.test(name.split('.')[0]);
+}
+
 /** Numeric-segment compare; anything unparsable sorts as 0 so junk never looks newer. */
 export function isNewerVersion(candidate: string, current: string): boolean {
   const parts = (v: string) => v.replace(/^v/, '').split('.').map((n) => parseInt(n, 10) || 0);
@@ -168,6 +179,7 @@ export class Updater {
     const exe = assets.find((a) => (a.name ?? '').toLowerCase().endsWith('.exe'));
     const sums = assets.find((a) => a.name === SUMS_ASSET);
     if (!version || !exe?.browser_download_url || !exe.name || !sums?.browser_download_url) return null;
+    if (!isPlainFileName(exe.name)) throw new Error('Update refused: unsafe asset name');
     // Fail-closed host gate BEFORE a single byte is fetched (§9/§12).
     for (const url of [exe.browser_download_url, sums.browser_download_url]) {
       if (!isTrustedReleaseHost(url)) throw new Error(`Update refused: untrusted host "${url}"`);
