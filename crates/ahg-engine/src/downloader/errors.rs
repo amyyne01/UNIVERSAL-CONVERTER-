@@ -46,6 +46,9 @@ const PRIVATE: &[&str] = &["private video. ", "video is private", "playlist is p
 const GEO: &[&str] = &[
     "geo restriction",
     "geo restricted",
+    // The hyphenated forms site extractors write.
+    "geo-restricted",
+    "geo-blocked",
     "not available from your location",
     // YouTube's own reason text for a rights block, relayed by yt-dlp.
     "blocked it in your country",

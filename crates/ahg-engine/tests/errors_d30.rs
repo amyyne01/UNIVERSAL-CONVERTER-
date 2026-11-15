@@ -121,3 +121,17 @@ fn youtubes_own_relayed_wordings_are_recognised() {
     assert_eq!(classify_error(blocked), ErrorClass::Geo);
     assert_eq!(error_code_of(blocked), ErrorCode::GeoBlocked);
 }
+
+/// Many site extractors write the phrase with a hyphen ("This content is
+/// geo-restricted", "geo-blocked"); Electron's loose "geo" caught those too.
+#[test]
+fn the_hyphenated_geo_wording_is_geo() {
+    for line in [
+        "ERROR: This content is geo-restricted",
+        "ERROR: [vimeo] 1: This video is geo-blocked in your area",
+    ] {
+        expect(line, ErrorClass::Geo, ErrorCode::GeoBlocked);
+    }
+    // A stray "geo" in a name still means nothing.
+    assert_ne!(classify_error("ERROR: unable to open geo-data.json for writing"), ErrorClass::Geo);
+}
