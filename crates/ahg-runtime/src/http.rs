@@ -103,18 +103,19 @@ pub fn song_search(proxy: impl Fn() -> Option<String> + Send + Sync + 'static) -
 /// Spotify's pages and API, read without looking at the status: the engine
 /// judges a reply by its content.
 pub struct SpotifyHttp {
-    http: Http,
+    proxy: Box<dyn Fn() -> Option<String> + Send>,
 }
 
 impl SpotifyHttp {
-    pub fn new(http: Http) -> Self {
-        Self { http }
+    /// `proxy` is asked on every request, so a changed setting applies at once (D10).
+    pub fn new(proxy: impl Fn() -> Option<String> + Send + 'static) -> Self {
+        Self { proxy: Box::new(proxy) }
     }
 }
 
 impl spotify::Transport for SpotifyHttp {
     fn fetch(&mut self, req: &spotify::Request) -> Option<String> {
-        self.http.send(req.method, &req.url, &req.headers, req.body.as_deref(), Duration::from_millis(req.timeout_ms))?.text()
+        Http::new((self.proxy)().as_deref()).send(req.method, &req.url, &req.headers, req.body.as_deref(), Duration::from_millis(req.timeout_ms))?.text()
     }
 }
 

@@ -630,12 +630,12 @@ pub fn system_now_ms() -> f64 {
 pub struct Spotify<T: Transport> {
     pub transport: T,
     pub state: State,
-    now: Box<dyn Fn() -> f64>,
+    now: Box<dyn Fn() -> f64 + Send>,
 }
 
 impl<T: Transport> Spotify<T> {
     /// `now` returns the current time in epoch milliseconds ([`system_now_ms`]).
-    pub fn new(transport: T, now: Box<dyn Fn() -> f64>) -> Self {
+    pub fn new(transport: T, now: Box<dyn Fn() -> f64 + Send>) -> Self {
         Self { transport, state: State::default(), now }
     }
 

@@ -154,7 +154,7 @@ fn a_large_body_can_be_read_in_chunks() {
 #[test]
 fn the_spotify_transport_returns_the_text_whatever_the_status() {
     let (base, seen) = server();
-    let mut transport = SpotifyHttp::new(Http::new(None));
+    let mut transport = SpotifyHttp::new(|| None);
     let request = |path: &str| SpotifyRequest {
         url: format!("{base}{path}"),
         method: "GET",
@@ -176,7 +176,7 @@ fn the_spotify_transport_returns_the_text_whatever_the_status() {
 #[ignore = "reads public Spotify data; needs the network"]
 fn the_real_spotify_is_read_without_credentials() {
     use ahg_engine::spotify::{Spotify, system_now_ms};
-    let mut spotify = Spotify::new(SpotifyHttp::new(Http::new(None)), Box::new(system_now_ms));
+    let mut spotify = Spotify::new(SpotifyHttp::new(|| None), Box::new(system_now_ms));
 
     let playlist = spotify.fetch_playlist("37i9dQZF1DWXRqgorJj26U").ok().flatten().expect("the playlist should load");
     assert!(!playlist.name.is_empty());
@@ -241,7 +241,7 @@ fn the_real_song_search_returns_rows_with_artist_and_length() {
 #[ignore = "talks to the real Spotify"]
 fn the_real_spotify_states_which_tracks_are_explicit() {
     use ahg_engine::spotify::{Spotify, system_now_ms};
-    let mut spotify = Spotify::new(SpotifyHttp::new(Http::new(None)), Box::new(system_now_ms));
+    let mut spotify = Spotify::new(SpotifyHttp::new(|| None), Box::new(system_now_ms));
     // A rap playlist: it holds explicit tracks and clean ones.
     let playlist = spotify.fetch_playlist("37i9dQZF1DX0XUsuxWHRQd").ok().flatten().expect("the playlist should load");
     let stated = playlist.tracks.iter().filter(|t| t.explicit.is_some()).count();
@@ -262,4 +262,21 @@ fn the_real_spotify_states_which_tracks_are_explicit() {
     // The same track read on its own says the same.
     let alone = spotify.fetch_track(&format!("https://open.spotify.com/track/{}", explicit[0].id)).ok().flatten().expect("the track should load");
     assert_eq!(alone.explicit, Some(true), "{} read alone", alone.name);
+}
+
+#[test]
+fn a_proxy_change_reaches_the_very_next_spotify_request() {
+    let (base, _seen) = server();
+    let proxy = std::sync::Arc::new(std::sync::Mutex::new(None::<String>));
+    let mut transport = SpotifyHttp::new({
+        let proxy = proxy.clone();
+        move || proxy.lock().unwrap().clone()
+    });
+    let request = SpotifyRequest { url: format!("{base}/ok"), method: "GET", headers: vec![], body: None, timeout_ms: 3000 };
+    assert!(transport.fetch(&request).is_some());
+    // Nothing listens at the proxy, so the request can only fail by going there.
+    *proxy.lock().unwrap() = Some(format!("http://{}", closed_addr()));
+    assert_eq!(transport.fetch(&request), None);
+    *proxy.lock().unwrap() = None;
+    assert!(transport.fetch(&request).is_some());
 }

@@ -288,7 +288,7 @@ fn the_preview_can_ask_for_one_tracks_match() {
 #[ignore = "downloads one real song"]
 fn a_real_spotify_track_is_matched_and_downloaded() {
     use ahg_engine::spotify::{Spotify, system_now_ms};
-    use ahg_runtime::http::{Http, SpotifyHttp};
+    use ahg_runtime::http::SpotifyHttp;
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
     let (bin, ffmpeg) = (root.join("bin").join("yt-dlp.exe"), root.join("bin").join("ffmpeg.exe"));
     assert!(bin.exists() && ffmpeg.exists(), "bin/yt-dlp.exe and bin/ffmpeg.exe are needed");
@@ -298,7 +298,7 @@ fn a_real_spotify_track_is_matched_and_downloaded() {
     let core = Core::start(paths, Arc::new(YtDlp::new(bin, Some(ffmpeg.to_string_lossy().into_owned()))), Box::new(|| Plan::Premium), tx);
 
     // Fleetwood Mac, "Dreams".
-    let mut spotify = Spotify::new(SpotifyHttp::new(Http::new(None)), Box::new(system_now_ms));
+    let mut spotify = Spotify::new(SpotifyHttp::new(|| None), Box::new(system_now_ms));
     let track = spotify.fetch_track("https://open.spotify.com/track/0ofHAoxe9vBkTCp2UQIavz").ok().flatten().expect("the track should load");
     println!("spotify: {} - {} ({} s, explicit {:?})", track.artist, track.name, track.duration_ms / 1000.0, track.explicit);
     let TrackMatch::Found(found) = core.match_track(&track) else { panic!("YouTube Music should have this song") };
@@ -475,7 +475,7 @@ fn start_with_release(dir: &Path, script: &str) -> (Core, Receiver<CoreEvent>) {
     ytdlp.env("FAKE_YTDLP_SCRIPT", dir.join("script.txt").to_str().unwrap());
     let (tx, rx) = channel();
     let paths = Paths { user_data: dir.join("userData"), downloads: dir.join("Downloads").to_string_lossy().into_owned() };
-    let core = Core::start_with(paths, Arc::new(ytdlp), Box::new(|| Plan::Premium), tx, Outside { song_search: Arc::new(|_: &str| None), releases: Arc::new(OneRelease { binary: b"MZ a newer yt-dlp".to_vec() }), desktop: Box::new(ahg_runtime::desktop::Windows) });
+    let core = Core::start_with(paths, Arc::new(ytdlp), Box::new(|| Plan::Premium), tx, Outside { song_search: Arc::new(|_: &str| None), releases: Arc::new(OneRelease { binary: b"MZ a newer yt-dlp".to_vec() }), desktop: Box::new(ahg_runtime::desktop::Windows), spotify: offline() });
     (core, rx)
 }
 
@@ -537,7 +537,7 @@ fn the_core_finds_downloads_and_installs_a_newer_version_of_the_app() {
     fs::write(dir.join("script.txt"), "").unwrap();
     let (tx, rx) = channel();
     let paths = Paths { user_data: dir.join("userData"), downloads: dir.join("Downloads").to_string_lossy().into_owned() };
-    let core = Core::start_with(paths, Arc::new(YtDlp::new(PathBuf::from(FAKE), None)), Box::new(|| Plan::Premium), tx, Outside { song_search: Arc::new(|_: &str| None), releases: Arc::new(net), desktop: Box::new(ahg_runtime::desktop::Windows) });
+    let core = Core::start_with(paths, Arc::new(YtDlp::new(PathBuf::from(FAKE), None)), Box::new(|| Plan::Premium), tx, Outside { song_search: Arc::new(|_: &str| None), releases: Arc::new(net), desktop: Box::new(ahg_runtime::desktop::Windows), spotify: offline() });
     assert!(!dir.join("userData").join("updates").join("stale.exe").exists());
 
     assert_eq!(core.update_status().phase, "idle");
@@ -584,7 +584,7 @@ fn only_media_inside_the_download_folder_is_shown_or_opened() {
     let (tx, _rx) = channel();
     let downloads = dir.join("Downloads");
     let paths = Paths { user_data: dir.join("userData"), downloads: downloads.to_string_lossy().into_owned() };
-    let outside = Outside { song_search: Arc::new(|_: &str| None), releases: Arc::new(common::Net::default()), desktop: Box::new(desktop.clone()) };
+    let outside = Outside { song_search: Arc::new(|_: &str| None), releases: Arc::new(common::Net::default()), desktop: Box::new(desktop.clone()), spotify: offline() };
     let core = Core::start_with(paths, Arc::new(YtDlp::new(PathBuf::from(FAKE), None)), Box::new(|| Plan::Premium), tx, outside);
     let at = |name: &str| downloads.join(name).to_string_lossy().into_owned();
     for name in ["song.mp3", "broken.mp3", "tool.exe"] {
@@ -1008,4 +1008,109 @@ fn quitting_with_four_downloads_a_search_and_a_hung_lookup_leaves_no_process() {
             panic!("process {pid} was still running after shutdown");
         }
     }
+}
+
+// ── Spotify through the core ────────────────────────────────────────────────
+
+type Seen = Arc<std::sync::Mutex<Vec<String>>>;
+
+/// Spotify's side, scripted: writes down every address asked for and answers
+/// from `pages`. No network.
+struct Scripted {
+    seen: Seen,
+    pages: fn(&str) -> Option<String>,
+}
+
+impl ahg_engine::spotify::Transport for Scripted {
+    fn fetch(&mut self, req: &ahg_engine::spotify::Request) -> Option<String> {
+        self.seen.lock().unwrap().push(req.url.clone());
+        (self.pages)(&req.url)
+    }
+}
+
+/// An embed page that mints a (made-up) token and carries `entity`.
+fn embed(entity: Value) -> String {
+    let data = json!({ "props": { "pageProps": { "state": { "data": { "session": { "accessToken": "made-up" }, "entity": entity } } } } });
+    format!(r#"<script id="__NEXT_DATA__" type="application/json">{data}</script>"#)
+}
+
+/// Spotify's embed pages for one track and one playlist; everything else (the
+/// GraphQL API, the home page) answers nothing.
+fn spotify_pages(url: &str) -> Option<String> {
+    if url.contains("/embed/track/") {
+        Some(embed(json!({ "uri": "spotify:track:t1", "name": "Song", "artists": [{ "name": "Artist" }], "duration": 215000, "album": { "name": "Album" } })))
+    } else if url.contains("/embed/playlist/") {
+        let list = json!([{ "uri": "spotify:track:a1", "title": "One", "subtitle": "Artist A", "duration": 1000 }, { "uri": "spotify:track:a2", "title": "Two", "subtitle": "Artist B", "duration": 2000 }]);
+        Some(embed(json!({ "uri": "spotify:playlist:p1", "name": "Mix", "trackList": list })))
+    } else {
+        None
+    }
+}
+
+fn offline() -> Box<dyn ahg_engine::spotify::Transport + Send> {
+    Box::new(Scripted { seen: Seen::default(), pages: |_| None })
+}
+
+fn start_spotify(name: &str) -> (Core, Seen) {
+    let dir = scratch(name);
+    let seen = Seen::default();
+    let (tx, _rx) = channel();
+    let paths = Paths { user_data: dir.join("userData"), downloads: dir.join("Downloads").to_string_lossy().into_owned() };
+    let spotify = Box::new(Scripted { seen: seen.clone(), pages: spotify_pages });
+    let outside = Outside { song_search: Arc::new(|_: &str| None), releases: Arc::new(common::Net::default()), desktop: Box::new(ahg_runtime::desktop::Windows), spotify };
+    (Core::start_with(paths, Arc::new(YtDlp::new(PathBuf::from(FAKE), None)), Box::new(|| Plan::Premium), tx, outside), seen)
+}
+
+#[test]
+fn the_core_reads_a_spotify_track() {
+    let (core, _) = start_spotify("spotifytrack");
+    let track = core.spotify_track("https://open.spotify.com/track/t1").unwrap().unwrap();
+    assert_eq!((track.id.as_str(), track.name.as_str(), track.artist.as_str(), track.album.as_str(), track.duration_ms), ("t1", "Song", "Artist", "Album", 215000.0));
+}
+
+#[test]
+fn the_core_reads_a_spotify_playlist() {
+    let (core, _) = start_spotify("spotifyplaylist");
+    let playlist = core.spotify_playlist("https://open.spotify.com/playlist/p1").unwrap().unwrap();
+    assert_eq!((playlist.name.as_str(), playlist.track_count), ("Mix", 2.0));
+    let tracks: Vec<_> = playlist.tracks.iter().map(|t| (t.id.as_str(), t.name.as_str(), t.artist.as_str())).collect();
+    assert_eq!(tracks, [("a1", "One", "Artist A"), ("a2", "Two", "Artist B")]);
+}
+
+#[test]
+fn an_id_spotify_cannot_read_gives_nothing_and_asks_nothing() {
+    let (core, seen) = start_spotify("spotifybadid");
+    assert_eq!(core.spotify_track("not a link!").unwrap(), None);
+    assert_eq!(core.spotify_playlist("").unwrap(), None);
+    assert_eq!(core.spotify_album("https://example.com/x y").unwrap(), None);
+    assert!(seen.lock().unwrap().is_empty());
+}
+
+/// As in Electron, whose search answered nothing on 2026-11-15 (QUIRKS Q6): the
+/// call is made faithfully (a token, then the search query) and gives nothing.
+#[test]
+fn spotify_search_makes_the_faithful_call_and_the_stand_in_gives_nothing() {
+    let (core, seen) = start_spotify("spotifysearch");
+    assert!(core.spotify_search("artist song").is_empty());
+    let asked = seen.lock().unwrap().clone();
+    assert!(asked[0].contains("/embed/track/7tFiyTwD0nx5a1eklYtX2J"), "{asked:?}");
+    assert!(asked.iter().any(|u| u.contains("operationName=searchDesktop")), "{asked:?}");
+}
+
+#[test]
+fn two_lookups_at_once_share_one_heal() {
+    let (core, seen) = start_spotify("spotifyheal");
+    let start = std::sync::Barrier::new(2);
+    std::thread::scope(|s| {
+        for _ in 0..2 {
+            s.spawn(|| {
+                start.wait();
+                assert!(core.spotify_playlist("p1").unwrap().is_some());
+            });
+        }
+    });
+    // The GraphQL answer is missing both times, which asks for a heal: the
+    // home page is read once, and the second lookup finds the cooldown running.
+    let homes = seen.lock().unwrap().iter().filter(|u| u.as_str() == ahg_engine::spotify::HOME).count();
+    assert_eq!(homes, 1);
 }

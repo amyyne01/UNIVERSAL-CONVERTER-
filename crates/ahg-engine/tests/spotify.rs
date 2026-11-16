@@ -3,9 +3,10 @@
 //! handler. The golden file holds, per step, the requests the TypeScript made and the
 //! response each got; here the same responses are replayed, and the requests and the
 //! result must come out identical.
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
 use ahg_engine::spotify::{Request, Spotify, Token, Transport};
 use ahg_engine::url_detector::parse_spotify_url;
@@ -13,7 +14,7 @@ use serde_json::{Value, json};
 
 struct Replay {
     calls: Rc<RefCell<VecDeque<Value>>>,
-    clock: Rc<Cell<f64>>,
+    clock: Arc<Mutex<f64>>,
     at: Rc<RefCell<String>>,
 }
 
@@ -33,7 +34,7 @@ impl Transport for Replay {
         let at = self.at.borrow().clone();
         let Some(call) = self.calls.borrow_mut().pop_front() else { panic!("{at}: unexpected request {}", req.url) };
         assert_eq!(request_json(req), call["req"], "{at}");
-        self.clock.set(self.clock.get() + call["advance"].as_f64().unwrap());
+        *self.clock.lock().unwrap() += call["advance"].as_f64().unwrap();
         call["resp"]["text"].as_str().map(str::to_owned)
     }
 }
@@ -72,19 +73,19 @@ fn spotify_matches_electron() {
     let mut requests = 0;
     for scenario in &golden {
         let name = scenario["name"].as_str().unwrap();
-        let clock = Rc::new(Cell::new(1_700_000_000_000.0));
+        let clock = Arc::new(Mutex::new(1_700_000_000_000.0));
         let calls = Rc::new(RefCell::new(VecDeque::new()));
         let at = Rc::new(RefCell::new(String::new()));
         let transport = Replay { calls: calls.clone(), clock: clock.clone(), at: at.clone() };
         let mut sp = Spotify::new(transport, Box::new({
             let clock = clock.clone();
-            move || clock.get()
+            move || *clock.lock().unwrap()
         }));
         for (i, step) in scenario["steps"].as_array().unwrap().iter().enumerate() {
             let label = format!("{name} / step {i} ({} {})", step["op"], step["arg"]);
             *at.borrow_mut() = label.clone();
             if let Some(t) = step["at"].as_f64() {
-                clock.set(t);
+                *clock.lock().unwrap() = t;
             }
             *calls.borrow_mut() = step["calls"].as_array().unwrap().iter().cloned().collect();
             requests += calls.borrow().len();

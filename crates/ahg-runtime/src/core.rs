@@ -16,12 +16,13 @@ use ahg_engine::config::ConfigManager;
 use ahg_engine::log::init_log;
 use ahg_engine::queue::{Event, new_task_id};
 use ahg_engine::scheduler::{Fire, POLL_MS, ScheduleConfig, Scheduler};
+use ahg_engine::spotify::{self, Spotify, Thrown};
 use ahg_engine::stats::{DownloadStats, StatsStore, stats_file_path};
 use ahg_engine::tier::{BASIC_LIMITS, Plan, clamp_concurrency};
 use ahg_engine::updater::UpdateState;
 use ahg_engine::ytdlp_updater::YtdlpStatus;
 use ahg_engine::downloader::bridge::{CONFIRMED, SongMatch, match_song, song_query, song_rows, song_url};
-use ahg_engine::types::{DownloadTask, MediaMetadata, SearchResult, Track};
+use ahg_engine::types::{DownloadTask, MediaMetadata, Playlist, SearchResult, Track};
 use ahg_engine::validate::{MAX_COOKIES_BYTES, is_netscape_cookies, media_url_arg, openable, revealable};
 use serde_json::{Map, Value, json};
 
@@ -98,11 +99,27 @@ fn last_fired_date(file: &std::path::Path) -> String {
     saved.as_ref().and_then(|v| v["lastFiredDate"].as_str()).unwrap_or_default().to_owned()
 }
 
+/// `Spotify` wants one transport type; this is the one the core holds, whatever
+/// is behind it.
+struct Dyn(Box<dyn spotify::Transport + Send>);
+
+impl spotify::Transport for Dyn {
+    fn fetch(&mut self, req: &spotify::Request) -> Option<String> {
+        self.0.fetch(req)
+    }
+
+    fn fetch_many(&mut self, reqs: &[spotify::Request]) -> Vec<Option<String>> {
+        self.0.fetch_many(reqs)
+    }
+}
+
 /// Everything of the core that reaches outside the app's own files and
 /// processes. The real ones, or stand-ins for tests.
 pub struct Outside {
     /// YouTube Music's song search.
     pub song_search: SongSearch,
+    /// Spotify's pages and API.
+    pub spotify: Box<dyn spotify::Transport + Send>,
     /// GitHub's release pages, for both updaters.
     pub releases: Arc<dyn Fetch>,
     /// Showing and opening files.
@@ -159,6 +176,9 @@ pub struct Core {
     stop: Sender<()>,
     dispatcher: Option<JoinHandle<()>>,
     song_search: SongSearch,
+    /// One reader for every Spotify lookup, so that two lookups that both need
+    /// a token or hash refresh share one attempt.
+    spotify: Mutex<Spotify<Dyn>>,
     hold_unconfirmed: Arc<AtomicBool>,
     remembered: Mutex<HashMap<String, SongMatch>>,
     /// The cancel flag of each lookup the interface has running (D46).
@@ -181,12 +201,17 @@ impl Core {
     /// `start`, with the YouTube Music song search given: the real one, or a
     /// stand-in for tests.
     pub fn start_with_search(paths: Paths, ytdlp: Arc<YtDlp>, plan: PlanSource, events: Sender<CoreEvent>, song_search: SongSearch) -> Self {
-        Self::start_with(paths, ytdlp, plan, events, Outside { song_search, releases: Arc::new(crate::http::Releases), desktop: Box::new(crate::desktop::Windows) })
+        let spotify = {
+            let ytdlp = ytdlp.clone();
+            Box::new(crate::http::SpotifyHttp::new(move || ytdlp.proxy()))
+        };
+        Self::start_with(paths, ytdlp, plan, events, Outside { song_search, spotify, releases: Arc::new(crate::http::Releases), desktop: Box::new(crate::desktop::Windows) })
     }
 
     /// `start`, with everything that reaches the network given.
     pub fn start_with(paths: Paths, ytdlp: Arc<YtDlp>, plan: PlanSource, events: Sender<CoreEvent>, outside: Outside) -> Self {
-        let Outside { song_search, releases, desktop } = outside;
+        let Outside { song_search, spotify, releases, desktop } = outside;
+        let spotify = Mutex::new(Spotify::new(Dyn(spotify), Box::new(spotify::system_now_ms)));
         let app_updater = {
             let tell = events.clone();
             AppUpdater::new(&paths.user_data.join("updates"), env!("CARGO_PKG_VERSION"), Box::new(releases.clone()), Box::new(move |event| drop(tell.send(CoreEvent::Update { channel: event.channel, payload: event.payload }))))
@@ -292,7 +317,7 @@ impl Core {
                 }
             })
         };
-        let core = Self { paths, config, stats, ytdlp, plan, engine, events, stop, dispatcher: Some(dispatcher), song_search, hold_unconfirmed, remembered, lookups: Mutex::default(), engine_updater, app_updater, desktop };
+        let core = Self { paths, config, stats, ytdlp, plan, engine, events, stop, dispatcher: Some(dispatcher), song_search, spotify, hold_unconfirmed, remembered, lookups: Mutex::default(), engine_updater, app_updater, desktop };
         core.sync();
         core
     }
@@ -437,6 +462,30 @@ impl Core {
         let result = run(&flag);
         lock(&self.lookups).retain(|f| !Arc::ptr_eq(f, &flag));
         result
+    }
+
+    /// Spotify, without an account. Each call blocks on the network, so call it
+    /// from a worker thread; calls take turns, which is what lets two of them
+    /// share one token or hash refresh. `Ok(None)`: not a Spotify id, or the
+    /// page had nothing. `Err(Thrown)`: Spotify sent data the reader cannot
+    /// take, where Electron's reader threw. Cancelling lookups does not reach
+    /// these: the transport has no stop hook.
+    pub fn spotify_track(&self, id_or_url: &str) -> Result<Option<Track>, Thrown> {
+        lock(&self.spotify).fetch_track(id_or_url)
+    }
+
+    pub fn spotify_playlist(&self, id_or_url: &str) -> Result<Option<Playlist>, Thrown> {
+        lock(&self.spotify).fetch_playlist(id_or_url)
+    }
+
+    pub fn spotify_album(&self, id_or_url: &str) -> Result<Option<Playlist>, Thrown> {
+        lock(&self.spotify).fetch_album(id_or_url)
+    }
+
+    /// As in Electron, which found nothing on 2026-11-15 (QUIRKS Q6): faithful,
+    /// and empty whenever Spotify says no.
+    pub fn spotify_search(&self, query: &str) -> Vec<Track> {
+        lock(&self.spotify).search(query)
     }
 
     /// D34, for the playlist preview: the YouTube Music song that is this
