@@ -888,6 +888,7 @@ fn spotify_request() -> Value {
 }
 
 /// The process ids a stand-in's `pid` lines wrote.
+#[cfg(windows)]
 fn pids_in(file: &Path) -> Vec<String> {
     fs::read_to_string(file).map_or_else(|_| Vec::new(), |text| text.lines().map(str::to_owned).collect())
 }
@@ -921,6 +922,7 @@ fn cancel_lookups_stops_a_hung_lookup_but_not_a_downloads_own_search() {
     assert!(core.fetch_metadata("https://youtu.be/dQw4w9WgXcQ").is_ok());
 }
 
+#[cfg(windows)]
 #[test]
 fn cancelling_a_spotify_download_that_is_still_searching_ends_its_search() {
     let dir = scratch("cancelsearching");
@@ -936,11 +938,45 @@ fn cancelling_a_spotify_download_that_is_still_searching_ends_its_search() {
     until("the search process is gone", || !pid_is_running(&pid));
     assert!(cancelled.elapsed() < Duration::from_secs(2), "{:?}", cancelled.elapsed());
     assert_eq!(status_of(&core, &id), DownloadStatus::Cancelled);
-    assert_eq!(pids_in(&pids).len(), 1, "the bridge went no further");
     kill_pid(&pid);
+    // Shutdown waits for the bridge to end, so a second search could not appear later.
+    core.shutdown();
+    assert_eq!(pids_in(&pids), [pid], "the bridge started no further search");
+}
+
+#[test]
+fn cancel_all_returns_at_once_even_while_a_search_cannot_be_stopped() {
+    let dir = scratch("cancelallprompt");
+    fs::write(dir.join("script.txt"), "exit 0\n").unwrap();
+    fs::write(dir.join("json.txt"), "").unwrap();
+    let mut ytdlp = YtDlp::new(PathBuf::from(FAKE), None);
+    ytdlp.env("FAKE_YTDLP_SCRIPT_JSON", dir.join("json.txt").to_str().unwrap());
+    ytdlp.env("FAKE_YTDLP_SCRIPT", dir.join("script.txt").to_str().unwrap());
+    // The song search stands in for the HTTP call, which no flag can stop: it holds the bridge until released.
+    let (entered, entered_rx) = channel::<()>();
+    let (release, release_rx) = channel::<()>();
+    let (entered, release_rx) = (std::sync::Mutex::new(entered), std::sync::Mutex::new(release_rx));
+    let search: ahg_runtime::download::SongSearch = Arc::new(move |_: &str| {
+        let _ = entered.lock().unwrap().send(());
+        let _ = release_rx.lock().unwrap().recv();
+        None
+    });
+    let (tx, _rx) = channel();
+    let paths = Paths { user_data: dir.join("userData"), downloads: dir.join("Downloads").to_string_lossy().into_owned() };
+    let core = Core::start_with_search(paths, Arc::new(ytdlp), Box::new(|| Plan::Premium), tx, search);
+    let id = core.start_download(&spotify_request()).unwrap().task_id;
+    entered_rx.recv_timeout(WAIT).expect("the bridge never reached the song search");
+
+    // The queue's thread answers `tasks` only after it has carried out the cancel.
+    let cancelled = Instant::now();
+    core.cancel_all();
+    assert_eq!(status_of(&core, &id), DownloadStatus::Cancelled);
+    assert!(cancelled.elapsed() < Duration::from_secs(2), "{:?}", cancelled.elapsed());
+    let _ = release.send(());
     core.shutdown();
 }
 
+#[cfg(windows)]
 #[test]
 fn quitting_with_four_downloads_a_search_and_a_hung_lookup_leaves_no_process() {
     let dir = scratch("quit");

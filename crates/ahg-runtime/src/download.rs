@@ -139,8 +139,8 @@ impl Downloader {
     }
 
     /// Stop every download. The processes are killed side by side, so the wait
-    /// is the slowest kill rather than the sum, and it returns only once every
-    /// Spotify search has ended too: nothing may outlive a quit.
+    /// is the slowest kill rather than the sum. It does not wait for a Spotify
+    /// search to end: on a quit, call `wait_for_searches` after it.
     pub fn cancel_all(&self) {
         let all: Vec<Running> = lock(&self.active).drain().map(|(_, r)| r).collect();
         thread::scope(|scope| {
@@ -148,11 +148,33 @@ impl Downloader {
                 scope.spawn(|| stop(running));
             }
         });
-        // ponytail: the searches end themselves within one poll of the flag set above; capped in case one thread died.
+    }
+
+    /// Waits until no download is inside a Spotify search, for the quit path:
+    /// nothing may outlive a quit. After `cancel_all` the searches end
+    /// themselves within one poll of their flag; capped in case one thread died
+    /// or sits in the song search's HTTP call, which no flag can stop.
+    pub fn wait_for_searches(&self) {
         let deadline = Instant::now() + SEARCH_STOP_WAIT;
         while self.searching.load(Ordering::SeqCst) > 0 && Instant::now() < deadline {
             thread::sleep(Duration::from_millis(10));
         }
+    }
+}
+
+/// One download inside the bridge's searches, counted until dropped (also on a panic).
+struct Searching<'a>(&'a AtomicUsize);
+
+impl<'a> Searching<'a> {
+    fn enter(count: &'a AtomicUsize) -> Self {
+        count.fetch_add(1, Ordering::SeqCst);
+        Self(count)
+    }
+}
+
+impl Drop for Searching<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
     }
 }
 
@@ -232,9 +254,10 @@ fn run(ytdlp: &YtDlp, task: &DownloadTask, attempt: u64, active: &Active, killed
         if song_search.is_some() {
             name_and_tag_from_spotify(task, &mut args);
         }
-        searching.fetch_add(1, Ordering::SeqCst);
-        let found = spotify_bridge(ytdlp, task, track, &mut args, song_search, killed);
-        searching.fetch_sub(1, Ordering::SeqCst);
+        let found = {
+            let _searching = Searching::enter(searching);
+            spotify_bridge(ytdlp, task, track, &mut args, song_search, killed)
+        };
         let matched = found.is_some();
         chosen = found.clone();
         let confirmed = found.as_ref().is_some_and(|(_, confidence)| *confidence >= CONFIRMED);

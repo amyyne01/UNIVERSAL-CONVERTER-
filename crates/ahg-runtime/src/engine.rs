@@ -203,6 +203,7 @@ fn run(mut queue: Queue, downloader: Downloader, rx: Receiver<Msg>, reports: Sen
                 // Quit: no process may be left running. Partial files stay, and
                 // the tasks are saved unfinished so the next start parks them.
                 downloader.cancel_all();
+                downloader.wait_for_searches();
                 queue.flush_history();
                 return;
             }

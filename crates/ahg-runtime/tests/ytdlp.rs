@@ -634,11 +634,24 @@ fn removing_sponsor_segments_shortens_the_file_so_its_length_is_not_judged() {
 
 // ── Stopping a lookup ────────────────────────────────────────────────────────
 
+#[cfg(windows)]
 fn pid_is_running(pid: &str) -> bool {
     let out = std::process::Command::new("tasklist").args(["/FI", &format!("PID eq {pid}"), "/NH"]).output().unwrap();
     String::from_utf8_lossy(&out.stdout).contains(pid)
 }
 
+/// Ends the stand-in with this id when dropped, so a failed assert leaves nothing running.
+#[cfg(windows)]
+struct KillOnDrop(String);
+
+#[cfg(windows)]
+impl Drop for KillOnDrop {
+    fn drop(&mut self) {
+        let _ = std::process::Command::new("taskkill").args(["/F", "/T", "/PID", &self.0]).output();
+    }
+}
+
+#[cfg(windows)]
 #[test]
 fn cancelling_a_search_ends_its_process_within_two_seconds_and_is_not_retried() {
     let dir = scratch("cancelsearch");
@@ -655,6 +668,7 @@ fn cancelling_a_search_ends_its_process_within_two_seconds_and_is_not_retried() 
         std::thread::sleep(Duration::from_millis(20));
     }
     let pid = fs::read_to_string(&pids).unwrap().trim().to_owned();
+    let _cleanup = KillOnDrop(pid.clone());
     assert!(pid_is_running(&pid), "the search should be running before the cancel");
 
     let started = Instant::now();
