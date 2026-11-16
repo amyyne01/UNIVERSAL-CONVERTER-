@@ -16,6 +16,12 @@ const DISCORD_KEYS = ['discordClientId', 'AHG_DISCORD_CLIENT_ID']; // public by 
 const DEFAULT_OUT = 'crates/ahg-app/src/secrets.gen.rs';
 const DUMMY_OUT = 'crates/ahg-runtime/tests/fixtures/sealed-dummy.rs';
 
+// Nothing derived from file content is ever printed, not even a parse error.
+process.on('uncaughtException', () => {
+  console.error('seal-secrets: unexpected error');
+  process.exit(1);
+});
+
 const fail = (msg) => {
   console.error(`seal-secrets: ${msg}`); // never put a value in a message
   process.exit(1);
@@ -23,7 +29,12 @@ const fail = (msg) => {
 
 const args = process.argv.slice(2);
 const flag = (n) => args.includes(n);
-const opt = (n) => (args.includes(n) ? args[args.indexOf(n) + 1] : undefined);
+const opt = (n) => {
+  if (!args.includes(n)) return undefined;
+  const v = args[args.indexOf(n) + 1];
+  if (v === undefined || v.startsWith('--')) fail(`${n} needs a value`);
+  return v;
+};
 const dummy = flag('--dummy');
 const out = opt('--out') ?? (dummy ? DUMMY_OUT : DEFAULT_OUT);
 const envPath = opt('--env');
@@ -43,10 +54,19 @@ if (dummy) {
   id = 'dummy-id-1111-not-a-secret';
   discord = '000000000000000000';
 } else {
-  const text = readFileSync(envPath, 'utf8');
+  let text;
+  try {
+    text = readFileSync(envPath, 'utf8').replace(/^﻿/, '');
+  } catch {
+    fail('cannot read the env file');
+  }
   let vals;
   if (text.trimStart().startsWith('{')) {
-    vals = JSON.parse(text);
+    try {
+      vals = JSON.parse(text);
+    } catch {
+      fail('the env file is not valid JSON');
+    }
   } else {
     vals = {};
     for (const line of text.split(/\r?\n/)) {
@@ -54,9 +74,13 @@ if (dummy) {
       if (m) vals[m[1]] = m[2].replace(/^(["'])(.*)\1$/, '$2');
     }
   }
-  const pick = (keys) => vals[keys.find((k) => k in vals)];
-  token = pick(TOKEN_KEYS);
-  id = pick(ID_KEYS);
+  const pick = (keys, plain) => {
+    const k = keys.find((k) => k in vals);
+    if (plain && /[\s#]/.test(String(vals[k]))) fail(`the value of ${k} has whitespace or #`);
+    return vals[k];
+  };
+  token = pick(TOKEN_KEYS, true);
+  id = pick(ID_KEYS, true);
   discord = pick(DISCORD_KEYS) ?? '';
 }
 if (typeof token !== 'string' || typeof id !== 'string' || !token || !id) {

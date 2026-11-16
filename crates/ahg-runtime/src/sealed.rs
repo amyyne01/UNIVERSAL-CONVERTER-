@@ -8,8 +8,17 @@ use sha2::{Digest, Sha256};
 use zeroize::Zeroizing;
 
 pub struct Revealed {
-    pub token: Zeroizing<String>,
-    pub registry: Zeroizing<String>,
+    token: Zeroizing<String>,
+    registry: Zeroizing<String>,
+}
+
+impl Revealed {
+    pub fn token(&self) -> &str {
+        &self.token
+    }
+    pub fn registry(&self) -> &str {
+        &self.registry
+    }
 }
 
 impl fmt::Debug for Revealed {
@@ -34,6 +43,9 @@ pub fn reveal(pad: &[u8; 136], masked: &[u8; 136]) -> Option<Revealed> {
     }
     let (token, rest) = field(&buf[1..128])?;
     let (registry, _) = field(rest)?;
+    if token.is_empty() || registry.is_empty() {
+        return None;
+    }
     Some(Revealed { token, registry })
 }
 

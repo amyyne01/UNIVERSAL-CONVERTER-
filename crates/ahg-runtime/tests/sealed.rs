@@ -34,8 +34,8 @@ fn reseal(pad: &[u8; 136], plain: &mut [u8; 136]) -> [u8; 136] {
 fn round_trip_of_the_tracked_dummy_fixture() {
     let (pad, masked) = fixture::pair();
     let r = reveal(&pad, &masked).expect("fixture reveals");
-    assert_eq!(&*r.token, TOKEN);
-    assert_eq!(&*r.registry, ID);
+    assert_eq!(r.token(), TOKEN);
+    assert_eq!(r.registry(), ID);
 }
 
 #[test]
@@ -127,7 +127,7 @@ fn real_mode_reads_both_spellings_and_the_discord_id() {
         return;
     }
     // An ignored output path inside the repo; removed afterwards.
-    let out = repo_root().join("crates/ahg-runtime/secrets.gen.rs");
+    let out = ignored_out(&format!("ahg-sealed-spell-{}", std::process::id()));
     let dir = temp_dir("spell");
     let cases = [
         ("a.env", "AHG_GITHUB_TOKEN=fake-tok\nAHG_LICENSE_GIST_ID=fake-gist\nAHG_DISCORD_CLIENT_ID=123456\n"),
@@ -143,10 +143,116 @@ fn real_mode_reads_both_spellings_and_the_discord_id() {
         assert!(o.status.success(), "{name}: {}", String::from_utf8_lossy(&o.stderr));
         let t = text.unwrap();
         let r = reveal(&parse_array(&t, "PAD"), &parse_array(&t, "MASKED")).expect("reveals");
-        assert_eq!((r.token.as_str(), r.registry.as_str()), ("fake-tok", "fake-gist"), "{name}");
+        assert_eq!((r.token(), r.registry()), ("fake-tok", "fake-gist"), "{name}");
         assert!(t.contains("pub const DISCORD_CLIENT_ID: &str = \"123456\";"), "{name}");
     }
+    cleanup(&dir);
+}
+
+#[test]
+fn an_empty_token_or_id_gives_none() {
+    let (pad, masked) = fixture::pair();
+    let mut base = [0u8; 136];
+    for i in 0..136 {
+        base[i] = pad[i] ^ masked[i];
+    }
+    // [1][len][token][len][id]: build from the real record's layout.
+    let tl = base[1] as usize;
+    let il = base[2 + tl] as usize;
+    let (tok, id) = (base[2..2 + tl].to_vec(), base[3 + tl..3 + tl + il].to_vec());
+    for (t, i) in [(vec![], id.clone()), (tok.clone(), vec![]), (vec![], vec![])] {
+        let mut plain = [7u8; 136];
+        plain[0] = 1;
+        plain[1] = t.len() as u8;
+        plain[2..2 + t.len()].copy_from_slice(&t);
+        plain[2 + t.len()] = i.len() as u8;
+        plain[3 + t.len()..3 + t.len() + i.len()].copy_from_slice(&i);
+        let m = reseal(&pad, &mut plain);
+        assert!(reveal(&pad, &m).is_none(), "empty field ({} / {})", t.len(), i.len());
+    }
+}
+
+/// A git-ignored output path inside the repo (`crates/**/secrets.gen.rs`), unique per tag.
+fn ignored_out(tag: &str) -> PathBuf {
+    let d = repo_root().join(format!("crates/ahg-runtime/sealtmp-{tag}"));
+    std::fs::create_dir_all(&d).unwrap();
+    d.join("secrets.gen.rs")
+}
+
+fn cleanup(dir: &Path) {
+    let tag = dir.file_name().unwrap().to_str().unwrap();
+    let _ = std::fs::remove_dir_all(repo_root().join(format!("crates/ahg-runtime/sealtmp-{tag}")));
     let _ = std::fs::remove_dir_all(dir);
+}
+
+fn run_with_env(dir: &Path, name: &str, body: &[u8], secret: &str) -> (std::process::Output, PathBuf) {
+    let f = dir.join(name);
+    std::fs::write(&f, body).unwrap();
+    // An ignored output path inside the repo.
+    let out = ignored_out(dir.file_name().unwrap().to_str().unwrap());
+    let _ = std::fs::remove_file(&out);
+    let o = seal(&["--env", f.to_str().unwrap(), "--out", out.to_str().unwrap()]);
+    let (so, se) = (String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
+    assert!(!so.contains(secret) && !se.contains(secret), "{name}: secret on output");
+    (o, out)
+}
+
+#[test]
+fn a_bad_env_file_never_prints_its_content() {
+    if !node_available() {
+        eprintln!("SKIPPED: node not found");
+        return;
+    }
+    let dir = temp_dir("bad");
+    let secret = "fake-secret-value-xyz";
+    let trailing = format!("{{\"githubToken\":\"{secret}\",\"licenseGistId\":\"fake-gist\",}}");
+    let (o, out) = run_with_env(&dir, "trailing.json", trailing.as_bytes(), secret);
+    assert!(!o.status.success() && !out.exists(), "trailing comma refused, nothing written");
+    // A UTF-8 BOM: stripped, so it succeeds.
+    let bom = format!("\u{feff}{{\"githubToken\":\"{secret}\",\"licenseGistId\":\"fake-gist\"}}");
+    let (o, out) = run_with_env(&dir, "bom.json", bom.as_bytes(), secret);
+    let wrote = out.exists();
+    let _ = std::fs::remove_file(&out);
+    assert!(o.status.success() && wrote, "BOM file seals");
+    let (o, out) = run_with_env(&dir, "missing.json", b"", secret);
+    assert!(!o.status.success() && !out.exists());
+    cleanup(&dir);
+}
+
+#[test]
+fn whitespace_or_hash_in_a_value_is_refused_naming_only_the_key() {
+    if !node_available() {
+        eprintln!("SKIPPED: node not found");
+        return;
+    }
+    let dir = temp_dir("ws");
+    let cases: [(&str, String); 4] = [
+        ("a.env", "AHG_GITHUB_TOKEN=fake-sec ret\nAHG_LICENSE_GIST_ID=g\n".into()),
+        ("b.env", "AHG_GITHUB_TOKEN=fake-sec#ret\nAHG_LICENSE_GIST_ID=g\n".into()),
+        ("c.json", r#"{"githubToken":"fake-sec ret","licenseGistId":"g"}"#.into()),
+        ("d.json", r#"{"githubToken":"fakesecret","licenseGistId":"g#x"}"#.into()),
+    ];
+    for (name, body) in &cases {
+        let (o, out) = run_with_env(&dir, name, body.as_bytes(), "fake-sec");
+        assert!(!o.status.success() && !out.exists(), "{name} refused");
+        let said = String::from_utf8_lossy(&o.stderr);
+        assert!(said.contains("AHG_") || said.contains("githubToken") || said.contains("licenseGistId"), "{name}: names the key");
+    }
+    cleanup(&dir);
+}
+
+#[test]
+fn out_without_a_value_fails_and_leaves_the_fixture_alone() {
+    if !node_available() {
+        eprintln!("SKIPPED: node not found");
+        return;
+    }
+    let fixture = repo_root().join("crates/ahg-runtime/tests/fixtures/sealed-dummy.rs");
+    let before = std::fs::read(&fixture).unwrap();
+    for args in [&["--dummy", "--out"][..], &["--dummy", "--out", "--dummy"][..]] {
+        assert!(!seal(args).status.success(), "{args:?}");
+    }
+    assert_eq!(std::fs::read(&fixture).unwrap(), before);
 }
 
 #[test]
@@ -208,9 +314,9 @@ fn script_writes_fresh_pads_that_reveal_the_dummy() {
     assert_ne!(ta, tb, "a fresh pad each run");
     for t in [&ta, &tb] {
         let r = reveal(&parse_array(t, "PAD"), &parse_array(t, "MASKED")).expect("reveals");
-        assert_eq!((r.token.as_str(), r.registry.as_str()), (TOKEN, ID));
+        assert_eq!((r.token(), r.registry()), (TOKEN, ID));
     }
-    let _ = std::fs::remove_dir_all(dir);
+    cleanup(&dir);
 }
 
 #[test]
@@ -233,5 +339,5 @@ fn real_mode_refuses_a_path_that_is_not_git_ignored() {
         let said = String::from_utf8_lossy(&o.stderr);
         assert!(!said.contains("fake-token-for-test") && !said.contains("fake-id-for-test"));
     }
-    let _ = std::fs::remove_dir_all(dir);
+    cleanup(&dir);
 }
