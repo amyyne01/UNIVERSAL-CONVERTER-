@@ -660,3 +660,208 @@ fn the_basic_plan_cannot_import_cookies() {
     assert!(!dir.join("userData").join("cookies.txt").exists());
     core.shutdown();
 }
+
+// ── The queue's controls, through the core ──────────────────────────────────
+
+fn pid_is_running(pid: &str) -> bool {
+    let out = std::process::Command::new("tasklist").args(["/FI", &format!("PID eq {pid}"), "/NH"]).output().unwrap();
+    String::from_utf8_lossy(&out.stdout).contains(pid)
+}
+
+/// End a stand-in's leftover child, so a test leaves nothing running.
+fn kill_pid(pid: &str) {
+    let _ = std::process::Command::new("taskkill").args(["/F", "/T", "/PID", pid]).output();
+}
+
+fn until(what: &str, mut cond: impl FnMut() -> bool) {
+    let deadline = Instant::now() + WAIT;
+    while !cond() {
+        assert!(Instant::now() < deadline, "never happened: {what}");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+/// How often the stand-in's script reached its `count` line.
+fn runs(file: &Path) -> usize {
+    fs::read_to_string(file).map_or(0, |text| text.lines().count())
+}
+
+fn status_of(core: &Core, id: &str) -> DownloadStatus {
+    core.tasks().into_iter().find(|t| t.task_id == id).unwrap().progress.status
+}
+
+fn one_at_a_time(core: &Core) {
+    assert_eq!(core.update_settings(json!({ "maxConcurrentDownloads": 1 }).as_object().unwrap()), Vec::<String>::new());
+}
+
+/// The id of the next task the queue starts, ignoring those already seen.
+fn next_started(rx: &Receiver<CoreEvent>, seen: &[&str]) -> String {
+    let events = wait_for(rx, |e| matches!(e, CoreEvent::Download(Event::Progress { id, progress }) if progress.status == DownloadStatus::FetchingInfo && !seen.contains(&id.as_str())));
+    match events.last() {
+        Some(CoreEvent::Download(Event::Progress { id, .. })) => id.clone(),
+        other => panic!("{other:?}"),
+    }
+}
+
+/// A script that records its start, starts a child and stays busy for `busy` ms.
+fn busy_script(dir: &Path, busy: u32) -> String {
+    format!("child {}\ncount {}\nerr [PROGRESS]1|100|NA|1|9\nsleep {busy}\nexit 0\n", dir.join("child.pid").display(), dir.join("runs.txt").display())
+}
+
+#[test]
+fn pausing_a_running_download_stops_its_process_and_resuming_starts_it_again() {
+    let dir = scratch("pause");
+    let (core, rx) = start(&dir, &busy_script(&dir, 1500), Plan::Premium);
+    let id = core.start_download(&request()).unwrap().task_id;
+    until("the first run", || runs(&dir.join("runs.txt")) == 1);
+    let first = fs::read_to_string(dir.join("child.pid")).unwrap();
+    assert!(pid_is_running(&first));
+
+    assert!(core.pause(&id));
+    assert_eq!(status_of(&core, &id), DownloadStatus::Paused);
+    until("the first process is gone", || !pid_is_running(&first));
+    assert_eq!(runs(&dir.join("runs.txt")), 1, "a paused download must not start again by itself");
+
+    assert!(core.resume(&id));
+    until("the second run", || runs(&dir.join("runs.txt")) == 2);
+    let second = fs::read_to_string(dir.join("child.pid")).unwrap();
+    assert_ne!(first, second, "a new process was started");
+    // The stand-in's child holds yt-dlp's pipes open; ending it lets the exit be seen.
+    kill_pid(&second);
+    wait_for(&rx, done);
+    assert_eq!(status_of(&core, &id), DownloadStatus::Done);
+    core.shutdown();
+}
+
+#[test]
+fn cancelling_a_waiting_task_and_a_running_task_ends_both_as_cancelled() {
+    let dir = scratch("cancel");
+    let (core, _rx) = start(&dir, &busy_script(&dir, 60_000), Plan::Premium);
+    one_at_a_time(&core);
+    let running = core.start_download(&request()).unwrap().task_id;
+    let waiting = core.start_download(&request()).unwrap().task_id;
+    until("the first run", || runs(&dir.join("runs.txt")) == 1);
+    let pid = fs::read_to_string(dir.join("child.pid")).unwrap();
+
+    assert!(core.cancel(&waiting));
+    assert_eq!(status_of(&core, &waiting), DownloadStatus::Cancelled);
+    assert_ne!(status_of(&core, &running), DownloadStatus::Cancelled, "the running one is untouched");
+    assert!(!core.cancel(&waiting), "it has ended: nothing left to cancel");
+    assert!(!core.cancel("no-such-task"));
+
+    assert!(core.cancel(&running));
+    assert_eq!(status_of(&core, &running), DownloadStatus::Cancelled);
+    until("the process is gone", || !pid_is_running(&pid));
+    assert_eq!(runs(&dir.join("runs.txt")), 1, "the cancelled waiting task never started");
+    core.shutdown();
+}
+
+#[test]
+fn promote_and_reorder_decide_which_waiting_task_starts_next() {
+    let dir = scratch("order");
+    let (core, rx) = start(&dir, "sleep 60000\n", Plan::Premium);
+    one_at_a_time(&core);
+    let a = core.start_download(&request()).unwrap().task_id;
+    assert_eq!(next_started(&rx, &[]), a);
+    let [b, c, d] = [(); 3].map(|()| core.start_download(&request()).unwrap().task_id);
+    assert!(!core.promote(&a), "a running task is not waiting");
+
+    // Waiting: b c d. "Do this next" puts d in front.
+    assert!(core.promote(&d));
+    assert!(core.cancel(&a));
+    assert_eq!(next_started(&rx, &[&a]), d);
+
+    // Waiting: b c. Naming c first moves it ahead of b.
+    core.reorder(vec![c.clone(), b.clone()]);
+    assert!(core.cancel(&d));
+    assert_eq!(next_started(&rx, &[&a, &d]), c);
+    assert!(core.cancel(&c));
+    assert_eq!(next_started(&rx, &[&a, &d, &c]), b);
+    core.shutdown();
+}
+
+#[test]
+fn finished_rows_can_be_removed_but_a_running_one_stays() {
+    let dir = scratch("remove");
+    let (core, rx) = start(&dir, "exit 0\n", Plan::Premium);
+    let finished = core.start_download(&request()).unwrap().task_id;
+    wait_for(&rx, done);
+    core.remove(vec![finished.clone()]);
+    assert!(core.tasks().iter().all(|t| t.task_id != finished), "the finished row is gone");
+    core.shutdown();
+
+    let dir = scratch("remove-running");
+    let (core, rx) = start(&dir, "err [PROGRESS]1|100|NA|1|9\nsleep 60000\n", Plan::Premium);
+    let running = core.start_download(&request()).unwrap().task_id;
+    wait_for(&rx, |e| matches!(e, CoreEvent::Download(Event::Progress { progress, .. }) if progress.status == DownloadStatus::Downloading));
+    core.remove(vec![running.clone()]);
+    assert_eq!(status_of(&core, &running), DownloadStatus::Downloading, "a running row is skipped");
+    assert!(core.has_unfinished_work());
+    core.shutdown();
+}
+
+#[test]
+fn pause_all_resume_all_and_cancel_all_move_every_task_together() {
+    let dir = scratch("all");
+    let (core, _rx) = start(&dir, &busy_script(&dir, 60_000), Plan::Premium);
+    one_at_a_time(&core);
+    assert!(!core.has_unfinished_work(), "an empty queue has none");
+    let running = core.start_download(&request()).unwrap().task_id;
+    let waiting = core.start_download(&request()).unwrap().task_id;
+    until("the first run", || runs(&dir.join("runs.txt")) == 1);
+    assert!(core.has_unfinished_work());
+    let first = fs::read_to_string(dir.join("child.pid")).unwrap();
+
+    core.pause_all();
+    assert_eq!(status_of(&core, &running), DownloadStatus::Paused);
+    assert_eq!(status_of(&core, &waiting), DownloadStatus::Queued);
+    assert!(core.has_unfinished_work(), "paused work is still work: the PC must not shut down");
+    until("the process is gone", || !pid_is_running(&first));
+    assert_eq!(runs(&dir.join("runs.txt")), 1, "nothing starts while paused");
+
+    core.resume_all();
+    until("the paused task runs again", || runs(&dir.join("runs.txt")) == 2);
+    assert_eq!(status_of(&core, &waiting), DownloadStatus::Queued, "one slot: the other still waits");
+    let second = fs::read_to_string(dir.join("child.pid")).unwrap();
+
+    core.cancel_all();
+    assert_eq!((status_of(&core, &running), status_of(&core, &waiting)), (DownloadStatus::Cancelled, DownloadStatus::Cancelled));
+    assert!(!core.has_unfinished_work());
+    until("the process is gone", || !pid_is_running(&second));
+    core.shutdown();
+}
+
+#[test]
+fn a_finished_download_leaves_no_unfinished_work() {
+    let dir = scratch("unfinished");
+    let (core, rx) = start(&dir, "exit 0\n", Plan::Premium);
+    core.start_download(&request()).unwrap();
+    wait_for(&rx, done);
+    until("the queue is idle", || !core.has_unfinished_work());
+    core.shutdown();
+}
+
+#[test]
+fn the_searches_pass_yt_dlp_the_arguments_electron_does() {
+    let dir = scratch("search");
+    let (core, _rx) = start(&dir, "out {\"id\":\"a\",\"title\":\"A\"}\nexit 0\n", Plan::Premium);
+    // runJsonOnce puts a socket timeout and retries in front of every lookup.
+    let args = |rest: &str| format!("--socket-timeout\n20\n--retries\n3\n--dump-json\n--no-warnings\n--flat-playlist\n{rest}");
+    let seen = || fs::read_to_string(dir.join("args.txt.json")).unwrap();
+    core.search_youtube("lofi beats").unwrap();
+    assert_eq!(seen(), args("ytsearch12:lofi beats"));
+    core.search_soundcloud("lofi beats").unwrap();
+    assert_eq!(seen(), args("scsearch12:lofi beats"));
+    core.fetch_metadata("https://youtu.be/dQw4w9WgXcQ").unwrap();
+    assert_eq!(seen(), args("--no-playlist\n--\nhttps://youtu.be/dQw4w9WgXcQ"));
+    core.shutdown();
+}
+
+#[test]
+fn a_link_that_looks_like_an_option_is_refused_before_any_process_starts() {
+    let dir = scratch("optionlink");
+    let (core, _rx) = start(&dir, "out {}\nexit 0\n", Plan::Premium);
+    assert_eq!(core.fetch_metadata("--rm-rf").unwrap_err(), "Invalid input: URL must not start with \"-\"");
+    assert!(!dir.join("args.txt").exists() && !dir.join("args.txt.json").exists(), "yt-dlp must not have been started");
+    core.shutdown();
+}
