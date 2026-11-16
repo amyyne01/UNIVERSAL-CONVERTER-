@@ -198,3 +198,23 @@ pub fn build_task(
     }
     Ok(task)
 }
+
+/// The request a retry or "download again" sends for `task` (D22): the fields
+/// Electron's downloads tab passes to `download.start`. The folder always comes
+/// from the settings, and the retry count and original id only track the
+/// queue's own automatic retries, so none of the three is sent.
+/// `skip_existing` replaces the task's own value when given.
+pub fn retry_request(task: &DownloadTask, skip_existing: Option<bool>) -> Value {
+    const FIELDS: [&str; 17] = [
+        "url", "source", "format", "quality", "videoQuality", "isAudioOnly", "isPlaylist", "playlistName", "embedThumbnail",
+        "embedMetadata", "skipExisting", "title", "thumbnailUrl", "duration", "uploader", "track", "playlistItems",
+    ];
+    let mut request = serde_json::to_value(task).unwrap_or_default();
+    if let Value::Object(fields) = &mut request {
+        fields.retain(|key, _| FIELDS.contains(&key.as_str()));
+        if let Some(skip) = skip_existing {
+            fields.insert("skipExisting".into(), json!(skip));
+        }
+    }
+    request
+}

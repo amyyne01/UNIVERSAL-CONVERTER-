@@ -1114,3 +1114,90 @@ fn two_lookups_at_once_share_one_heal() {
     let homes = seen.lock().unwrap().iter().filter(|u| u.as_str() == ahg_engine::spotify::HOME).count();
     assert_eq!(homes, 1);
 }
+
+const GONE: &str = "err ERROR: Video unavailable\nexit 1\n";
+
+fn failed(e: &CoreEvent) -> bool {
+    matches!(e, CoreEvent::DownloadFailed(_))
+}
+
+#[test]
+fn retrying_a_failed_task_gives_a_new_id_and_removes_the_old_row() {
+    let dir = scratch("retry-failed");
+    let (core, rx) = start(&dir, GONE, Plan::Premium);
+    let old = core.start_download(&request()).unwrap().task_id;
+    wait_for(&rx, failed);
+    assert_eq!(status_of(&core, &old), DownloadStatus::Failed);
+
+    let new = core.retry(&old, None).unwrap();
+    assert_ne!(new.task_id, old);
+    assert_eq!(new.url, request()["url"]);
+    wait_for(&rx, failed);
+    until("the old row is gone", || core.task(&old).is_none());
+    assert!(core.task(&new.task_id).is_some());
+    assert_eq!(core.tasks().len(), 1);
+    core.shutdown();
+}
+
+#[test]
+fn a_refused_retry_keeps_the_old_row() {
+    let dir = scratch("retry-refused");
+    let row = json!([{ "taskId": "task_old", "url": "-rf", "progress": { "status": "failed" } }]);
+    fs::write(dir.join("userData").join("downloads-history.json"), row.to_string()).unwrap();
+    let (core, _rx) = start(&dir, GONE, Plan::Premium);
+    assert_eq!(status_of(&core, "task_old"), DownloadStatus::Failed);
+
+    assert!(core.retry("task_old", None).is_err());
+    assert_eq!(core.tasks().len(), 1);
+    assert_eq!(status_of(&core, "task_old"), DownloadStatus::Failed);
+    core.shutdown();
+}
+
+#[test]
+fn a_cancelled_task_can_be_retried() {
+    let dir = scratch("retry-cancelled");
+    let (core, _rx) = start(&dir, &busy_script(&dir, 60_000), Plan::Premium);
+    one_at_a_time(&core);
+    let running = core.start_download(&request()).unwrap().task_id;
+    let waiting = core.start_download(&request()).unwrap().task_id;
+    until("the first run", || runs(&dir.join("runs.txt")) == 1);
+    let pid = fs::read_to_string(dir.join("child.pid")).unwrap();
+    assert!(core.cancel(&waiting));
+
+    let new = core.retry(&waiting, None).unwrap();
+    assert_ne!(new.task_id, waiting);
+    until("the cancelled row is gone", || core.task(&waiting).is_none());
+    assert!(core.cancel(&running));
+    until("the process is gone", || !pid_is_running(&pid));
+    core.shutdown();
+}
+
+#[test]
+fn a_running_task_and_an_unknown_id_cannot_be_retried() {
+    let dir = scratch("retry-running");
+    let (core, _rx) = start(&dir, &busy_script(&dir, 60_000), Plan::Premium);
+    let running = core.start_download(&request()).unwrap().task_id;
+    until("the first run", || runs(&dir.join("runs.txt")) == 1);
+    let pid = fs::read_to_string(dir.join("child.pid")).unwrap();
+
+    assert!(core.retry(&running, None).is_err());
+    assert!(core.retry("no-such-task", None).is_err());
+    assert_eq!(core.tasks().len(), 1);
+    assert!(core.cancel(&running));
+    until("the process is gone", || !pid_is_running(&pid));
+    core.shutdown();
+}
+
+#[test]
+fn retry_due_is_the_automatic_retrys_deadline_and_none_otherwise() {
+    let dir = scratch("retry-due");
+    let (core, rx) = start(&dir, "err ERROR: unable to download video data: The read operation timed out\nexit 1\n", Plan::Premium);
+    let id = core.start_download(&request()).unwrap().task_id;
+    assert_eq!(core.retry_due("no-such-task"), None);
+    until("the first failure is waiting out its delay", || core.retry_due(&id).is_some());
+    let due = core.retry_due(&id).unwrap();
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64;
+    assert!(due > now && due <= now + 5000, "due {due} now {now}");
+    drop(rx);
+    core.shutdown();
+}

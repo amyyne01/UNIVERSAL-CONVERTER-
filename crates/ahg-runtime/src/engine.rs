@@ -127,6 +127,18 @@ impl Engine {
         self.ask(|q, _| (q.all_tasks().into_iter().cloned().collect(), Vec::new())).unwrap_or_default()
     }
 
+    /// One task in history.
+    pub fn task(&self, id: &str) -> Option<DownloadTask> {
+        let id = id.to_owned();
+        self.ask(move |q, _| (q.all_tasks().into_iter().find(|t| t.task_id == id).cloned(), Vec::new())).flatten()
+    }
+
+    /// When the task's pending automatic retry starts, if it has one.
+    pub fn retry_due(&self, id: &str) -> Option<u64> {
+        let id = id.to_owned();
+        self.ask(move |q, _| (q.retry_due(&id), Vec::new())).flatten()
+    }
+
     /// True while anything is running or still queued.
     pub fn has_unfinished_work(&self) -> bool {
         self.ask(|q, _| (q.has_unfinished_work(), Vec::new())).unwrap_or(false)

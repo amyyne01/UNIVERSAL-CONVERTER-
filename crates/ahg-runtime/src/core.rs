@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-use ahg_engine::api::build_task;
+use ahg_engine::api::{build_task, retry_request};
 use ahg_engine::atomic_write::write_file_atomic;
 use ahg_engine::clock::LocalTime;
 use ahg_engine::config::ConfigManager;
@@ -22,7 +22,7 @@ use ahg_engine::tier::{BASIC_LIMITS, Plan, clamp_concurrency};
 use ahg_engine::updater::UpdateState;
 use ahg_engine::ytdlp_updater::YtdlpStatus;
 use ahg_engine::downloader::bridge::{CONFIRMED, SongMatch, match_song, song_query, song_rows, song_url};
-use ahg_engine::types::{DownloadTask, MediaMetadata, Playlist, SearchResult, Track};
+use ahg_engine::types::{DownloadStatus, DownloadTask, MediaMetadata, Playlist, SearchResult, Track};
 use ahg_engine::validate::{MAX_COOKIES_BYTES, is_netscape_cookies, media_url_arg, openable, revealable};
 use serde_json::{Map, Value, json};
 
@@ -425,6 +425,28 @@ impl Core {
 
     pub fn has_unfinished_work(&self) -> bool {
         self.engine().has_unfinished_work()
+    }
+
+    /// One task in history.
+    pub fn task(&self, id: &str) -> Option<DownloadTask> {
+        self.engine().task(id)
+    }
+
+    /// When the task's pending automatic retry starts (epoch ms), if it has one.
+    pub fn retry_due(&self, id: &str) -> Option<u64> {
+        self.engine().retry_due(id)
+    }
+
+    /// Download a failed, cancelled or finished task again as a new task, then
+    /// drop the old row. A refused request keeps the old row.
+    pub fn retry(&self, id: &str, skip_existing: Option<bool>) -> Result<DownloadTask, String> {
+        let old = self.task(id).ok_or("No such task")?;
+        if !matches!(old.progress.status, DownloadStatus::Failed | DownloadStatus::Cancelled | DownloadStatus::Done) {
+            return Err("Only a failed, cancelled or finished download can be retried".into());
+        }
+        let task = self.start_download(&retry_request(&old, skip_existing))?;
+        self.remove(vec![old.task_id]);
+        Ok(task)
     }
 
     // ── Looking things up ───────────────────────────────────────────────────

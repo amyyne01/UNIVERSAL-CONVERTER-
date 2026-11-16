@@ -309,6 +309,12 @@ impl Queue {
         self.timers.iter().map(|t| t.due).min()
     }
 
+    /// When a task's pending automatic retry starts, or None when it has none.
+    pub fn retry_due(&self, id: &str) -> Option<u64> {
+        let seq = self.retry_timers.get(id)?;
+        self.timers.iter().find(|t| t.seq == *seq).map(|t| t.due)
+    }
+
     /// Milliseconds until each pending timer, soonest first.
     pub fn pending_timers(&self, now: u64) -> Vec<u64> {
         let mut waits: Vec<u64> = self.timers.iter().map(|t| t.due.saturating_sub(now)).collect();
