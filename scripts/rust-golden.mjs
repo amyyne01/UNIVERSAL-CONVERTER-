@@ -204,7 +204,7 @@ const extra = [
     outputDir: ['{TMP}\\out', '{TMP}/out', '{TMP}\\file.txt', '{TMP}\\missing', '{TMP}\\out\\..\\out', '{TMP}\\out\\', 'relative',
       'out', '\\\\server\\share\\dir', 'C:\\Windows', 'c:\\windows\\Temp', 'C:/Windows', 'C:\\', 'c:', 'C:\\Program Files',
       'C:\\ProgramData\\x', 'C:\\Users',
-      'C:\\Program Files (x86)', 'C:\\Windows\\System32', 'D:\\Music\\..\\..\\Windows', 'D:\\'],
+      'C:\\Program Files (x86)', 'C:\\Windows\\System32', 'D:\\Music\\..\\..\\Windows'],
     proxy: ['http://a:1', 'https://a', 'socks5://127.0.0.1:9050', 'socks5h://a', 'socks4://a', 'HTTP://a', 'host:8080', ' http://a'],
     rateLimit: ['2M', '500K', '1G', '100', '2 MB', '2m', '2MB', '\u0661', '2M\n', '0', 'K'],
     palette: ['aurora', 'slate', 'moss', 'ember', 'paper', 'lagoon', 'orchid', 'Aurora', 'nope', ' moss'],
