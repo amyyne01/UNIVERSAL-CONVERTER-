@@ -341,3 +341,25 @@ fn real_mode_refuses_a_path_that_is_not_git_ignored() {
     }
     cleanup(&dir);
 }
+
+/// The built probe must not carry the dummy plaintext. Only the release build's
+/// folding is meaningful, so a debug run skips (the positive control still runs).
+#[test]
+fn probe_binary_does_not_contain_the_plaintext() {
+    let path = env!("CARGO_BIN_EXE_sealed_probe");
+    let bin = std::fs::read(path).expect("read probe");
+    assert!(!bin.is_empty(), "empty haystack");
+    let has = |needle: &[u8]| bin.windows(needle.len()).any(|w| w == needle);
+    assert!(has(b"AHG-PROBE-MARKER-7f3a"), "positive control missing: scan is blind");
+    let out = Command::new(path).output().expect("run probe");
+    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "ok");
+    if cfg!(debug_assertions) {
+        eprintln!("skipped: absence is only checked in a release build");
+        return;
+    }
+    for s in [TOKEN, ID, fixture::DISCORD_CLIENT_ID] {
+        let wide: Vec<u8> = s.encode_utf16().flat_map(u16::to_le_bytes).collect();
+        assert!(!has(s.as_bytes()), "ASCII plaintext in binary");
+        assert!(!has(&wide), "UTF-16LE plaintext in binary");
+    }
+}
