@@ -7,11 +7,12 @@
 //! release host and its SHA-256 is the one that release published.
 use std::io::Read;
 use std::sync::{Mutex, MutexGuard};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use ahg_engine::updater::{Event, Request, fs_error_message, guard_request, guard_response};
 use ahg_engine::ytdlp_updater::{CheckBegin, UpdateBegin, YtdlpStatus, YtdlpUpdater, latest_release, write_swap};
 use sha2::{Digest, Sha256};
+
+use crate::lock;
 
 const PREFIX: &str = "Engine update";
 /// The release feed and the checksum list are small; the binary is about 18 MB.
@@ -42,6 +43,25 @@ impl<T: Fetch + ?Sized> Fetch for std::sync::Arc<T> {
     }
 }
 
+/// One guarded request: a trusted host before, a good status and a trusted
+/// final host after, and no more bytes than `limit`.
+pub(crate) fn guarded_bytes(fetch: &dyn Fetch, url: &str, limit: u64, prefix: &str) -> Result<Vec<u8>, String> {
+    let request = guard_request(url, prefix)?;
+    let reply = fetch.get(&request).ok_or("fetch failed")?;
+    guard_response((200..300).contains(&reply.status), reply.status, Some(&reply.final_url), prefix)?;
+    let mut body = Vec::new();
+    reply.body.take(limit + 1).read_to_end(&mut body).map_err(|_| "fetch failed".to_owned())?;
+    if body.len() as u64 > limit {
+        return Err(format!("{prefix} refused: the reply is too large"));
+    }
+    Ok(body)
+}
+
+/// Lower-case hex of a SHA-256 digest.
+pub(crate) fn hex_of(digest: impl AsRef<[u8]>) -> String {
+    digest.as_ref().iter().map(|b| format!("{b:02x}")).collect()
+}
+
 type Version = Box<dyn Fn() -> String + Send + Sync>;
 type Swapped = Box<dyn Fn() + Send + Sync>;
 type Notify = Box<dyn Fn(Event) + Send + Sync>;
@@ -57,7 +77,7 @@ pub struct EngineUpdater {
 }
 
 fn now() -> f64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0.0, |d| d.as_millis() as f64)
+    crate::now_ms() as f64
 }
 
 impl EngineUpdater {
@@ -67,7 +87,7 @@ impl EngineUpdater {
     }
 
     fn state(&self) -> MutexGuard<'_, YtdlpUpdater> {
-        self.state.lock().unwrap_or_else(|e| e.into_inner())
+        lock(&self.state)
     }
 
     fn tell(&self, events: Vec<Event>) {
@@ -125,7 +145,7 @@ impl EngineUpdater {
         let latest = latest_release(&self.json(feed_url)?)?;
         let binary = self.bytes(&latest.asset_request().url, BINARY_LIMIT)?;
         let sums = String::from_utf8_lossy(&self.bytes(&latest.sums_request().url, TEXT_LIMIT)?).into_owned();
-        let sha: String = Sha256::digest(&binary).iter().map(|b| format!("{b:02x}")).collect();
+        let sha = hex_of(Sha256::digest(&binary));
         let plan = self.state().update_verify(&sums, &sha)?;
         write_swap(&plan, &binary).map_err(|e| fs_error_message(&e, "rename", &plan.target))?;
         Ok(latest.tag)
@@ -138,14 +158,6 @@ impl EngineUpdater {
     /// One guarded request: a trusted host before, a good status and a
     /// trusted final host after, and no more bytes than `limit`.
     fn bytes(&self, url: &str, limit: u64) -> Result<Vec<u8>, String> {
-        let request = guard_request(url, PREFIX)?;
-        let reply = self.fetch.get(&request).ok_or("fetch failed")?;
-        guard_response((200..300).contains(&reply.status), reply.status, Some(&reply.final_url), PREFIX)?;
-        let mut body = Vec::new();
-        reply.body.take(limit + 1).read_to_end(&mut body).map_err(|_| "fetch failed".to_owned())?;
-        if body.len() as u64 > limit {
-            return Err(format!("{PREFIX} refused: the reply is too large"));
-        }
-        Ok(body)
+        guarded_bytes(&*self.fetch, url, limit, PREFIX)
     }
 }

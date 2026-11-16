@@ -14,6 +14,7 @@ use ahg_engine::types::{MediaMetadata, SearchResult, SourcePlatform};
 use ahg_engine::url_detector::detect_url;
 use serde_json::Value;
 
+use crate::lock;
 use crate::proc::{Stream, Utf8Chunks, hidden, kill_tree, read_output, wait_for};
 
 pub const TIMEOUT_MESSAGE: &str = "Timed out reading that link — the site did not answer in time.";
@@ -68,7 +69,7 @@ impl Tools {
     }
 
     pub fn ytdlp(&self) -> Option<PathBuf> {
-        let mut cached = self.ytdlp.lock().unwrap_or_else(|e| e.into_inner());
+        let mut cached = lock(&self.ytdlp);
         if cached.is_none() {
             let found = self.dirs.iter().map(|d| d.join(exe("yt-dlp"))).find(|c| c.exists() && version_of(c).is_some());
             // In development the bare command on the system path is the last
@@ -80,7 +81,7 @@ impl Tools {
     }
 
     pub fn ffmpeg(&self) -> Option<String> {
-        let mut cached = self.ffmpeg.lock().unwrap_or_else(|e| e.into_inner());
+        let mut cached = lock(&self.ffmpeg);
         if cached.is_none() {
             *cached = self.dirs.iter().map(|d| d.join(exe("ffmpeg"))).find(|c| c.exists()).map(|c| c.to_string_lossy().into_owned());
         }
@@ -95,7 +96,7 @@ impl Tools {
     /// Forget the cached yt-dlp, so the next call searches again. Called after
     /// the engine updater swaps in a new one.
     pub fn reset_cache(&self) {
-        *self.ytdlp.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        *lock(&self.ytdlp) = None;
     }
 }
 
@@ -132,7 +133,7 @@ impl YtDlp {
 
     /// D10: route lookups and searches through this proxy. `None` or empty is direct.
     pub fn set_proxy(&self, proxy: Option<&str>) {
-        *self.proxy.lock().unwrap_or_else(|e| e.into_inner()) = proxy.filter(|p| !p.is_empty()).map(str::to_owned);
+        *lock(&self.proxy) = proxy.filter(|p| !p.is_empty()).map(str::to_owned);
     }
 
     /// The installed yt-dlp release, such as "2026.06.30", or "" when there is none.
@@ -152,7 +153,7 @@ impl YtDlp {
 
     /// The proxy in force for lookups and searches, if any.
     pub fn proxy(&self) -> Option<String> {
-        self.proxy.lock().unwrap_or_else(|e| e.into_inner()).clone()
+        lock(&self.proxy).clone()
     }
 
     pub fn set_metadata_timeout(&mut self, limit: Duration) {
@@ -190,13 +191,18 @@ impl YtDlp {
         }
     }
 
+    /// `run_json` with the arguments every listing starts with.
+    pub(crate) fn list_json(&self, rest: &[&str]) -> Result<Vec<Value>, String> {
+        self.run_json(&[&["--dump-json", "--no-warnings", "--flat-playlist"], rest].concat())
+    }
+
     fn run_json_once(&self, args: &[&str]) -> Result<Vec<Value>, String> {
         let bin = self.bin().ok_or("yt-dlp not found")?;
         // The socket timeout bounds a stalled connection, and the retries let
         // yt-dlp ride out a hiccup itself.
         let mut cmd = self.command(&bin);
         cmd.args(["--socket-timeout", "20", "--retries", "3"]);
-        if let Some(proxy) = self.proxy.lock().unwrap_or_else(|e| e.into_inner()).as_deref() {
+        if let Some(proxy) = lock(&self.proxy).as_deref() {
             cmd.args(["--proxy", proxy]);
         }
         cmd.args(args);
@@ -240,12 +246,12 @@ impl YtDlp {
     pub fn fetch_metadata(&self, url: &str) -> Result<MediaMetadata, String> {
         // A video opened from inside a list would otherwise make yt-dlp
         // enumerate the entire list before answering.
-        let mut args = vec!["--dump-json", "--no-warnings", "--flat-playlist"];
+        let mut args = Vec::new();
         if !detect_url(url).is_collection {
             args.push("--no-playlist");
         }
         args.extend(["--", url]);
-        let items = self.run_json(&args).map_err(|msg| {
+        let items = self.list_json(&args).map_err(|msg| {
             let code = serde_json::to_value(error_code_of(&msg)).ok().and_then(|v| v.as_str().map(str::to_owned)).unwrap_or_default();
             log_line("error", &format!("fetch failed host={} code={code}", host_of(url)));
             // The interface waits on this call, so it gets an explanation it can show.
@@ -263,7 +269,7 @@ impl YtDlp {
     }
 
     fn search(&self, query: &str, source: SourcePlatform) -> Result<Vec<SearchResult>, String> {
-        let items = self.run_json(&["--dump-json", "--no-warnings", "--flat-playlist", query])?;
+        let items = self.list_json(&[query])?;
         Ok(search_results(&items, source))
     }
 }

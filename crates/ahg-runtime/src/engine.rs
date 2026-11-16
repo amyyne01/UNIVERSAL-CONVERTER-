@@ -9,13 +9,14 @@ use std::path::Path;
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
 use std::sync::Mutex;
 use std::thread::{self, JoinHandle};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use ahg_engine::log::log_line;
 use ahg_engine::queue::{Effect, Event, Queue};
 use ahg_engine::types::DownloadTask;
 
 use crate::download::{Downloader, Report};
+use crate::{lock, now_ms};
 
 /// What the engine tells the outside.
 #[derive(Debug, Clone, PartialEq)]
@@ -37,10 +38,6 @@ enum Msg {
     Job(Job),
     Report(Report),
     Shutdown,
-}
-
-fn now_ms() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64)
 }
 
 pub struct Engine {
@@ -145,7 +142,7 @@ impl Engine {
     /// Unfinished tasks stay in history and come back parked at the next start.
     pub fn shutdown(&self) {
         let _ = self.tx.send(Msg::Shutdown);
-        let thread = self.thread.lock().unwrap_or_else(|e| e.into_inner()).take();
+        let thread = lock(&self.thread).take();
         if let Some(thread) = thread {
             let _ = thread.join();
         }

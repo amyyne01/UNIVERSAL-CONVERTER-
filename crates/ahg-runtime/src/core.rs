@@ -5,9 +5,9 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{RecvTimeoutError, Sender, channel};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 use ahg_engine::api::build_task;
 use ahg_engine::atomic_write::write_file_atomic;
@@ -26,6 +26,7 @@ use ahg_engine::validate::{MAX_COOKIES_BYTES, is_netscape_cookies, media_url_arg
 use serde_json::{Map, Value, json};
 
 use crate::app_update::AppUpdater;
+use crate::{lock, now_ms};
 use crate::desktop::Desktop;
 use crate::download::{Downloader, SongSearch};
 use crate::engine_update::{EngineUpdater, Fetch};
@@ -146,14 +147,6 @@ pub enum TrackMatch {
 /// Which plan the user is on right now. Asked on every request, so an
 /// activation or a revocation takes effect at once.
 pub type PlanSource = Box<dyn Fn() -> Plan + Send + Sync>;
-
-fn now_ms() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64)
-}
-
-fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
-    m.lock().unwrap_or_else(|e| e.into_inner())
-}
 
 pub struct Core {
     paths: Paths,

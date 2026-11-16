@@ -15,6 +15,7 @@ use ahg_engine::downloader::progress::{Outcome, OutputScan};
 use ahg_engine::downloader::score::score_candidates;
 use ahg_engine::types::{DownloadProgress, DownloadTask, SourcePlatform, Track};
 
+use crate::lock;
 use crate::proc::{Stream, Utf8Chunks, kill_tree, read_output};
 use crate::ytdlp::YtDlp;
 
@@ -41,10 +42,6 @@ struct Running {
 }
 
 type Active = Arc<Mutex<HashMap<String, Running>>>;
-
-fn lock(active: &Active) -> std::sync::MutexGuard<'_, HashMap<String, Running>> {
-    active.lock().unwrap_or_else(|e| e.into_inner())
-}
 
 /// Asks YouTube Music's own song search for `query` and returns the response
 /// text, or `None` when it cannot be reached.
@@ -179,7 +176,7 @@ fn spotify_bridge(ytdlp: &YtDlp, task: &DownloadTask, track: &Track, args: &mut 
         }
     }
 
-    let items = ytdlp.run_json(&["--dump-json", "--no-warnings", "--flat-playlist", &format!("ytsearch5:{query}")]).ok()?;
+    let items = ytdlp.list_json(&[&format!("ytsearch5:{query}")]).ok()?;
     let best = score_candidates(track, &search_results(&items, SourcePlatform::Youtube)).into_iter().next()?;
     // D34: a video that barely resembles the track is not offered even as a guess.
     if best.candidate.url.is_empty() || (song_search.is_some() && best.score < GUESS_FLOOR) {
@@ -194,7 +191,7 @@ fn spotify_bridge(ytdlp: &YtDlp, task: &DownloadTask, track: &Track, args: &mut 
 /// then carry only an id and a title, so each is looked up in full until the
 /// music metadata of one confirms it.
 fn confirmed_by_lookup(ytdlp: &YtDlp, track: &Track, query: &str) -> Option<String> {
-    let songs = ytdlp.run_json(&["--dump-json", "--no-warnings", "--flat-playlist", "--playlist-end", &LOOKUPS.to_string(), &song_search_page(query)]).ok()?;
+    let songs = ytdlp.list_json(&["--playlist-end", &LOOKUPS.to_string(), &song_search_page(query)]).ok()?;
     songs.iter().take(LOOKUPS).filter_map(|song| song["id"].as_str()).map(|id| format!("https://music.youtube.com/watch?v={id}")).find(|url| {
         let found = ytdlp.run_json(&["--dump-json", "--no-warnings", "--no-playlist", "--", url]).ok();
         let look = found.and_then(|items| items.into_iter().next()).and_then(|item| serde_json::from_value::<Lookup>(item).ok());

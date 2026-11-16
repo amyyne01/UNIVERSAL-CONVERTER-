@@ -13,7 +13,8 @@ use std::sync::{Mutex, MutexGuard};
 use ahg_engine::updater::{Event, UpdateState, Updater, guard_request, guard_response};
 use sha2::{Digest, Sha256};
 
-use crate::engine_update::Fetch;
+use crate::engine_update::{Fetch, guarded_bytes, hex_of};
+use crate::lock;
 
 const PREFIX: &str = "Update";
 const TEXT_LIMIT: u64 = 5 * 1024 * 1024;
@@ -42,7 +43,7 @@ impl AppUpdater {
     }
 
     fn state(&self) -> MutexGuard<'_, Updater> {
-        self.state.lock().unwrap_or_else(|e| e.into_inner())
+        lock(&self.state)
     }
 
     fn tell(&self, events: Vec<Event>) {
@@ -74,7 +75,7 @@ impl AppUpdater {
     /// arrive as events. `Err` only when there is nothing to download.
     /// Blocking: call it from a worker thread.
     pub fn download(&self) -> Result<UpdateState, String> {
-        let _one_at_a_time = self.downloading.lock().unwrap_or_else(|e| e.into_inner());
+        let _one_at_a_time = lock(&self.downloading);
         let sums = self.state().download_begin()?;
         if let Err(events) = self.fetch_and_stage(&sums.url) {
             self.tell(events);
@@ -130,7 +131,7 @@ impl AppUpdater {
             self.tell(events);
         }
         out.flush().map_err(|e| e.to_string())?;
-        Ok(hasher.finalize().iter().map(|b| format!("{b:02x}")).collect())
+        Ok(hex_of(hasher.finalize()))
     }
 
     /// Put the downloaded version in place of `target_exe`, the running app.
@@ -143,15 +144,7 @@ impl AppUpdater {
 
     /// One guarded request, as in the yt-dlp updater.
     fn bytes(&self, url: &str, limit: u64) -> Result<Vec<u8>, String> {
-        let request = guard_request(url, PREFIX)?;
-        let reply = self.fetch.get(&request).ok_or("fetch failed")?;
-        guard_response((200..300).contains(&reply.status), reply.status, Some(&reply.final_url), PREFIX)?;
-        let mut body = Vec::new();
-        reply.body.take(limit + 1).read_to_end(&mut body).map_err(|_| "fetch failed".to_owned())?;
-        if body.len() as u64 > limit {
-            return Err(format!("{PREFIX} refused: the reply is too large"));
-        }
-        Ok(body)
+        guarded_bytes(&*self.fetch, url, limit, PREFIX)
     }
 }
 
