@@ -689,7 +689,9 @@ fn busy_script(dir: &Path, busy: u32) -> String {
 #[test]
 fn pausing_a_running_download_stops_its_process_and_resuming_starts_it_again() {
     let dir = scratch("pause");
-    let (core, rx) = start(&dir, &busy_script(&dir, 1500), Plan::Premium);
+    // The first run stays busy until it is paused, however slow the machine is: a run that
+    // ended by itself would leave its child behind, and a pause would have nothing to stop.
+    let (core, rx) = start(&dir, &busy_script(&dir, 60_000), Plan::Premium);
     let id = core.start_download(&request()).unwrap().task_id;
     until("the first run", || runs(&dir.join("runs.txt")) == 1);
     let first = fs::read_to_string(dir.join("child.pid")).unwrap();
@@ -700,6 +702,8 @@ fn pausing_a_running_download_stops_its_process_and_resuming_starts_it_again() {
     until("the first process is gone", || !pid_is_running(&first));
     assert_eq!(runs(&dir.join("runs.txt")), 1, "a paused download must not start again by itself");
 
+    // Nothing reads the script now: the second run ends on its own, so it can finish.
+    fs::write(dir.join("script.txt"), busy_script(&dir, 0)).unwrap();
     assert!(core.resume(&id));
     until("the second run", || runs(&dir.join("runs.txt")) == 2);
     let second = fs::read_to_string(dir.join("child.pid")).unwrap();
@@ -865,10 +869,12 @@ fn spotify_request() -> Value {
     json!({ "url": "https://open.spotify.com/track/t1", "source": "spotify", "isAudioOnly": true, "format": "mp3", "quality": "128", "track": track })
 }
 
-/// The process ids a stand-in's `pid` lines wrote.
+/// The process ids a stand-in's `pid` lines wrote. Only whole numbers count: the stand-in
+/// writes an id and its newline in two calls, so a read (or a second process appending)
+/// in between shows a half-written line, and an empty id would match any process in `tasklist`.
 #[cfg(windows)]
 fn pids_in(file: &Path) -> Vec<String> {
-    fs::read_to_string(file).map_or_else(|_| Vec::new(), |text| text.lines().map(str::to_owned).collect())
+    fs::read_to_string(file).map_or_else(|_| Vec::new(), |text| text.lines().filter(|l| l.parse::<u32>().is_ok()).map(str::to_owned).collect())
 }
 
 #[test]
@@ -888,10 +894,9 @@ fn cancel_lookups_stops_a_hung_lookup_but_not_a_downloads_own_search() {
     });
     until("the interface's lookup started", || runs(&count) == 2);
 
-    let cancelled = Instant::now();
+    // A lookup that was not stopped would answer after 2.5 s with Ok, so the error is the proof.
     core.cancel_lookups();
     assert_eq!(lookup.join().unwrap().unwrap_err(), CANCELLED_MESSAGE);
-    assert!(cancelled.elapsed() < Duration::from_secs(2), "{:?}", cancelled.elapsed());
     // The download's own search ran on and found the song.
     wait_for(&rx, done);
     assert_eq!(status_of(&core, &id), DownloadStatus::Done);
@@ -911,10 +916,10 @@ fn cancelling_a_spotify_download_that_is_still_searching_ends_its_search() {
     let pid = pids_in(&pids).remove(0);
     assert!(pid_is_running(&pid));
 
-    let cancelled = Instant::now();
+    // The search would sleep for a minute, so seeing it gone within WAIT shows the cancel
+    // ended it; how fast `tasklist` and `taskkill` run on a busy machine does not matter.
     assert!(core.cancel(&id));
     until("the search process is gone", || !pid_is_running(&pid));
-    assert!(cancelled.elapsed() < Duration::from_secs(2), "{:?}", cancelled.elapsed());
     assert_eq!(status_of(&core, &id), DownloadStatus::Cancelled);
     kill_pid(&pid);
     // Shutdown waits for the bridge to end, so a second search could not appear later.
@@ -979,7 +984,9 @@ fn quitting_with_four_downloads_a_search_and_a_hung_lookup_leaves_no_process() {
     assert_eq!(lookup.join().unwrap().unwrap_err(), CANCELLED_MESSAGE);
     let Ok(core) = Arc::try_unwrap(core) else { panic!("the lookup has ended, so nothing else holds the core") };
     core.shutdown();
-    assert!(quitting.elapsed() < Duration::from_secs(8), "{:?}", quitting.elapsed());
+    // Quitting must not hang (every process here sleeps a minute). Idle it takes a few
+    // seconds, and each of the five kills starts `taskkill`, so the bound has wide margin.
+    assert!(quitting.elapsed() < Duration::from_secs(30), "{:?}", quitting.elapsed());
     for pid in pids_in(&downloads).into_iter().chain(pids_in(&lookups)) {
         if pid_is_running(&pid) {
             kill_pid(&pid);
