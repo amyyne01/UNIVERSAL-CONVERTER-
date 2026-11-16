@@ -680,3 +680,47 @@ fn cancelling_a_search_ends_its_process_within_two_seconds_and_is_not_retried() 
     assert_eq!(y.run_json_until(&["--dump-json", "x"], &flag).unwrap_err(), CANCELLED_MESSAGE, "a flag already set starts nothing");
     assert_eq!(runs(&count), 1);
 }
+
+// ── What a failed lookup writes to the log ──────────────────────────────────
+
+/// Electron 1.6.1 (downloader.ts, fetchMetadata) logs `fetch failed host=<host> code=<code>`
+/// and never the link, its path or its query. (Its searches log nothing, as here.)
+#[test]
+fn a_failed_lookup_logs_host_and_code_but_never_the_link() {
+    let dir = scratch("faillog");
+    ahg_engine::log::init_log(&dir);
+    let y = ytdlp(&dir, "err ERROR: Video unavailable\nexit 1\n", "");
+    y.fetch_metadata("https://lookup-host.example:8443/watch?v=abc&token=zzqq-secret-query").unwrap_err();
+
+    let log = fs::read_to_string(dir.join("ahg.log")).unwrap();
+    let line = log.lines().find(|l| l.contains("fetch failed")).unwrap_or_else(|| panic!("no failure line: {log}"));
+    assert!(line.contains("[error] fetch failed host=lookup-host.example:8443 code=removed"), "{line}");
+    assert!(!log.contains("https://") && !log.contains("zzqq-secret-query") && !log.contains("/watch"), "{log}");
+}
+
+// ── The Spotify bridge's artist ─────────────────────────────────────────────
+
+/// Electron 1.6.1 (downloader.ts, resolveSpotifyBridge): `track.artist || track.artists?.[0]`.
+#[test]
+fn a_track_with_no_artist_is_searched_under_the_first_of_its_artists() {
+    let dir = scratch("emptyartist");
+    let mut task = spotify_task();
+    let track = task.track.as_mut().unwrap();
+    track.artist = String::new();
+    track.artists = vec!["First".into(), "Second".into()];
+    let asked = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let mut d = Downloader::with(Arc::new(ytdlp(&dir, "exit 1\n", DOWNLOADS)));
+    let seen = asked.clone();
+    d.set_song_search(Arc::new(move |query: &str| {
+        seen.lock().unwrap().push(query.to_owned());
+        None
+    }));
+    let (tx, rx) = channel();
+    d.start(task, 3, tx);
+    while let Ok(report) = rx.recv_timeout(Duration::from_secs(20)) {
+        if matches!(report, Report::Done { .. } | Report::Error { .. }) {
+            break;
+        }
+    }
+    assert_eq!(asked.lock().unwrap().first().map(String::as_str), Some("First - The Song"));
+}
