@@ -45,8 +45,9 @@ pub fn resolve_protocol_link(raw: &str) -> Option<UrlDetection> {
         return None;
     }
     let detection = detect_url(target);
-    let open_host = matches!(detection.platform, SourcePlatform::Generic | SourcePlatform::Direct) && points_inside(target);
-    (detection.platform != SourcePlatform::Unknown && !open_host).then_some(detection)
+    // Whatever platform was detected: its patterns match anywhere in the text,
+    // so a platform name in the path of an inside host would pass for a site.
+    (detection.platform != SourcePlatform::Unknown && !points_inside(target)).then_some(detection)
 }
 
 /// D36 (Rust only): a link that arrives through `ahg://` may not name this PC

@@ -14,6 +14,15 @@ const HOSTS: &[(&str, bool)] = &[
     ("https://example.com/page", true),
     ("https://example.com/clip.mp4", true),
     ("https://localhost.example.com/a", true),
+    ("https://youtu.be/dQw4w9WgXcQ", true),
+    ("https://user@www.youtube.com/watch?v=dQw4w9WgXcQ", true),
+    ("https://www.youtube.com:8443/watch?v=dQw4w9WgXcQ", true),
+    ("https://www.youtube.com@127.0.0.1/watch?v=dQw4w9WgXcQ", false),
+    // an inside host with a platform name in the path or query
+    ("http://127.0.0.1/youtube.com/watch?v=AAAAAAAAAAA", false),
+    ("https://localhost/open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC", false),
+    ("http://[::1]/soundcloud.com/a/b", false),
+    ("http://10.0.0.5/?u=youtube.com/watch?v=AAAAAAAAAAA", false),
     // localhost
     ("http://localhost/a", false),
     ("http://localhost:8080/a", false),
@@ -76,5 +85,5 @@ fn the_same_links_pasted_are_still_accepted() {
             inside_and_detected += 1;
         }
     }
-    assert_eq!(inside_and_detected, 18);
+    assert_eq!(inside_and_detected, 19);
 }
