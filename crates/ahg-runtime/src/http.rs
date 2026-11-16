@@ -13,8 +13,8 @@ pub struct Http {
     /// A proxy was asked for but its address could not be used. Requests are
     /// then refused: going direct would expose the traffic the proxy was for.
     proxy_broken: bool,
-    /// Refuse any plain-http address, the first or after a redirect, and follow
-    /// at most 3 redirects (cover art, which comes from addresses a track names).
+    /// Refuse any plain-http address and follow no redirect (cover art, which comes from addresses a track names: the
+    /// caller follows each hop itself and checks it first).
     strict: bool,
 }
 
@@ -23,6 +23,9 @@ pub struct Response {
     /// Where the response finally came from, after any redirects.
     pub final_url: String,
     pub content_length: Option<String>,
+    /// The `Location` header, as sent: where a redirect points (only a client
+    /// that does not follow redirects by itself ever sees one).
+    pub location: Option<String>,
     body: ureq::Body,
 }
 
@@ -57,7 +60,7 @@ impl Http {
         }
     }
 
-    /// This client takes https addresses only and follows at most 3 redirects.
+    /// This client takes https addresses only and follows no redirect: a 3xx is returned as the response, with its `location`.
     pub fn https_only(mut self) -> Self {
         self.strict = true;
         self
@@ -79,7 +82,8 @@ impl Http {
             .timeout_global(Some(timeout))
             .proxy(self.proxy.clone())
             .https_only(self.strict)
-            .max_redirects(if self.strict { 3 } else { 10 })
+            .max_redirects(if self.strict { 0 } else { 10 })
+            .max_redirects_will_error(!self.strict)
             // Windows' own TLS and Windows' own list of trusted authorities:
             // nothing extra to ship, and a certificate the system trusts (a
             // company proxy, an antivirus) is trusted here too. The library's
@@ -95,7 +99,8 @@ impl Http {
         let status = response.status().as_u16();
         let final_url = response.get_uri().to_string();
         let content_length = response.headers().get("content-length").and_then(|v| v.to_str().ok()).map(str::to_owned);
-        Some(Response { status, final_url, content_length, body: response.into_body() })
+        let location = response.headers().get("location").and_then(|v| v.to_str().ok()).map(str::to_owned);
+        Some(Response { status, final_url, content_length, location, body: response.into_body() })
     }
 }
 
@@ -135,8 +140,8 @@ impl spotify::Transport for SpotifyHttp {
 pub fn cover_get(url: &str, proxy: Option<&str>) -> Option<crate::engine_update::Fetched> {
     let headers = [("User-Agent".to_owned(), "Mozilla/5.0".to_owned())];
     let response = Http::new(proxy).https_only().send("GET", url, &headers, None, Duration::from_secs(20))?;
-    let (status, final_url, content_length) = (response.status, response.final_url.clone(), response.content_length.clone());
-    Some(crate::engine_update::Fetched { status, final_url, content_length, body: Box::new(response.into_reader()) })
+    let (status, final_url, content_length, location) = (response.status, response.final_url.clone(), response.content_length.clone(), response.location.clone());
+    Some(crate::engine_update::Fetched { status, final_url, content_length, location, body: Box::new(response.into_reader()) })
 }
 
 /// The updaters' requests to GitHub's release pages. Always direct: update
@@ -160,6 +165,6 @@ impl crate::engine_update::Fetch for Releases {
         let status = response.status().as_u16();
         let final_url = response.get_uri().to_string();
         let content_length = response.headers().get("content-length").and_then(|v| v.to_str().ok()).map(str::to_owned);
-        Some(crate::engine_update::Fetched { status, final_url, content_length, body: Box::new(response.into_body().into_with_config().limit(u64::MAX).reader()) })
+        Some(crate::engine_update::Fetched { status, final_url, content_length, location: None, body: Box::new(response.into_body().into_with_config().limit(u64::MAX).reader()) })
     }
 }

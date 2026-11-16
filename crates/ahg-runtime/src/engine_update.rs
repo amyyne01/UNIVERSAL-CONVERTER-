@@ -27,6 +27,8 @@ pub struct Fetched {
     pub final_url: String,
     /// The `content-length` header as sent, if any.
     pub content_length: Option<String>,
+    /// The `Location` header of a redirect the transport did not follow.
+    pub location: Option<String>,
     pub body: Box<dyn Read + Send>,
 }
 

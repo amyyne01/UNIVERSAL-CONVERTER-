@@ -44,7 +44,7 @@ impl Fetch for Net {
         assert_eq!(request.user_agent, "AHG-Universal-Converter");
         self.asked.lock().unwrap().push(request.url.clone());
         let (status, final_url, body) = self.replies.lock().unwrap().get(&request.url)?.clone();
-        Some(Fetched { status, final_url, content_length: Some(body.len().to_string()), body: Box::new(Cursor::new(body)) })
+        Some(Fetched { status, final_url, content_length: Some(body.len().to_string()), location: None, body: Box::new(Cursor::new(body)) })
     }
 }
 

@@ -143,6 +143,29 @@ pub type CoverFetch = Box<dyn Fn(&str, Option<&str>) -> Option<Fetched> + Send +
 /// The most bytes of a cover image `Core::fetch_cover` takes.
 pub const MAX_COVER_BYTES: u64 = 5 * 1024 * 1024;
 
+/// The most redirects `Core::fetch_cover` follows; the next one is refused.
+pub const MAX_COVER_REDIRECTS: u32 = 3;
+
+/// Where a redirect from `base` (an https address) points: `location` may be
+/// absolute, start with `//` or `/`, or be relative to `base`'s folder.
+fn resolve_location(base: &str, location: &str) -> String {
+    let location = location.trim();
+    if location.split_once("://").is_some_and(|(scheme, _)| !scheme.contains(['/', '?', '#'])) {
+        return location.to_owned();
+    }
+    if let Some(rest) = location.strip_prefix("//") {
+        return format!("https://{rest}");
+    }
+    let rest = &base["https://".len()..];
+    let authority_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    if location.starts_with('/') {
+        return format!("https://{}{location}", &rest[..authority_end]);
+    }
+    let path = rest[..rest.find(['?', '#']).unwrap_or(rest.len())].to_owned();
+    let folder = if authority_end == path.len() { format!("{path}/") } else { path[..=path.rfind('/').unwrap_or(0)].to_owned() };
+    format!("https://{folder}{location}")
+}
+
 /// Everything of the core that reaches outside the app's own files and
 /// processes. The real ones, or stand-ins for tests.
 pub struct Outside {
@@ -653,10 +676,24 @@ impl Core {
     /// Electron's CSP lets pages show images from any https host (`img-src
     /// https:`), so there is no host list here either.
     pub fn fetch_cover(&self, url: &str) -> Result<Vec<u8>, String> {
-        if !cover_url_allowed(url) {
-            return Err("Cover refused: not an https address of a named host".into());
-        }
-        let reply = (self.cover)(url, self.ytdlp.proxy().as_deref()).ok_or("Cover fetch failed")?;
+        // Redirects are followed here, one hop at a time, so that every address is
+        // checked before it is requested.
+        let mut target = url.to_owned();
+        let mut hops = 0;
+        let reply = loop {
+            if !cover_url_allowed(&target) {
+                return Err("Cover refused: not an https address of a named host".into());
+            }
+            let reply = (self.cover)(&target, self.ytdlp.proxy().as_deref()).ok_or("Cover fetch failed")?;
+            if !matches!(reply.status, 301 | 302 | 303 | 307 | 308) {
+                break reply;
+            }
+            hops += 1;
+            if hops > MAX_COVER_REDIRECTS {
+                return Err("Cover refused: too many redirects".into());
+            }
+            target = resolve_location(&target, reply.location.as_deref().filter(|l| !l.trim().is_empty()).ok_or("Cover fetch failed: redirect without a place")?);
+        };
         if !(200..300).contains(&reply.status) || !(reply.final_url.is_empty() || reply.final_url.starts_with("https://")) {
             return Err(format!("Cover fetch failed: HTTP {}", reply.status));
         }
@@ -830,7 +867,7 @@ const _: fn() = || {
 // upgrade path: resolve, pin the address for the request, refuse private ranges.
 pub fn cover_url_allowed(url: &str) -> bool {
     let Some(rest) = url.strip_prefix("https://") else { return false };
-    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    let authority = rest.split(['/', '?', '#', '\\']).next().unwrap_or_default();
     if authority.contains('@') || authority.starts_with('[') {
         return false;
     }
@@ -851,7 +888,7 @@ mod cover_host_tests {
             "http://i.example/a", "file:///c:/a", "", "i.example/a", "https:///a", "https://",
             "https://127.0.0.1/a", "https://10.0.0.5:8080/a", "https://2130706433/a", "https://0x7f.1/a", "https://[::1]/a", "https://[2001:db8::1]:443/a",
             "https://localhost/a", "https://LOCALHOST:80/a", "https://app.localhost/a", "https://localhost./a",
-            "https://user@i.example/a", "https://user:pw@i.example/a", "https://i.example@evil.example/a", "https://@i.example/a",
+            "https://user@i.example/a", "https://user:pw@i.example/a", "https://i.example@evil.example/a", "https://@i.example/a", "https://127.0.0.1\\.example.com/a",
         ];
         assert!(!accepted.is_empty() && !refused.is_empty());
         for url in accepted {

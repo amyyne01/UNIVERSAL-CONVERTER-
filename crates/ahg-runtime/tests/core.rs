@@ -465,7 +465,7 @@ impl ahg_runtime::engine_update::Fetch for OneRelease {
             let sha: String = Sha256::digest(&self.binary).iter().map(|b| format!("{b:02x}")).collect();
             format!("{sha}  yt-dlp.exe\n").into_bytes()
         };
-        Some(ahg_runtime::engine_update::Fetched { status: 200, final_url: request.url.clone(), content_length: None, body: Box::new(std::io::Cursor::new(body)) })
+        Some(ahg_runtime::engine_update::Fetched { status: 200, final_url: request.url.clone(), content_length: None, location: None, body: Box::new(std::io::Cursor::new(body)) })
     }
 }
 
@@ -1394,7 +1394,7 @@ fn start_cover(name: &str, body: Vec<u8>) -> (Core, Asked) {
             asked.lock().unwrap().push((url.to_owned(), proxy.map(str::to_owned)));
             let status = if url.ends_with("/missing") { 404 } else { 200 };
             let final_url = if url.ends_with("/downgrade") { "http://cdn.example/a.jpg".to_owned() } else { url.to_owned() };
-            Some(ahg_runtime::engine_update::Fetched { status, final_url, content_length: Some(body.len().to_string()), body: Box::new(std::io::Cursor::new(body.clone())) })
+            Some(ahg_runtime::engine_update::Fetched { status, final_url, content_length: Some(body.len().to_string()), location: None, body: Box::new(std::io::Cursor::new(body.clone())) })
         }
     });
     let (tx, _rx) = channel();
@@ -1478,4 +1478,75 @@ fn a_lookup_started_after_shutdown_is_cancelled_and_starts_no_process() {
     assert!(began.elapsed() < Duration::from_secs(2), "{:?}", began.elapsed());
     assert_eq!(runs(&count), 0, "no process was started");
     assert!(core.start_download(&request()).is_err(), "no download is queued after shutdown");
+}
+
+/// A core whose cover transport answers from `routes` (address, status, `Location`);
+/// an address not listed is a 200 with the bytes `cover`. Every address asked for is written down.
+fn start_hops(name: &str, routes: &'static [(&'static str, u16, &'static str)]) -> (Core, Asked) {
+    let dir = scratch(name);
+    let asked = Asked::default();
+    let cover: ahg_runtime::core::CoverFetch = Box::new({
+        let asked = asked.clone();
+        move |url: &str, proxy: Option<&str>| {
+            asked.lock().unwrap().push((url.to_owned(), proxy.map(str::to_owned)));
+            let (status, location) = routes.iter().find(|r| r.0 == url).map_or((200, None), |r| (r.1, Some(r.2.to_owned())));
+            let body = if status == 200 { b"cover".to_vec() } else { Vec::new() };
+            Some(ahg_runtime::engine_update::Fetched { status, final_url: url.to_owned(), content_length: None, location, body: Box::new(std::io::Cursor::new(body)) })
+        }
+    });
+    let (tx, _rx) = channel();
+    let paths = Paths { user_data: dir.join("userData"), downloads: dir.join("Downloads").to_string_lossy().into_owned() };
+    let outside = Outside { cover, ..Outside::standin() };
+    (Core::start_with(paths, Arc::new(YtDlp::new(PathBuf::from(FAKE), None)), Box::new(|| Plan::Premium), tx, outside), asked)
+}
+
+#[test]
+fn a_redirect_to_an_address_that_is_not_allowed_is_refused_before_it_is_requested() {
+    const ROUTES: &[(&str, u16, &str)] = &[
+        ("https://i.example/ip", 302, "https://127.0.0.1/x"),
+        ("https://i.example/localhost", 301, "https://localhost/x"),
+        ("https://i.example/http", 307, "http://i.example/x"),
+        ("https://i.example/userinfo", 308, "https://u@i.example/x"),
+        ("https://i.example/v6", 303, "https://[::1]/x"),
+        ("https://i.example/slashes", 302, "//127.0.0.1/x"),
+        ("https://i.example/nowhere", 302, ""),
+    ];
+    assert!(!ROUTES.is_empty());
+    for (from, _, to) in ROUTES {
+        let (core, asked) = start_hops("coverbadhop", ROUTES);
+        assert!(core.fetch_cover(from).is_err(), "{from} -> {to}");
+        assert_eq!(asked.lock().unwrap().len(), 1, "the second request was never made: {from} -> {to}");
+        core.shutdown();
+    }
+}
+
+#[test]
+fn a_relative_redirect_to_an_allowed_host_is_followed() {
+    const ROUTES: &[(&str, u16, &str)] = &[
+        ("https://i.example/a/b.jpg", 302, "c.jpg"),
+        ("https://i.example/a/c.jpg", 301, "/d/e.jpg"),
+        ("https://i.example/d/e.jpg", 308, "//cdn.example/f.jpg"),
+    ];
+    let (core, asked) = start_hops("coverrelative", ROUTES);
+    assert_eq!(core.fetch_cover("https://i.example/a/b.jpg").unwrap(), b"cover");
+    let seen: Vec<String> = asked.lock().unwrap().iter().map(|a| a.0.clone()).collect();
+    assert_eq!(seen, ["https://i.example/a/b.jpg", "https://i.example/a/c.jpg", "https://i.example/d/e.jpg", "https://cdn.example/f.jpg"]);
+    core.shutdown();
+}
+
+#[test]
+fn a_fourth_redirect_is_refused_and_three_are_followed() {
+    const ROUTES: &[(&str, u16, &str)] = &[
+        ("https://i.example/1", 302, "https://i.example/2"),
+        ("https://i.example/2", 302, "https://i.example/3"),
+        ("https://i.example/3", 302, "https://i.example/4"),
+        ("https://i.example/4", 302, "https://i.example/5"),
+    ];
+    assert!(!ROUTES.is_empty());
+    let (core, asked) = start_hops("coverchain", ROUTES);
+    let err = core.fetch_cover("https://i.example/1").unwrap_err();
+    assert!(err.contains("too many redirects"), "{err}");
+    assert_eq!(asked.lock().unwrap().len(), 4, "the fourth redirect is never followed");
+    assert_eq!(core.fetch_cover("https://i.example/2").unwrap(), b"cover", "three redirects are followed");
+    core.shutdown();
 }
