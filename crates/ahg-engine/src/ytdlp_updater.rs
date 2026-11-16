@@ -22,9 +22,9 @@ use std::io;
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::text::js_trim;
+use crate::text::{js_trim, truthy};
 use crate::updater::{
-    Event, Request, assets_list, event, find_named, is_trusted_release_host, js_string, js_truthy, parse_checksum, prop, win_join,
+    Event, Request, assets_list, event, find_named, is_trusted_release_host, js_string, parse_checksum, prop, win_join,
 };
 
 pub const RELEASE_API: &str = "https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest";
@@ -84,7 +84,7 @@ pub fn latest_release(json: &Value) -> Result<Latest, String> {
         Ok(find_named(assets, name)?.and_then(|a| a.get("browser_download_url")).filter(|u| !u.is_null()))
     };
     let (asset_url, sums_url) = (url_of(ASSET_NAME)?, url_of(SUMS_ASSET)?);
-    let present = |u: Option<&Value>| u.filter(|u| js_truthy(u)).map(js_string);
+    let present = |u: Option<&Value>| u.filter(|u| truthy(u)).map(js_string);
     let (Some(asset_url), Some(sums_url), false) = (present(asset_url), present(sums_url), tag.is_empty()) else {
         return Err(format!("{PREFIX} refused: incomplete release feed"));
     };

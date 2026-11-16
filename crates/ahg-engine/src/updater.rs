@@ -25,7 +25,7 @@ use serde_json::{Value, json};
 use url::Url;
 
 use crate::downloader::progress::js_number;
-use crate::text::{JS_SPACE, js_trim};
+use crate::text::{JS_SPACE, is_sep, js_trim, truthy as js_truthy};
 
 pub const RELEASE_API: &str = "https://api.github.com/repos/amyyne01/UNIVERSAL-CONVERTER-/releases/latest";
 /// Published beside the exe by scripts/release-assets.mjs; the update is refused without it.
@@ -219,16 +219,6 @@ pub(crate) fn js_string(v: &Value) -> String {
     }
 }
 
-pub(crate) fn js_truthy(v: &Value) -> bool {
-    match v {
-        Value::Null => false,
-        Value::Bool(b) => *b,
-        Value::Number(n) => n.as_f64().is_some_and(|f| f != 0.0 && !f.is_nan()),
-        Value::String(s) => !s.is_empty(),
-        _ => true,
-    }
-}
-
 /// `value.key ?? undefined`: reading a property of null is a TypeError.
 pub(crate) fn prop<'a>(v: &'a Value, key: &str) -> Result<Option<&'a Value>, String> {
     if v.is_null() {
@@ -257,10 +247,6 @@ pub(crate) fn find_named<'a>(assets: &'a [Value], name: &str) -> Result<Option<&
 }
 
 // ── Windows paths (path.win32.join, which Node uses on Windows) ──────────────
-
-fn is_sep(c: char) -> bool {
-    c == '\\' || c == '/'
-}
 
 /// `path.win32.normalize` for drive-letter, rooted and relative paths.
 /// ponytail: UNC (`\\server\share`) is not recognised; add when userData can sit on one.

@@ -2,9 +2,9 @@
 //! clipboard links, `ahg://` links, file paths and imported cookie files.
 //! Ported from electron/security.ts. Its sender attestation, rate limiting and
 //! content policy guarded the web page inside Electron and have no counterpart.
-use crate::text::{js_len, js_trim};
+use crate::text::{is_sep, js_len, js_trim};
 
-const MAX_URL: usize = 2048;
+pub(crate) const MAX_URL: usize = 2048;
 
 /// The guard a pasted URL passes before it reaches detection or anything that
 /// spawns: bounded, on one line, and unable to be read as a command-line flag.
@@ -75,10 +75,6 @@ pub fn is_netscape_cookies(text: &str) -> bool {
         cookies += 1;
     }
     cookies > 0
-}
-
-fn is_sep(c: char) -> bool {
-    c == '\\' || c == '/'
 }
 
 /// Node's `path.win32.resolve`, done on text alone: it never touches the disk

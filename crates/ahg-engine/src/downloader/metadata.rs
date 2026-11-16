@@ -6,6 +6,7 @@
 use serde_json::Value;
 
 use super::progress::js_number;
+use crate::text::truthy;
 use crate::types::{MediaMetadata, SearchResult, SourcePlatform};
 use crate::url_detector::detect_url;
 
@@ -66,17 +67,6 @@ fn js_string(v: &Value) -> String {
 /// `String(v ?? '')`.
 fn string_or_empty(v: Option<&Value>) -> String {
     v.filter(|v| !v.is_null()).map_or_else(String::new, js_string)
-}
-
-/// JavaScript truthiness of a value read from JSON.
-fn truthy(v: &Value) -> bool {
-    match v {
-        Value::Null => false,
-        Value::Bool(b) => *b,
-        Value::Number(n) => n.as_f64().is_some_and(|f| f != 0.0 && !f.is_nan()),
-        Value::String(s) => !s.is_empty(),
-        Value::Array(_) | Value::Object(_) => true,
-    }
 }
 
 /// `toNum`: `Number(v)` when that is finite, else 0. A missing value is 0.

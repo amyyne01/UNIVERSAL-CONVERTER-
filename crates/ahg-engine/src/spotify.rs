@@ -31,7 +31,7 @@ use regex::Regex;
 use serde_json::{Map, Value, json};
 
 use crate::downloader::progress::js_number;
-use crate::text::{js_trim, utf16_prefix};
+use crate::text::{js_trim, truthy, utf16_prefix};
 use crate::types::{Playlist, Track};
 use crate::url_detector::parse_spotify_url;
 
@@ -231,16 +231,6 @@ fn index0(v: Option<&Value>) -> Option<&Value> {
         Value::Array(a) => a.first(),
         Value::Object(m) => m.get("0"),
         _ => None,
-    }
-}
-
-fn truthy(v: &Value) -> bool {
-    match v {
-        Value::Null => false,
-        Value::Bool(b) => *b,
-        Value::Number(n) => n.as_f64().is_some_and(|n| n != 0.0 && !n.is_nan()),
-        Value::String(s) => !s.is_empty(),
-        _ => true,
     }
 }
 

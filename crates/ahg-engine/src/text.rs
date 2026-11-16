@@ -80,3 +80,20 @@ pub fn ascii_ci_regex(pattern: &str) -> Regex {
     }
     Regex::new(&out).expect("pattern is a compile-time constant")
 }
+
+/// JavaScript truthiness of a JSON value.
+pub fn truthy(v: &serde_json::Value) -> bool {
+    use serde_json::Value;
+    match v {
+        Value::Null => false,
+        Value::Bool(b) => *b,
+        Value::Number(n) => n.as_f64().is_some_and(|f| f != 0.0 && !f.is_nan()),
+        Value::String(s) => !s.is_empty(),
+        Value::Array(_) | Value::Object(_) => true,
+    }
+}
+
+/// A path separator in a Windows path: `\` or `/`.
+pub(crate) fn is_sep(c: char) -> bool {
+    c == '\\' || c == '/'
+}

@@ -9,26 +9,14 @@ use serde_json::{Map, Value, json};
 
 use crate::downloader::bridge::{GUESS_CEILING, song_url};
 use crate::queue::{TaskInit, create_task};
-use crate::text::js_len;
+use crate::text::{js_len, truthy};
 use crate::tier::{BASIC_LIMITS, Plan, clamp_audio_quality, clamp_extras, clamp_format, clamp_video_quality};
 use crate::types::{AUDIO_ONLY_SOURCES, DownloadTask, PartialExtras, SourcePlatform, Track, VideoQuality};
-use crate::validate::{media_url_arg, playlist_items_arg};
+use crate::validate::{MAX_URL, media_url_arg, playlist_items_arg};
 
-const MAX_URL: usize = 2048;
 /// Cap on a scraped artist list, so a hostile track cannot balloon it.
 const MAX_ARTISTS: usize = 64;
 const BAD_TEXT: &str = "Invalid input: expected a string within length limits";
-
-/// JavaScript truthiness of a JSON value.
-fn truthy(v: &Value) -> bool {
-    match v {
-        Value::Null => false,
-        Value::Bool(b) => *b,
-        Value::Number(n) => n.as_f64().is_some_and(|f| f != 0.0 && !f.is_nan()),
-        Value::String(s) => !s.is_empty(),
-        Value::Array(_) | Value::Object(_) => true,
-    }
-}
 
 /// Required text of at most `max` UTF-16 units.
 fn text(v: Option<&Value>, max: usize) -> Result<String, String> {
