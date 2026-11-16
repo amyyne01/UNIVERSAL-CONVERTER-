@@ -3,6 +3,7 @@
 //! the Spotify bridge.
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -18,6 +19,10 @@ use crate::lock;
 use crate::proc::{Stream, Utf8Chunks, hidden, kill_tree, read_output, wait_for};
 
 pub const TIMEOUT_MESSAGE: &str = "Timed out reading that link — the site did not answer in time.";
+/// What a lookup that was cancelled (D46) answers with.
+pub const CANCELLED_MESSAGE: &str = "Cancelled.";
+/// How often a running lookup looks at its cancel flag.
+const CANCEL_POLL: Duration = Duration::from_millis(50);
 /// How long a metadata or search call may take before it is stopped.
 const METADATA_TIMEOUT: Duration = Duration::from_secs(90);
 const VERSION_TIMEOUT: Duration = Duration::from_secs(5);
@@ -185,18 +190,32 @@ impl YtDlp {
     /// transient failure is tried once more; a permanent one answers the same
     /// twice, and a timeout has already cost the full wait, so neither is.
     pub fn run_json(&self, args: &[&str]) -> Result<Vec<Value>, String> {
-        match self.run_json_once(args) {
-            Err(msg) if msg != TIMEOUT_MESSAGE && classify_error(&msg) == ErrorClass::Retryable => self.run_json_once(args),
+        self.run_json_with(args, None)
+    }
+
+    /// `run_json` that ends at once, process tree killed, with
+    /// [`CANCELLED_MESSAGE`], when `cancel` is set (D46). Polled every 50 ms.
+    pub fn run_json_until(&self, args: &[&str], cancel: &AtomicBool) -> Result<Vec<Value>, String> {
+        self.run_json_with(args, Some(cancel))
+    }
+
+    fn run_json_with(&self, args: &[&str], cancel: Option<&AtomicBool>) -> Result<Vec<Value>, String> {
+        match self.run_json_once(args, cancel) {
+            Err(msg) if msg != TIMEOUT_MESSAGE && msg != CANCELLED_MESSAGE && classify_error(&msg) == ErrorClass::Retryable => self.run_json_once(args, cancel),
             other => other,
         }
     }
 
     /// `run_json` with the arguments every listing starts with.
-    pub(crate) fn list_json(&self, rest: &[&str]) -> Result<Vec<Value>, String> {
-        self.run_json(&[&["--dump-json", "--no-warnings", "--flat-playlist"], rest].concat())
+    pub(crate) fn list_json(&self, rest: &[&str], cancel: Option<&AtomicBool>) -> Result<Vec<Value>, String> {
+        self.run_json_with(&[&["--dump-json", "--no-warnings", "--flat-playlist"], rest].concat(), cancel)
     }
 
-    fn run_json_once(&self, args: &[&str]) -> Result<Vec<Value>, String> {
+    fn run_json_once(&self, args: &[&str], cancel: Option<&AtomicBool>) -> Result<Vec<Value>, String> {
+        let stopped = || cancel.is_some_and(|flag| flag.load(Ordering::SeqCst));
+        if stopped() {
+            return Err(CANCELLED_MESSAGE.to_owned());
+        }
         let bin = self.bin().ok_or("yt-dlp not found")?;
         // The socket timeout bounds a stalled connection, and the retries let
         // yt-dlp ride out a hiccup itself.
@@ -215,10 +234,18 @@ impl YtDlp {
         let (mut out, mut err) = (String::new(), String::new());
         let (mut out_chunks, mut err_chunks) = (Utf8Chunks::default(), Utf8Chunks::default());
         loop {
-            match chunks.recv_timeout(deadline.saturating_duration_since(std::time::Instant::now())) {
+            if stopped() {
+                kill_tree(pid);
+                let _ = child.wait();
+                return Err(CANCELLED_MESSAGE.to_owned());
+            }
+            // Waits in slices, so a cancel is seen within one slice even when the process is silent.
+            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+            match chunks.recv_timeout(remaining.min(CANCEL_POLL)) {
                 Ok((Stream::Stdout, bytes)) => out.push_str(&out_chunks.push(&bytes)),
                 Ok((Stream::Stderr, bytes)) => err.push_str(&err_chunks.push(&bytes)),
                 Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) if remaining > CANCEL_POLL => {}
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                     kill_tree(pid);
                     let _ = child.wait();
@@ -244,6 +271,15 @@ impl YtDlp {
 
     /// What a link holds: one item, or a collection with its entries.
     pub fn fetch_metadata(&self, url: &str) -> Result<MediaMetadata, String> {
+        self.fetch_metadata_with(url, None)
+    }
+
+    /// `fetch_metadata`, stopped by `cancel` with [`CANCELLED_MESSAGE`] as the error.
+    pub fn fetch_metadata_until(&self, url: &str, cancel: &AtomicBool) -> Result<MediaMetadata, String> {
+        self.fetch_metadata_with(url, Some(cancel))
+    }
+
+    fn fetch_metadata_with(&self, url: &str, cancel: Option<&AtomicBool>) -> Result<MediaMetadata, String> {
         // A video opened from inside a list would otherwise make yt-dlp
         // enumerate the entire list before answering.
         let mut args = Vec::new();
@@ -251,7 +287,10 @@ impl YtDlp {
             args.push("--no-playlist");
         }
         args.extend(["--", url]);
-        let items = self.list_json(&args).map_err(|msg| {
+        let items = self.list_json(&args, cancel).map_err(|msg| {
+            if msg == CANCELLED_MESSAGE {
+                return msg;
+            }
             let code = serde_json::to_value(error_code_of(&msg)).ok().and_then(|v| v.as_str().map(str::to_owned)).unwrap_or_default();
             log_line("error", &format!("fetch failed host={} code={code}", host_of(url)));
             // The interface waits on this call, so it gets an explanation it can show.
@@ -261,15 +300,23 @@ impl YtDlp {
     }
 
     pub fn search_youtube(&self, query: &str) -> Result<Vec<SearchResult>, String> {
-        self.search(&format!("ytsearch12:{query}"), SourcePlatform::Youtube)
+        self.search(&format!("ytsearch12:{query}"), SourcePlatform::Youtube, None)
+    }
+
+    pub fn search_youtube_until(&self, query: &str, cancel: &AtomicBool) -> Result<Vec<SearchResult>, String> {
+        self.search(&format!("ytsearch12:{query}"), SourcePlatform::Youtube, Some(cancel))
     }
 
     pub fn search_soundcloud(&self, query: &str) -> Result<Vec<SearchResult>, String> {
-        self.search(&format!("scsearch12:{query}"), SourcePlatform::Soundcloud)
+        self.search(&format!("scsearch12:{query}"), SourcePlatform::Soundcloud, None)
     }
 
-    fn search(&self, query: &str, source: SourcePlatform) -> Result<Vec<SearchResult>, String> {
-        let items = self.list_json(&[query])?;
+    pub fn search_soundcloud_until(&self, query: &str, cancel: &AtomicBool) -> Result<Vec<SearchResult>, String> {
+        self.search(&format!("scsearch12:{query}"), SourcePlatform::Soundcloud, Some(cancel))
+    }
+
+    fn search(&self, query: &str, source: SourcePlatform, cancel: Option<&AtomicBool>) -> Result<Vec<SearchResult>, String> {
+        let items = self.list_json(&[query], cancel)?;
         Ok(search_results(&items, source))
     }
 }

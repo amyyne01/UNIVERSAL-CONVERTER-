@@ -10,6 +10,7 @@
 //! - `sleep <ms>`
 //! - `child <file>`: start a copy of itself that sleeps for a minute, and write its pid to the file
 //! - `count <file>`: append a line to the file, to count how often the script ran
+//! - `pid <file>`: append this process's own id as a line to the file
 //! - `failonce <file>`: the first run (the file is missing) prints a network error and exits 1
 //! - `exit <code>`
 //!
@@ -72,6 +73,11 @@ fn main() {
                     && let Ok(child) = Command::new(exe).env("FAKE_YTDLP_SCRIPT", &sleeper).env_remove("FAKE_YTDLP_ARGS").spawn()
                 {
                     let _ = std::fs::write(rest, child.id().to_string());
+                }
+            }
+            "pid" => {
+                if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(rest) {
+                    let _ = writeln!(f, "{}", std::process::id());
                 }
             }
             "count" => {

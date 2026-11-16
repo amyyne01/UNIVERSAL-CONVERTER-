@@ -12,7 +12,7 @@ use ahg_engine::queue::Event;
 use ahg_engine::tier::Plan;
 use ahg_engine::types::{DownloadStatus, VideoQuality};
 use ahg_runtime::core::{CookiesImport, Core, CoreEvent, Outside, Paths, Shown, TrackMatch};
-use ahg_runtime::ytdlp::YtDlp;
+use ahg_runtime::ytdlp::{CANCELLED_MESSAGE, YtDlp};
 use serde_json::{Value, json};
 
 const FAKE: &str = env!("CARGO_BIN_EXE_fake_ytdlp");
@@ -864,4 +864,112 @@ fn a_link_that_looks_like_an_option_is_refused_before_any_process_starts() {
     assert_eq!(core.fetch_metadata("--rm-rf").unwrap_err(), "Invalid input: URL must not start with \"-\"");
     assert!(!dir.join("args.txt").exists() && !dir.join("args.txt.json").exists(), "yt-dlp must not have been started");
     core.shutdown();
+}
+
+// ── Stopping lookups, and leaving no process at quit ────────────────────────
+
+/// A core whose lookups (`--dump-json`) play `json_script` and whose downloads
+/// play `script`. The song search finds nothing, so yt-dlp matches a Spotify track.
+fn start_split(dir: &Path, json_script: &str, script: &str) -> (Core, Receiver<CoreEvent>) {
+    fs::write(dir.join("json.txt"), json_script).unwrap();
+    fs::write(dir.join("script.txt"), script).unwrap();
+    let mut ytdlp = YtDlp::new(PathBuf::from(FAKE), None);
+    ytdlp.env("FAKE_YTDLP_SCRIPT_JSON", dir.join("json.txt").to_str().unwrap());
+    ytdlp.env("FAKE_YTDLP_SCRIPT", dir.join("script.txt").to_str().unwrap());
+    let search: ahg_runtime::download::SongSearch = Arc::new(|_: &str| None);
+    let (tx, rx) = channel();
+    let paths = Paths { user_data: dir.join("userData"), downloads: dir.join("Downloads").to_string_lossy().into_owned() };
+    (Core::start_with_search(paths, Arc::new(ytdlp), Box::new(|| Plan::Premium), tx, search), rx)
+}
+
+fn spotify_request() -> Value {
+    let track = json!({ "id": "t1", "name": "The Song", "artist": "Artist", "artists": ["Artist"], "album": "", "trackNumber": 1, "durationMs": 200000, "thumbnailUrl": "" });
+    json!({ "url": "https://open.spotify.com/track/t1", "source": "spotify", "isAudioOnly": true, "format": "mp3", "quality": "128", "track": track })
+}
+
+/// The process ids a stand-in's `pid` lines wrote.
+fn pids_in(file: &Path) -> Vec<String> {
+    fs::read_to_string(file).map_or_else(|_| Vec::new(), |text| text.lines().map(str::to_owned).collect())
+}
+
+#[test]
+fn cancel_lookups_stops_a_hung_lookup_but_not_a_downloads_own_search() {
+    let dir = scratch("cancellookups");
+    let media = dir.join("Downloads").join("a.mp3");
+    fs::write(&media, vec![0u8; 2048]).unwrap();
+    let (count, record) = (dir.join("count"), r#"{"id":"abc00000001","track":"The Song","artist":"Artist","duration":200}"#);
+    // Every lookup answers after 2.5 s: the interface's, and the bridge's two.
+    let (core, rx) = start_split(&dir, &format!("count {}\nsleep 2500\nout {record}\nexit 0\n", count.display()), &format!("out [FILEPATH]{}\nexit 0\n", media.display()));
+    let core = Arc::new(core);
+    let id = core.start_download(&spotify_request()).unwrap().task_id;
+    until("the bridge's search started", || runs(&count) == 1);
+    let lookup = std::thread::spawn({
+        let core = core.clone();
+        move || core.fetch_metadata("https://youtu.be/dQw4w9WgXcQ")
+    });
+    until("the interface's lookup started", || runs(&count) == 2);
+
+    let cancelled = Instant::now();
+    core.cancel_lookups();
+    assert_eq!(lookup.join().unwrap().unwrap_err(), CANCELLED_MESSAGE);
+    assert!(cancelled.elapsed() < Duration::from_secs(2), "{:?}", cancelled.elapsed());
+    // The download's own search ran on and found the song.
+    wait_for(&rx, done);
+    assert_eq!(status_of(&core, &id), DownloadStatus::Done);
+    assert!(runs(&count) >= 3, "the bridge looked the song up after the other lookup was stopped");
+    // Only lookups running at that moment are stopped, not later ones.
+    assert!(core.fetch_metadata("https://youtu.be/dQw4w9WgXcQ").is_ok());
+}
+
+#[test]
+fn cancelling_a_spotify_download_that_is_still_searching_ends_its_search() {
+    let dir = scratch("cancelsearching");
+    let pids = dir.join("pids");
+    let (core, _rx) = start_split(&dir, &format!("pid {}\nsleep 60000\n", pids.display()), "exit 0\n");
+    let id = core.start_download(&spotify_request()).unwrap().task_id;
+    until("the search started", || pids_in(&pids).len() == 1);
+    let pid = pids_in(&pids).remove(0);
+    assert!(pid_is_running(&pid));
+
+    let cancelled = Instant::now();
+    assert!(core.cancel(&id));
+    until("the search process is gone", || !pid_is_running(&pid));
+    assert!(cancelled.elapsed() < Duration::from_secs(2), "{:?}", cancelled.elapsed());
+    assert_eq!(status_of(&core, &id), DownloadStatus::Cancelled);
+    assert_eq!(pids_in(&pids).len(), 1, "the bridge went no further");
+    kill_pid(&pid);
+    core.shutdown();
+}
+
+#[test]
+fn quitting_with_four_downloads_a_search_and_a_hung_lookup_leaves_no_process() {
+    let dir = scratch("quit");
+    let (downloads, lookups) = (dir.join("downloads.pids"), dir.join("lookups.pids"));
+    // Three YouTube downloads and one Spotify track still searching, which fill four slots.
+    let (core, _rx) = start_split(&dir, &format!("pid {}\nsleep 60000\n", lookups.display()), &format!("pid {}\nerr [PROGRESS]1|100|NA|1|9\nsleep 60000\n", downloads.display()));
+    core.update_settings(json!({ "maxConcurrentDownloads": 4 }).as_object().unwrap());
+    for _ in 0..3 {
+        core.start_download(&request()).unwrap();
+    }
+    core.start_download(&spotify_request()).unwrap();
+    let core = Arc::new(core);
+    let lookup = std::thread::spawn({
+        let core = core.clone();
+        move || core.fetch_metadata("https://youtu.be/dQw4w9WgXcQ")
+    });
+    until("every process started", || pids_in(&downloads).len() == 3 && pids_in(&lookups).len() == 2);
+
+    // The interface stops its lookups, then lets go of the core: that is quitting.
+    let quitting = Instant::now();
+    core.cancel_lookups();
+    assert_eq!(lookup.join().unwrap().unwrap_err(), CANCELLED_MESSAGE);
+    let Ok(core) = Arc::try_unwrap(core) else { panic!("the lookup has ended, so nothing else holds the core") };
+    core.shutdown();
+    assert!(quitting.elapsed() < Duration::from_secs(8), "{:?}", quitting.elapsed());
+    for pid in pids_in(&downloads).into_iter().chain(pids_in(&lookups)) {
+        if pid_is_running(&pid) {
+            kill_pid(&pid);
+            panic!("process {pid} was still running after shutdown");
+        }
+    }
 }

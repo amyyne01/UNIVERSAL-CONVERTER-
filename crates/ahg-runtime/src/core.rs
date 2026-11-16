@@ -161,6 +161,8 @@ pub struct Core {
     song_search: SongSearch,
     hold_unconfirmed: Arc<AtomicBool>,
     remembered: Mutex<HashMap<String, SongMatch>>,
+    /// The cancel flag of each lookup the interface has running (D46).
+    lookups: Mutex<Vec<Arc<AtomicBool>>>,
     engine_updater: Arc<EngineUpdater>,
     app_updater: AppUpdater,
     desktop: Box<dyn Desktop>,
@@ -290,7 +292,7 @@ impl Core {
                 }
             })
         };
-        let core = Self { paths, config, stats, ytdlp, plan, engine, events, stop, dispatcher: Some(dispatcher), song_search, hold_unconfirmed, remembered, engine_updater, app_updater, desktop };
+        let core = Self { paths, config, stats, ytdlp, plan, engine, events, stop, dispatcher: Some(dispatcher), song_search, hold_unconfirmed, remembered, lookups: Mutex::default(), engine_updater, app_updater, desktop };
         core.sync();
         core
     }
@@ -404,15 +406,37 @@ impl Core {
 
     /// What a link holds. Slow: call it from a worker thread.
     pub fn fetch_metadata(&self, url: &str) -> Result<MediaMetadata, String> {
-        self.ytdlp.fetch_metadata(media_url_arg(url)?)
+        let url = media_url_arg(url)?;
+        self.lookup(|cancel| self.ytdlp.fetch_metadata_until(url, cancel))
     }
 
     pub fn search_youtube(&self, query: &str) -> Result<Vec<SearchResult>, String> {
-        self.ytdlp.search_youtube(query)
+        self.lookup(|cancel| self.ytdlp.search_youtube_until(query, cancel))
     }
 
     pub fn search_soundcloud(&self, query: &str) -> Result<Vec<SearchResult>, String> {
-        self.ytdlp.search_soundcloud(query)
+        self.lookup(|cancel| self.ytdlp.search_soundcloud_until(query, cancel))
+    }
+
+    /// D46: stop the lookups the interface has running right now, each ending
+    /// with [`CANCELLED_MESSAGE`](crate::ytdlp::CANCELLED_MESSAGE). A download's
+    /// own searches are not touched (cancelling the download stops those), and
+    /// a lookup started afterwards is not affected.
+    pub fn cancel_lookups(&self) {
+        for flag in lock(&self.lookups).iter() {
+            flag.store(true, Ordering::SeqCst);
+        }
+    }
+
+    /// Runs one lookup under a flag of its own, which `cancel_lookups` can set
+    /// while it runs. A flag per call, rather than one shared flag, so that
+    /// cancelling never has to be undone for the next lookup.
+    fn lookup<T>(&self, run: impl FnOnce(&AtomicBool) -> T) -> T {
+        let flag = Arc::new(AtomicBool::new(false));
+        lock(&self.lookups).push(flag.clone());
+        let result = run(&flag);
+        lock(&self.lookups).retain(|f| !Arc::ptr_eq(f, &flag));
+        result
     }
 
     /// D34, for the playlist preview: the YouTube Music song that is this

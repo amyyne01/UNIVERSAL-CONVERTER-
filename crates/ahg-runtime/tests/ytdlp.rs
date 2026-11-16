@@ -3,13 +3,14 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::channel;
 use std::time::{Duration, Instant};
 
 use ahg_engine::queue::{TaskInit, create_task};
 use ahg_engine::types::{SourcePlatform, Track};
 use ahg_runtime::download::{Downloader, Report};
-use ahg_runtime::ytdlp::{TIMEOUT_MESSAGE, Tools, YtDlp};
+use ahg_runtime::ytdlp::{CANCELLED_MESSAGE, TIMEOUT_MESSAGE, Tools, YtDlp};
 
 const FAKE: &str = env!("CARGO_BIN_EXE_fake_ytdlp");
 
@@ -629,4 +630,39 @@ fn removing_sponsor_segments_shortens_the_file_so_its_length_is_not_judged() {
         task.extras = Some(PartialExtras { sponsor_block: Some(SponsorBlockMode::Remove), sponsor_block_categories: Some(vec!["sponsor".into()]), ..Default::default() });
     });
     assert_eq!(confidences(&reports), [1.0]);
+}
+
+// ── Stopping a lookup ────────────────────────────────────────────────────────
+
+fn pid_is_running(pid: &str) -> bool {
+    let out = std::process::Command::new("tasklist").args(["/FI", &format!("PID eq {pid}"), "/NH"]).output().unwrap();
+    String::from_utf8_lossy(&out.stdout).contains(pid)
+}
+
+#[test]
+fn cancelling_a_search_ends_its_process_within_two_seconds_and_is_not_retried() {
+    let dir = scratch("cancelsearch");
+    let (pids, count) = (dir.join("pids"), dir.join("count"));
+    let y = Arc::new(ytdlp(&dir, &format!("count {}\npid {}\nsleep 60000\n", count.display(), pids.display()), ""));
+    let flag = Arc::new(AtomicBool::new(false));
+    let worker = std::thread::spawn({
+        let (y, flag) = (y.clone(), flag.clone());
+        move || y.run_json_until(&["--dump-json", "x"], &flag)
+    });
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while fs::read_to_string(&pids).is_ok_and(|t| !t.ends_with('\n')) || !pids.exists() {
+        assert!(Instant::now() < deadline, "the search never started");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let pid = fs::read_to_string(&pids).unwrap().trim().to_owned();
+    assert!(pid_is_running(&pid), "the search should be running before the cancel");
+
+    let started = Instant::now();
+    flag.store(true, Ordering::SeqCst);
+    assert_eq!(worker.join().unwrap().unwrap_err(), CANCELLED_MESSAGE);
+    assert!(started.elapsed() < Duration::from_secs(2), "{:?}", started.elapsed());
+    assert!(!pid_is_running(&pid), "the search process must be gone");
+    assert_eq!(runs(&count), 1, "a cancelled search is not tried again");
+    assert_eq!(y.run_json_until(&["--dump-json", "x"], &flag).unwrap_err(), CANCELLED_MESSAGE, "a flag already set starts nothing");
+    assert_eq!(runs(&count), 1);
 }
