@@ -18,6 +18,7 @@ use ahg_engine::queue::{Event, new_task_id};
 use ahg_engine::scheduler::{Fire, POLL_MS, ScheduleConfig, Scheduler};
 use ahg_engine::spotify::{self, Spotify, Thrown};
 use ahg_engine::stats::{DownloadStats, StatsStore, stats_file_path};
+use ahg_engine::text::{js_len, utf16_prefix};
 use ahg_engine::tier::{BASIC_LIMITS, Plan, clamp_concurrency};
 use ahg_engine::updater::UpdateState;
 use ahg_engine::ytdlp_updater::YtdlpStatus;
@@ -70,6 +71,28 @@ pub enum CoreEvent {
 /// After a scheduled run with nothing to resume, no queue change will ever
 /// come; look once after downloads have had this long to start.
 const SHUTDOWN_CHECK: Duration = Duration::from_secs(10);
+
+/// After launch, Electron waits this long, then resolves the tools
+/// ([`Core::warm_up`]); the caller waits it out, the core never sleeps.
+pub const WARM_UP_DELAY: Duration = Duration::from_millis(1500);
+/// ... then this long, counted from launch, before the app update check.
+pub const APP_UPDATE_DELAY: Duration = Duration::from_secs(6);
+/// ... and this long before [`Core::auto_update_engine`].
+pub const ENGINE_UPDATE_DELAY: Duration = Duration::from_secs(8);
+
+/// The most characters (UTF-16 units, as in JavaScript) of a search text; more is cut.
+pub const MAX_QUERY: usize = 256;
+/// The most ids `reorder` takes; more refuses the whole call.
+pub const MAX_REORDER_IDS: usize = 500;
+/// The longest id `reorder` and `promote` take; a longer one refuses the call.
+pub const MAX_TASK_ID: usize = 64;
+/// The longest id `pause`, `resume`, `cancel` and `remove` take; a longer one refuses the call.
+pub const MAX_PATH: usize = 4096;
+
+/// Whether every id is short enough, counting as JavaScript does.
+fn short_enough(ids: &[String], max: usize) -> bool {
+    ids.iter().all(|id| js_len(id) <= max)
+}
 
 /// Choices only the Rust app has. They live in their own file, so the
 /// settings file stays exactly what Electron 1.x writes and reads.
@@ -383,19 +406,19 @@ impl Core {
     }
 
     pub fn pause(&self, id: &str) -> bool {
-        self.engine().pause(id)
+        js_len(id) <= MAX_PATH && self.engine().pause(id)
     }
 
     pub fn resume(&self, id: &str) -> bool {
-        self.engine().resume(id)
+        js_len(id) <= MAX_PATH && self.engine().resume(id)
     }
 
     pub fn cancel(&self, id: &str) -> bool {
-        self.engine().cancel(id)
+        js_len(id) <= MAX_PATH && self.engine().cancel(id)
     }
 
     pub fn promote(&self, id: &str) -> bool {
-        self.engine().promote(id)
+        js_len(id) <= MAX_TASK_ID && self.engine().promote(id)
     }
 
     pub fn pause_all(&self) {
@@ -410,12 +433,19 @@ impl Core {
         self.engine().cancel_all();
     }
 
+    /// An id over `MAX_PATH` characters refuses the whole call, as in Electron.
     pub fn remove(&self, ids: Vec<String>) {
-        self.engine().remove(ids);
+        if short_enough(&ids, MAX_PATH) {
+            self.engine().remove(ids);
+        }
     }
 
+    /// More than `MAX_REORDER_IDS` ids, or an id over `MAX_TASK_ID` characters,
+    /// refuses the whole call, as in Electron.
     pub fn reorder(&self, ids: Vec<String>) {
-        self.engine().reorder(ids);
+        if ids.len() <= MAX_REORDER_IDS && short_enough(&ids, MAX_TASK_ID) {
+            self.engine().reorder(ids);
+        }
     }
 
     /// Every task in history, oldest first.
@@ -457,11 +487,14 @@ impl Core {
         self.lookup(|cancel| self.ytdlp.fetch_metadata_until(url, cancel))
     }
 
+    /// The search text is cut to `MAX_QUERY` characters, not refused.
     pub fn search_youtube(&self, query: &str) -> Result<Vec<SearchResult>, String> {
+        let query = utf16_prefix(query, MAX_QUERY);
         self.lookup(|cancel| self.ytdlp.search_youtube_until(query, cancel))
     }
 
     pub fn search_soundcloud(&self, query: &str) -> Result<Vec<SearchResult>, String> {
+        let query = utf16_prefix(query, MAX_QUERY);
         self.lookup(|cancel| self.ytdlp.search_soundcloud_until(query, cancel))
     }
 
@@ -507,7 +540,7 @@ impl Core {
     /// As in Electron, which found nothing on 2026-11-15 (QUIRKS Q6): faithful,
     /// and empty whenever Spotify says no.
     pub fn spotify_search(&self, query: &str) -> Vec<Track> {
-        lock(&self.spotify).search(query)
+        lock(&self.spotify).search(utf16_prefix(query, MAX_QUERY))
     }
 
     /// D34, for the playlist preview: the YouTube Music song that is this
@@ -536,22 +569,18 @@ impl Core {
         }
         let mut remembered = lock(&self.remembered);
         remembered.insert(track_id.to_owned(), chosen.clone());
-        self.save_remembered(&remembered);
-        true
+        self.save_remembered(&remembered)
     }
 
     /// Drop the remembered choice for a track: it is matched afresh next time.
-    pub fn forget_match(&self, track_id: &str) {
+    /// False when the file could not be saved (nothing to forget is not a failure).
+    pub fn forget_match(&self, track_id: &str) -> bool {
         let mut remembered = lock(&self.remembered);
-        if remembered.remove(track_id).is_some() {
-            self.save_remembered(&remembered);
-        }
+        remembered.remove(track_id).is_none() || self.save_remembered(&remembered)
     }
 
-    fn save_remembered(&self, remembered: &HashMap<String, SongMatch>) {
-        if let Ok(text) = serde_json::to_string(remembered) {
-            let _ = write_file_atomic(&remembered_file(&self.paths.user_data), &text);
-        }
+    fn save_remembered(&self, remembered: &HashMap<String, SongMatch>) -> bool {
+        serde_json::to_string(remembered).is_ok_and(|text| write_file_atomic(&remembered_file(&self.paths.user_data), &text).is_ok())
     }
 
     /// D34, "needs review": whether a Spotify track is downloaded only on a
@@ -561,10 +590,12 @@ impl Core {
     }
 
     /// Takes effect for downloads that start from now on, and is remembered.
-    pub fn set_hold_unconfirmed(&self, hold: bool) {
+    /// False when the file could not be saved: the choice holds until quit only.
+    pub fn set_hold_unconfirmed(&self, hold: bool) -> bool {
         self.hold_unconfirmed.store(hold, Ordering::SeqCst);
-        let _ = write_file_atomic(&own_settings_file(&self.paths.user_data), &json!({ "holdUnconfirmed": hold }).to_string());
+        let saved = write_file_atomic(&own_settings_file(&self.paths.user_data), &json!({ "holdUnconfirmed": hold }).to_string()).is_ok();
         let _ = self.events.send(CoreEvent::SettingsChanged);
+        saved
     }
 
     // ── Cookies ─────────────────────────────────────────────────────────────
@@ -662,6 +693,22 @@ impl Core {
     /// worker thread.
     pub fn update_engine(&self) -> YtdlpStatus {
         self.engine_updater.update()
+    }
+
+    /// What the startup does for yt-dlp: nothing unless the `autoUpdateEngine`
+    /// setting is on, else check, and install when a newer one is found. Slow:
+    /// call it from a worker thread, `ENGINE_UPDATE_DELAY` after launch.
+    pub fn auto_update_engine(&self) {
+        if lock(&self.config).get("autoUpdateEngine").and_then(Value::as_bool) == Some(true) && self.check_engine(false).state == "available" {
+            self.update_engine();
+        }
+    }
+
+    /// Resolve yt-dlp and ffmpeg now, so a first search does not pay for it.
+    /// Call it `WARM_UP_DELAY` after launch, from a worker thread.
+    pub fn warm_up(&self) {
+        self.ytdlp.bin();
+        self.ytdlp.ffmpeg();
     }
 
     /// This month's counters and the last active month before it.

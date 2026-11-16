@@ -1201,3 +1201,109 @@ fn retry_due_is_the_automatic_retrys_deadline_and_none_otherwise() {
     drop(rx);
     core.shutdown();
 }
+
+// ── Startup checks, input limits and honest saves ───────────────────────────
+
+#[test]
+fn the_startup_delays_are_electrons() {
+    use ahg_runtime::core::{APP_UPDATE_DELAY, ENGINE_UPDATE_DELAY, WARM_UP_DELAY};
+    assert_eq!((WARM_UP_DELAY, APP_UPDATE_DELAY, ENGINE_UPDATE_DELAY), (Duration::from_millis(1500), Duration::from_secs(6), Duration::from_secs(8)));
+}
+
+#[test]
+fn warm_up_resolves_the_tools_without_starting_a_download() {
+    let dir = scratch("warmup");
+    let (core, _rx) = start(&dir, "", Plan::Premium);
+    core.warm_up();
+    assert!(core.tasks().is_empty());
+    core.shutdown();
+}
+
+#[test]
+fn auto_update_engine_installs_the_newer_yt_dlp_when_on_and_asks_nothing_when_off() {
+    let new_exe = |dir: &Path| dir.join("userData").join("bin").join("yt-dlp.exe");
+
+    let dir = scratch("autoengine-on");
+    let (core, rx) = start_with_release(&dir, "");
+    core.update_settings(json!({ "autoUpdateEngine": true }).as_object().unwrap());
+    core.auto_update_engine();
+    assert_eq!(fs::read(new_exe(&dir)).unwrap(), b"MZ a newer yt-dlp");
+    assert_eq!(engine_states(&rx.try_iter().collect::<Vec<_>>()), ["checking", "available", "downloading", "updated"]);
+    core.shutdown();
+
+    let dir = scratch("autoengine-off");
+    let (core, rx) = start_with_release(&dir, "");
+    core.update_settings(json!({ "autoUpdateEngine": false }).as_object().unwrap());
+    core.auto_update_engine();
+    assert!(!new_exe(&dir).exists());
+    assert!(engine_states(&rx.try_iter().collect::<Vec<_>>()).is_empty(), "no request means no status change");
+    assert_eq!(core.engine_status().state, "idle");
+    core.shutdown();
+}
+
+#[test]
+fn a_search_query_is_cut_to_256_characters_before_yt_dlp_sees_it() {
+    let dir = scratch("longquery");
+    let (core, _rx) = start(&dir, "out {\"id\":\"a\",\"title\":\"A\"}\nexit 0\n", Plan::Premium);
+    let seen = || fs::read_to_string(dir.join("args.txt.json")).unwrap();
+    core.search_youtube(&"a".repeat(5000)).unwrap();
+    assert!(seen().ends_with(&format!("ytsearch12:{}", "a".repeat(256))));
+    // JavaScript counts UTF-16 units: 300 emoji are 600, and 128 of them are 256.
+    core.search_soundcloud(&"😀".repeat(300)).unwrap();
+    assert!(seen().ends_with(&format!("scsearch12:{}", "😀".repeat(128))));
+    core.shutdown();
+}
+
+#[test]
+fn over_long_ids_and_too_many_ids_change_nothing() {
+    let dir = scratch("limits");
+    let (core, rx) = start(&dir, "sleep 60000\n", Plan::Premium);
+    one_at_a_time(&core);
+    let a = core.start_download(&request()).unwrap().task_id;
+    assert_eq!(next_started(&rx, &[]), a);
+    let [b, c, d] = [(); 3].map(|()| core.start_download(&request()).unwrap().task_id);
+
+    // 501 ids, the first three would put d first; refused as a whole.
+    let mut many = vec![d.clone(), c.clone(), b.clone()];
+    many.extend((0..498).map(|i| format!("x{i}")));
+    assert_eq!(many.len(), 501);
+    core.reorder(many);
+    // One id of 65 characters refuses the whole list too.
+    core.reorder(vec![d.clone(), "x".repeat(65)]);
+    assert!(!core.promote(&format!("{d}{}", "x".repeat(64))));
+    assert!(!core.promote(&"x".repeat(65)));
+    assert!(!core.cancel(&"x".repeat(4097)));
+    assert!(!core.pause(&"x".repeat(4097)));
+    assert!(!core.resume(&"x".repeat(4097)));
+    core.remove(vec![b.clone(), "x".repeat(4097)]);
+    assert!(core.tasks().iter().any(|t| t.task_id == b), "one over-long id refuses the whole removal");
+
+    assert!(core.cancel(&a));
+    assert_eq!(next_started(&rx, &[&a]), b, "the order is as it was");
+    assert!(core.cancel(&c) && core.cancel(&d) && core.cancel(&b));
+    core.shutdown();
+}
+
+#[test]
+fn a_save_answers_whether_the_file_was_written() {
+    use ahg_engine::downloader::bridge::SongMatch;
+    let dir = scratch("honestsave");
+    let user = dir.join("userData");
+    let chosen = SongMatch { url: "https://www.youtube.com/watch?v=mine0000001".into(), title: "T".into(), artist: "A".into(), album: String::new(), duration: Some(1.0), explicit: false, confidence: 0.4 };
+    let (core, _rx) = start(&dir, "", Plan::Premium);
+    assert!(core.set_hold_unconfirmed(true));
+    assert!(core.remember_match("t1", &chosen));
+    assert!(core.forget_match("t1"));
+    assert!(core.forget_match("never-remembered"), "nothing to save is not a failed save");
+    assert!(core.remember_match("t1", &chosen));
+
+    // A folder where each file should be: the atomic write cannot replace it.
+    fs::remove_file(user.join("settings-rust.json")).unwrap();
+    fs::create_dir(user.join("settings-rust.json")).unwrap();
+    fs::remove_file(user.join("spotify-matches.json")).unwrap();
+    fs::create_dir(user.join("spotify-matches.json")).unwrap();
+    assert!(!core.set_hold_unconfirmed(false));
+    assert!(!core.remember_match("t2", &chosen));
+    assert!(!core.forget_match("t1"));
+    core.shutdown();
+}
