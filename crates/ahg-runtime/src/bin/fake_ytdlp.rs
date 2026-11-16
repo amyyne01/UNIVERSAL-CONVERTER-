@@ -77,12 +77,14 @@ fn main() {
             }
             "pid" => {
                 if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(rest) {
-                    let _ = writeln!(f, "{}", std::process::id());
+                    let _ = f.write_all(format!("{}
+", std::process::id()).as_bytes());
                 }
             }
             "count" => {
                 if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(rest) {
-                    let _ = writeln!(f, "run");
+                    let _ = f.write_all(b"run
+");
                 }
             }
             "failonce" => {
