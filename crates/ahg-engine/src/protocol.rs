@@ -2,6 +2,8 @@
 //! Ported from electron/protocol.ts. Registering as the OS handler, and the
 //! single-instance forwarding of a link to the running window, are the app
 //! layer's; what is here is what to register and which links to accept.
+use url::{Host, Url};
+
 use crate::types::{SourcePlatform, UrlDetection};
 use crate::url_detector::detect_url;
 use crate::validate::media_url_arg;
@@ -43,5 +45,27 @@ pub fn resolve_protocol_link(raw: &str) -> Option<UrlDetection> {
         return None;
     }
     let detection = detect_url(target);
-    (detection.platform != SourcePlatform::Unknown).then_some(detection)
+    let open_host = matches!(detection.platform, SourcePlatform::Generic | SourcePlatform::Direct) && points_inside(target);
+    (detection.platform != SourcePlatform::Unknown && !open_host).then_some(detection)
+}
+
+/// D36 (Rust only): a link that arrives through `ahg://` may not name this PC
+/// or the home network. Judged on the host text alone, no DNS: an IP literal
+/// (any spelling the URL parser reads), `localhost`, `*.localhost`. A link the
+/// user pastes is their own act and is not checked here.
+/// ponytail: a public name that resolves to a private address is not caught
+/// (needs DNS, which the engine does not do).
+fn points_inside(target: &str) -> bool {
+    // Not parseable as http(s): the parser and the downloader could read the
+    // host differently, so it is refused. `ytsearch:` and the like have no host.
+    let Ok(url) = Url::parse(target) else { return true };
+    match url.host() {
+        Some(Host::Domain(d)) => {
+            let d = d.trim_end_matches('.').to_ascii_lowercase();
+            d == "localhost" || d.ends_with(".localhost")
+        }
+        // Every IP literal is refused; a real media site is addressed by name.
+        Some(Host::Ipv4(_) | Host::Ipv6(_)) => true,
+        None => false,
+    }
 }

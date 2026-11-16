@@ -59,17 +59,29 @@ fn check(wrong: Vec<String>) {
 
 // ── protocol.ts ──────────────────────────────────────────────────────────────
 
+/// D36 (Rust only): `ahg://` links Electron accepts that Rust refuses, both
+/// Direct links whose http(s) address the URL parser rejects. A fixed list, so
+/// a new difference cannot hide.
+const D36_EXEMPT: [&str; 2] = ["ahg://https://\u{202e}evil.example/x.mp4", "ahg://https://exa mple.com/x.mp4"];
+
 #[test]
 fn protocol_links_resolve_as_electron_does() {
     let g = golden();
     assert_eq!(PROTOCOL_SCHEME, "ahg");
     let mut wrong = Vec::new();
+    let mut exempt = 0;
     for c in list(&g["protocol"]["resolve"], "protocol.resolve") {
-        let got = resolve_protocol_link(c["raw"].as_str().unwrap()).map(|d| serde_json::to_value(d).unwrap());
-        if got.unwrap_or(Value::Null) != c["out"] {
+        let raw = c["raw"].as_str().unwrap();
+        let got = resolve_protocol_link(raw).map(|d| serde_json::to_value(d).unwrap());
+        if D36_EXEMPT.contains(&raw) {
+            // Electron accepts these; D36 refuses them (see tests/protocol_hosts.rs).
+            assert!(c["out"].is_object() && got.is_none(), "{}", short(c));
+            exempt += 1;
+        } else if got.unwrap_or(Value::Null) != c["out"] {
             wrong.push(short(c));
         }
     }
+    assert_eq!(exempt, D36_EXEMPT.len(), "an exempt case is missing from the golden file");
     check(wrong);
 }
 
