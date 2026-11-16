@@ -133,6 +133,20 @@ export default async function queueSection({ OUT }) {
     'a permanent error fails at once': [
       ['slots', 1], ['enqueue', yt(1)], ['enqueue', yt(2)], ['error', 0, GONE], ['advance', 500], ['error', 1, ''], ['advance', 500], ['flush'],
     ],
+    'a sign-in error fails at once, with no retry timer': [
+      ['slots', 1], ['enqueue', yt(1)], ['error', 0, 'Sign in to confirm your age'], ['advance', 60000], ['flush'],
+    ],
+    'a region-block error fails at once, with no retry timer': [
+      ['slots', 1], ['enqueue', yt(1)], ['error', 0, 'This video is not available in your country'], ['advance', 60000], ['flush'],
+    ],
+    'the old attempt is ignored after a retry fires under the same id': [
+      ['slots', 1], ['enqueue', yt(1)], ['error', 0, NET], ['advance', 5000], ['progress', 0, p({ percent: 50 })], ['done', 0, '{TMP}\\song.mp3', ['{TMP}\\song.mp3'], false],
+      ['error', 0, GONE], ['advance', 500], ['progress', 1, p({ percent: 10 })], ['done', 1, '', [], false], ['advance', 500], ['flush'],
+    ],
+    'two slots, three tasks: cancel one, pause one, the third starts': [
+      ['slots', 2], ['enqueue', yt(1)], ['enqueue', yt(2)], ['enqueue', yt(3)], ['cancel', 0], ['error', 0, 'ERROR: killed'], ['advance', 500], ['pause', 1], ['progress', 2, p({ percent: 30 })],
+      ['advance', 500], ['done', 2, '', [], false], ['advance', 500], ['flush'],
+    ],
     'the token gate retries with the fallback clients latched': [
       ['slots', 1], ['enqueue', yt(1)], ['error', 0, GATED], ['advance', 5000], ['error', 1, NET], ['advance', 15000], ['done', 2, '', [], false], ['advance', 500], ['flush'],
     ],

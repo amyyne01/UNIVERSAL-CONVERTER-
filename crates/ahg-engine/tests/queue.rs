@@ -100,7 +100,7 @@ fn yt(n: usize) -> Value {
 #[test]
 fn the_queue_behaves_as_electron_does_step_by_step() {
     let scenarios: Vec<Value> = serde_json::from_str(include_str!("golden/queue.json")).unwrap();
-    assert!(scenarios.len() >= 30);
+    assert!(scenarios.len() >= 36);
     let scratch = Scratch::new();
     let mut wrong = Vec::new();
 
