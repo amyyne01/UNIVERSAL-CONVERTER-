@@ -2,6 +2,7 @@
 //! the engine thread and the statistics, and keeps them consistent with each
 //! other and with the plan the user is on.
 use std::collections::HashMap;
+use std::io::Read;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{RecvTimeoutError, Sender, channel};
@@ -31,7 +32,7 @@ use crate::app_update::AppUpdater;
 use crate::{lock, now_ms};
 use crate::desktop::Desktop;
 use crate::download::{Downloader, SongSearch};
-use crate::engine_update::{EngineUpdater, Fetch};
+use crate::engine_update::{EngineUpdater, Fetch, Fetched};
 use crate::engine::{Engine, Notice};
 use crate::ytdlp::YtDlp;
 
@@ -136,9 +137,17 @@ impl spotify::Transport for Dyn {
     }
 }
 
+/// One cover-art request: the address and the proxy setting as it is right now.
+pub type CoverFetch = Box<dyn Fn(&str, Option<&str>) -> Option<Fetched> + Send + Sync>;
+
+/// The most bytes of a cover image `Core::fetch_cover` takes.
+pub const MAX_COVER_BYTES: u64 = 5 * 1024 * 1024;
+
 /// Everything of the core that reaches outside the app's own files and
 /// processes. The real ones, or stand-ins for tests.
 pub struct Outside {
+    /// Cover-art images.
+    pub cover: CoverFetch,
     /// YouTube Music's song search.
     pub song_search: SongSearch,
     /// Spotify's pages and API.
@@ -197,7 +206,14 @@ pub struct Core {
     engine: Arc<Engine>,
     events: Sender<CoreEvent>,
     stop: Sender<()>,
-    dispatcher: Option<JoinHandle<()>>,
+    /// Taken once, by the first `shutdown`.
+    dispatcher: Mutex<Option<JoinHandle<()>>>,
+    /// Set by the first `shutdown` (and read by the later ones and by `Drop`).
+    down: AtomicBool,
+    /// Held while `settings-rust.json` is read, changed and written, so that two
+    /// callers never save over each other.
+    own_settings: Mutex<()>,
+    cover: CoverFetch,
     song_search: SongSearch,
     /// One reader for every Spotify lookup, so that two lookups that both need
     /// a token or hash refresh share one attempt.
@@ -228,12 +244,12 @@ impl Core {
             let ytdlp = ytdlp.clone();
             Box::new(crate::http::SpotifyHttp::new(move || ytdlp.proxy()))
         };
-        Self::start_with(paths, ytdlp, plan, events, Outside { song_search, spotify, releases: Arc::new(crate::http::Releases), desktop: Box::new(crate::desktop::Windows) })
+        Self::start_with(paths, ytdlp, plan, events, Outside { song_search, spotify, releases: Arc::new(crate::http::Releases), desktop: Box::new(crate::desktop::Windows), cover: Box::new(crate::http::cover_get) })
     }
 
     /// `start`, with everything that reaches the network given.
     pub fn start_with(paths: Paths, ytdlp: Arc<YtDlp>, plan: PlanSource, events: Sender<CoreEvent>, outside: Outside) -> Self {
-        let Outside { song_search, spotify, releases, desktop } = outside;
+        let Outside { song_search, spotify, releases, desktop, cover } = outside;
         let spotify = Mutex::new(Spotify::new(Dyn(spotify), Box::new(spotify::system_now_ms)));
         let app_updater = {
             let tell = events.clone();
@@ -340,7 +356,7 @@ impl Core {
                 }
             })
         };
-        let core = Self { paths, config, stats, ytdlp, plan, engine, events, stop, dispatcher: Some(dispatcher), song_search, spotify, hold_unconfirmed, remembered, lookups: Mutex::default(), engine_updater, app_updater, desktop };
+        let core = Self { paths, config, stats, ytdlp, plan, engine, events, stop, dispatcher: Mutex::new(Some(dispatcher)), down: AtomicBool::new(false), own_settings: Mutex::new(()), cover, song_search, spotify, hold_unconfirmed, remembered, lookups: Mutex::default(), engine_updater, app_updater, desktop };
         core.sync();
         core
     }
@@ -593,9 +609,54 @@ impl Core {
     /// False when the file could not be saved: the choice holds until quit only.
     pub fn set_hold_unconfirmed(&self, hold: bool) -> bool {
         self.hold_unconfirmed.store(hold, Ordering::SeqCst);
-        let saved = write_file_atomic(&own_settings_file(&self.paths.user_data), &json!({ "holdUnconfirmed": hold }).to_string()).is_ok();
+        let saved = self.set_own_setting("holdUnconfirmed", Value::Bool(hold));
         let _ = self.events.send(CoreEvent::SettingsChanged);
         saved
+    }
+
+    /// The file of the Rust-only settings, as the object it holds (empty when it
+    /// is missing or unreadable).
+    fn read_own_settings(&self) -> Map<String, Value> {
+        let text = std::fs::read_to_string(own_settings_file(&self.paths.user_data)).ok();
+        text.and_then(|text| serde_json::from_str(&text).ok()).unwrap_or_default()
+    }
+
+    /// One choice only the Rust app has (the look, the sidebar pin ...), from
+    /// `settings-rust.json`. `None` when it was never set.
+    pub fn own_setting(&self, key: &str) -> Option<Value> {
+        let _file = lock(&self.own_settings);
+        self.read_own_settings().remove(key)
+    }
+
+    /// Remember one such choice, keeping every other key of the file, including
+    /// ones this version does not know. False when the file could not be saved.
+    pub fn set_own_setting(&self, key: &str, value: Value) -> bool {
+        let _file = lock(&self.own_settings);
+        let mut all = self.read_own_settings();
+        all.insert(key.to_owned(), value);
+        write_file_atomic(&own_settings_file(&self.paths.user_data), &Value::Object(all).to_string()).is_ok()
+    }
+
+    /// A cover image, from an `https` address only. Slow: call it from a worker
+    /// thread. The proxy setting is read for each call (D10). At most
+    /// `MAX_COVER_BYTES`; a bigger body is refused, not cut.
+    /// Electron's CSP lets pages show images from any https host (`img-src
+    /// https:`), so there is no host list here either.
+    pub fn fetch_cover(&self, url: &str) -> Result<Vec<u8>, String> {
+        if !url.strip_prefix("https://").is_some_and(|rest| !rest.is_empty() && !rest.starts_with('/')) {
+            return Err("Cover refused: not an https address".into());
+        }
+        let reply = (self.cover)(url, self.ytdlp.proxy().as_deref()).ok_or("Cover fetch failed")?;
+        if !(200..300).contains(&reply.status) || !(reply.final_url.is_empty() || reply.final_url.starts_with("https://")) {
+            return Err(format!("Cover fetch failed: HTTP {}", reply.status));
+        }
+        // ponytail: the same read as engine_update::guarded_bytes, which also insists on GitHub's hosts
+        let mut body = Vec::new();
+        reply.body.take(MAX_COVER_BYTES + 1).read_to_end(&mut body).map_err(|_| "Cover fetch failed".to_owned())?;
+        if body.len() as u64 > MAX_COVER_BYTES {
+            return Err("Cover refused: the image is too large".into());
+        }
+        Ok(body)
     }
 
     // ── Cookies ─────────────────────────────────────────────────────────────
@@ -718,15 +779,19 @@ impl Core {
 
     // ── Shutdown ────────────────────────────────────────────────────────────
 
-    /// Stop every download, and save the history and the settings.
-    pub fn shutdown(mut self) {
-        self.stop_all();
-    }
-
-    fn stop_all(&mut self) {
+    /// Stop the lookups and every download, and save the history and the
+    /// settings. Callable through a shared handle (`Arc<Core>`) and any number
+    /// of times: the first call does the work, the others return at once.
+    pub fn shutdown(&self) {
+        if self.down.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        // A lookup holds a handle of its own now, so it would outlive the quit.
+        self.cancel_lookups();
         self.engine.shutdown();
         let _ = self.stop.send(());
-        if let Some(dispatcher) = self.dispatcher.take() {
+        let dispatcher = lock(&self.dispatcher).take();
+        if let Some(dispatcher) = dispatcher {
             let _ = dispatcher.join();
         }
         lock(&self.config).save_now();
@@ -735,6 +800,12 @@ impl Core {
 
 impl Drop for Core {
     fn drop(&mut self) {
-        self.stop_all();
+        self.shutdown();
     }
 }
+
+// The interface holds the core behind an `Arc` on several threads.
+const _: fn() = || {
+    fn is<T: Send + Sync>() {}
+    is::<Core>();
+};

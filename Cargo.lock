@@ -126,6 +126,7 @@ name = "ahg-runtime"
 version = "2.0.0"
 dependencies = [
  "ahg-engine",
+ "ahg-runtime",
  "serde_json",
  "sha2",
  "ureq",

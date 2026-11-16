@@ -119,6 +119,15 @@ impl spotify::Transport for SpotifyHttp {
     }
 }
 
+/// One cover-art request (`Core::fetch_cover`). `proxy` is the setting as it is
+/// right now (D10). The caller limits how much of the body it reads.
+pub fn cover_get(url: &str, proxy: Option<&str>) -> Option<crate::engine_update::Fetched> {
+    let headers = [("User-Agent".to_owned(), "Mozilla/5.0".to_owned())];
+    let response = Http::new(proxy).send("GET", url, &headers, None, Duration::from_secs(20))?;
+    let (status, final_url, content_length) = (response.status, response.final_url.clone(), response.content_length.clone());
+    Some(crate::engine_update::Fetched { status, final_url, content_length, body: Box::new(response.into_reader()) })
+}
+
 /// The updaters' requests to GitHub's release pages. Always direct: update
 /// checks do not use the proxy (D10). There is no limit on the whole
 /// download, only on how long the connection may stay silent, so a large file

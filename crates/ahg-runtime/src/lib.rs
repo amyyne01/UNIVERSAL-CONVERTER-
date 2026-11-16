@@ -12,6 +12,8 @@ pub mod http;
 #[cfg(feature = "license")]
 pub mod machine;
 pub mod proc;
+#[cfg(feature = "standin")]
+pub mod standin;
 pub mod unpack;
 pub mod ytdlp;
 

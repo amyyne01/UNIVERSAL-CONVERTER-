@@ -13,3 +13,9 @@ windows-sys = { version = "0.61.2", features = ["Win32_System_SystemInformation"
 [features]
 # The entitlement layer; its source is not published.
 license = ["ahg-engine/license"]
+# Stand-ins for everything outside the app (`standin.rs`), for tests.
+standin = []
+
+# The crate's own tests use the stand-ins, so a plain `cargo test` sees them too.
+[dev-dependencies]
+ahg-runtime = { path = ".", features = ["standin"] }

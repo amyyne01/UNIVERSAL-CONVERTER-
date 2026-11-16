@@ -475,7 +475,7 @@ fn start_with_release(dir: &Path, script: &str) -> (Core, Receiver<CoreEvent>) {
     ytdlp.env("FAKE_YTDLP_SCRIPT", dir.join("script.txt").to_str().unwrap());
     let (tx, rx) = channel();
     let paths = Paths { user_data: dir.join("userData"), downloads: dir.join("Downloads").to_string_lossy().into_owned() };
-    let core = Core::start_with(paths, Arc::new(ytdlp), Box::new(|| Plan::Premium), tx, Outside { song_search: Arc::new(|_: &str| None), releases: Arc::new(OneRelease { binary: b"MZ a newer yt-dlp".to_vec() }), desktop: Box::new(ahg_runtime::desktop::Windows), spotify: offline() });
+    let core = Core::start_with(paths, Arc::new(ytdlp), Box::new(|| Plan::Premium), tx, Outside { song_search: Arc::new(|_: &str| None), releases: Arc::new(OneRelease { binary: b"MZ a newer yt-dlp".to_vec() }), desktop: Box::new(ahg_runtime::desktop::Windows), spotify: offline(), cover: Box::new(|_, _| None) });
     (core, rx)
 }
 
@@ -537,7 +537,7 @@ fn the_core_finds_downloads_and_installs_a_newer_version_of_the_app() {
     fs::write(dir.join("script.txt"), "").unwrap();
     let (tx, rx) = channel();
     let paths = Paths { user_data: dir.join("userData"), downloads: dir.join("Downloads").to_string_lossy().into_owned() };
-    let core = Core::start_with(paths, Arc::new(YtDlp::new(PathBuf::from(FAKE), None)), Box::new(|| Plan::Premium), tx, Outside { song_search: Arc::new(|_: &str| None), releases: Arc::new(net), desktop: Box::new(ahg_runtime::desktop::Windows), spotify: offline() });
+    let core = Core::start_with(paths, Arc::new(YtDlp::new(PathBuf::from(FAKE), None)), Box::new(|| Plan::Premium), tx, Outside { song_search: Arc::new(|_: &str| None), releases: Arc::new(net), desktop: Box::new(ahg_runtime::desktop::Windows), spotify: offline(), cover: Box::new(|_, _| None) });
     assert!(!dir.join("userData").join("updates").join("stale.exe").exists());
 
     assert_eq!(core.update_status().phase, "idle");
@@ -584,7 +584,7 @@ fn only_media_inside_the_download_folder_is_shown_or_opened() {
     let (tx, _rx) = channel();
     let downloads = dir.join("Downloads");
     let paths = Paths { user_data: dir.join("userData"), downloads: downloads.to_string_lossy().into_owned() };
-    let outside = Outside { song_search: Arc::new(|_: &str| None), releases: Arc::new(common::Net::default()), desktop: Box::new(desktop.clone()), spotify: offline() };
+    let outside = Outside { song_search: Arc::new(|_: &str| None), releases: Arc::new(common::Net::default()), desktop: Box::new(desktop.clone()), spotify: offline(), cover: Box::new(|_, _| None) };
     let core = Core::start_with(paths, Arc::new(YtDlp::new(PathBuf::from(FAKE), None)), Box::new(|| Plan::Premium), tx, outside);
     let at = |name: &str| downloads.join(name).to_string_lossy().into_owned();
     for name in ["song.mp3", "broken.mp3", "tool.exe"] {
@@ -1057,7 +1057,7 @@ fn start_spotify(name: &str) -> (Core, Seen) {
     let (tx, _rx) = channel();
     let paths = Paths { user_data: dir.join("userData"), downloads: dir.join("Downloads").to_string_lossy().into_owned() };
     let spotify = Box::new(Scripted { seen: seen.clone(), pages: spotify_pages });
-    let outside = Outside { song_search: Arc::new(|_: &str| None), releases: Arc::new(common::Net::default()), desktop: Box::new(ahg_runtime::desktop::Windows), spotify };
+    let outside = Outside { song_search: Arc::new(|_: &str| None), releases: Arc::new(common::Net::default()), desktop: Box::new(ahg_runtime::desktop::Windows), spotify, cover: Box::new(|_, _| None) };
     (Core::start_with(paths, Arc::new(YtDlp::new(PathBuf::from(FAKE), None)), Box::new(|| Plan::Premium), tx, outside), seen)
 }
 
@@ -1305,5 +1305,143 @@ fn a_save_answers_whether_the_file_was_written() {
     assert!(!core.set_hold_unconfirmed(false));
     assert!(!core.remember_match("t2", &chosen));
     assert!(!core.forget_match("t1"));
+    core.shutdown();
+}
+
+// ── Ready for the interface: shutdown through an Arc, own settings, covers ──
+
+#[test]
+fn shutdown_through_an_arc_returns_quickly_and_a_second_call_does_nothing() {
+    let dir = scratch("arcshutdown");
+    let (core, _rx) = start(&dir, "", Plan::Premium);
+    let core = Arc::new(core);
+    let other = core.clone();
+    let began = Instant::now();
+    core.shutdown();
+    assert!(began.elapsed() < Duration::from_secs(8), "{:?}", began.elapsed());
+
+    // A change made after the first call would be saved by a second one that did anything.
+    let config = dir.join("userData").join("config.json");
+    let before = fs::read_to_string(&config).unwrap_or_default();
+    core.update_settings(json!({ "maxConcurrentDownloads": 3 }).as_object().unwrap());
+    let again = Instant::now();
+    other.shutdown();
+    assert!(again.elapsed() < Duration::from_millis(500), "{:?}", again.elapsed());
+    assert_eq!(fs::read_to_string(&config).unwrap_or_default(), before);
+}
+
+#[test]
+fn shutdown_stops_a_lookup_that_is_still_running() {
+    let dir = scratch("shutdownlookup");
+    let count = dir.join("count");
+    let (core, _rx) = start_split(&dir, &format!("count {}\nsleep 60000\n", count.display()), "");
+    let core = Arc::new(core);
+    let lookup = std::thread::spawn({
+        let core = core.clone();
+        move || core.fetch_metadata("https://youtu.be/dQw4w9WgXcQ")
+    });
+    until("the lookup started", || runs(&count) == 1);
+    let began = Instant::now();
+    core.shutdown();
+    assert_eq!(lookup.join().unwrap().unwrap_err(), CANCELLED_MESSAGE);
+    assert!(began.elapsed() < Duration::from_secs(8), "{:?}", began.elapsed());
+}
+
+fn own_file(dir: &Path) -> Value {
+    serde_json::from_str(&fs::read_to_string(dir.join("userData").join("settings-rust.json")).unwrap()).unwrap()
+}
+
+#[test]
+fn two_own_settings_both_survive_a_restart() {
+    let dir = scratch("ownsettings");
+    let (core, _rx) = start(&dir, "", Plan::Premium);
+    assert_eq!(core.own_setting("preset"), None);
+    assert!(core.set_own_setting("preset", json!("orbit")));
+    assert!(core.set_own_setting("sidebarPinned", json!(true)));
+    core.shutdown();
+
+    let (core, _rx) = start(&dir, "", Plan::Premium);
+    assert_eq!(core.own_setting("preset"), Some(json!("orbit")));
+    assert_eq!(core.own_setting("sidebarPinned"), Some(json!(true)));
+    core.shutdown();
+}
+
+#[test]
+fn needs_review_keeps_the_other_keys_of_the_file() {
+    let dir = scratch("holdkeepsothers");
+    fs::write(dir.join("userData").join("settings-rust.json"), r#"{"preset":"shelf","mystery":{"a":1}}"#).unwrap();
+    let (core, _rx) = start(&dir, "", Plan::Premium);
+    assert!(core.set_hold_unconfirmed(true));
+    assert!(core.set_own_setting("sidebarPinned", json!(false)));
+    core.shutdown();
+    assert_eq!(own_file(&dir), json!({ "preset": "shelf", "mystery": { "a": 1 }, "holdUnconfirmed": true, "sidebarPinned": false }));
+
+    let (core, _rx) = start(&dir, "", Plan::Premium);
+    assert!(core.hold_unconfirmed());
+    core.shutdown();
+}
+
+type Asked = Arc<std::sync::Mutex<Vec<(String, Option<String>)>>>;
+
+/// A core whose cover transport answers with `body`, and writes down every
+/// (address, proxy) it was asked for. `/missing` is a 404, `/downgrade` ends on http.
+fn start_cover(name: &str, body: Vec<u8>) -> (Core, Asked) {
+    let dir = scratch(name);
+    let asked = Asked::default();
+    let cover: ahg_runtime::core::CoverFetch = Box::new({
+        let asked = asked.clone();
+        move |url: &str, proxy: Option<&str>| {
+            asked.lock().unwrap().push((url.to_owned(), proxy.map(str::to_owned)));
+            let status = if url.ends_with("/missing") { 404 } else { 200 };
+            let final_url = if url.ends_with("/downgrade") { "http://cdn.example/a.jpg".to_owned() } else { url.to_owned() };
+            Some(ahg_runtime::engine_update::Fetched { status, final_url, content_length: Some(body.len().to_string()), body: Box::new(std::io::Cursor::new(body.clone())) })
+        }
+    });
+    let (tx, _rx) = channel();
+    let paths = Paths { user_data: dir.join("userData"), downloads: dir.join("Downloads").to_string_lossy().into_owned() };
+    let outside = Outside { cover, ..Outside::standin() };
+    (Core::start_with(paths, Arc::new(YtDlp::new(PathBuf::from(FAKE), None)), Box::new(|| Plan::Premium), tx, outside), asked)
+}
+
+#[test]
+fn a_cover_comes_back_as_its_bytes() {
+    let (core, asked) = start_cover("cover", b"jpeg-bytes".to_vec());
+    assert_eq!(core.fetch_cover("https://i.example/a.jpg").unwrap(), b"jpeg-bytes");
+    assert_eq!(asked.lock().unwrap().len(), 1);
+    core.shutdown();
+}
+
+#[test]
+fn a_cover_over_five_mib_is_refused_and_five_mib_is_not() {
+    const MIB: usize = 1024 * 1024;
+    let (core, _) = start_cover("coverbig", vec![7u8; 6 * MIB]);
+    assert!(core.fetch_cover("https://i.example/a.jpg").is_err());
+    core.shutdown();
+    let (core, _) = start_cover("coveredge", vec![7u8; 5 * MIB]);
+    assert_eq!(core.fetch_cover("https://i.example/a.jpg").unwrap().len(), 5 * MIB);
+    core.shutdown();
+}
+
+#[test]
+fn only_https_covers_are_fetched_and_a_bad_answer_is_an_error() {
+    let (core, asked) = start_cover("coverrefused", b"x".to_vec());
+    for url in ["http://i.example/a.jpg", "file:///c:/a.jpg", "ftp://i.example/a.jpg", "", "i.example/a.jpg", "https:///a.jpg"] {
+        assert!(core.fetch_cover(url).is_err(), "{url}");
+    }
+    assert!(asked.lock().unwrap().is_empty(), "a refused address is never requested");
+    assert!(core.fetch_cover("https://i.example/missing").is_err());
+    assert!(core.fetch_cover("https://i.example/downgrade").is_err(), "an answer from plain http is refused");
+    core.shutdown();
+}
+
+#[test]
+fn a_changed_proxy_reaches_the_next_cover_request() {
+    let (core, asked) = start_cover("coverproxy", b"x".to_vec());
+    core.fetch_cover("https://i.example/a.jpg").unwrap();
+    core.update_settings(json!({ "proxy": "socks5h://127.0.0.1:9050" }).as_object().unwrap());
+    core.fetch_cover("https://i.example/a.jpg").unwrap();
+    let asked = asked.lock().unwrap();
+    assert_eq!(asked[0].1, None);
+    assert_eq!(asked[1].1.as_deref(), Some("socks5h://127.0.0.1:9050"));
     core.shutdown();
 }
