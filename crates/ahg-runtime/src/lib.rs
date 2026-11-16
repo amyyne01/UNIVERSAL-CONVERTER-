@@ -12,6 +12,7 @@ pub mod http;
 #[cfg(feature = "license")]
 pub mod machine;
 pub mod proc;
+pub mod sealed;
 #[cfg(feature = "standin")]
 pub mod standin;
 pub mod unpack;

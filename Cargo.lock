@@ -131,6 +131,7 @@ dependencies = [
  "sha2",
  "ureq",
  "windows-sys 0.61.2",
+ "zeroize",
 ]
 
 [[package]]
