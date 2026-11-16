@@ -59,12 +59,12 @@ pub const PLAYLIST_CAP: u32 = 10_000;
 pub const ALBUM_PAGE: u32 = 50;
 pub const ALBUM_CAP: u32 = 2_000;
 
-/// Starting persisted-query hashes. `searchDesktop` is a placeholder the service
-/// rejects, so a first search always heals first.
+/// Starting persisted-query hashes. `searchDesktop`: verified 2026-11-16; hashes rotate
+/// with each web-player build, the heal refreshes it.
 pub const DEFAULT_HASHES: [(&str, &str); 3] = [
     ("fetchPlaylist", "73a3b3470804983e4d55d83cd6cc99715019228fd999d51429cc69473a18789d"),
     ("getAlbum", "46ae954ef809572f5e21cea2bedf2ea9ff1c5a73af2b90d8a52a96d0e6e98018"),
-    ("searchDesktop", "919c08e0c4c5b0a8e8a3b1e6f2e0a6d0c4c5b0a8e8a3b1e6f2e0a6d0c4c5b0a8"),
+    ("searchDesktop", "eef7cc54888d91bdd6802623477873caa3948ae173a0c34fd86827b267e94c03"),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -552,10 +552,36 @@ pub fn bundle_srcs(html: &str) -> Vec<String> {
     SCRIPT_SRC.captures_iter(html).map(|c| c[1].to_owned()).collect()
 }
 
-/// The 64-hex hash within 400 UTF-16 units of the FIRST occurrence of `op`.
+/// The hash of `op`. D45: the definition form `"op","query|mutation","<hash>"` wins;
+/// otherwise the 64-hex hash within 400 UTF-16 units of the FIRST occurrence of `op`.
 pub fn find_hash(js: &str, op: &str) -> Option<String> {
+    let definition = Regex::new(&format!(r#""{}","(?:query|mutation)","([a-fA-F0-9]{{64}})""#, regex::escape(op))).ok()?;
+    if let Some(c) = definition.captures(js) {
+        return Some(c[1].to_owned());
+    }
     let i = js.find(op)?;
     HASH64.find(utf16_prefix(&js[i..], 400)).map(|m| m.as_str().to_owned())
+}
+
+/// D45: the web-player script's webpack runtime lists its lazy chunks as a name map and a
+/// hash map (`u.u=e=>""+(({id:"name"})[e]||e)+"."+({id:"hash8"})[e]+".js"`); this returns
+/// `(name, base + name.hash8.js)` for each. The search route lives in one of them.
+pub fn chunk_urls(js: &str, base: &str) -> Vec<(String, String)> {
+    static MAPS: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r#"\(\{([^}]*)\}\)\[e\]\|\|e\)\+"\."\+\(\{([^}]*)\}\)\[e\]\+"\.js""#).unwrap());
+    static ENTRY: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"(\d+):"([^"]+)""#).unwrap());
+    let Some(maps) = MAPS.captures(js) else { return vec![] };
+    let hashes: HashMap<&str, &str> = ENTRY.captures_iter(maps.get(2).unwrap().as_str()).map(|c| (c.get(1).unwrap().as_str(), c.get(2).unwrap().as_str())).collect();
+    ENTRY
+        .captures_iter(maps.get(1).unwrap().as_str())
+        .filter_map(|c| hashes.get(&c[1]).map(|h| (c[2].to_owned(), format!("{base}{}.{h}.js", &c[2]))))
+        .collect()
+}
+
+/// D45: the `u.p="…"` public path of the web-player script.
+fn public_path(js: &str) -> Option<&str> {
+    let rest = &js[js.find(r#"u.p=""#)? + 5..];
+    rest.get(..rest.find('"')?)
 }
 
 // ── State ──────────────────────────────────────────────────────────────────────
@@ -751,8 +777,22 @@ impl<T: Transport> Spotify<T> {
     fn scan_bundles(&mut self, op: &str) -> Option<String> {
         let html = self.transport.fetch(&home_request())?;
         let reqs: Vec<Request> = bundle_srcs(&html).iter().take(MAX_BUNDLES).map(|s| bundle_request(s)).collect();
-        let hash = self.transport.fetch_many(&reqs).into_iter().flatten().find_map(|js| find_hash(&js, op))?;
+        let scripts: Vec<String> = self.transport.fetch_many(&reqs).into_iter().flatten().collect();
+        let hash = match scripts.iter().find_map(|js| find_hash(js, op)) {
+            Some(hash) => hash,
+            None => self.scan_lazy_chunks(&scripts, op)?,
+        };
         self.state.hashes.insert(op.to_owned(), hash.clone());
         Some(hash)
+    }
+
+    /// D45: the operation's hash is not in a linked script; the router code-splits it into
+    /// a lazy chunk named after its family (`searchDesktop` → `…search…`). Fetches only those.
+    fn scan_lazy_chunks(&mut self, scripts: &[String], op: &str) -> Option<String> {
+        let word = op.split(|c: char| c.is_uppercase()).next().filter(|w| !w.is_empty())?.to_lowercase();
+        let chunks = scripts.iter().find_map(|js| Some(chunk_urls(js, public_path(js)?)).filter(|c| !c.is_empty()))?;
+        let reqs: Vec<Request> =
+            chunks.into_iter().filter(|(name, _)| name.contains(&word)).take(MAX_BUNDLES).map(|(_, url)| bundle_request(&url)).collect();
+        self.transport.fetch_many(&reqs).into_iter().flatten().find_map(|js| find_hash(&js, op))
     }
 }

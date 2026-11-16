@@ -81,6 +81,9 @@ fn spotify_matches_electron() {
             let clock = clock.clone();
             move || *clock.lock().unwrap()
         }));
+        // D45: Rust starts `searchDesktop` from a verified hash; the golden file was recorded
+        // from Electron's placeholder, so replay from that one.
+        sp.state.hashes.insert("searchDesktop".into(), "919c08e0c4c5b0a8e8a3b1e6f2e0a6d0c4c5b0a8e8a3b1e6f2e0a6d0c4c5b0a8".into());
         for (i, step) in scenario["steps"].as_array().unwrap().iter().enumerate() {
             let label = format!("{name} / step {i} ({} {})", step["op"], step["arg"]);
             *at.borrow_mut() = label.clone();
@@ -101,4 +104,103 @@ fn spotify_matches_electron() {
         }
     }
     assert!(requests > 0);
+}
+
+// ── D45: search heal reaches the lazy route chunk (hand tests; Electron lacks this) ──
+
+use ahg_engine::spotify::{chunk_urls, find_hash};
+
+const BASE: &str = "https://cdn.test/build/";
+const NEW_HASH: &str = "abababababababababababababababababababababababababababababababab";
+
+/// A trimmed webpack runtime: a name map, a hash map, and a css pair that must be ignored.
+fn runtime_js() -> String {
+    format!(
+        r#"u.p="{BASE}";u.u=e=>""+(({{4406:"xpui-routes-search",9908:"dwp-panel-section"}})[e]||e)+"."+({{4406:"bdb477e8",9908:"11223344"}})[e]+".js";u.miniCssF=e=>""+(({{4406:"xpui-routes-search"}})[e]||e)+"."+({{4406:"deadbeef"}})[e]+".css""#
+    )
+}
+
+#[test]
+fn chunk_urls_lists_the_js_chunks_with_full_urls() {
+    let got = chunk_urls(&runtime_js(), BASE);
+    let want = vec![
+        ("xpui-routes-search".to_owned(), format!("{BASE}xpui-routes-search.bdb477e8.js")),
+        ("dwp-panel-section".to_owned(), format!("{BASE}dwp-panel-section.11223344.js")),
+    ];
+    assert_eq!(got, want);
+    assert!(chunk_urls("no runtime here", BASE).is_empty());
+}
+
+#[test]
+fn find_hash_prefers_the_definition_form() {
+    let cases = [
+        (format!(r#"new _.l("searchDesktop","query","{NEW_HASH}",null)"#), Some(NEW_HASH)),
+        (format!(r#"new _.l("searchDesktop","mutation","{NEW_HASH}",null)"#), Some(NEW_HASH)),
+        // the name appears first with no hash nearby, then as a definition
+        (format!(r#"x="searchDesktop";{}new _.l("searchDesktop","query","{NEW_HASH}",null)"#, "y;".repeat(300)), Some(NEW_HASH)),
+        // the name appears first next to another hash; the definition still wins
+        (format!(r#"f("searchDesktop","{}");new _.l("searchDesktop","query","{NEW_HASH}",null)"#, "cd".repeat(32)), Some(NEW_HASH)),
+        ("nothing".to_owned(), None),
+    ];
+    assert!(!cases.is_empty());
+    for (js, want) in &cases {
+        assert_eq!(find_hash(js, "searchDesktop").as_deref(), *want, "{js}");
+    }
+}
+
+struct Scripted {
+    log: Rc<RefCell<Vec<String>>>,
+    chunk: Option<String>,
+}
+
+impl Transport for Scripted {
+    fn fetch(&mut self, req: &Request) -> Option<String> {
+        self.log.borrow_mut().push(req.url.clone());
+        let u = &req.url;
+        if u.contains("operationName=searchDesktop") {
+            return Some(if u.contains(NEW_HASH) {
+                r#"{"data":{"searchV2":{"tracksV2":{"items":[{"item":{"data":{"uri":"spotify:track:AAA","name":"One","artists":{"items":[{"profile":{"name":"Ann"}}]},"albumOfTrack":{"name":"Al"},"duration":{"totalMilliseconds":1000}}}}]}}}}"#.to_owned()
+            } else {
+                r#"{"errors":[{"message":"PersistedQueryNotFound"}]}"#.to_owned()
+            });
+        }
+        if u == "https://open.spotify.com/" {
+            return Some(r#"<script src="https://cdn.test/build/web-player.js"></script>"#.to_owned());
+        }
+        if u == "https://cdn.test/build/web-player.js" {
+            return Some(runtime_js());
+        }
+        if u.ends_with("xpui-routes-search.bdb477e8.js") {
+            return self.chunk.clone();
+        }
+        panic!("unexpected request {u}");
+    }
+}
+
+fn searcher(chunk: Option<String>) -> (Spotify<Scripted>, Rc<RefCell<Vec<String>>>) {
+    let log = Rc::new(RefCell::new(vec![]));
+    let mut sp = Spotify::new(Scripted { log: log.clone(), chunk }, Box::new(|| 1_700_000_000_000.0));
+    sp.state.token = Some(Token { value: "t".to_owned(), expires_at: 1.8e12 });
+    (sp, log)
+}
+
+#[test]
+fn search_heals_through_the_lazy_chunk_and_retries() {
+    let chunk = format!(r#"new _.l("searchDesktop","query","{NEW_HASH}",null)"#);
+    let (mut sp, log) = searcher(Some(chunk));
+    let tracks = sp.search("ann");
+    assert_eq!(tracks.len(), 1);
+    assert_eq!(tracks[0].id, "AAA");
+    assert_eq!(sp.state.hashes["searchDesktop"], NEW_HASH);
+    let log = log.borrow();
+    // stale answer, home page, web-player script, exactly one lazy chunk, retry
+    assert_eq!(log.len(), 5, "{log:?}");
+    assert!(log[4].contains(NEW_HASH));
+}
+
+#[test]
+fn search_returns_empty_when_the_heal_finds_nothing() {
+    let (mut sp, log) = searcher(Some("nothing here".to_owned()));
+    assert!(sp.search("ann").is_empty());
+    assert_eq!(log.borrow().len(), 4, "no retry without a new hash");
 }
