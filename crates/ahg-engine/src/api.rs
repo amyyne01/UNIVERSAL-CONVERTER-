@@ -199,6 +199,23 @@ pub fn build_task(
     Ok(task)
 }
 
+/// Electron's `buildDownloadRequest(config, overrides)` (src/lib/download.ts):
+/// the saved defaults for format, quality, video quality and the three flags
+/// (`??`, so a missing or null setting takes the built-in default), then every
+/// override on top, nulls included, as the object spread does.
+pub fn build_request(config: Option<&Value>, overrides: &Map<String, Value>) -> Value {
+    let setting = |key: &str, default: Value| config.and_then(|c| c.get(key)).filter(|v| !v.is_null()).cloned().unwrap_or(default);
+    let mut request = Map::new();
+    request.insert("format".into(), setting("defaultFormat", json!("mp3")));
+    request.insert("quality".into(), setting("defaultQuality", json!("320")));
+    request.insert("videoQuality".into(), setting("defaultVideoQuality", json!("best")));
+    for key in ["embedThumbnail", "embedMetadata", "skipExisting"] {
+        request.insert(key.into(), setting(key, json!(true)));
+    }
+    request.extend(overrides.iter().map(|(k, v)| (k.clone(), v.clone())));
+    Value::Object(request)
+}
+
 /// The request a retry or "download again" sends for `task` (D22): the fields
 /// Electron's downloads tab passes to `download.start`. The folder always comes
 /// from the settings, and the retry count and original id only track the
