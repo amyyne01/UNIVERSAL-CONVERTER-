@@ -1,0 +1,39 @@
+name: Check
+
+# Checks only. The release is built locally; CI is given no credentials.
+# Push to main only: no PR or fork triggers on purpose (public repository).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  logic:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      # rust-toolchain.toml pins channel and components; this installs and prints it.
+      - run: rustup show
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test
+
+  app:
+    runs-on: windows-latest
+    env:
+      RUSTC_WRAPPER: sccache
+      CARGO_INCREMENTAL: "0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mozilla-actions/sccache-action@v0.0.9
+      - run: rustup show
+      - run: cargo build -p ahg-runtime --bin fake_ytdlp
+      - run: cargo test -p ahg-app
+      # ponytail: 6 existing clippy warnings in ahg-app; add "-- -D warnings" once they are fixed
+      - run: cargo clippy -p ahg-app --all-targets
