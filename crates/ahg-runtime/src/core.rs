@@ -905,25 +905,40 @@ fn host_and_port(url: &str) -> (String, u16) {
     (host.trim_end_matches('.').to_ascii_lowercase(), port.parse().unwrap_or(443))
 }
 
-/// Whether a cover host may not be at `ip`: loopback, private, link-local, shared (carrier-grade NAT), unique-local,
-/// unspecified, multicast and reserved addresses, and the IPv6 forms that carry an IPv4 address (mapped, compatible, NAT64).
+/// Whether a cover host may not be at `ip`: an allowlist, so an address passes only if it is global unicast and
+/// outside every special-purpose range. IPv4: not 0/8, 10/8, 100.64/10, 127/8, 169.254/16, 172.16/12, 192.0.0/24,
+/// 192.0.2/24, 192.88.99/24, 192.168/16, 198.18/15, 198.51.100/24, 203.0.113/24, nor 224/4 and 240/4 (multicast,
+/// reserved, broadcast). IPv6: only 2000::/3 minus 2001::/23 (protocol assignments, Teredo), 2001:db8::/32 and 3fff::/20
+/// (documentation); mapped, compatible, NAT64 (64:ff9b::/96) and 6to4 (2002::/16) forms are judged by the IPv4 address
+/// inside; 64:ff9b:1::/48 and everything else (loopback, unspecified, site-local, link-local, unique-local, multicast) is refused.
 fn ip_forbidden(ip: IpAddr) -> bool {
     match ip {
-        IpAddr::V4(v4) => {
-            let o = v4.octets();
-            v4.is_loopback() || v4.is_private() || v4.is_link_local() || v4.is_multicast() || v4.is_broadcast()
-                || o[0] == 0 || o[0] >= 240 || (o[0] == 100 && o[1] & 0xc0 == 64)
-        }
+        IpAddr::V4(v4) => !v4_global(v4),
         IpAddr::V6(v6) => {
             let s = v6.segments();
-            let embedded = s[..6] == [0; 6] || (s[0] == 0x64 && s[1] == 0xff9b && s[2..6] == [0; 4]);
-            let [a, b] = [(s[6] >> 8) as u8, s[6] as u8];
-            let [c, d] = [(s[7] >> 8) as u8, s[7] as u8];
-            v6.is_loopback() || v6.is_unspecified() || v6.is_multicast() || s[0] & 0xffc0 == 0xfe80 || s[0] & 0xfe00 == 0xfc00
-                || v6.to_ipv4_mapped().is_some_and(|v4| ip_forbidden(v4.into()))
-                || (embedded && ip_forbidden(Ipv4Addr::new(a, b, c, d).into()))
+            let inside = |hi: u16, lo: u16| Ipv4Addr::new((hi >> 8) as u8, hi as u8, (lo >> 8) as u8, lo as u8);
+            if let Some(v4) = v6.to_ipv4_mapped() {
+                !v4_global(v4)
+            } else if s[..6] == [0; 6] || (s[0] == 0x64 && s[1] == 0xff9b && s[2..6] == [0; 4]) {
+                !v4_global(inside(s[6], s[7]))
+            } else if s[0] == 0x2002 {
+                !v4_global(inside(s[1], s[2]))
+            } else {
+                s[0] & 0xe000 != 0x2000 || (s[0] == 0x2001 && (s[1] & 0xfe00 == 0 || s[1] == 0xdb8)) || (s[0] == 0x3fff && s[1] & 0xf000 == 0)
+            }
         }
     }
+}
+
+fn v4_global(v4: Ipv4Addr) -> bool {
+    let o = v4.octets();
+    !(o[0] == 0 || o[0] == 10 || o[0] == 127 || o[0] >= 224
+        || (o[0] == 100 && o[1] & 0xc0 == 64)
+        || (o[0] == 169 && o[1] == 254)
+        || (o[0] == 172 && o[1] & 0xf0 == 16)
+        || (o[0] == 192 && (o[1] == 168 || (o[1] == 0 && o[2] <= 2) || (o[1] == 88 && o[2] == 99)))
+        || (o[0] == 198 && (o[1] & 0xfe == 18 || (o[1] == 51 && o[2] == 100)))
+        || (o[0] == 203 && o[1] == 0 && o[2] == 113))
 }
 
 #[cfg(test)]
@@ -952,12 +967,19 @@ mod cover_host_tests {
     #[test]
     fn addresses_are_classified_without_resolving_anything() {
         let forbidden = [
-            "127.0.0.1", "127.255.255.254", "0.0.0.0", "0.1.2.3", "10.0.0.5", "10.255.255.255", "172.16.0.1", "172.31.255.255", "192.168.1.1", "169.254.169.254",
-            "100.64.0.1", "100.127.255.255", "224.0.0.1", "239.255.255.255", "255.255.255.255", "240.0.0.1",
-            "::1", "::", "fe80::1", "febf::1", "fc00::1", "fdff::1", "ff02::1",
-            "::ffff:127.0.0.1", "::ffff:10.0.0.5", "::ffff:192.168.1.1", "::ffff:169.254.169.254", "::127.0.0.1", "::10.0.0.5", "64:ff9b::7f00:1", "64:ff9b::a00:5",
+            // IPv4: every special range, at both edges
+            "0.0.0.0", "0.255.255.255", "10.0.0.5", "10.255.255.255", "100.64.0.1", "100.127.255.255", "127.0.0.1", "127.255.255.254", "169.254.169.254", "172.16.0.1", "172.31.255.255",
+            "192.0.0.1", "192.0.0.255", "192.0.2.1", "192.88.99.1", "192.168.1.1", "198.18.0.1", "198.19.255.255", "198.51.100.7", "203.0.113.9", "224.0.0.1", "239.255.255.255", "240.0.0.1", "255.255.255.255",
+            // IPv6: not global unicast, protocol assignments (Teredo), documentation, site/link/unique-local, multicast
+            "::1", "::", "fe80::1", "febf::1", "fec0::1", "fc00::1", "fdff::1", "ff02::1", "2001::1", "2001:1ff::1", "2001:db8::1", "3fff::1", "3fff:fff::1", "1::1", "4000::1", "64:ff9b:1::1",
+            // mapped, compatible, NAT64 and 6to4 with an internal IPv4 inside
+            "::ffff:127.0.0.1", "::ffff:10.0.0.5", "::ffff:192.168.1.1", "::ffff:169.254.169.254", "::127.0.0.1", "::10.0.0.5", "64:ff9b::7f00:1", "64:ff9b::a00:5", "2002:a00:5::1", "2002:7f00:1::1", "2002:c0a8:101::",
         ];
-        let allowed = ["93.184.216.34", "8.8.8.8", "1.1.1.1", "172.15.255.255", "172.32.0.1", "100.63.255.255", "100.128.0.1", "11.0.0.1", "223.255.255.255", "2606:4700::1111", "2001:db8::1", "::ffff:93.184.216.34", "64:ff9b::5db8:d822"];
+        let allowed = [
+            "93.184.216.34", "8.8.8.8", "1.1.1.1", "9.255.255.255", "11.0.0.1", "100.63.255.255", "100.128.0.1", "126.255.255.255", "128.0.0.1", "169.253.255.255", "169.255.0.1", "172.15.255.255", "172.32.0.1",
+            "192.0.3.1", "192.88.98.1", "192.169.0.1", "198.17.255.255", "198.20.0.1", "198.51.99.1", "198.51.101.1", "203.0.112.1", "203.0.114.1", "223.255.255.255",
+            "2606:4700::1111", "2001:200::1", "2001:db9::1", "2a00:1450::1", "3ffe::1", "2fff::1", "::ffff:93.184.216.34", "::5db8:d822", "64:ff9b::5db8:d822", "2002:5db8:d822::1",
+        ];
         assert!(!forbidden.is_empty() && !allowed.is_empty());
         for ip in forbidden {
             assert!(ip_forbidden(ip.parse().unwrap()), "should be forbidden: {ip}");

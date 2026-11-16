@@ -38,6 +38,8 @@ impl Resolver for Pinned {
 }
 
 /// The addresses a name has, from the system's resolver (none when it has none).
+// ponytail: the system lookup has no timeout of its own, so a hung resolver stalls the calling worker (ureq's timeout starts
+// only at the connection); upgrade path: run it on a helper thread and wait with `recv_timeout`, as ureq's DefaultResolver does.
 pub fn lookup(host: &str, port: u16) -> Vec<SocketAddr> {
     (host, port).to_socket_addrs().map(Iterator::collect).unwrap_or_default()
 }
