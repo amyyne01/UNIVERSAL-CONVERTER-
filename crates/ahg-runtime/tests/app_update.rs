@@ -65,6 +65,19 @@ impl Rig {
 }
 
 #[test]
+fn two_downloads_at_once_both_finish() {
+    let r = rig("overlap", &good_release(), "2.0.0");
+    r.updater.check();
+    let updater = &r.updater;
+    std::thread::scope(|s| {
+        let both = [s.spawn(|| updater.download()), s.spawn(|| updater.download())];
+        for h in both {
+            assert_eq!(h.join().unwrap().unwrap().phase, "ready");
+        }
+    });
+}
+
+#[test]
 fn a_check_reports_a_newer_version_or_that_there_is_none() {
     let r = rig("check", &good_release(), "2.0.0");
     let state = r.updater.check();

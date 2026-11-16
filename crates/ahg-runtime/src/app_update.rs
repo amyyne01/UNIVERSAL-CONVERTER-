@@ -26,6 +26,8 @@ type Notify = Box<dyn Fn(Event) + Send + Sync>;
 
 pub struct AppUpdater {
     state: Mutex<Updater>,
+    /// Held for a whole download: a second one waits, then runs, as two overlapping Electron downloads would both finish.
+    downloading: Mutex<()>,
     update_dir: PathBuf,
     fetch: Box<dyn Fetch>,
     /// The running app's version, such as "2.0.0".
@@ -36,7 +38,7 @@ pub struct AppUpdater {
 impl AppUpdater {
     /// `update_dir` is `<userData>/updates`.
     pub fn new(update_dir: &Path, current: &str, fetch: Box<dyn Fetch>, notify: Notify) -> Self {
-        Self { state: Mutex::new(Updater::new(&update_dir.to_string_lossy())), update_dir: update_dir.to_owned(), fetch, current: current.to_owned(), notify }
+        Self { state: Mutex::new(Updater::new(&update_dir.to_string_lossy())), downloading: Mutex::new(()), update_dir: update_dir.to_owned(), fetch, current: current.to_owned(), notify }
     }
 
     fn state(&self) -> MutexGuard<'_, Updater> {
@@ -72,6 +74,7 @@ impl AppUpdater {
     /// arrive as events. `Err` only when there is nothing to download.
     /// Blocking: call it from a worker thread.
     pub fn download(&self) -> Result<UpdateState, String> {
+        let _one_at_a_time = self.downloading.lock().unwrap_or_else(|e| e.into_inner());
         let sums = self.state().download_begin()?;
         if let Err(events) = self.fetch_and_stage(&sums.url) {
             self.tell(events);

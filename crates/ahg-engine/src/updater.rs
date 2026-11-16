@@ -349,9 +349,12 @@ pub struct InstallPlan {
     pub log: &'static str,
 }
 
+const NO_UPDATE: &str = "Update refused: no available update to download";
+
 struct Job {
     expected: String,
     version: String,
+    asset: String,
     total: f64,
     received: f64,
     last_sent: f64,
@@ -360,6 +363,8 @@ struct Job {
 pub struct Updater {
     update_dir: String,
     available: Option<Available>,
+    /// The release a download began with; a later check cannot take it away.
+    target: Option<Available>,
     downloaded: Option<String>,
     state: UpdateState,
     job: Option<Job>,
@@ -377,7 +382,7 @@ pub fn resolve_target_exe(injected: Option<Option<&str>>, env_portable: Option<&
 impl Updater {
     /// `update_dir` is `<userData>/updates`.
     pub fn new(update_dir: &str) -> Self {
-        Self { update_dir: update_dir.to_string(), available: None, downloaded: None, state: UpdateState::phase("idle"), job: None }
+        Self { update_dir: update_dir.to_string(), available: None, target: None, downloaded: None, state: UpdateState::phase("idle"), job: None }
     }
 
     pub fn get_state(&self) -> &UpdateState {
@@ -436,9 +441,10 @@ impl Updater {
     /// `download()` starting. `Err` is the rejected promise (no event, no state change);
     /// `Ok` is the checksum file to fetch.
     pub fn download_begin(&mut self) -> Result<Request, String> {
-        let target = self.available.as_ref().ok_or("Update refused: no available update to download")?;
+        let target = self.available.clone().ok_or(NO_UPDATE)?;
         // The URLs passed the host gate when the release was read, and the gate is a pure function.
         let sums = Request::new(&target.sums_url);
+        self.target = Some(target);
         self.job = None;
         Ok(sums)
     }
@@ -451,11 +457,11 @@ impl Updater {
 
     /// The checksum file arrived. `Ok` is the exe to fetch; `Err` carries the events.
     pub fn download_sums(&mut self, text: &str) -> Result<Request, Vec<Event>> {
-        let target = self.available.clone().expect("download_begin succeeded");
+        let Some(target) = self.target.clone() else { return Err(self.error(NO_UPDATE.into())) };
         match parse_checksum(text, &target.asset_name) {
             None => Err(self.error("Update refused: no checksum published for this release".into())),
             Some(expected) => {
-                self.job = Some(Job { expected, version: target.version, total: 0.0, received: 0.0, last_sent: -1.0 });
+                self.job = Some(Job { expected, version: target.version, asset: target.asset_name, total: 0.0, received: 0.0, last_sent: -1.0 });
                 Ok(Request::new(&target.asset_url))
             }
         }
@@ -490,12 +496,11 @@ impl Updater {
     /// All bytes arrived; `actual_sha` is their SHA-256 as lowercase hex.
     /// `Ok` is where to write them (`write_staged`).
     pub fn download_finish(&mut self, actual_sha: &str) -> Result<Stage, Vec<Event>> {
-        let job = self.job.take().expect("download_sums succeeded");
+        let Some(job) = self.job.take() else { return Err(self.error(NO_UPDATE.into())) };
         if actual_sha != job.expected.to_ascii_lowercase() {
             return Err(self.error("Update refused: the download did not match its published checksum".into()));
         }
-        let asset = &self.available.as_ref().expect("download_begin succeeded").asset_name;
-        Ok(Stage { dir: self.update_dir.clone(), file: win_join(&self.update_dir, asset), version: job.version })
+        Ok(Stage { dir: self.update_dir.clone(), file: win_join(&self.update_dir, &job.asset), version: job.version })
     }
 
     /// The staged file is on disk.
