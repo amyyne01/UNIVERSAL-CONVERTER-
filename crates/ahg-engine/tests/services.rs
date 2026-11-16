@@ -117,7 +117,16 @@ fn the_counters_count_roll_and_save_as_electron_does() {
     }
     let scenarios = g["scenarios"].as_array().unwrap();
     assert!(scenarios.len() >= 12);
+    // D38: these scenarios cross an idle month, where Electron's `previous` becomes
+    // an empty bucket and Rust keeps the last active month. Pinned by the hand test below.
+    const IDLE_MONTH: [usize; 1] = [0];
+    assert_eq!(IDLE_MONTH.len(), 1);
     for (i, scenario) in scenarios.iter().enumerate() {
+        if IDLE_MONTH.contains(&i) {
+            let crosses = scenario["out"].as_array().unwrap().iter().any(|st| st["disk"].as_str().is_some_and(|d| d.contains("\"previous\":{\"month\":\"2026-06\",\"files\":0,")));
+            assert!(crosses, "scenario {i} no longer crosses an idle month");
+            continue;
+        }
         let dir = tmp.join(i.to_string());
         fs::create_dir_all(&dir).unwrap();
         let target = stats_file_path(&dir);
@@ -150,6 +159,43 @@ fn the_counters_count_roll_and_save_as_electron_does() {
             assert_eq!(result, step.get("result").cloned().unwrap_or(Value::Null), "scenario {i} step {s}");
             assert_eq!(json!(disk()), step["disk"], "scenario {i} step {s}: file on disk");
         }
+    }
+}
+
+/// D38, an approved difference from Electron 1.6.1: an idle month never
+/// replaces `previous`, so it stays the last month that had downloads.
+#[test]
+fn an_idle_month_does_not_replace_the_previous_month() {
+    // (months visited in order, a download in each, expected previous month after the last visit)
+    let cases: [(&[&str], &[bool], Option<&str>); 5] = [
+        (&["2026-01", "2026-02", "2026-03"], &[true, false, false], Some("2026-01")),
+        (&["2026-01", "2026-02"], &[true, false], Some("2026-01")),
+        (&["2026-01", "2026-02", "2026-03"], &[true, true, false], Some("2026-02")),
+        (&["2026-01", "2026-02", "2026-03", "2026-04"], &[true, false, false, false], Some("2026-01")),
+        (&["2026-01", "2026-02"], &[false, false], None),
+    ];
+    assert!(!cases.is_empty());
+    let tmp = scratch("stats-d38");
+    for (i, (months, active, previous)) in cases.iter().enumerate() {
+        let dir = tmp.join(i.to_string());
+        fs::create_dir_all(&dir).unwrap();
+        let target = stats_file_path(&dir);
+        let mut store = StatsStore::default();
+        store.init_at(&target, months[0]);
+        for (month, active) in months.iter().zip(active.iter()) {
+            if *active {
+                store.record_at(SourcePlatform::Youtube, &[], 5.0, month);
+            } else {
+                store.get_at(month);
+            }
+        }
+        let last = months.last().unwrap();
+        let got = store.get_at(last);
+        assert_eq!(got.previous.as_ref().map(|p| p.month.as_str()), *previous, "case {i}");
+        // A restart reads the same thing back from the file.
+        let mut again = StatsStore::default();
+        again.init_at(&target, last);
+        assert_eq!(again.get_at(last), got, "case {i}: file round trip");
     }
 }
 

@@ -100,7 +100,10 @@ impl StatsStore {
             return;
         }
         let last = std::mem::replace(&mut data.current, MonthBucket::empty(month));
-        data.previous = Some(last);
+        // D38: an idle month leaves `previous` as it was (Electron replaces it).
+        if last.files != 0.0 || last.bytes != 0.0 || !last.by_platform.is_empty() {
+            data.previous = Some(last);
+        }
         self.save();
     }
 
