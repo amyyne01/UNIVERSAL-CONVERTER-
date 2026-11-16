@@ -63,6 +63,43 @@ fn the_download_archive_path_is_a_plain_path_not_a_template() {
 }
 
 #[test]
+fn percent_in_the_download_folder_is_doubled_once_everywhere_it_is_a_template() {
+    // D48 (extension of D37): the folder is part of the "-o" template too.
+    let cases = [
+        (json!({"outputDir": "C:\\100%"}), vec!["C:\\100%%\\Test Song.%(ext)s"]),
+        (json!({"outputDir": "C:\\100%\\\\"}), vec!["C:\\100%%\\Test Song.%(ext)s"]),
+        (json!({"outputDir": "C:\\Music\\50% Off"}), vec!["C:\\Music\\50%% Off\\Test Song.%(ext)s"]),
+        (json!({"outputDir": "C:\\%(id)s"}), vec!["C:\\%%(id)s\\Test Song.%(ext)s"]),
+        (json!({"outputDir": "C:\\Music%"}), vec!["C:\\Music%%\\Test Song.%(ext)s"]),
+        (json!({"outputDir": "C:\\Music"}), vec!["C:\\Music\\Test Song.%(ext)s"]),
+        (json!({"outputDir": "C:\\5%", "title": "100%"}), vec!["C:\\5%%\\100%%.%(ext)s"]),
+        (
+            json!({"outputDir": "C:\\5%", "isPlaylist": true, "playlistName": "50%", "extras": {"splitChapters": true}}),
+            vec![
+                "C:\\5%%\\50%%\\%(title)s.%(ext)s",
+                "chapter:C:\\5%%\\50%%\\%(title)s - %(section_number)03d %(section_title)s.%(ext)s",
+            ],
+        ),
+        // The user's own template stays yt-dlp's language, the folder still a literal.
+        (
+            json!({"outputDir": "C:\\5%", "extras": {"outputTemplate": "%(title)s - 5%"}}),
+            vec!["C:\\5%%\\%(title)s - 5%.%(ext)s"],
+        ),
+    ];
+    assert!(!cases.is_empty());
+    for (over, want) in cases {
+        assert_eq!(output_args(&over), want, "{over}");
+    }
+}
+
+#[test]
+fn the_archive_path_keeps_a_plain_percent_in_the_download_folder() {
+    let args = build(&json!({"outputDir": "C:\\5%", "isPlaylist": true, "playlistName": "50%"}));
+    let at = args.iter().position(|a| a == "--download-archive").unwrap();
+    assert_eq!(args[at + 1], "C:\\5%\\50%\\.download-archive.txt");
+}
+
+#[test]
 fn a_spotify_name_with_percent_is_replaced_once_and_not_doubled_twice() {
     use ahg_engine::downloader::bridge::name_and_tag_from_spotify;
     use ahg_engine::queue::{TaskInit, create_task};

@@ -149,9 +149,10 @@ pub fn build_ytdlp_args(task: &DownloadTask, ffmpeg_path: Option<&str>) -> Vec<S
         format!("{stem}{tag}.%(ext)s")
     };
     let folder = template_literal(&sub);
-    push(&mut args, &["-o", &win32_join(&[&task.output_dir, &folder, &name])]);
+    let dir = template_literal(&task.output_dir);
+    push(&mut args, &["-o", &win32_join(&[&dir, &folder, &name])]);
     if x.split_chapters {
-        let chapter = win32_join(&[&task.output_dir, &folder, "%(title)s - %(section_number)03d %(section_title)s.%(ext)s"]);
+        let chapter = win32_join(&[&dir, &folder, "%(title)s - %(section_number)03d %(section_title)s.%(ext)s"]);
         push(&mut args, &["-o", &format!("chapter:{chapter}")]);
     }
     if task.is_playlist {
@@ -250,6 +251,7 @@ pub(crate) fn replaceable_stem(task: &DownloadTask, track_name: &str) -> Option<
 
 /// D37 (Rust only): text that goes into an output template as a literal. yt-dlp
 /// reads "%%" as one "%", so a "%" in a title or folder name is doubled.
+/// D48 extends it to the download folder.
 fn template_literal(s: &str) -> String {
     s.replace('%', "%%")
 }

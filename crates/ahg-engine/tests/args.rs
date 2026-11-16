@@ -28,10 +28,11 @@ fn builds_the_arguments_electron_builds() {
 }
 
 /// D37 (Rust only): a "%" in the title or playlist name is written as "%%" so it
-/// stays a "%" in the file name. The only cases allowed to differ from Electron
-/// are those with a "%" in one of the two, and there are exactly this many.
+/// stays a "%" in the file name; D48 adds the download folder. The only cases
+/// allowed to differ from Electron are those with a "%" in one of the three, and
+/// there are exactly this many.
 const EXEMPT_BY_D37: usize = 64;
 
 fn has_percent(base: &Value, over: &Value) -> bool {
-    ["title", "playlistName"].iter().any(|k| over.get(k).unwrap_or(&base[k]).as_str().is_some_and(|s| s.contains('%')))
+    ["title", "playlistName", "outputDir"].iter().any(|k| over.get(k).unwrap_or(&base[k]).as_str().is_some_and(|s| s.contains('%')))
 }
