@@ -118,6 +118,18 @@ fn an_https_only_client_refuses_a_plain_http_address() {
 }
 
 #[test]
+fn a_pinned_client_connects_only_to_the_pinned_address_whatever_the_name_says() {
+    let (base, seen) = server();
+    let addr: std::net::SocketAddr = base.trim_start_matches("http://").parse().unwrap();
+    // `.invalid` never resolves: only the pin can have brought the request here.
+    let url = format!("http://pin.invalid:{}/ok", addr.port());
+    assert!(Http::new(None).send("GET", &url, &[], None, T).is_none(), "the name alone leads nowhere");
+    let res = Http::new(None).pinned(vec![addr]).send("GET", &url, &[], None, T).unwrap();
+    assert_eq!(res.status, 200);
+    assert!(seen.recv().unwrap().headers.iter().any(|h| h.to_lowercase().starts_with("host: pin.invalid")), "the name is still what the request says");
+}
+
+#[test]
 fn a_body_is_sent_with_a_patch() {
     let (base, seen) = server();
     let headers = vec![("Content-Type".to_owned(), "application/json".to_owned())];

@@ -2,10 +2,13 @@
 //! Blocking calls, made from worker threads. An error status is still a
 //! response: each caller decides what a status means.
 use std::io::Read;
+use std::net::{SocketAddr, ToSocketAddrs};
 use std::time::Duration;
 
 use ahg_engine::spotify;
 use ureq::tls::{RootCerts, TlsConfig, TlsProvider};
+use ureq::unversioned::resolver::{ResolvedSocketAddrs, Resolver};
+use ureq::unversioned::transport::{DefaultConnector, NextTimeout};
 use ureq::{Agent, Proxy, ResponseExt};
 
 pub struct Http {
@@ -16,6 +19,27 @@ pub struct Http {
     /// Refuse any plain-http address and follow no redirect (cover art, which comes from addresses a track names: the
     /// caller follows each hop itself and checks it first).
     strict: bool,
+    /// Connect only to these addresses, whatever the name in the address resolves to (empty: resolve as usual).
+    pinned: Vec<SocketAddr>,
+}
+
+/// A resolver that answers with the addresses it was given and looks nothing up.
+#[derive(Debug)]
+struct Pinned(Vec<SocketAddr>);
+
+impl Resolver for Pinned {
+    fn resolve(&self, _: &ureq::http::Uri, _: &ureq::config::Config, _: NextTimeout) -> Result<ResolvedSocketAddrs, ureq::Error> {
+        let mut found = self.empty();
+        for addr in &self.0 {
+            let _ = found.try_push(*addr); // the 17th and later are dropped
+        }
+        Ok(found)
+    }
+}
+
+/// The addresses a name has, from the system's resolver (none when it has none).
+pub fn lookup(host: &str, port: u16) -> Vec<SocketAddr> {
+    (host, port).to_socket_addrs().map(Iterator::collect).unwrap_or_default()
 }
 
 pub struct Response {
@@ -54,15 +78,22 @@ impl Http {
     /// The address is used exactly as written.
     pub fn new(proxy: Option<&str>) -> Self {
         match proxy.filter(|p| !p.is_empty()).map(Proxy::new) {
-            None => Self { proxy: None, proxy_broken: false, strict: false },
-            Some(Ok(proxy)) => Self { proxy: Some(proxy), proxy_broken: false, strict: false },
-            Some(Err(_)) => Self { proxy: None, proxy_broken: true, strict: false },
+            None => Self { proxy: None, proxy_broken: false, strict: false, pinned: Vec::new() },
+            Some(Ok(proxy)) => Self { proxy: Some(proxy), proxy_broken: false, strict: false, pinned: Vec::new() },
+            Some(Err(_)) => Self { proxy: None, proxy_broken: true, strict: false, pinned: Vec::new() },
         }
     }
 
     /// This client takes https addresses only and follows no redirect: a 3xx is returned as the response, with its `location`.
     pub fn https_only(mut self) -> Self {
         self.strict = true;
+        self
+    }
+
+    /// This client connects only to `addrs` (not with a proxy: it has to find the proxy). The name in the address is still what
+    /// the request and the certificate say. An empty list pins nothing.
+    pub fn pinned(mut self, addrs: Vec<SocketAddr>) -> Self {
+        self.pinned = addrs;
         self
     }
 
@@ -77,7 +108,7 @@ impl Http {
         if self.proxy_broken {
             return None;
         }
-        let agent: Agent = Agent::config_builder()
+        let config = Agent::config_builder()
             .http_status_as_error(false)
             .timeout_global(Some(timeout))
             .proxy(self.proxy.clone())
@@ -89,8 +120,8 @@ impl Http {
             // company proxy, an antivirus) is trusted here too. The library's
             // built-in list refuses Google's chain.
             .tls_config(TlsConfig::builder().provider(TlsProvider::NativeTls).root_certs(RootCerts::PlatformVerifier).build())
-            .build()
-            .into();
+            .build();
+        let agent = if self.pinned.is_empty() { Agent::from(config) } else { Agent::with_parts(config, DefaultConnector::default(), Pinned(self.pinned.clone())) };
         let mut request = ureq::http::Request::builder().method(method).uri(url);
         for (name, value) in headers {
             request = request.header(name.as_str(), value.as_str());
@@ -136,10 +167,11 @@ impl spotify::Transport for SpotifyHttp {
 }
 
 /// One cover-art request (`Core::fetch_cover`). `proxy` is the setting as it is
-/// right now (D10). The caller limits how much of the body it reads.
-pub fn cover_get(url: &str, proxy: Option<&str>) -> Option<crate::engine_update::Fetched> {
+/// right now (D10). The caller limits how much of the body it reads. The
+/// connection goes only to `addrs`, the addresses the caller checked (none with a proxy).
+pub fn cover_get(url: &str, proxy: Option<&str>, addrs: &[SocketAddr]) -> Option<crate::engine_update::Fetched> {
     let headers = [("User-Agent".to_owned(), "Mozilla/5.0".to_owned())];
-    let response = Http::new(proxy).https_only().send("GET", url, &headers, None, Duration::from_secs(20))?;
+    let response = Http::new(proxy).https_only().pinned(addrs.to_vec()).send("GET", url, &headers, None, Duration::from_secs(20))?;
     let (status, final_url, content_length, location) = (response.status, response.final_url.clone(), response.content_length.clone(), response.location.clone());
     Some(crate::engine_update::Fetched { status, final_url, content_length, location, body: Box::new(response.into_reader()) })
 }

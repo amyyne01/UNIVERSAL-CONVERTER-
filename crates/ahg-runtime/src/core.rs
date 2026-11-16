@@ -3,6 +3,7 @@
 //! other and with the plan the user is on.
 use std::collections::HashMap;
 use std::io::Read;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{RecvTimeoutError, Sender, channel};
@@ -137,8 +138,13 @@ impl spotify::Transport for Dyn {
     }
 }
 
-/// One cover-art request: the address and the proxy setting as it is right now.
-pub type CoverFetch = Box<dyn Fn(&str, Option<&str>) -> Option<Fetched> + Send + Sync>;
+/// One cover-art request: the address, the proxy setting as it is right now, and the
+/// addresses the host was checked to have (the connection may go nowhere else; empty
+/// with a proxy, which finds the host itself).
+pub type CoverFetch = Box<dyn Fn(&str, Option<&str>, &[SocketAddr]) -> Option<Fetched> + Send + Sync>;
+
+/// The addresses of a host name and port.
+pub type Resolve = Box<dyn Fn(&str, u16) -> Vec<SocketAddr> + Send + Sync>;
 
 /// The most bytes of a cover image `Core::fetch_cover` takes.
 pub const MAX_COVER_BYTES: u64 = 5 * 1024 * 1024;
@@ -171,6 +177,8 @@ fn resolve_location(base: &str, location: &str) -> String {
 pub struct Outside {
     /// Cover-art images.
     pub cover: CoverFetch,
+    /// Finding the addresses of a cover host, so they can be checked before it is requested.
+    pub resolve: Resolve,
     /// YouTube Music's song search.
     pub song_search: SongSearch,
     /// Spotify's pages and API.
@@ -240,6 +248,7 @@ pub struct Core {
     /// to finish (the settings saved) instead of returning early.
     finish: Mutex<()>,
     cover: CoverFetch,
+    resolve: Resolve,
     song_search: SongSearch,
     /// One reader for every Spotify lookup, so that two lookups that both need
     /// a token or hash refresh share one attempt.
@@ -270,12 +279,12 @@ impl Core {
             let ytdlp = ytdlp.clone();
             Box::new(crate::http::SpotifyHttp::new(move || ytdlp.proxy()))
         };
-        Self::start_with(paths, ytdlp, plan, events, Outside { song_search, spotify, releases: Arc::new(crate::http::Releases), desktop: Box::new(crate::desktop::Windows), cover: Box::new(crate::http::cover_get) })
+        Self::start_with(paths, ytdlp, plan, events, Outside { song_search, spotify, releases: Arc::new(crate::http::Releases), desktop: Box::new(crate::desktop::Windows), cover: Box::new(crate::http::cover_get), resolve: Box::new(crate::http::lookup) })
     }
 
     /// `start`, with everything that reaches the network given.
     pub fn start_with(paths: Paths, ytdlp: Arc<YtDlp>, plan: PlanSource, events: Sender<CoreEvent>, outside: Outside) -> Self {
-        let Outside { song_search, spotify, releases, desktop, cover } = outside;
+        let Outside { song_search, spotify, releases, desktop, cover, resolve } = outside;
         let spotify = Mutex::new(Spotify::new(Dyn(spotify), Box::new(spotify::system_now_ms)));
         let app_updater = {
             let tell = events.clone();
@@ -382,7 +391,7 @@ impl Core {
                 }
             })
         };
-        let core = Self { paths, config, stats, ytdlp, plan, engine, events, stop, dispatcher: Mutex::new(Some(dispatcher)), down: AtomicBool::new(false), own_settings: Mutex::new(()), finish: Mutex::new(()), cover, song_search, spotify, hold_unconfirmed, remembered, lookups: Mutex::default(), engine_updater, app_updater, desktop };
+        let core = Self { paths, config, stats, ytdlp, plan, engine, events, stop, dispatcher: Mutex::new(Some(dispatcher)), down: AtomicBool::new(false), own_settings: Mutex::new(()), finish: Mutex::new(()), cover, resolve, song_search, spotify, hold_unconfirmed, remembered, lookups: Mutex::default(), engine_updater, app_updater, desktop };
         core.sync();
         core
     }
@@ -684,7 +693,20 @@ impl Core {
             if !cover_url_allowed(&target) {
                 return Err("Cover refused: not an https address of a named host".into());
             }
-            let reply = (self.cover)(&target, self.ytdlp.proxy().as_deref()).ok_or("Cover fetch failed")?;
+            // With a proxy the proxy resolves the name and no address can be checked here (the host rule above is all there is).
+            // Without one, the name is resolved once, every address must be public, and the connection is pinned to them, so the
+            // answer cannot change between this check and the connection (DNS rebinding). A name with a public and an internal
+            // address is refused: the safe choice, no guessing which one a connection would take.
+            let proxy = self.ytdlp.proxy().filter(|p| !p.is_empty());
+            let mut pinned = Vec::new();
+            if proxy.is_none() {
+                let (host, port) = host_and_port(&target);
+                pinned = (self.resolve)(&host, port);
+                if pinned.is_empty() || pinned.iter().any(|a| ip_forbidden(a.ip())) {
+                    return Err("Cover refused: the host is not a public address".into());
+                }
+            }
+            let reply = (self.cover)(&target, proxy.as_deref(), &pinned).ok_or("Cover fetch failed")?;
             if !matches!(reply.status, 301 | 302 | 303 | 307 | 308) {
                 break reply;
             }
@@ -863,8 +885,7 @@ const _: fn() = || {
 /// Whether `url` may be fetched as cover art: https, with a real host name. No
 /// IP literal (IPv4 in any spelling, or IPv6 in brackets), no `localhost` or
 /// `*.localhost`, no user name in the address. Pure: nothing is resolved.
-// ponytail: a name that resolves to a private address (DNS rebinding) still passes;
-// upgrade path: resolve, pin the address for the request, refuse private ranges.
+/// A single-label name (`intranet`) is refused too: it resolves through the local search domain.
 pub fn cover_url_allowed(url: &str) -> bool {
     let Some(rest) = url.strip_prefix("https://") else { return false };
     let authority = rest.split(['/', '?', '#', '\\']).next().unwrap_or_default();
@@ -874,12 +895,40 @@ pub fn cover_url_allowed(url: &str) -> bool {
     let host = authority.split(':').next().unwrap_or_default().trim_end_matches('.').to_ascii_lowercase();
     let last = host.rsplit('.').next().unwrap_or_default();
     let numeric = !last.is_empty() && (last.bytes().all(|b| b.is_ascii_digit()) || last.starts_with("0x"));
-    !host.is_empty() && host != "localhost" && !host.ends_with(".localhost") && !numeric
+    host.contains('.') && !host.ends_with(".localhost") && !numeric
+}
+
+/// The host and port of an address `cover_url_allowed` accepted (443 when none is written).
+fn host_and_port(url: &str) -> (String, u16) {
+    let authority = url["https://".len()..].split(['/', '?', '#']).next().unwrap_or_default();
+    let (host, port) = authority.split_once(':').unwrap_or((authority, ""));
+    (host.trim_end_matches('.').to_ascii_lowercase(), port.parse().unwrap_or(443))
+}
+
+/// Whether a cover host may not be at `ip`: loopback, private, link-local, shared (carrier-grade NAT), unique-local,
+/// unspecified, multicast and reserved addresses, and the IPv6 forms that carry an IPv4 address (mapped, compatible, NAT64).
+fn ip_forbidden(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => {
+            let o = v4.octets();
+            v4.is_loopback() || v4.is_private() || v4.is_link_local() || v4.is_multicast() || v4.is_broadcast()
+                || o[0] == 0 || o[0] >= 240 || (o[0] == 100 && o[1] & 0xc0 == 64)
+        }
+        IpAddr::V6(v6) => {
+            let s = v6.segments();
+            let embedded = s[..6] == [0; 6] || (s[0] == 0x64 && s[1] == 0xff9b && s[2..6] == [0; 4]);
+            let [a, b] = [(s[6] >> 8) as u8, s[6] as u8];
+            let [c, d] = [(s[7] >> 8) as u8, s[7] as u8];
+            v6.is_loopback() || v6.is_unspecified() || v6.is_multicast() || s[0] & 0xffc0 == 0xfe80 || s[0] & 0xfe00 == 0xfc00
+                || v6.to_ipv4_mapped().is_some_and(|v4| ip_forbidden(v4.into()))
+                || (embedded && ip_forbidden(Ipv4Addr::new(a, b, c, d).into()))
+        }
+    }
 }
 
 #[cfg(test)]
 mod cover_host_tests {
-    use super::cover_url_allowed;
+    use super::{cover_url_allowed, ip_forbidden};
 
     #[test]
     fn hosts_are_accepted_or_refused_without_resolving_anything() {
@@ -889,6 +938,7 @@ mod cover_host_tests {
             "https://127.0.0.1/a", "https://10.0.0.5:8080/a", "https://2130706433/a", "https://0x7f.1/a", "https://[::1]/a", "https://[2001:db8::1]:443/a",
             "https://localhost/a", "https://LOCALHOST:80/a", "https://app.localhost/a", "https://localhost./a",
             "https://user@i.example/a", "https://user:pw@i.example/a", "https://i.example@evil.example/a", "https://@i.example/a", "https://127.0.0.1\\.example.com/a",
+            "https://intranet/a", "https://intranet:8443/a", "https://intranet./a", "https://i/a",
         ];
         assert!(!accepted.is_empty() && !refused.is_empty());
         for url in accepted {
@@ -896,6 +946,24 @@ mod cover_host_tests {
         }
         for url in refused {
             assert!(!cover_url_allowed(url), "should be refused: {url}");
+        }
+    }
+
+    #[test]
+    fn addresses_are_classified_without_resolving_anything() {
+        let forbidden = [
+            "127.0.0.1", "127.255.255.254", "0.0.0.0", "0.1.2.3", "10.0.0.5", "10.255.255.255", "172.16.0.1", "172.31.255.255", "192.168.1.1", "169.254.169.254",
+            "100.64.0.1", "100.127.255.255", "224.0.0.1", "239.255.255.255", "255.255.255.255", "240.0.0.1",
+            "::1", "::", "fe80::1", "febf::1", "fc00::1", "fdff::1", "ff02::1",
+            "::ffff:127.0.0.1", "::ffff:10.0.0.5", "::ffff:192.168.1.1", "::ffff:169.254.169.254", "::127.0.0.1", "::10.0.0.5", "64:ff9b::7f00:1", "64:ff9b::a00:5",
+        ];
+        let allowed = ["93.184.216.34", "8.8.8.8", "1.1.1.1", "172.15.255.255", "172.32.0.1", "100.63.255.255", "100.128.0.1", "11.0.0.1", "223.255.255.255", "2606:4700::1111", "2001:db8::1", "::ffff:93.184.216.34", "64:ff9b::5db8:d822"];
+        assert!(!forbidden.is_empty() && !allowed.is_empty());
+        for ip in forbidden {
+            assert!(ip_forbidden(ip.parse().unwrap()), "should be forbidden: {ip}");
+        }
+        for ip in allowed {
+            assert!(!ip_forbidden(ip.parse().unwrap()), "should be allowed: {ip}");
         }
     }
 }

@@ -463,7 +463,7 @@ fn start_with_release(dir: &Path, script: &str) -> (Core, Receiver<CoreEvent>) {
     ytdlp.env("FAKE_YTDLP_SCRIPT", dir.join("script.txt").to_str().unwrap());
     let (tx, rx) = channel();
     let paths = Paths { user_data: dir.join("userData"), downloads: dir.join("Downloads").to_string_lossy().into_owned() };
-    let core = Core::start_with(paths, Arc::new(ytdlp), Box::new(|| Plan::Premium), tx, Outside { song_search: Arc::new(|_: &str| None), releases: Arc::new(OneRelease { binary: b"MZ a newer yt-dlp".to_vec() }), desktop: Box::new(ahg_runtime::desktop::Windows), spotify: offline(), cover: Box::new(|_, _| None) });
+    let core = Core::start_with(paths, Arc::new(ytdlp), Box::new(|| Plan::Premium), tx, Outside { song_search: Arc::new(|_: &str| None), releases: Arc::new(OneRelease { binary: b"MZ a newer yt-dlp".to_vec() }), desktop: Box::new(ahg_runtime::desktop::Windows), spotify: offline(), cover: Box::new(|_, _, _| None), resolve: Box::new(|_, _| Vec::new()) });
     (core, rx)
 }
 
@@ -525,7 +525,7 @@ fn the_core_finds_downloads_and_installs_a_newer_version_of_the_app() {
     fs::write(dir.join("script.txt"), "").unwrap();
     let (tx, rx) = channel();
     let paths = Paths { user_data: dir.join("userData"), downloads: dir.join("Downloads").to_string_lossy().into_owned() };
-    let core = Core::start_with(paths, Arc::new(YtDlp::new(PathBuf::from(FAKE), None)), Box::new(|| Plan::Premium), tx, Outside { song_search: Arc::new(|_: &str| None), releases: Arc::new(net), desktop: Box::new(ahg_runtime::desktop::Windows), spotify: offline(), cover: Box::new(|_, _| None) });
+    let core = Core::start_with(paths, Arc::new(YtDlp::new(PathBuf::from(FAKE), None)), Box::new(|| Plan::Premium), tx, Outside { song_search: Arc::new(|_: &str| None), releases: Arc::new(net), desktop: Box::new(ahg_runtime::desktop::Windows), spotify: offline(), cover: Box::new(|_, _, _| None), resolve: Box::new(|_, _| Vec::new()) });
     assert!(!dir.join("userData").join("updates").join("stale.exe").exists());
 
     assert_eq!(core.update_status().phase, "idle");
@@ -572,7 +572,7 @@ fn only_media_inside_the_download_folder_is_shown_or_opened() {
     let (tx, _rx) = channel();
     let downloads = dir.join("Downloads");
     let paths = Paths { user_data: dir.join("userData"), downloads: downloads.to_string_lossy().into_owned() };
-    let outside = Outside { song_search: Arc::new(|_: &str| None), releases: Arc::new(common::Net::default()), desktop: Box::new(desktop.clone()), spotify: offline(), cover: Box::new(|_, _| None) };
+    let outside = Outside { song_search: Arc::new(|_: &str| None), releases: Arc::new(common::Net::default()), desktop: Box::new(desktop.clone()), spotify: offline(), cover: Box::new(|_, _, _| None), resolve: Box::new(|_, _| Vec::new()) };
     let core = Core::start_with(paths, Arc::new(YtDlp::new(PathBuf::from(FAKE), None)), Box::new(|| Plan::Premium), tx, outside);
     let at = |name: &str| downloads.join(name).to_string_lossy().into_owned();
     for name in ["song.mp3", "broken.mp3", "tool.exe"] {
@@ -1035,7 +1035,7 @@ fn start_spotify(name: &str) -> (Core, Seen) {
     let (tx, _rx) = channel();
     let paths = Paths { user_data: dir.join("userData"), downloads: dir.join("Downloads").to_string_lossy().into_owned() };
     let spotify = Box::new(Scripted { seen: seen.clone(), pages: spotify_pages });
-    let outside = Outside { song_search: Arc::new(|_: &str| None), releases: Arc::new(common::Net::default()), desktop: Box::new(ahg_runtime::desktop::Windows), spotify, cover: Box::new(|_, _| None) };
+    let outside = Outside { song_search: Arc::new(|_: &str| None), releases: Arc::new(common::Net::default()), desktop: Box::new(ahg_runtime::desktop::Windows), spotify, cover: Box::new(|_, _, _| None), resolve: Box::new(|_, _| Vec::new()) };
     (Core::start_with(paths, Arc::new(YtDlp::new(PathBuf::from(FAKE), None)), Box::new(|| Plan::Premium), tx, outside), seen)
 }
 
@@ -1368,7 +1368,7 @@ fn start_cover(name: &str, body: Vec<u8>) -> (Core, Asked) {
     let asked = Asked::default();
     let cover: ahg_runtime::core::CoverFetch = Box::new({
         let asked = asked.clone();
-        move |url: &str, proxy: Option<&str>| {
+        move |url: &str, proxy: Option<&str>, _: &[std::net::SocketAddr]| {
             asked.lock().unwrap().push((url.to_owned(), proxy.map(str::to_owned)));
             let status = if url.ends_with("/missing") { 404 } else { 200 };
             let final_url = if url.ends_with("/downgrade") { "http://cdn.example/a.jpg".to_owned() } else { url.to_owned() };
@@ -1461,11 +1461,16 @@ fn a_lookup_started_after_shutdown_is_cancelled_and_starts_no_process() {
 /// A core whose cover transport answers from `routes` (address, status, `Location`);
 /// an address not listed is a 200 with the bytes `cover`. Every address asked for is written down.
 fn start_hops(name: &str, routes: &'static [(&'static str, u16, &'static str)]) -> (Core, Asked) {
+    start_hops_resolving(name, routes, Outside::standin().resolve)
+}
+
+/// `start_hops` with the host names answered by `resolve`.
+fn start_hops_resolving(name: &str, routes: &'static [(&'static str, u16, &'static str)], resolve: ahg_runtime::core::Resolve) -> (Core, Asked) {
     let dir = scratch(name);
     let asked = Asked::default();
     let cover: ahg_runtime::core::CoverFetch = Box::new({
         let asked = asked.clone();
-        move |url: &str, proxy: Option<&str>| {
+        move |url: &str, proxy: Option<&str>, _: &[std::net::SocketAddr]| {
             asked.lock().unwrap().push((url.to_owned(), proxy.map(str::to_owned)));
             let (status, location) = routes.iter().find(|r| r.0 == url).map_or((200, None), |r| (r.1, Some(r.2.to_owned())));
             let body = if status == 200 { b"cover".to_vec() } else { Vec::new() };
@@ -1474,8 +1479,107 @@ fn start_hops(name: &str, routes: &'static [(&'static str, u16, &'static str)]) 
     });
     let (tx, _rx) = channel();
     let paths = Paths { user_data: dir.join("userData"), downloads: dir.join("Downloads").to_string_lossy().into_owned() };
-    let outside = Outside { cover, ..Outside::standin() };
+    let outside = Outside { cover, resolve, ..Outside::standin() };
     (Core::start_with(paths, Arc::new(YtDlp::new(PathBuf::from(FAKE), None)), Box::new(|| Plan::Premium), tx, outside), asked)
+}
+
+/// A name server that answers from `table` (name, addresses); a name not in it has no address.
+fn by_name(table: &[(&str, &[&str])]) -> ahg_runtime::core::Resolve {
+    let table: Vec<(String, Vec<std::net::IpAddr>)> = table.iter().map(|(n, ips)| ((*n).to_owned(), ips.iter().map(|ip| ip.parse().unwrap()).collect())).collect();
+    Box::new(move |host: &str, port: u16| table.iter().filter(|e| e.0 == host).flat_map(|e| e.1.iter()).map(|ip| std::net::SocketAddr::new(*ip, port)).collect())
+}
+
+#[test]
+fn a_name_that_resolves_to_an_internal_address_is_refused_and_never_requested() {
+    const INTERNAL: &[&str] = &["127.0.0.1", "10.0.0.5", "172.16.0.1", "192.168.1.1", "169.254.169.254", "100.64.0.1", "0.0.0.0", "::1", "::", "fc00::1", "fe80::1", "::ffff:127.0.0.1", "::ffff:10.0.0.5"];
+    assert!(!INTERNAL.is_empty());
+    for ip in INTERNAL {
+        let (core, asked) = start_hops_resolving("coverinternal", &[], by_name(&[("cdn.example", &[ip])]));
+        assert!(core.fetch_cover("https://cdn.example/a.jpg").is_err(), "{ip}");
+        assert!(asked.lock().unwrap().is_empty(), "no request for a name that resolves to {ip}");
+        core.shutdown();
+    }
+}
+
+#[test]
+fn a_name_with_one_public_and_one_internal_address_is_refused_either_way_round() {
+    for answer in [&["93.184.216.34", "10.0.0.5"], &["10.0.0.5", "93.184.216.34"]] {
+        let (core, asked) = start_hops_resolving("covermixed", &[], by_name(&[("cdn.example", answer)]));
+        assert!(core.fetch_cover("https://cdn.example/a.jpg").is_err(), "{answer:?}");
+        assert!(asked.lock().unwrap().is_empty());
+        core.shutdown();
+    }
+}
+
+#[test]
+fn a_name_that_resolves_to_public_addresses_only_is_fetched_and_pinned_to_them() {
+    let pinned = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let cover: ahg_runtime::core::CoverFetch = Box::new({
+        let pinned = pinned.clone();
+        move |url: &str, _: Option<&str>, addrs: &[std::net::SocketAddr]| {
+            pinned.lock().unwrap().push(addrs.to_vec());
+            Some(ahg_runtime::engine_update::Fetched { status: 200, final_url: url.to_owned(), content_length: None, location: None, body: Box::new(std::io::Cursor::new(b"cover".to_vec())) })
+        }
+    });
+    let dir = scratch("coverpinned");
+    let (tx, _rx) = channel();
+    let paths = Paths { user_data: dir.join("userData"), downloads: dir.join("Downloads").to_string_lossy().into_owned() };
+    let resolve = by_name(&[("cdn.example", &["93.184.216.34", "2606:4700::1111"])]);
+    let outside = Outside { cover, resolve, ..Outside::standin() };
+    let core = Core::start_with(paths, Arc::new(YtDlp::new(PathBuf::from(FAKE), None)), Box::new(|| Plan::Premium), tx, outside);
+    assert_eq!(core.fetch_cover("https://cdn.example:8443/a.jpg").unwrap(), b"cover");
+    let seen = pinned.lock().unwrap();
+    assert_eq!(seen.len(), 1);
+    let want: Vec<std::net::SocketAddr> = vec!["93.184.216.34:8443".parse().unwrap(), "[2606:4700::1111]:8443".parse().unwrap()];
+    assert_eq!(seen[0], want, "the connection may only go to the addresses that were checked");
+    core.shutdown();
+}
+
+#[test]
+fn a_name_with_no_address_and_a_single_label_host_are_refused_and_never_requested() {
+    let (core, asked) = start_hops_resolving("covernoaddr", &[], by_name(&[("intranet", &["93.184.216.34"])]));
+    assert!(core.fetch_cover("https://gone.example/a.jpg").is_err(), "a name that does not resolve");
+    assert!(core.fetch_cover("https://intranet/a.jpg").is_err(), "a single-label host, even if it resolves to a public address");
+    assert!(asked.lock().unwrap().is_empty());
+    core.shutdown();
+}
+
+#[test]
+fn a_redirect_to_a_name_that_resolves_to_an_internal_address_is_refused_after_one_request() {
+    const ROUTES: &[(&str, u16, &str)] = &[("https://i.example/go", 302, "https://internal.example/x")];
+    let (core, asked) = start_hops_resolving("coverhopdns", ROUTES, by_name(&[("i.example", &["93.184.216.34"]), ("internal.example", &["10.0.0.5"])]));
+    assert!(core.fetch_cover("https://i.example/go").is_err());
+    assert_eq!(asked.lock().unwrap().len(), 1, "the internal hop was never requested");
+    core.shutdown();
+}
+
+#[test]
+fn with_a_proxy_no_name_is_resolved_here_and_nothing_is_pinned() {
+    let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let resolve: ahg_runtime::core::Resolve = Box::new({
+        let calls = calls.clone();
+        move |_: &str, _: u16| {
+            calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Vec::new()
+        }
+    });
+    let pinned = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let cover: ahg_runtime::core::CoverFetch = Box::new({
+        let pinned = pinned.clone();
+        move |url: &str, _: Option<&str>, addrs: &[std::net::SocketAddr]| {
+            pinned.lock().unwrap().push(addrs.len());
+            Some(ahg_runtime::engine_update::Fetched { status: 200, final_url: url.to_owned(), content_length: None, location: None, body: Box::new(std::io::Cursor::new(b"cover".to_vec())) })
+        }
+    });
+    let dir = scratch("coverproxyresolve");
+    let (tx, _rx) = channel();
+    let paths = Paths { user_data: dir.join("userData"), downloads: dir.join("Downloads").to_string_lossy().into_owned() };
+    let core = Core::start_with(paths, Arc::new(YtDlp::new(PathBuf::from(FAKE), None)), Box::new(|| Plan::Premium), tx, Outside { cover, resolve, ..Outside::standin() });
+    core.update_settings(json!({ "proxy": "socks5h://127.0.0.1:9050" }).as_object().unwrap());
+    assert_eq!(core.fetch_cover("https://cdn.example/a.jpg").unwrap(), b"cover");
+    assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 0);
+    assert_eq!(*pinned.lock().unwrap(), [0]);
+    core.shutdown();
 }
 
 #[test]

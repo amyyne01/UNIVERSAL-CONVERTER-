@@ -2,6 +2,7 @@
 //! crate's and the interface's). Compiled only with the `standin` feature.
 use std::collections::HashMap;
 use std::io::Cursor;
+use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
 use ahg_engine::spotify;
@@ -71,8 +72,9 @@ impl spotify::Transport for Offline {
 impl Outside {
     /// A complete `Outside` that reaches nothing: no song is found, Spotify and
     /// the cover host cannot be reached, no release exists, no file is shown.
-    /// Swap a field for what a test needs.
+    /// Every host name resolves to one public address (a documentation one, never
+    /// connected to). Swap a field for what a test needs.
     pub fn standin() -> Self {
-        Self { song_search: Arc::new(|_: &str| None), spotify: Box::new(Offline), releases: Arc::new(Net::default()), desktop: Box::new(Quiet), cover: Box::new(|_, _| None) }
+        Self { song_search: Arc::new(|_: &str| None), spotify: Box::new(Offline), releases: Arc::new(Net::default()), desktop: Box::new(Quiet), cover: Box::new(|_, _, _| None), resolve: Box::new(|_, port| vec![SocketAddr::from(([93, 184, 216, 34], port))]) }
     }
 }
