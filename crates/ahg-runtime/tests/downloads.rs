@@ -3,12 +3,14 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Arc;
 use std::sync::mpsc::{Receiver, channel};
 use std::time::{Duration, Instant};
 
 use ahg_engine::queue::{TaskInit, create_task};
 use ahg_engine::types::{DownloadStatus, DownloadTask};
 use ahg_runtime::download::{Downloader, Report};
+use ahg_runtime::ytdlp::{Tools, YtDlp};
 
 const FAKE: &str = env!("CARGO_BIN_EXE_fake_ytdlp");
 const WAIT: Duration = Duration::from_secs(20);
@@ -190,4 +192,37 @@ fn a_binary_that_cannot_be_started_is_reported_as_an_error() {
     d.start(task("t6"), 1, tx);
     assert!(matches!(until_end(&rx).last().unwrap(), Report::Error { .. }));
     assert_eq!(d.running(), 0);
+}
+
+#[test]
+fn a_missing_yt_dlp_binary_says_yt_dlp_not_found() {
+    let dir = scratch("notfound");
+    // A strict search over an empty folder finds no yt-dlp, as in a shipped build.
+    let d = Downloader::with(Arc::new(YtDlp::from_tools(Arc::new(Tools::strict(vec![dir.clone()])))));
+    let (tx, rx) = channel();
+    d.start(task("t7"), 1, tx);
+    match until_end(&rx).last().unwrap() {
+        Report::Error { message, .. } => assert!(message.contains("yt-dlp not found"), "{message}"),
+        other => panic!("expected Error, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_stand_in_that_keeps_printing_after_the_kill_reports_nothing_more() {
+    let dir = scratch("chatty");
+    let script = format!("err [PROGRESS]1|100|NA|1|9\n{}", "err [PROGRESS]2|100|NA|1|9\nsleep 20\n".repeat(3000));
+    let d = downloader(&dir, &script);
+    let (tx, rx) = channel();
+    d.start(task("t8"), 1, tx);
+    assert!(matches!(rx.recv_timeout(WAIT).unwrap(), Report::Progress { .. }));
+
+    d.cancel("t8");
+    let deadline = Instant::now() + WAIT;
+    while d.running() > 0 && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert_eq!(d.running(), 0);
+    // What was already sent before the download thread ended may still be queued; after that, silence.
+    while rx.try_recv().is_ok() {}
+    assert!(rx.recv_timeout(Duration::from_millis(500)).is_err(), "no report may follow the kill");
 }

@@ -208,3 +208,32 @@ fn a_download_that_cannot_start_frees_its_slot_for_the_next() {
     assert!(!engine.has_unfinished_work());
     engine.shutdown();
 }
+
+/// A task whose process cannot be spawned (a NUL byte in its link makes the
+/// start fail) must not wedge the queue: all three end and the third runs.
+#[test]
+fn a_middle_task_that_cannot_start_does_not_stop_the_third() {
+    let dir = scratch("middle");
+    let (engine, rx) = engine(&dir, "sleep 100\nexit 0\n", 1.0);
+    let mut broken = task("b");
+    broken.url.push('\0');
+    engine.enqueue(task("a"));
+    engine.enqueue(broken);
+    engine.enqueue(task("c"));
+
+    let mut ended = Vec::new();
+    wait_for(&rx, |n| {
+        if let Notice::Event(Event::Done { id, .. } | Event::Error { id, .. }) = n {
+            ended.push(id.clone());
+        }
+        ended.len() == 3
+    });
+    assert_eq!(ended, ["a", "b", "c"]);
+    let tasks = engine.tasks();
+    let status = |id: &str| tasks.iter().find(|t| t.task_id == id).unwrap().progress.status;
+    assert_eq!(status("a"), DownloadStatus::Done);
+    assert_eq!(status("b"), DownloadStatus::Failed);
+    assert_eq!(status("c"), DownloadStatus::Done);
+    assert!(!engine.has_unfinished_work());
+    engine.shutdown();
+}

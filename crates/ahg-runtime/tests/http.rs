@@ -16,6 +16,16 @@ struct Seen {
     body: String,
 }
 
+/// The address of a port nothing listens on: bound here, then released.
+fn closed_addr() -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.local_addr().unwrap().to_string()
+}
+
+fn closed_url(path: &str) -> String {
+    format!("http://{}{path}", closed_addr())
+}
+
 /// A server that answers each request by its path, and reports what it saw.
 fn server() -> (String, Receiver<Seen>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -120,7 +130,7 @@ fn a_request_that_takes_too_long_fails_at_the_timeout() {
 
 #[test]
 fn nothing_listening_is_a_failure_not_a_panic() {
-    assert!(Http::new(None).send("GET", "http://127.0.0.1:9/none", &[], None, Duration::from_secs(3)).is_none());
+    assert!(Http::new(None).send("GET", &closed_url("/none"), &[], None, Duration::from_secs(3)).is_none());
 }
 
 #[test]
@@ -156,7 +166,7 @@ fn the_spotify_transport_returns_the_text_whatever_the_status() {
     assert!(seen.recv().unwrap().headers.iter().any(|h| h.eq_ignore_ascii_case("user-agent: test-agent")));
     // Spotify's replies are read without looking at the status.
     assert_eq!(transport.fetch(&request("/error")).as_deref(), Some("{\"errors\":[]}"));
-    assert_eq!(transport.fetch(&SpotifyRequest { url: "http://127.0.0.1:9/x".into(), ..request("/ok") }), None);
+    assert_eq!(transport.fetch(&SpotifyRequest { url: closed_url("/x"), ..request("/ok") }), None);
 }
 
 /// The Rust Spotify reader against the live service: a public playlist and a
@@ -206,9 +216,9 @@ fn every_proxy_scheme_settings_accept_is_understood_as_written() {
 
 #[test]
 fn requests_go_through_the_proxy_when_one_is_set() {
-    // Nothing listens on port 9, so a request can only fail if it really went to the proxy.
+    // Nothing listens on the proxy's port, so a request can only fail if it really went to the proxy.
     let (base, _seen) = server();
-    let http = Http::new(Some("http://127.0.0.1:9"));
+    let http = Http::new(Some(&format!("http://{}", closed_addr())));
     assert!(http.send("GET", &format!("{base}/ok"), &[], None, Duration::from_secs(3)).is_none());
 }
 
