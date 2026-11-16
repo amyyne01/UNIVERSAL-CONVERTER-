@@ -47,7 +47,13 @@ pub fn panel(s: &State, p: &Pal) -> El {
         .child(hint(copy::PALETTE_FOOTER_CLOSE_CAP, copy::PALETTE_FOOTER_CLOSE, p))
         .child(spacer())
         .child(label(SAVES_ITSELF, sans(12.0, 400.0), p.muted));
-    let list = col().w(LIST_W).h_full().min_h(0.0).border_sides([0.0, 1.0, 0.0, 0.0], p.line).scroll(ScrollSpec { stick_bottom: false }).child(command_list(s, p));
+    let list = col()
+        .w(LIST_W)
+        .h_full()
+        .min_h(0.0)
+        .border_sides([0.0, 1.0, 0.0, 0.0], p.line)
+        .scroll(ScrollSpec { stick_bottom: false })
+        .child(command_list(s, p));
     col()
         .h(PANEL_H)
         .radius(12.0)
@@ -86,11 +92,21 @@ pub(crate) fn section_list(s: &State, p: &Pal) -> El {
 }
 
 fn command_list(s: &State, p: &Pal) -> El {
-    let mut l = col().w_full().padding(8.0).child(group(copy::NAV_SETTINGS, p)).child(section_list(s, p)).child(group(copy::PALETTE_GROUP_NAVIGATE, p));
+    let mut l = col()
+        .w_full()
+        .padding(8.0)
+        .child(group(copy::NAV_SETTINGS, p))
+        .child(section_list(s, p))
+        .child(group(copy::PALETTE_GROUP_NAVIGATE, p));
     for (i, name) in [copy::NAV_HOME, copy::NAV_DOWNLOADS, copy::NAV_SETTINGS].into_iter().enumerate() {
         l = l.child(entry(None, None, &copy::palette_go_to(name), "", &[copy::KEY_CTRL, ["1", "2", "3"][i]], false, p));
     }
-    for (src, name) in [(SourcePlatform::Youtube, copy::NAV_YOUTUBE), (SourcePlatform::Spotify, copy::NAV_SPOTIFY), (SourcePlatform::Soundcloud, copy::NAV_SOUNDCLOUD), (SourcePlatform::Instagram, copy::NAV_REELS)] {
+    for (src, name) in [
+        (SourcePlatform::Youtube, copy::NAV_YOUTUBE),
+        (SourcePlatform::Spotify, copy::NAV_SPOTIFY),
+        (SourcePlatform::Soundcloud, copy::NAV_SOUNDCLOUD),
+        (SourcePlatform::Instagram, copy::NAV_REELS),
+    ] {
         l = l.child(entry(Some(platform_icon(src)), Some(source_color(p, src)), name, "", &[], false, p));
     }
     l = l.child(group(copy::PALETTE_GROUP_ACTIONS, p));
@@ -132,7 +148,13 @@ fn entry(i: Option<&'static Icon>, tint: Option<Color>, name: &str, status: &str
         .cursor(Cursor::Pointer)
         .role("option")
         .child(glyph)
-        .child(label(name, sans(13.0, if on { 500.0 } else { 400.0 }), if on { p.text } else { p.text2 }).single_line().truncate().grow(1.0).min_w(0.0));
+        .child(
+            label(name, sans(13.0, if on { 500.0 } else { 400.0 }), if on { p.text } else { p.text2 })
+                .single_line()
+                .truncate()
+                .grow(1.0)
+                .min_w(0.0),
+        );
     if !status.is_empty() {
         r = r.child(label(status, mono(12.0, 400.0), p.muted));
     }
@@ -160,15 +182,36 @@ pub(crate) fn schedule_sheet(p: &Pal, crumb: bool) -> El {
         let on = (1..=5).contains(&i);
         let chip = el().h(32.0).w(48.0).center().radius(6.0).hover(p.hover).cursor(Cursor::Pointer).role("checkbox").checked(on).label(day);
         chips = chips.child(if on {
-            chip.fill(p.raised).border(1.0, p.line_strong).child(label(d, sans(13.0, 500.0), p.text)).child(el().size(16.0, 2.0).radius(1.0).fill(p.accent).absolute(16.0, 24.0))
+            chip.fill(p.raised)
+                .border(1.0, p.line_strong)
+                .child(label(d, sans(13.0, 500.0), p.text))
+                .child(el().size(16.0, 2.0).radius(1.0).fill(p.accent).absolute(16.0, 24.0))
         } else {
             chip.border(1.0, p.line).child(label(d, sans(13.0, 400.0), p.muted))
         });
     }
-    let time = row().h(32.0).px(12.0).gap(8.0).center_y().radius(6.0).fill(p.deep).border(1.0, p.line_strong).child(icon(&icons::CLOCK, 16.0).color(p.muted)).child(label("03:00", mono(13.0, 500.0), p.text));
+    let time = row()
+        .h(32.0)
+        .px(12.0)
+        .gap(8.0)
+        .center_y()
+        .radius(6.0)
+        .fill(p.deep)
+        .border(1.0, p.line_strong)
+        .child(icon(&icons::CLOCK, 16.0).color(p.muted))
+        .child(label("03:00", mono(13.0, 500.0), p.text));
     let mut c = col().grow(1.0).h_full().min_w(0.0).gap(4.0);
     if crumb {
-        c = c.child(row().w_full().center_y().gap(8.0).mb(8.0).child(label(copy::NAV_SETTINGS, sans(12.0, 400.0), p.muted)).child(label("/", sans(12.0, 400.0), p.muted)).child(label(PICKED, sans(12.0, 400.0), p.text2)));
+        c = c.child(
+            row()
+                .w_full()
+                .center_y()
+                .gap(8.0)
+                .mb(8.0)
+                .child(label(copy::NAV_SETTINGS, sans(12.0, 400.0), p.muted))
+                .child(label("/", sans(12.0, 400.0), p.muted))
+                .child(label(PICKED, sans(12.0, 400.0), p.text2)),
+        );
     }
     c.child(label(PICKED, sans(16.0, 500.0), p.text))
         .child(label(w::SCHEDULE_HINT, sans(13.0, 400.0), p.text2).mb(16.0))

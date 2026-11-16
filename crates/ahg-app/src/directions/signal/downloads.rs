@@ -35,9 +35,11 @@ pub fn view(s: &State, p: &Pal) -> El {
 fn header(tasks: &[DownloadTask], p: &Pal) -> El {
     let active = model::active_count(tasks);
     let all_paused = model::all_paused(tasks);
-    let mut left = stack(8.0)
-        .child(label(copy::DL_TITLE, sans(28.0, 500.0), p.text))
-        .child(label(copy::active_and_total(active, tasks.len(), all_paused), mono(12.0, 400.0), p.muted));
+    let mut left = stack(8.0).child(label(copy::DL_TITLE, sans(28.0, 500.0), p.text)).child(label(
+        copy::active_and_total(active, tasks.len(), all_paused),
+        mono(12.0, 400.0),
+        p.muted,
+    ));
     if tasks.len() >= 2 {
         left = left.child(label(copy::downloads_summary(tasks.len(), &model::summary_parts(tasks)), sans(13.0, 400.0), p.text2));
     }
@@ -158,7 +160,11 @@ fn list(s: &State, p: &Pal) -> El {
             if t.progress.status == St::Queued && !seam_done {
                 seam_done = true;
                 if i > 0 {
-                    out = out.child(row().w_full().h(28.0).px(16.0).center_y().border_sides([1.0, 0.0, 0.0, 0.0], p.line).child(label(copy::up_next(queued), mono(11.0, 400.0), p.muted)));
+                    out = out.child(row().w_full().h(28.0).px(16.0).center_y().border_sides([1.0, 0.0, 0.0, 0.0], p.line).child(label(
+                        copy::up_next(queued),
+                        mono(11.0, 400.0),
+                        p.muted,
+                    )));
                 }
             }
             out = out.child(task_row(s, t, i > 0, p));
@@ -213,10 +219,29 @@ fn empty_row(p: &Pal) -> El {
         .center_y()
         .child(el().w(44.0))
         .child(el().size(40.0, 40.0).radius(8.0).fill(p.raised).center().child(icon(&icons::DOWNLOAD, 16.0).color(p.muted)))
-        .child(stack(4.0).grow(1.0).child(label(copy::EMPTY_NONE_TITLE, sans(14.0, 500.0), p.text)).child(label(copy::EMPTY_NONE_BODY, sans(13.0, 400.0), p.text2)))
+        .child(stack(4.0).grow(1.0).child(label(copy::EMPTY_NONE_TITLE, sans(14.0, 500.0), p.text)).child(label(
+            copy::EMPTY_NONE_BODY,
+            sans(13.0, 400.0),
+            p.text2,
+        )))
         // The idle channel: the meter's well, every segment dark until something comes in.
-        .child(stack(0.0).w(INSTRUMENT).h(48.0).px(12.0).justify_center().radius(6.0).fill(p.deep).border(1.0, p.line).child(meter(0.0, SEGMENTS, None, 8.0, 2.0, p.accent, p.unlit)))
-        .child(row().w(STATE_COL + ACTIONS + 12.0).justify_end().child(button(None, copy::EMPTY_NONE_ACTION, p.text, p).on_press(|s: &mut State| s.nav = Nav::Home)))
+        .child(
+            stack(0.0)
+                .w(INSTRUMENT)
+                .h(48.0)
+                .px(12.0)
+                .justify_center()
+                .radius(6.0)
+                .fill(p.deep)
+                .border(1.0, p.line)
+                .child(meter(0.0, SEGMENTS, None, 8.0, 2.0, p.accent, p.unlit)),
+        )
+        .child(
+            row()
+                .w(STATE_COL + ACTIONS + 12.0)
+                .justify_end()
+                .child(button(None, copy::EMPTY_NONE_ACTION, p.text, p).on_press(|s: &mut State| s.nav = Nav::Home)),
+        )
 }
 
 fn task_row(s: &State, t: &DownloadTask, rule_above: bool, p: &Pal) -> El {
@@ -308,14 +333,23 @@ fn instrument(t: &DownloadTask, p: &Pal) -> Option<El> {
     let st = pr.status;
     if st == St::Done {
         let file = model::file_name(&pr.filename);
-        let format_tag = el().h(20.0).px(8.0).center().radius(4.0).border(1.0, p.line_strong).child(label(t.format.to_uppercase(), mono(11.0, 500.0), p.text2));
+        let format_tag = el().h(20.0).px(8.0).center().radius(4.0).border(1.0, p.line_strong).child(label(
+            t.format.to_uppercase(),
+            mono(11.0, 500.0),
+            p.text2,
+        ));
         return Some(
             row()
                 .w(OWNED)
                 .gap(12.0)
                 .center_y()
                 .child(format_tag)
-                .child(stack(4.0).grow(1.0).child(label(file, mono(12.0, 500.0), p.text).single_line().truncate_middle().min_w(0.0)).child(label(model::folder(&pr.filename), mono(11.0, 400.0), p.muted).single_line().truncate_middle().min_w(0.0)))
+                .child(
+                    stack(4.0)
+                        .grow(1.0)
+                        .child(label(file, mono(12.0, 500.0), p.text).single_line().truncate_middle().min_w(0.0))
+                        .child(label(model::folder(&pr.filename), mono(11.0, 400.0), p.muted).single_line().truncate_middle().min_w(0.0)),
+                )
                 .help(pr.filename.clone()),
         );
     }
@@ -352,7 +386,9 @@ fn state_col(t: &DownloadTask, p: &Pal) -> El {
     let c = col().w(STATE_COL).items_end().gap(4.0);
     if pr.status == St::Downloading {
         let pct = format!("{}%", pr.percent.clamp(0.0, 100.0).round());
-        return c.child(label(pct, mono(16.0, 500.0), p.text)).child(label(copy::rate_line(pr.speed, pr.eta), mono(11.0, 400.0), p.muted).align(Align::End));
+        return c
+            .child(label(pct, mono(16.0, 500.0), p.text))
+            .child(label(copy::rate_line(pr.speed, pr.eta), mono(11.0, 400.0), p.muted).align(Align::End));
     }
     let (i, word, tone): (&'static rune::Icon, &str, Color) = match pr.status {
         St::Queued => (&icons::CLOCK, copy::STATE_QUEUED, p.muted),
@@ -400,7 +436,12 @@ fn actions(t: &DownloadTask, p: &Pal) -> El {
         a = a.child(icon_button(&icons::RETRY, copy::ACT_RETRY, p.error, p));
     }
     if st == St::Done {
-        a = a.child(icon_button(&icons::EXTERNAL, copy::ACT_OPEN_FILE, p.text2, p)).child(icon_button(&icons::FOLDER, copy::ACT_SHOW_IN_FOLDER, p.text2, p));
+        a = a.child(icon_button(&icons::EXTERNAL, copy::ACT_OPEN_FILE, p.text2, p)).child(icon_button(
+            &icons::FOLDER,
+            copy::ACT_SHOW_IN_FOLDER,
+            p.text2,
+            p,
+        ));
     }
     if matches!(st, St::Done | St::Failed | St::Cancelled) {
         a = a.child(icon_button(&icons::REMOVE, copy::ACT_REMOVE, p.muted, p).group_opacity(0.0, 1.0));

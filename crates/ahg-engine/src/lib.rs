@@ -7,6 +7,7 @@ pub mod clock;
 pub mod config;
 pub mod downloader;
 #[cfg(feature = "license")]
+#[rustfmt::skip]
 pub mod license;
 pub mod log;
 pub mod presence;

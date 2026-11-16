@@ -164,7 +164,14 @@ fn the_clipboard_watcher_offers_as_electron_does() {
 /// Does what the app layer would with each effect, and says what it did in the
 /// shape the generator recorded. A failing write or connect is fed back the way
 /// the app layer must feed it back.
-fn carry_out(p: &mut Presence, effects: Vec<Effect>, windows: bool, xdg: Option<&str>, tmp: Option<&str>, fail: &mut (bool, bool)) -> Vec<Value> {
+fn carry_out(
+    p: &mut Presence,
+    effects: Vec<Effect>,
+    windows: bool,
+    xdg: Option<&str>,
+    tmp: Option<&str>,
+    fail: &mut (bool, bool),
+) -> Vec<Value> {
     let mut queue: VecDeque<Effect> = effects.into();
     let mut events = Vec::new();
     while let Some(effect) = queue.pop_front() {
@@ -226,7 +233,11 @@ fn presence_connects_writes_and_reconnects_as_electron_does() {
                     vec![]
                 }
                 "fire" if step["fired"] == true => {
-                    if step["ms"] == json!(FLUSH_MS) { p.flush_timer_fired() } else { p.reconnect_timer_fired() }
+                    if step["ms"] == json!(FLUSH_MS) {
+                        p.flush_timer_fired()
+                    } else {
+                        p.reconnect_timer_fired()
+                    }
                 }
                 "fire" => vec![],
                 _ => {
@@ -336,12 +347,8 @@ fn the_tray_menu_matches_electron() {
     assert_eq!(g["tray"]["tooltipsAreAllEqual"], json!(true));
     let mut wrong = Vec::new();
     for c in list(&g["tray"]["cases"], "tray.cases") {
-        let recent: Vec<(String, DownloadStatus)> = c["recent"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|r| (r["title"].as_str().unwrap().to_string(), status(&r["status"])))
-            .collect();
+        let recent: Vec<(String, DownloadStatus)> =
+            c["recent"].as_array().unwrap().iter().map(|r| (r["title"].as_str().unwrap().to_string(), status(&r["status"]))).collect();
         let got: Vec<Value> = tray_menu(&recent)
             .into_iter()
             .map(|e| match e {

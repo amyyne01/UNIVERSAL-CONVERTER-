@@ -22,14 +22,7 @@ fn scratch(name: &str) -> PathBuf {
 /// `[year, month, day, hour?, minute?]` as the generator writes local times.
 fn local(at: &Value, weekday: u32) -> LocalTime {
     let n = |i: usize, default: i64| at.get(i).and_then(Value::as_i64).unwrap_or(default);
-    LocalTime {
-        year: n(0, 0) as i32,
-        month: n(1, 1) as u32,
-        day: n(2, 1) as u32,
-        hour: n(3, 12) as u32,
-        minute: n(4, 0) as u32,
-        weekday,
-    }
+    LocalTime { year: n(0, 0) as i32, month: n(1, 1) as u32, day: n(2, 1) as u32, hour: n(3, 12) as u32, minute: n(4, 0) as u32, weekday }
 }
 
 fn short(v: &Value) -> String {
@@ -123,7 +116,11 @@ fn the_counters_count_roll_and_save_as_electron_does() {
     assert_eq!(IDLE_MONTH.len(), 1);
     for (i, scenario) in scenarios.iter().enumerate() {
         if IDLE_MONTH.contains(&i) {
-            let crosses = scenario["out"].as_array().unwrap().iter().any(|st| st["disk"].as_str().is_some_and(|d| d.contains("\"previous\":{\"month\":\"2026-06\",\"files\":0,")));
+            let crosses = scenario["out"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|st| st["disk"].as_str().is_some_and(|d| d.contains("\"previous\":{\"month\":\"2026-06\",\"files\":0,")));
             assert!(crosses, "scenario {i} no longer crosses an idle month");
             continue;
         }
@@ -146,12 +143,8 @@ fn the_counters_count_roll_and_save_as_electron_does() {
                 "get" => serde_json::to_value(store.get_at(&month)).unwrap(),
                 _ => {
                     let platform: SourcePlatform = serde_json::from_value(s[2].clone()).unwrap();
-                    let files: Vec<String> = s[3]
-                        .as_array()
-                        .unwrap()
-                        .iter()
-                        .map(|f| f.as_str().unwrap().replace("{TMP}", tmp.to_str().unwrap()))
-                        .collect();
+                    let files: Vec<String> =
+                        s[3].as_array().unwrap().iter().map(|f| f.as_str().unwrap().replace("{TMP}", tmp.to_str().unwrap())).collect();
                     store.record_at(platform, &files, s[4].as_f64().unwrap(), &month);
                     Value::Null
                 }

@@ -6,8 +6,8 @@
 //! Everything reaches the queue through one channel, so the queue is only ever
 //! touched from this one thread.
 use std::path::Path;
-use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
 use std::sync::Mutex;
+use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 

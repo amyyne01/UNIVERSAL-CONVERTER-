@@ -133,8 +133,7 @@ pub fn link_count_chip(count: usize) -> String {
 pub const STATUS_DROP: &str = "Drop to add every link";
 pub const STATUS_READING: &str = "Reading the link…";
 pub const STATUS_SEARCHING: &str = "Searching YouTube, SoundCloud and Spotify…";
-pub const STATUS_NOT_A_LINK: &str =
-    "Not a link. Press Enter to search YouTube, SoundCloud and Spotify for it";
+pub const STATUS_NOT_A_LINK: &str = "Not a link. Press Enter to search YouTube, SoundCloud and Spotify for it";
 pub const STATUS_SEE_PLANS: &str = "See plans";
 
 pub fn status_adding(count: usize) -> String {
@@ -161,15 +160,12 @@ pub fn rest_saves_as(format: &str) -> String {
 }
 
 // Errors on Home.
-pub const ERR_NOT_SUPPORTED: &str =
-    "This site isn’t supported. Paste a link from YouTube, Spotify, SoundCloud, Vimeo and more.";
+pub const ERR_NOT_SUPPORTED: &str = "This site isn’t supported. Paste a link from YouTube, Spotify, SoundCloud, Vimeo and more.";
 pub const ERR_NO_LINKS: &str = "No downloadable links found. Check what you pasted and try again.";
 
 // Basic-plan limit.
-pub const BASIC_LIMIT_BATCH: &str =
-    "Basic limit reached: 5 links at a time. Premium removes the limit.";
-pub const BASIC_LIMIT_COLLECTION: &str =
-    "Basic limit reached: 20 tracks per playlist. Premium removes the limit.";
+pub const BASIC_LIMIT_BATCH: &str = "Basic limit reached: 5 links at a time. Premium removes the limit.";
+pub const BASIC_LIMIT_COLLECTION: &str = "Basic limit reached: 20 tracks per playlist. Premium removes the limit.";
 
 // "Works with" row (first launch).
 pub const WORKS_WITH: &str = "Works with";
@@ -204,8 +200,7 @@ pub const MONTH_FAILED: &str = "This month’s count couldn’t be read. Your do
 pub const MONTH_LOADING_SR: &str = "Counting this month’s files…";
 pub const MONTH_NOTHING_YET: &str = "Nothing downloaded yet this month";
 pub const MONTH_NOTHING_YET_NO_PREV: &str = "Paste a link above; the count starts with your first file.";
-pub const MONTH_FIRST_ON_RECORD: &str =
-    " on disk. First month on record, so there is nothing to compare against yet.";
+pub const MONTH_FIRST_ON_RECORD: &str = " on disk. First month on record, so there is nothing to compare against yet.";
 pub const FILE_ONE: &str = "file";
 pub const FILE_MANY: &str = "files";
 
@@ -303,11 +298,7 @@ pub fn search_nothing_matched(query: &str) -> String {
 }
 
 pub fn search_row_aria(title: &str, subtitle: &str) -> String {
-    if subtitle.is_empty() {
-        format!("Download {title}")
-    } else {
-        format!("Download {title}, {subtitle}")
-    }
+    if subtitle.is_empty() { format!("Download {title}") } else { format!("Download {title}, {subtitle}") }
 }
 
 pub fn search_region_aria(query: &str) -> String {
@@ -344,8 +335,7 @@ pub fn downloads_summary(total: usize, parts: &[String]) -> String {
 }
 
 /// The word used for a status in the summary line (`cancelled` is spelled `canceled`).
-pub const SUMMARY_WORDS: [&str; 7] =
-    ["downloading", "retrying", "queued", "paused", "done", "failed", "canceled"];
+pub const SUMMARY_WORDS: [&str; 7] = ["downloading", "retrying", "queued", "paused", "done", "failed", "canceled"];
 
 pub fn clear_confirm(count: usize) -> String {
     format!("Clear {count}?")
@@ -392,11 +382,7 @@ pub fn up_next(count: usize) -> String {
 
 /// Accessible name of the group's transfer total; `speed` is empty when unknown.
 pub fn transferring_aria(live: usize, speed: &str) -> String {
-    if speed.is_empty() {
-        format!("{live} transferring")
-    } else {
-        format!("{live} transferring, {speed} total")
-    }
+    if speed.is_empty() { format!("{live} transferring") } else { format!("{live} transferring, {speed} total") }
 }
 
 // Empty states.
@@ -475,8 +461,7 @@ pub const ACT_SHOW_IN_FOLDER: &str = "Show in folder";
 pub const ACT_REMOVE: &str = "Remove";
 
 // Reorder announcements.
-pub const ANNOUNCE_GRABBED: &str =
-    "Grabbed. Use the arrow keys to move, Enter to drop, Escape to cancel.";
+pub const ANNOUNCE_GRABBED: &str = "Grabbed. Use the arrow keys to move, Enter to drop, Escape to cancel.";
 pub const ANNOUNCE_DROPPED: &str = "Dropped";
 pub const ANNOUNCE_REORDER_CANCELED: &str = "Reorder canceled";
 
@@ -523,8 +508,7 @@ pub fn file_cannot_open(subject: &str) -> String {
 
 // Failed rows: cause and remedy per error kind. `{thing}` is filled by `error_text`.
 pub const ERR_PRIVATE_CAUSE: &str = "This {thing} is private.";
-pub const ERR_PRIVATE_REMEDY: &str =
-    "Ask the owner for access, or sign in with your browser in Settings, then retry.";
+pub const ERR_PRIVATE_REMEDY: &str = "Ask the owner for access, or sign in with your browser in Settings, then retry.";
 pub const ERR_REMOVED_CAUSE: &str = "We couldn’t find anything at this link.";
 pub const ERR_REMOVED_REMEDY: &str = "Check the link, or paste a different one.";
 pub const ERR_AGE_RESTRICTED_CAUSE: &str = "This {thing} is age-restricted.";
@@ -540,22 +524,18 @@ pub const ERR_RATE_LIMITED_REMEDY: &str = "Wait a few minutes, then retry.";
 pub const ERR_NETWORK_CAUSE: &str = "The connection dropped.";
 pub const ERR_NETWORK_REMEDY: &str = "Check your internet, then retry.";
 pub const ERR_UNSUPPORTED_CAUSE: &str = "This link isn’t something we can download.";
-pub const ERR_UNSUPPORTED_REMEDY: &str =
-    "Check the link, or paste one from YouTube, Spotify, SoundCloud, Vimeo and more.";
+pub const ERR_UNSUPPORTED_REMEDY: &str = "Check the link, or paste one from YouTube, Spotify, SoundCloud, Vimeo and more.";
 pub const ERR_FFMPEG_MISSING_CAUSE: &str = "A part of the app needed for conversion is missing.";
-pub const ERR_FFMPEG_MISSING_REMEDY: &str =
-    "Download the app again, or restore the files it came with.";
+pub const ERR_FFMPEG_MISSING_REMEDY: &str = "Download the app again, or restore the files it came with.";
 pub const ERR_DISK_FULL_CAUSE: &str = "There is no space left on the drive.";
-pub const ERR_DISK_FULL_REMEDY: &str =
-    "Free up some space or pick another folder in Settings, then retry.";
+pub const ERR_DISK_FULL_REMEDY: &str = "Free up some space or pick another folder in Settings, then retry.";
 pub const ERR_UNKNOWN_CAUSE: &str = "Something went wrong.";
 pub const ERR_UNKNOWN_REMEDY: &str = "Try again in a moment.";
 
 /// Replaces the generic "removed" sentence when the source is a generic site.
 pub const ERR_GENERIC_DEAD_END: &str = "We couldn’t find anything at this link. The site may not be supported, or the address is wrong. Supported sites include YouTube, Vimeo, X, TikTok, Twitch, SoundCloud, Bandcamp and Reddit.";
 /// Replaces the remedy for a Spotify source whose kind is unknown, removed, unsupported or missing.
-pub const ERR_SPOTIFY_REMEDY: &str =
-    "We find Spotify songs by name. Search for it in the Spotify tab, or paste a different link.";
+pub const ERR_SPOTIFY_REMEDY: &str = "We find Spotify songs by name. Search for it in the Spotify tab, or paste a different link.";
 
 /// One readable sentence pair: `{cause} {remedy}`, with `{thing}` set to `video` or `link`.
 pub fn error_text(cause: &str, remedy: &str, is_video_source: bool) -> String {
@@ -577,11 +557,7 @@ pub fn format_bytes(n: f64) -> String {
         v /= 1024.0;
         i += 1;
     }
-    if i == 0 {
-        format!("{v} {}", U[i])
-    } else {
-        format!("{v:.1} {}", U[i])
-    }
+    if i == 0 { format!("{v} {}", U[i]) } else { format!("{v:.1} {}", U[i]) }
 }
 
 /// `formatDuration`: `m:ss` under an hour, `h:mm:ss` from an hour, empty for zero.
@@ -607,10 +583,7 @@ pub fn format_eta(secs: f64) -> String {
 
 /// Rate line under the percentage: speed and ETA joined with ` · `, `–` when neither.
 pub fn rate_line(bps: f64, eta_secs: f64) -> String {
-    let parts: Vec<String> = [format_speed(bps), format_eta(eta_secs)]
-        .into_iter()
-        .filter(|p| !p.is_empty())
-        .collect();
+    let parts: Vec<String> = [format_speed(bps), format_eta(eta_secs)].into_iter().filter(|p| !p.is_empty()).collect();
     if parts.is_empty() { RATE_UNKNOWN.to_string() } else { parts.join(" · ") }
 }
 

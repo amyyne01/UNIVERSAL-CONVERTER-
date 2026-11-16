@@ -93,25 +93,14 @@ const GATED_SIGNS: &[&str] = &["403: forbidden", "requested format is not availa
 
 /// Needles per code, first match wins.
 const ERROR_CODE_NEEDLES: &[(ErrorCode, &[&str])] = &[
-    (
-        ErrorCode::FfmpegMissing,
-        &["ffmpeg is not installed", "ffmpeg not found", "ffprobe and ffmpeg not found", "ffmpeg-location"],
-    ),
+    (ErrorCode::FfmpegMissing, &["ffmpeg is not installed", "ffmpeg not found", "ffprobe and ffmpeg not found", "ffmpeg-location"]),
     (ErrorCode::DiskFull, &["no space left", "disk full", "enospc", "not enough space"]),
     (ErrorCode::Drm, &["drm protect"]),
     (ErrorCode::AgeRestricted, &["age-restricted", "age restricted", "confirm your age"]),
     (ErrorCode::Private, PRIVATE),
     (
         ErrorCode::LoginRequired,
-        &[
-            "sign in",
-            "login required",
-            "members-only",
-            "members only",
-            "logged-in",
-            "logged in",
-            "authentication is required",
-        ],
+        &["sign in", "login required", "members-only", "members only", "logged-in", "logged in", "authentication is required"],
     ),
     (ErrorCode::GeoBlocked, GEO),
     (ErrorCode::RateLimited, &["too many requests", "http error 429", "rate-limit", "rate limit"]),

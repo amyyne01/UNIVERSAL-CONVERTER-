@@ -112,10 +112,7 @@ fn d30_exempt_inputs_are_counted() {
     assert!(diff.iter().all(|&i| d30_exempt(cases[i]["input"].as_str().unwrap())));
     println!("D30: {} of {} golden inputs differ from Electron", diff.len(), cases.len());
     for (loose, _) in D30_LOOSE {
-        let n = diff
-            .iter()
-            .filter(|&&i| uncovered(&cases[i]["input"].as_str().unwrap().to_lowercase()).any(|l| l == *loose))
-            .count();
+        let n = diff.iter().filter(|&&i| uncovered(&cases[i]["input"].as_str().unwrap().to_lowercase()).any(|l| l == *loose)).count();
         println!("  uncovered {loose:?}: {n}");
     }
 }

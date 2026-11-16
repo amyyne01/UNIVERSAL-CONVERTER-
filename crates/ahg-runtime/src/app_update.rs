@@ -39,7 +39,14 @@ pub struct AppUpdater {
 impl AppUpdater {
     /// `update_dir` is `<userData>/updates`.
     pub fn new(update_dir: &Path, current: &str, fetch: Box<dyn Fetch>, notify: Notify) -> Self {
-        Self { state: Mutex::new(Updater::new(&update_dir.to_string_lossy())), downloading: Mutex::new(()), update_dir: update_dir.to_owned(), fetch, current: current.to_owned(), notify }
+        Self {
+            state: Mutex::new(Updater::new(&update_dir.to_string_lossy())),
+            downloading: Mutex::new(()),
+            update_dir: update_dir.to_owned(),
+            fetch,
+            current: current.to_owned(),
+            notify,
+        }
     }
 
     fn state(&self) -> MutexGuard<'_, Updater> {
@@ -63,7 +70,10 @@ impl AppUpdater {
     /// Ask GitHub whether a newer version exists. Blocking: call it from a worker thread.
     pub fn check(&self) -> UpdateState {
         self.state().begin_check();
-        let events = match self.bytes(&Updater::check_request().url, TEXT_LIMIT).and_then(|body| serde_json::from_slice(&body).map_err(|_| format!("{PREFIX} failed: unreadable release feed"))) {
+        let events = match self
+            .bytes(&Updater::check_request().url, TEXT_LIMIT)
+            .and_then(|body| serde_json::from_slice(&body).map_err(|_| format!("{PREFIX} failed: unreadable release feed")))
+        {
             Ok(feed) => self.state().on_release_json(&feed, &self.current),
             Err(message) => self.state().check_failed(&message),
         };

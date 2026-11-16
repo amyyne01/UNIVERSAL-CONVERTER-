@@ -28,10 +28,7 @@ fn percent_is_doubled_in_the_literal_pieces_only() {
         // Already doubled by the user: doubled again, so it stays "%%" on disk.
         (json!({"title": "%%"}), vec!["C:\\Downloads\\%%%%.%(ext)s"]),
         (json!({"title": "Test Song"}), vec!["C:\\Downloads\\Test Song.%(ext)s"]),
-        (
-            json!({"isPlaylist": true, "playlistName": "50% (mix)"}),
-            vec!["C:\\Downloads\\50%% (mix)\\%(title)s.%(ext)s"],
-        ),
+        (json!({"isPlaylist": true, "playlistName": "50% (mix)"}), vec!["C:\\Downloads\\50%% (mix)\\%(title)s.%(ext)s"]),
         (
             json!({"isPlaylist": true, "playlistName": "50%", "extras": {"splitChapters": true}}),
             vec![
@@ -40,10 +37,7 @@ fn percent_is_doubled_in_the_literal_pieces_only() {
             ],
         ),
         // The user's own template is yt-dlp's language: untouched.
-        (
-            json!({"title": "100%", "extras": {"outputTemplate": "%(title)s - 5%"}}),
-            vec!["C:\\Downloads\\%(title)s - 5%.%(ext)s"],
-        ),
+        (json!({"title": "100%", "extras": {"outputTemplate": "%(title)s - 5%"}}), vec!["C:\\Downloads\\%(title)s - 5%.%(ext)s"]),
         (
             json!({"isPlaylist": true, "playlistName": "50%", "extras": {"outputTemplate": "%(title)s"}}),
             vec!["C:\\Downloads\\50%%\\%(title)s.%(ext)s"],
@@ -75,16 +69,10 @@ fn percent_in_the_download_folder_is_doubled_once_everywhere_it_is_a_template() 
         (json!({"outputDir": "C:\\5%", "title": "100%"}), vec!["C:\\5%%\\100%%.%(ext)s"]),
         (
             json!({"outputDir": "C:\\5%", "isPlaylist": true, "playlistName": "50%", "extras": {"splitChapters": true}}),
-            vec![
-                "C:\\5%%\\50%%\\%(title)s.%(ext)s",
-                "chapter:C:\\5%%\\50%%\\%(title)s - %(section_number)03d %(section_title)s.%(ext)s",
-            ],
+            vec!["C:\\5%%\\50%%\\%(title)s.%(ext)s", "chapter:C:\\5%%\\50%%\\%(title)s - %(section_number)03d %(section_title)s.%(ext)s"],
         ),
         // The user's own template stays yt-dlp's language, the folder still a literal.
-        (
-            json!({"outputDir": "C:\\5%", "extras": {"outputTemplate": "%(title)s - 5%"}}),
-            vec!["C:\\5%%\\%(title)s - 5%.%(ext)s"],
-        ),
+        (json!({"outputDir": "C:\\5%", "extras": {"outputTemplate": "%(title)s - 5%"}}), vec!["C:\\5%%\\%(title)s - 5%.%(ext)s"]),
     ];
     assert!(!cases.is_empty());
     for (over, want) in cases {

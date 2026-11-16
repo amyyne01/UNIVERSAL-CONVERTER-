@@ -2,8 +2,8 @@
 //! returns for the same inputs (tests/golden/tier.json, written by
 //! scripts/rust-golden.mjs).
 use ahg_engine::tier::{
-    BASIC_LIMITS, MAX_CONCURRENT_DOWNLOADS, Plan, clamp_audio_quality, clamp_concurrency, clamp_extras, clamp_format,
-    clamp_video_quality, is_premium_format, is_premium_video_quality,
+    BASIC_LIMITS, MAX_CONCURRENT_DOWNLOADS, Plan, clamp_audio_quality, clamp_concurrency, clamp_extras, clamp_format, clamp_video_quality,
+    is_premium_format, is_premium_video_quality,
 };
 use ahg_engine::types::{DownloadExtras, PartialExtras, RETRY_BACKOFF_MS, VideoQuality, merge_extras};
 use serde_json::{Value, json};
@@ -82,11 +82,7 @@ fn concurrency_is_clamped_as_in_electron() {
 fn extras_are_merged_and_clamped_as_in_electron() {
     for c in rows(&golden(), "extras") {
         let partial: Option<PartialExtras> = serde_json::from_value(c["partial"].clone()).unwrap();
-        let got = if c["plan"].is_null() {
-            merge_extras(partial.as_ref())
-        } else {
-            clamp_extras(partial.as_ref(), plan(&c["plan"]))
-        };
+        let got = if c["plan"].is_null() { merge_extras(partial.as_ref()) } else { clamp_extras(partial.as_ref(), plan(&c["plan"])) };
         assert_eq!(serde_json::to_value(got).unwrap(), c["out"], "{c}");
     }
 }

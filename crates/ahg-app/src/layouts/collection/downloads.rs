@@ -60,7 +60,9 @@ pub fn view(s: &State, p: &Pal) -> El {
     );
     let interrupted = tasks.iter().filter(|t| t.progress.status == St::Paused && t.interrupted == Some(true)).count();
     if interrupted > 0 {
-        page = page.child(row().w_full().h(48.0).px(12.0).mb(16.0).center_y().radius(8.0).fill(p.soft(p.warning)).child(interrupted_line(p, interrupted)));
+        page = page.child(
+            row().w_full().h(48.0).px(12.0).mb(16.0).center_y().radius(8.0).fill(p.soft(p.warning)).child(interrupted_line(p, interrupted)),
+        );
     }
     let running: Vec<&DownloadTask> = tasks.iter().filter(|t| is_active(t.progress.status) && t.progress.status != St::Queued).collect();
     let waiting: Vec<&DownloadTask> = tasks.iter().filter(|t| t.progress.status == St::Queued).collect();
@@ -106,15 +108,13 @@ fn header(p: &Pal, tasks: &[DownloadTask], active: usize) -> El {
         n(&[St::Cancelled]),
     ];
     let parts: Vec<String> = counts.iter().zip(copy::SUMMARY_WORDS).filter(|(c, _)| **c > 0).map(|(c, w)| format!("{c} {w}")).collect();
-    let mut words = col()
-        .gap(4.0)
-        .child(
-            row()
-                .gap(16.0)
-                .items_end()
-                .child(text(copy::DL_TITLE).font(serif(44.0).lh(48.0)).color(p.text))
-                .child(text(copy::active_and_total(active, tasks.len(), all_paused)).font(mono(13.0, 400.0)).color(p.text2).mb(8.0)),
-        );
+    let mut words = col().gap(4.0).child(
+        row()
+            .gap(16.0)
+            .items_end()
+            .child(text(copy::DL_TITLE).font(serif(44.0).lh(48.0)).color(p.text))
+            .child(text(copy::active_and_total(active, tasks.len(), all_paused)).font(mono(13.0, 400.0)).color(p.text2).mb(8.0)),
+    );
     if !tasks.is_empty() {
         words = words.child(text(copy::downloads_summary(tasks.len(), &parts)).font(sans(13.0, 400.0)).color(p.text2).single_line());
     }
@@ -184,11 +184,21 @@ fn state_word(p: &Pal, t: &DownloadTask) -> (&'static Icon, &'static str, Color)
 fn actions(t: &DownloadTask) -> Vec<(&'static str, &'static Icon, &'static str)> {
     use ErrorCode::*;
     match t.progress.status {
-        St::Queued => vec![("next", &icons::TO_FRONT, copy::ACT_DO_THIS_NEXT), ("pause", &icons::PAUSE, copy::ACT_PAUSE), ("cancel", &icons::CANCEL, copy::ACT_CANCEL)],
+        St::Queued => vec![
+            ("next", &icons::TO_FRONT, copy::ACT_DO_THIS_NEXT),
+            ("pause", &icons::PAUSE, copy::ACT_PAUSE),
+            ("cancel", &icons::CANCEL, copy::ACT_CANCEL),
+        ],
         St::Paused => vec![("resume", &icons::PLAY, copy::ACT_RESUME), ("cancel", &icons::CANCEL, copy::ACT_CANCEL)],
-        St::Downloading | St::FetchingInfo | St::Retrying => vec![("pause", &icons::PAUSE, copy::ACT_PAUSE), ("cancel", &icons::CANCEL, copy::ACT_CANCEL)],
+        St::Downloading | St::FetchingInfo | St::Retrying => {
+            vec![("pause", &icons::PAUSE, copy::ACT_PAUSE), ("cancel", &icons::CANCEL, copy::ACT_CANCEL)]
+        }
         St::Converting | St::Embedding => vec![("cancel", &icons::CANCEL, copy::ACT_CANCEL)],
-        St::Done => vec![("open", &icons::EXTERNAL, copy::ACT_OPEN_FILE), ("folder", &icons::FOLDER, copy::ACT_SHOW_IN_FOLDER), ("remove", &icons::REMOVE, copy::ACT_REMOVE)],
+        St::Done => vec![
+            ("open", &icons::EXTERNAL, copy::ACT_OPEN_FILE),
+            ("folder", &icons::FOLDER, copy::ACT_SHOW_IN_FOLDER),
+            ("remove", &icons::REMOVE, copy::ACT_REMOVE),
+        ],
         St::Failed | St::Cancelled => {
             let mut a = vec![("copy", &icons::COPY, copy::ACT_COPY_DETAILS)];
             match t.error_code {
@@ -209,9 +219,7 @@ fn task_row(s: &State, p: &Pal, t: &DownloadTask) -> El {
     let st = t.progress.status;
     let label = parts::label(t);
     let troubled = matches!(st, St::Failed | St::Cancelled);
-    let thumb = el()
-        .w((THUMB * (1.0 + parts::DISC_TRAVEL)).round())
-        .child(parts::sleeve(s, p, t, THUMB, disc(t), st == St::Cancelled));
+    let thumb = el().w((THUMB * (1.0 + parts::DISC_TRAVEL)).round()).child(parts::sleeve(s, p, t, THUMB, disc(t), st == St::Cancelled));
 
     let mut detail = vec![run(parts::source_name(t.source), p.source(t.source))];
     let reason = parts::reason(t);

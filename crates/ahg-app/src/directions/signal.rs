@@ -6,13 +6,13 @@
 //! The signature is the tape counter (`model::timecode`): media time carried
 //! across so far, `hh:mm:ss`, on in-flight Downloads rows and nowhere else.
 mod downloads;
-mod home;
-mod nav;
-mod settings;
 pub(crate) mod found;
+mod home;
 pub(crate) mod icons;
 pub(crate) mod model;
+mod nav;
 pub(crate) mod parts;
+mod settings;
 pub(crate) mod theme;
 
 use rune::{Color, Cx, El, col, el, icon, row, spacer};
@@ -44,7 +44,11 @@ fn titlebar(s: &State, p: &Pal, trailing: f32) -> El {
         Some(img) if img.is_ready() => el().size(18.0, 18.0).pixels(img.pixels()),
         _ => el().size(18.0, 18.0),
     };
-    let mark = row().gap(8.0).center_y().child(logo).child(parts::Line::new().strong(copy::BRAND, p.text).add(copy::BRAND_REST, p.muted).one(mono(12.0, 400.0)));
+    let mark = row()
+        .gap(8.0)
+        .center_y()
+        .child(logo)
+        .child(parts::Line::new().strong(copy::BRAND, p.text).add(copy::BRAND_REST, p.muted).one(mono(12.0, 400.0)));
     let search = row()
         .w(420.0)
         .h(30.0)

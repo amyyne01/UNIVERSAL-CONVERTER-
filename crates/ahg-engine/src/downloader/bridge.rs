@@ -245,7 +245,9 @@ fn song_hit(item: &Value) -> Option<SongHit> {
     let second = column(1);
     let parts: Vec<&str> = second.split(" • ").collect();
     let clock: Option<Vec<f64>> = parts.last().and_then(|last| {
-        last.split(':').map(|p| if p.trim().is_empty() { Some(0.0) } else { p.trim().parse::<f64>().ok().filter(|n| n.is_finite()) }).collect()
+        last.split(':')
+            .map(|p| if p.trim().is_empty() { Some(0.0) } else { p.trim().parse::<f64>().ok().filter(|n| n.is_finite()) })
+            .collect()
     });
     let clock = clock.filter(|c| c.len() >= 2);
     let (artist, album) = match &clock {
@@ -282,7 +284,8 @@ fn album_key(album: &str) -> String {
 /// `None` when Spotify's flag is not known.
 pub fn pick_row(track: &Track, rows: &[SongHit], explicit: Option<bool>) -> Option<Pick> {
     let agreeing: Vec<(usize, &SongHit)> = rows.iter().enumerate().filter(|(_, row)| row_agrees(track, &row.row())).collect();
-    let flagged: Vec<(usize, &SongHit)> = agreeing.iter().copied().filter(|(_, row)| explicit.is_none_or(|flag| row.explicit == flag)).collect();
+    let flagged: Vec<(usize, &SongHit)> =
+        agreeing.iter().copied().filter(|(_, row)| explicit.is_none_or(|flag| row.explicit == flag)).collect();
     let pool = if flagged.is_empty() { &agreeing } else { &flagged };
     let album = album_key(&track.album);
     let same_album = pool.iter().find(|(_, row)| !album.is_empty() && album_key(&row.album) == album);
@@ -370,7 +373,9 @@ pub fn song_url(url: &str) -> Option<&str> {
     }
     let is_id = |id: &str| id.len() >= 6 && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_');
     let one_video = match parsed.host_str()? {
-        "music.youtube.com" | "www.youtube.com" | "youtube.com" => parsed.path() == "/watch" && parsed.query_pairs().any(|(key, id)| key == "v" && is_id(&id)),
+        "music.youtube.com" | "www.youtube.com" | "youtube.com" => {
+            parsed.path() == "/watch" && parsed.query_pairs().any(|(key, id)| key == "v" && is_id(&id))
+        }
         "youtu.be" => is_id(parsed.path().trim_start_matches('/')),
         _ => false,
     };
@@ -393,8 +398,15 @@ pub fn name_and_tag_from_spotify(task: &crate::types::DownloadTask, args: &mut V
     if task.embed_metadata {
         let artists = if track.artists.is_empty() { track.artist.clone() } else { track.artists.join(", ") };
         let number = if track.track_number >= 1.0 { format!("{}", track.track_number as u64) } else { String::new() };
-        let tags = [("title", track.name.as_str()), ("artist", &artists), ("album", &track.album), ("track", &number), ("date", track.album_year.as_deref().unwrap_or(""))];
-        let flags: Vec<String> = tags.iter().filter_map(|(field, text)| fixed_tag(field, text)).flat_map(|tag| ["--parse-metadata".to_owned(), tag]).collect();
+        let tags = [
+            ("title", track.name.as_str()),
+            ("artist", &artists),
+            ("album", &track.album),
+            ("track", &number),
+            ("date", track.album_year.as_deref().unwrap_or("")),
+        ];
+        let flags: Vec<String> =
+            tags.iter().filter_map(|(field, text)| fixed_tag(field, text)).flat_map(|tag| ["--parse-metadata".to_owned(), tag]).collect();
         add_options(args, flags);
     }
     if let Some(old) = replaceable_stem(task, &track.name) {
@@ -450,7 +462,8 @@ const LENGTH_ALLOWANCE: f64 = 5.5;
 /// (`ffmpeg -i file`): its "  Duration: 00:04:17.83, ..." line.
 pub fn media_seconds(ffmpeg_report: &str) -> Option<f64> {
     let clock = ffmpeg_report.lines().find_map(|line| line.trim_start().strip_prefix("Duration: "))?.split(',').next()?;
-    let parts: Vec<f64> = clock.trim().split(':').map(|p| p.parse::<f64>().ok().filter(|n| n.is_finite() && *n >= 0.0)).collect::<Option<_>>()?;
+    let parts: Vec<f64> =
+        clock.trim().split(':').map(|p| p.parse::<f64>().ok().filter(|n| n.is_finite() && *n >= 0.0)).collect::<Option<_>>()?;
     (parts.len() == 3).then(|| parts[0] * 3600.0 + parts[1] * 60.0 + parts[2])
 }
 

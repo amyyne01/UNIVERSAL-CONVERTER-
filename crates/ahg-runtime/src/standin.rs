@@ -75,6 +75,13 @@ impl Outside {
     /// Every host name resolves to one public address (a documentation one, never
     /// connected to). Swap a field for what a test needs.
     pub fn standin() -> Self {
-        Self { song_search: Arc::new(|_: &str| None), spotify: Box::new(Offline), releases: Arc::new(Net::default()), desktop: Box::new(Quiet), cover: Box::new(|_, _, _| None), resolve: Box::new(|_, port| vec![SocketAddr::from(([93, 184, 216, 34], port))]) }
+        Self {
+            song_search: Arc::new(|_: &str| None),
+            spotify: Box::new(Offline),
+            releases: Arc::new(Net::default()),
+            desktop: Box::new(Quiet),
+            cover: Box::new(|_, _, _| None),
+            resolve: Box::new(|_, port| vec![SocketAddr::from(([93, 184, 216, 34], port))]),
+        }
     }
 }

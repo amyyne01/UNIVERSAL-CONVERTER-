@@ -8,8 +8,23 @@ use serde_json::json;
 const T0: u64 = 1_763_200_000_000;
 
 const FIELDS: [&str; 17] = [
-    "url", "source", "format", "quality", "videoQuality", "isAudioOnly", "isPlaylist", "playlistName", "embedThumbnail",
-    "embedMetadata", "skipExisting", "title", "thumbnailUrl", "duration", "uploader", "track", "playlistItems",
+    "url",
+    "source",
+    "format",
+    "quality",
+    "videoQuality",
+    "isAudioOnly",
+    "isPlaylist",
+    "playlistName",
+    "embedThumbnail",
+    "embedMetadata",
+    "skipExisting",
+    "title",
+    "thumbnailUrl",
+    "duration",
+    "uploader",
+    "track",
+    "playlistItems",
 ];
 
 fn sample() -> DownloadTask {

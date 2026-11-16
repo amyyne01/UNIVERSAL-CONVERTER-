@@ -216,11 +216,15 @@ fn an_upgrade_raises_the_number_of_simultaneous_downloads_without_a_restart() {
     let mut ytdlp = YtDlp::new(PathBuf::from(FAKE), None);
     ytdlp.env("FAKE_YTDLP_SCRIPT", dir.join("script.txt").to_str().unwrap());
     let premium = Arc::new(AtomicBool::new(false));
-    let plan = { let premium = premium.clone(); move || if premium.load(Ordering::SeqCst) { Plan::Premium } else { Plan::Basic } };
+    let plan = {
+        let premium = premium.clone();
+        move || if premium.load(Ordering::SeqCst) { Plan::Premium } else { Plan::Basic }
+    };
     let (tx, rx) = channel();
     let paths = Paths { user_data: dir.join("userData"), downloads: dir.join("Downloads").to_string_lossy().into_owned() };
     let core = Core::start(paths, Arc::new(ytdlp), Box::new(plan), tx);
-    let running = |core: &Core| core.tasks().iter().filter(|t| !matches!(t.progress.status, DownloadStatus::Queued | DownloadStatus::Done)).count();
+    let running =
+        |core: &Core| core.tasks().iter().filter(|t| !matches!(t.progress.status, DownloadStatus::Queued | DownloadStatus::Done)).count();
 
     core.update_settings(json!({ "maxConcurrentDownloads": 4 }).as_object().unwrap());
     for _ in 0..4 {
@@ -257,7 +261,10 @@ fn the_preview_can_ask_for_one_tracks_match() {
     let track: Track = serde_json::from_value(json!({ "id": "t1", "name": "The Song", "artist": "Artist", "artists": ["Artist"], "album": "The Album", "trackNumber": 1, "durationMs": 200000, "thumbnailUrl": "" })).unwrap();
     let TrackMatch::Found(found) = core.match_track(&track) else { panic!("the song agrees with the track") };
     assert_eq!(found.url, "https://music.youtube.com/watch?v=right000001");
-    assert_eq!((found.title.as_str(), found.artist.as_str(), found.album.as_str(), found.duration), ("The Song", "Artist", "The Album", Some(200.0)));
+    assert_eq!(
+        (found.title.as_str(), found.artist.as_str(), found.album.as_str(), found.duration),
+        ("The Song", "Artist", "The Album", Some(200.0))
+    );
     assert_eq!(found.confidence, 1.0);
 
     // No song agrees: the preview says so. The download still tries its fallbacks.
@@ -290,7 +297,10 @@ fn a_real_spotify_track_is_matched_and_downloaded() {
     let track = spotify.fetch_track("https://open.spotify.com/track/0ofHAoxe9vBkTCp2UQIavz").ok().flatten().expect("the track should load");
     println!("spotify: {} - {} ({} s, explicit {:?})", track.artist, track.name, track.duration_ms / 1000.0, track.explicit);
     let TrackMatch::Found(found) = core.match_track(&track) else { panic!("YouTube Music should have this song") };
-    println!("match: {} / {} / {} ({:?} s), confidence {}, {}", found.title, found.artist, found.album, found.duration, found.confidence, found.url);
+    println!(
+        "match: {} / {} / {} ({:?} s), confidence {}, {}",
+        found.title, found.artist, found.album, found.duration, found.confidence, found.url
+    );
     assert_eq!(found.confidence, 1.0);
 
     let request = json!({ "url": track.spotify_url, "source": "spotify", "isAudioOnly": true, "format": "mp3", "quality": "128",
@@ -310,8 +320,17 @@ fn a_real_spotify_track_is_matched_and_downloaded() {
     assert_eq!(file.file_name().and_then(|n| n.to_str()), Some("Fleetwood Mac - Dreams - 2004 Remaster.mp3"));
     let probe = std::process::Command::new(root.join("bin").join("ffmpeg.exe")).args(["-hide_banner", "-i"]).arg(&file).output().unwrap();
     let probe = String::from_utf8_lossy(&probe.stderr).into_owned();
-    let tag = |name: &str| probe.lines().find_map(|l| l.trim().strip_prefix(name).map(|rest| rest.trim_start().trim_start_matches(':').trim().to_owned()));
-    println!("tags: title {:?}, artist {:?}, album {:?}, track {:?}, date {:?}", tag("title"), tag("artist"), tag("album"), tag("track"), tag("date"));
+    let tag = |name: &str| {
+        probe.lines().find_map(|l| l.trim().strip_prefix(name).map(|rest| rest.trim_start().trim_start_matches(':').trim().to_owned()))
+    };
+    println!(
+        "tags: title {:?}, artist {:?}, album {:?}, track {:?}, date {:?}",
+        tag("title"),
+        tag("artist"),
+        tag("album"),
+        tag("track"),
+        tag("date")
+    );
     assert_eq!(tag("title").as_deref(), Some(track.name.as_str()));
     assert_eq!(tag("artist").as_deref(), Some("Fleetwood Mac"));
     // The file says where it came from.
@@ -378,7 +397,15 @@ fn a_chosen_match_is_remembered_for_that_track_and_used_from_then_on() {
         (Core::start_with_search(paths, Arc::new(ytdlp), Box::new(|| Plan::Premium), tx, search), rx)
     };
     let track: Track = serde_json::from_value(json!({ "id": "t1", "name": "The Song", "artist": "Artist", "artists": ["Artist"], "album": "", "trackNumber": 1, "durationMs": 200000, "thumbnailUrl": "" })).unwrap();
-    let chosen = SongMatch { url: "https://www.youtube.com/watch?v=mine0000001".into(), title: "The Song (the one I wanted)".into(), artist: "Artist".into(), album: String::new(), duration: Some(201.0), explicit: false, confidence: 0.4 };
+    let chosen = SongMatch {
+        url: "https://www.youtube.com/watch?v=mine0000001".into(),
+        title: "The Song (the one I wanted)".into(),
+        artist: "Artist".into(),
+        album: String::new(),
+        duration: Some(201.0),
+        explicit: false,
+        confidence: 0.4,
+    };
 
     let (core, _rx) = begin(&dir);
     assert_eq!(core.match_track(&track), TrackMatch::Unreachable);
@@ -417,8 +444,12 @@ fn a_tampered_list_of_remembered_matches_cannot_send_yt_dlp_anywhere() {
     let dir = scratch("remembertamper");
     fs::write(dir.join("userData").join("spotify-matches.json"), r#"{"t1":{"url":"--exec=calc","title":"x","artist":"","album":"","duration":null,"explicit":false,"confidence":1},"t2":"nonsense"}"#).unwrap();
     // A song search that is never reachable: this test must not touch the network.
-    fs::write(dir.join("script.txt"), "exit 1
-").unwrap();
+    fs::write(
+        dir.join("script.txt"),
+        "exit 1
+",
+    )
+    .unwrap();
     let mut ytdlp = YtDlp::new(PathBuf::from(FAKE), None);
     ytdlp.env("FAKE_YTDLP_SCRIPT", dir.join("script.txt").to_str().unwrap());
     let (tx, _rx) = channel();
@@ -453,7 +484,13 @@ impl ahg_runtime::engine_update::Fetch for OneRelease {
             let sha: String = Sha256::digest(&self.binary).iter().map(|b| format!("{b:02x}")).collect();
             format!("{sha}  yt-dlp.exe\n").into_bytes()
         };
-        Some(ahg_runtime::engine_update::Fetched { status: 200, final_url: request.url.clone(), content_length: None, location: None, body: Box::new(std::io::Cursor::new(body)) })
+        Some(ahg_runtime::engine_update::Fetched {
+            status: 200,
+            final_url: request.url.clone(),
+            content_length: None,
+            location: None,
+            body: Box::new(std::io::Cursor::new(body)),
+        })
     }
 }
 
@@ -463,12 +500,27 @@ fn start_with_release(dir: &Path, script: &str) -> (Core, Receiver<CoreEvent>) {
     ytdlp.env("FAKE_YTDLP_SCRIPT", dir.join("script.txt").to_str().unwrap());
     let (tx, rx) = channel();
     let paths = Paths { user_data: dir.join("userData"), downloads: dir.join("Downloads").to_string_lossy().into_owned() };
-    let core = Core::start_with(paths, Arc::new(ytdlp), Box::new(|| Plan::Premium), tx, Outside { song_search: Arc::new(|_: &str| None), releases: Arc::new(OneRelease { binary: b"MZ a newer yt-dlp".to_vec() }), desktop: Box::new(ahg_runtime::desktop::Windows), spotify: offline(), cover: Box::new(|_, _, _| None), resolve: Box::new(|_, _| Vec::new()) });
+    let core = Core::start_with(
+        paths,
+        Arc::new(ytdlp),
+        Box::new(|| Plan::Premium),
+        tx,
+        Outside {
+            song_search: Arc::new(|_: &str| None),
+            releases: Arc::new(OneRelease { binary: b"MZ a newer yt-dlp".to_vec() }),
+            desktop: Box::new(ahg_runtime::desktop::Windows),
+            spotify: offline(),
+            cover: Box::new(|_, _, _| None),
+            resolve: Box::new(|_, _| Vec::new()),
+        },
+    );
     (core, rx)
 }
 
 fn engine_states(seen: &[CoreEvent]) -> Vec<String> {
-    seen.iter().filter_map(|e| if let CoreEvent::EngineStatus(status) = e { status["state"].as_str().map(str::to_owned) } else { None }).collect()
+    seen.iter()
+        .filter_map(|e| if let CoreEvent::EngineStatus(status) = e { status["state"].as_str().map(str::to_owned) } else { None })
+        .collect()
 }
 
 #[test]
@@ -516,7 +568,11 @@ fn the_core_finds_downloads_and_installs_a_newer_version_of_the_app() {
     const SUMS: &str = "https://github.com/amyyne01/UNIVERSAL-CONVERTER-/releases/download/v9.9.9/SHA256SUMS.txt";
     let new_exe = b"MZ version 9.9.9 of the app".to_vec();
     let feed = json!({ "tag_name": "v9.9.9", "assets": [{ "name": "AHG-Converter.exe", "browser_download_url": EXE }, { "name": "SHA256SUMS.txt", "browser_download_url": SUMS }] }).to_string();
-    let net = common::Net::default().with(FEED, 200, feed.as_bytes()).with(EXE, 200, &new_exe).with(SUMS, 200, format!("{}  AHG-Converter.exe\n", common::sha(&new_exe)).as_bytes());
+    let net = common::Net::default().with(FEED, 200, feed.as_bytes()).with(EXE, 200, &new_exe).with(
+        SUMS,
+        200,
+        format!("{}  AHG-Converter.exe\n", common::sha(&new_exe)).as_bytes(),
+    );
 
     let dir = scratch("appupdate");
     // Something an earlier run staged: it is dropped when the core starts.
@@ -525,7 +581,20 @@ fn the_core_finds_downloads_and_installs_a_newer_version_of_the_app() {
     fs::write(dir.join("script.txt"), "").unwrap();
     let (tx, rx) = channel();
     let paths = Paths { user_data: dir.join("userData"), downloads: dir.join("Downloads").to_string_lossy().into_owned() };
-    let core = Core::start_with(paths, Arc::new(YtDlp::new(PathBuf::from(FAKE), None)), Box::new(|| Plan::Premium), tx, Outside { song_search: Arc::new(|_: &str| None), releases: Arc::new(net), desktop: Box::new(ahg_runtime::desktop::Windows), spotify: offline(), cover: Box::new(|_, _, _| None), resolve: Box::new(|_, _| Vec::new()) });
+    let core = Core::start_with(
+        paths,
+        Arc::new(YtDlp::new(PathBuf::from(FAKE), None)),
+        Box::new(|| Plan::Premium),
+        tx,
+        Outside {
+            song_search: Arc::new(|_: &str| None),
+            releases: Arc::new(net),
+            desktop: Box::new(ahg_runtime::desktop::Windows),
+            spotify: offline(),
+            cover: Box::new(|_, _, _| None),
+            resolve: Box::new(|_, _| Vec::new()),
+        },
+    );
     assert!(!dir.join("userData").join("updates").join("stale.exe").exists());
 
     assert_eq!(core.update_status().phase, "idle");
@@ -540,7 +609,8 @@ fn the_core_finds_downloads_and_installs_a_newer_version_of_the_app() {
     core.install_update(&target).unwrap();
     assert_eq!(fs::read(&target).unwrap(), new_exe);
 
-    let channels: Vec<&str> = rx.try_iter().filter_map(|e| if let CoreEvent::Update { channel, .. } = e { Some(channel) } else { None }).collect();
+    let channels: Vec<&str> =
+        rx.try_iter().filter_map(|e| if let CoreEvent::Update { channel, .. } = e { Some(channel) } else { None }).collect();
     assert_eq!(channels.first(), Some(&"update:available"));
     assert_eq!(channels.last(), Some(&"update:downloaded"));
     assert!(channels.contains(&"update:progress"));
@@ -572,7 +642,14 @@ fn only_media_inside_the_download_folder_is_shown_or_opened() {
     let (tx, _rx) = channel();
     let downloads = dir.join("Downloads");
     let paths = Paths { user_data: dir.join("userData"), downloads: downloads.to_string_lossy().into_owned() };
-    let outside = Outside { song_search: Arc::new(|_: &str| None), releases: Arc::new(common::Net::default()), desktop: Box::new(desktop.clone()), spotify: offline(), cover: Box::new(|_, _, _| None), resolve: Box::new(|_, _| Vec::new()) };
+    let outside = Outside {
+        song_search: Arc::new(|_: &str| None),
+        releases: Arc::new(common::Net::default()),
+        desktop: Box::new(desktop.clone()),
+        spotify: offline(),
+        cover: Box::new(|_, _, _| None),
+        resolve: Box::new(|_, _| Vec::new()),
+    };
     let core = Core::start_with(paths, Arc::new(YtDlp::new(PathBuf::from(FAKE), None)), Box::new(|| Plan::Premium), tx, outside);
     let at = |name: &str| downloads.join(name).to_string_lossy().into_owned();
     for name in ["song.mp3", "broken.mp3", "tool.exe"] {
@@ -595,7 +672,15 @@ fn only_media_inside_the_download_folder_is_shown_or_opened() {
     assert!(core.show_in_folder(&outside_file).is_err() && core.open_file(&outside_file).is_err());
 
     let asked = desktop.0.lock().unwrap().clone();
-    assert_eq!(asked, [format!("reveal {}", at("song.mp3")), format!("open {}", at("song.mp3")), format!("open {}", at("broken.mp3")), format!("reveal {}", at("tool.exe"))]);
+    assert_eq!(
+        asked,
+        [
+            format!("reveal {}", at("song.mp3")),
+            format!("open {}", at("song.mp3")),
+            format!("open {}", at("broken.mp3")),
+            format!("reveal {}", at("tool.exe"))
+        ]
+    );
     core.shutdown();
 }
 
@@ -674,7 +759,10 @@ fn one_at_a_time(core: &Core) {
 
 /// The id of the next task the queue starts, ignoring those already seen.
 fn next_started(rx: &Receiver<CoreEvent>, seen: &[&str]) -> String {
-    let events = wait_for(rx, |e| matches!(e, CoreEvent::Download(Event::Progress { id, progress }) if progress.status == DownloadStatus::FetchingInfo && !seen.contains(&id.as_str())));
+    let events = wait_for(
+        rx,
+        |e| matches!(e, CoreEvent::Download(Event::Progress { id, progress }) if progress.status == DownloadStatus::FetchingInfo && !seen.contains(&id.as_str())),
+    );
     match events.last() {
         Some(CoreEvent::Download(Event::Progress { id, .. })) => id.clone(),
         other => panic!("{other:?}"),
@@ -683,7 +771,11 @@ fn next_started(rx: &Receiver<CoreEvent>, seen: &[&str]) -> String {
 
 /// A script that records its start, starts a child and stays busy for `busy` ms.
 fn busy_script(dir: &Path, busy: u32) -> String {
-    format!("child {}\ncount {}\nerr [PROGRESS]1|100|NA|1|9\nsleep {busy}\nexit 0\n", dir.join("child.pid").display(), dir.join("runs.txt").display())
+    format!(
+        "child {}\ncount {}\nerr [PROGRESS]1|100|NA|1|9\nsleep {busy}\nexit 0\n",
+        dir.join("child.pid").display(),
+        dir.join("runs.txt").display()
+    )
 }
 
 #[test]
@@ -874,7 +966,8 @@ fn spotify_request() -> Value {
 /// in between shows a half-written line, and an empty id would match any process in `tasklist`.
 #[cfg(windows)]
 fn pids_in(file: &Path) -> Vec<String> {
-    fs::read_to_string(file).map_or_else(|_| Vec::new(), |text| text.lines().filter(|l| l.parse::<u32>().is_ok()).map(str::to_owned).collect())
+    fs::read_to_string(file)
+        .map_or_else(|_| Vec::new(), |text| text.lines().filter(|l| l.parse::<u32>().is_ok()).map(str::to_owned).collect())
 }
 
 #[test]
@@ -884,7 +977,11 @@ fn cancel_lookups_stops_a_hung_lookup_but_not_a_downloads_own_search() {
     fs::write(&media, vec![0u8; 2048]).unwrap();
     let (count, record) = (dir.join("count"), r#"{"id":"abc00000001","track":"The Song","artist":"Artist","duration":200}"#);
     // Every lookup answers after 2.5 s: the interface's, and the bridge's two.
-    let (core, rx) = start_split(&dir, &format!("count {}\nsleep 2500\nout {record}\nexit 0\n", count.display()), &format!("out [FILEPATH]{}\nexit 0\n", media.display()));
+    let (core, rx) = start_split(
+        &dir,
+        &format!("count {}\nsleep 2500\nout {record}\nexit 0\n", count.display()),
+        &format!("out [FILEPATH]{}\nexit 0\n", media.display()),
+    );
     let core = Arc::new(core);
     let id = core.start_download(&spotify_request()).unwrap().task_id;
     until("the bridge's search started", || runs(&count) == 1);
@@ -965,7 +1062,11 @@ fn quitting_with_four_downloads_a_search_and_a_hung_lookup_leaves_no_process() {
     let dir = scratch("quit");
     let (downloads, lookups) = (dir.join("downloads.pids"), dir.join("lookups.pids"));
     // Three YouTube downloads and one Spotify track still searching, which fill four slots.
-    let (core, _rx) = start_split(&dir, &format!("pid {}\nsleep 60000\n", lookups.display()), &format!("pid {}\nerr [PROGRESS]1|100|NA|1|9\nsleep 60000\n", downloads.display()));
+    let (core, _rx) = start_split(
+        &dir,
+        &format!("pid {}\nsleep 60000\n", lookups.display()),
+        &format!("pid {}\nerr [PROGRESS]1|100|NA|1|9\nsleep 60000\n", downloads.display()),
+    );
     core.update_settings(json!({ "maxConcurrentDownloads": 4 }).as_object().unwrap());
     for _ in 0..3 {
         core.start_download(&request()).unwrap();
@@ -1023,7 +1124,9 @@ fn embed(entity: Value) -> String {
 /// GraphQL API, the home page) answers nothing.
 fn spotify_pages(url: &str) -> Option<String> {
     if url.contains("/embed/track/") {
-        Some(embed(json!({ "uri": "spotify:track:t1", "name": "Song", "artists": [{ "name": "Artist" }], "duration": 215000, "album": { "name": "Album" } })))
+        Some(embed(
+            json!({ "uri": "spotify:track:t1", "name": "Song", "artists": [{ "name": "Artist" }], "duration": 215000, "album": { "name": "Album" } }),
+        ))
     } else if url.contains("/embed/playlist/") {
         let list = json!([{ "uri": "spotify:track:a1", "title": "One", "subtitle": "Artist A", "duration": 1000 }, { "uri": "spotify:track:a2", "title": "Two", "subtitle": "Artist B", "duration": 2000 }]);
         Some(embed(json!({ "uri": "spotify:playlist:p1", "name": "Mix", "trackList": list })))
@@ -1042,7 +1145,14 @@ fn start_spotify(name: &str) -> (Core, Seen) {
     let (tx, _rx) = channel();
     let paths = Paths { user_data: dir.join("userData"), downloads: dir.join("Downloads").to_string_lossy().into_owned() };
     let spotify = Box::new(Scripted { seen: seen.clone(), pages: spotify_pages });
-    let outside = Outside { song_search: Arc::new(|_: &str| None), releases: Arc::new(common::Net::default()), desktop: Box::new(ahg_runtime::desktop::Windows), spotify, cover: Box::new(|_, _, _| None), resolve: Box::new(|_, _| Vec::new()) };
+    let outside = Outside {
+        song_search: Arc::new(|_: &str| None),
+        releases: Arc::new(common::Net::default()),
+        desktop: Box::new(ahg_runtime::desktop::Windows),
+        spotify,
+        cover: Box::new(|_, _, _| None),
+        resolve: Box::new(|_, _| Vec::new()),
+    };
     (Core::start_with(paths, Arc::new(YtDlp::new(PathBuf::from(FAKE), None)), Box::new(|| Plan::Premium), tx, outside), seen)
 }
 
@@ -1050,7 +1160,10 @@ fn start_spotify(name: &str) -> (Core, Seen) {
 fn the_core_reads_a_spotify_track() {
     let (core, _) = start_spotify("spotifytrack");
     let track = core.spotify_track("https://open.spotify.com/track/t1").unwrap().unwrap();
-    assert_eq!((track.id.as_str(), track.name.as_str(), track.artist.as_str(), track.album.as_str(), track.duration_ms), ("t1", "Song", "Artist", "Album", 215000.0));
+    assert_eq!(
+        (track.id.as_str(), track.name.as_str(), track.artist.as_str(), track.album.as_str(), track.duration_ms),
+        ("t1", "Song", "Artist", "Album", 215000.0)
+    );
 }
 
 #[test]
@@ -1192,7 +1305,10 @@ fn retry_due_is_the_automatic_retrys_deadline_and_none_otherwise() {
 #[test]
 fn the_startup_delays_are_electrons() {
     use ahg_runtime::core::{APP_UPDATE_DELAY, ENGINE_UPDATE_DELAY, WARM_UP_DELAY};
-    assert_eq!((WARM_UP_DELAY, APP_UPDATE_DELAY, ENGINE_UPDATE_DELAY), (Duration::from_millis(1500), Duration::from_secs(6), Duration::from_secs(8)));
+    assert_eq!(
+        (WARM_UP_DELAY, APP_UPDATE_DELAY, ENGINE_UPDATE_DELAY),
+        (Duration::from_millis(1500), Duration::from_secs(6), Duration::from_secs(8))
+    );
 }
 
 #[test]
@@ -1274,7 +1390,15 @@ fn a_save_answers_whether_the_file_was_written() {
     use ahg_engine::downloader::bridge::SongMatch;
     let dir = scratch("honestsave");
     let user = dir.join("userData");
-    let chosen = SongMatch { url: "https://www.youtube.com/watch?v=mine0000001".into(), title: "T".into(), artist: "A".into(), album: String::new(), duration: Some(1.0), explicit: false, confidence: 0.4 };
+    let chosen = SongMatch {
+        url: "https://www.youtube.com/watch?v=mine0000001".into(),
+        title: "T".into(),
+        artist: "A".into(),
+        album: String::new(),
+        duration: Some(1.0),
+        explicit: false,
+        confidence: 0.4,
+    };
     let (core, _rx) = start(&dir, "", Plan::Premium);
     assert!(core.set_hold_unconfirmed(true));
     assert!(core.remember_match("t1", &chosen));
@@ -1379,7 +1503,13 @@ fn start_cover(name: &str, body: Vec<u8>) -> (Core, Asked) {
             asked.lock().unwrap().push((url.to_owned(), proxy.map(str::to_owned)));
             let status = if url.ends_with("/missing") { 404 } else { 200 };
             let final_url = if url.ends_with("/downgrade") { "http://cdn.example/a.jpg".to_owned() } else { url.to_owned() };
-            Some(ahg_runtime::engine_update::Fetched { status, final_url, content_length: Some(body.len().to_string()), location: None, body: Box::new(std::io::Cursor::new(body.clone())) })
+            Some(ahg_runtime::engine_update::Fetched {
+                status,
+                final_url,
+                content_length: Some(body.len().to_string()),
+                location: None,
+                body: Box::new(std::io::Cursor::new(body.clone())),
+            })
         }
     });
     let (tx, _rx) = channel();
@@ -1410,7 +1540,18 @@ fn a_cover_over_five_mib_is_refused_and_five_mib_is_not() {
 #[test]
 fn only_https_covers_are_fetched_and_a_bad_answer_is_an_error() {
     let (core, asked) = start_cover("coverrefused", b"x".to_vec());
-    for url in ["http://i.example/a.jpg", "file:///c:/a.jpg", "ftp://i.example/a.jpg", "", "i.example/a.jpg", "https:///a.jpg", "https://127.0.0.1/a.jpg", "https://[::1]/a.jpg", "https://localhost/a.jpg", "https://u@i.example/a.jpg"] {
+    for url in [
+        "http://i.example/a.jpg",
+        "file:///c:/a.jpg",
+        "ftp://i.example/a.jpg",
+        "",
+        "i.example/a.jpg",
+        "https:///a.jpg",
+        "https://127.0.0.1/a.jpg",
+        "https://[::1]/a.jpg",
+        "https://localhost/a.jpg",
+        "https://u@i.example/a.jpg",
+    ] {
         assert!(core.fetch_cover(url).is_err(), "{url}");
     }
     assert!(asked.lock().unwrap().is_empty(), "a refused address is never requested");
@@ -1472,7 +1613,11 @@ fn start_hops(name: &str, routes: &'static [(&'static str, u16, &'static str)]) 
 }
 
 /// `start_hops` with the host names answered by `resolve`.
-fn start_hops_resolving(name: &str, routes: &'static [(&'static str, u16, &'static str)], resolve: ahg_runtime::core::Resolve) -> (Core, Asked) {
+fn start_hops_resolving(
+    name: &str,
+    routes: &'static [(&'static str, u16, &'static str)],
+    resolve: ahg_runtime::core::Resolve,
+) -> (Core, Asked) {
     let dir = scratch(name);
     let asked = Asked::default();
     let cover: ahg_runtime::core::CoverFetch = Box::new({
@@ -1481,7 +1626,13 @@ fn start_hops_resolving(name: &str, routes: &'static [(&'static str, u16, &'stat
             asked.lock().unwrap().push((url.to_owned(), proxy.map(str::to_owned)));
             let (status, location) = routes.iter().find(|r| r.0 == url).map_or((200, None), |r| (r.1, Some(r.2.to_owned())));
             let body = if status == 200 { b"cover".to_vec() } else { Vec::new() };
-            Some(ahg_runtime::engine_update::Fetched { status, final_url: url.to_owned(), content_length: None, location, body: Box::new(std::io::Cursor::new(body)) })
+            Some(ahg_runtime::engine_update::Fetched {
+                status,
+                final_url: url.to_owned(),
+                content_length: None,
+                location,
+                body: Box::new(std::io::Cursor::new(body)),
+            })
         }
     });
     let (tx, _rx) = channel();
@@ -1492,13 +1643,30 @@ fn start_hops_resolving(name: &str, routes: &'static [(&'static str, u16, &'stat
 
 /// A name server that answers from `table` (name, addresses); a name not in it has no address.
 fn by_name(table: &[(&str, &[&str])]) -> ahg_runtime::core::Resolve {
-    let table: Vec<(String, Vec<std::net::IpAddr>)> = table.iter().map(|(n, ips)| ((*n).to_owned(), ips.iter().map(|ip| ip.parse().unwrap()).collect())).collect();
-    Box::new(move |host: &str, port: u16| table.iter().filter(|e| e.0 == host).flat_map(|e| e.1.iter()).map(|ip| std::net::SocketAddr::new(*ip, port)).collect())
+    let table: Vec<(String, Vec<std::net::IpAddr>)> =
+        table.iter().map(|(n, ips)| ((*n).to_owned(), ips.iter().map(|ip| ip.parse().unwrap()).collect())).collect();
+    Box::new(move |host: &str, port: u16| {
+        table.iter().filter(|e| e.0 == host).flat_map(|e| e.1.iter()).map(|ip| std::net::SocketAddr::new(*ip, port)).collect()
+    })
 }
 
 #[test]
 fn a_name_that_resolves_to_an_internal_address_is_refused_and_never_requested() {
-    const INTERNAL: &[&str] = &["127.0.0.1", "10.0.0.5", "172.16.0.1", "192.168.1.1", "169.254.169.254", "100.64.0.1", "0.0.0.0", "::1", "::", "fc00::1", "fe80::1", "::ffff:127.0.0.1", "::ffff:10.0.0.5"];
+    const INTERNAL: &[&str] = &[
+        "127.0.0.1",
+        "10.0.0.5",
+        "172.16.0.1",
+        "192.168.1.1",
+        "169.254.169.254",
+        "100.64.0.1",
+        "0.0.0.0",
+        "::1",
+        "::",
+        "fc00::1",
+        "fe80::1",
+        "::ffff:127.0.0.1",
+        "::ffff:10.0.0.5",
+    ];
     assert!(!INTERNAL.is_empty());
     for ip in INTERNAL {
         let (core, asked) = start_hops_resolving("coverinternal", &[], by_name(&[("cdn.example", &[ip])]));
@@ -1525,7 +1693,13 @@ fn a_name_that_resolves_to_public_addresses_only_is_fetched_and_pinned_to_them()
         let pinned = pinned.clone();
         move |url: &str, _: Option<&str>, addrs: &[std::net::SocketAddr]| {
             pinned.lock().unwrap().push(addrs.to_vec());
-            Some(ahg_runtime::engine_update::Fetched { status: 200, final_url: url.to_owned(), content_length: None, location: None, body: Box::new(std::io::Cursor::new(b"cover".to_vec())) })
+            Some(ahg_runtime::engine_update::Fetched {
+                status: 200,
+                final_url: url.to_owned(),
+                content_length: None,
+                location: None,
+                body: Box::new(std::io::Cursor::new(b"cover".to_vec())),
+            })
         }
     });
     let dir = scratch("coverpinned");
@@ -1554,7 +1728,8 @@ fn a_name_with_no_address_and_a_single_label_host_are_refused_and_never_requeste
 #[test]
 fn a_redirect_to_a_name_that_resolves_to_an_internal_address_is_refused_after_one_request() {
     const ROUTES: &[(&str, u16, &str)] = &[("https://i.example/go", 302, "https://internal.example/x")];
-    let (core, asked) = start_hops_resolving("coverhopdns", ROUTES, by_name(&[("i.example", &["93.184.216.34"]), ("internal.example", &["10.0.0.5"])]));
+    let (core, asked) =
+        start_hops_resolving("coverhopdns", ROUTES, by_name(&[("i.example", &["93.184.216.34"]), ("internal.example", &["10.0.0.5"])]));
     assert!(core.fetch_cover("https://i.example/go").is_err());
     assert_eq!(asked.lock().unwrap().len(), 1, "the internal hop was never requested");
     core.shutdown();
@@ -1575,13 +1750,25 @@ fn with_a_proxy_no_name_is_resolved_here_and_nothing_is_pinned() {
         let pinned = pinned.clone();
         move |url: &str, _: Option<&str>, addrs: &[std::net::SocketAddr]| {
             pinned.lock().unwrap().push(addrs.len());
-            Some(ahg_runtime::engine_update::Fetched { status: 200, final_url: url.to_owned(), content_length: None, location: None, body: Box::new(std::io::Cursor::new(b"cover".to_vec())) })
+            Some(ahg_runtime::engine_update::Fetched {
+                status: 200,
+                final_url: url.to_owned(),
+                content_length: None,
+                location: None,
+                body: Box::new(std::io::Cursor::new(b"cover".to_vec())),
+            })
         }
     });
     let dir = scratch("coverproxyresolve");
     let (tx, _rx) = channel();
     let paths = Paths { user_data: dir.join("userData"), downloads: dir.join("Downloads").to_string_lossy().into_owned() };
-    let core = Core::start_with(paths, Arc::new(YtDlp::new(PathBuf::from(FAKE), None)), Box::new(|| Plan::Premium), tx, Outside { cover, resolve, ..Outside::standin() });
+    let core = Core::start_with(
+        paths,
+        Arc::new(YtDlp::new(PathBuf::from(FAKE), None)),
+        Box::new(|| Plan::Premium),
+        tx,
+        Outside { cover, resolve, ..Outside::standin() },
+    );
     core.update_settings(json!({ "proxy": "socks5h://127.0.0.1:9050" }).as_object().unwrap());
     assert_eq!(core.fetch_cover("https://cdn.example/a.jpg").unwrap(), b"cover");
     assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 0);

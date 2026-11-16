@@ -1,8 +1,6 @@
 //! Compares the outside-input validators with electron/security.ts
 //! (tests/golden/validate.json, written by scripts/rust-golden.mjs).
-use ahg_engine::validate::{
-    MAX_COOKIES_BYTES, confine_to_root, is_netscape_cookies, media_url_arg, playlist_items_arg, url_arg,
-};
+use ahg_engine::validate::{MAX_COOKIES_BYTES, confine_to_root, is_netscape_cookies, media_url_arg, playlist_items_arg, url_arg};
 use serde_json::{Value, json};
 
 fn golden() -> Value {

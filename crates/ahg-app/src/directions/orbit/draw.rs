@@ -80,7 +80,8 @@ pub fn planet(w: f32, ink: Color, page: Color) -> Shape {
     let (ro, ry_o, ri, ry_i, lift) = (w * 0.478, w * 0.128, w * 0.418, w * 0.074, -w * 0.012);
     let band = |from: f32, to: f32| {
         let n = 48;
-        let mut pts: Vec<[f32; 2]> = (0..=n).map(|i| from + (to - from) * i as f32 / n as f32).map(|a| rot(ro * a.cos(), ry_o * a.sin())).collect();
+        let mut pts: Vec<[f32; 2]> =
+            (0..=n).map(|i| from + (to - from) * i as f32 / n as f32).map(|a| rot(ro * a.cos(), ry_o * a.sin())).collect();
         pts.extend((0..=n).rev().map(|i| from + (to - from) * i as f32 / n as f32).map(|a| rot(ri * a.cos(), ry_i * a.sin() + lift)));
         pts
     };
@@ -91,9 +92,16 @@ pub fn planet(w: f32, ink: Color, page: Color) -> Shape {
     // The front half, with the gap cut between it and the disc.
     // Only across the disc: beyond it the stroke would notch the ring where its halves meet.
     let edge = |rx: f32, ry: f32, dy: f32| -> Vec<[f32; 2]> {
-        arc(0.0, 0.0, 1.0, 0.0, std::f32::consts::PI, 96).iter().filter(|p| (rx * p[0]).abs() < r + gap).map(|p| rot(rx * p[0], ry * p[1] + dy)).collect()
+        arc(0.0, 0.0, 1.0, 0.0, std::f32::consts::PI, 96)
+            .iter()
+            .filter(|p| (rx * p[0]).abs() < r + gap)
+            .map(|p| rot(rx * p[0], ry * p[1] + dy))
+            .collect()
     };
-    s = s.stroke(edge(ri, ry_i, lift), gap * 2.0, page).stroke(edge(ro, ry_o, 0.0), gap * 2.0, page).fill(band(0.0, std::f32::consts::PI), ink);
+    s = s
+        .stroke(edge(ri, ry_i, lift), gap * 2.0, page)
+        .stroke(edge(ro, ry_o, 0.0), gap * 2.0, page)
+        .fill(band(0.0, std::f32::consts::PI), ink);
     // Two craters, as in the mark.
     let crater = rot(-r * 0.47, -r * 0.62);
     s.fill(disc(crater[0], crater[1], r * 0.085), page).fill(disc(crater[0] + r * 0.11, crater[1] + r * 0.07, r * 0.035), page)
@@ -106,6 +114,7 @@ pub fn trace(samples: &[f32], scale: f32, w: f32, h: f32, rule: Color, ink: Colo
         s = s.line([0.0, y], [w, y], 1.0, LineCap::Butt, rule);
     }
     let n = samples.len().max(2) - 1;
-    let pts: Vec<[f32; 2]> = samples.iter().enumerate().map(|(i, v)| [w * i as f32 / n as f32, h - 1.0 - (v / scale).clamp(0.0, 1.0) * (h - 2.0)]).collect();
+    let pts: Vec<[f32; 2]> =
+        samples.iter().enumerate().map(|(i, v)| [w * i as f32 / n as f32, h - 1.0 - (v / scale).clamp(0.0, 1.0) * (h - 2.0)]).collect();
     s.stroke(pts, 1.5, ink)
 }

@@ -24,7 +24,14 @@ pub fn view(s: &State, p: &Pal, fit: Fit) -> El {
     if !trouble.is_empty() {
         c = c.child(attention(p, &trouble));
     }
-    col().key("rail").w(fit.rail).h_full().min_h(0.0).border_sides([0.0, 0.0, 0.0, 1.0], p.line).scroll(ScrollSpec { stick_bottom: false }).child(c)
+    col()
+        .key("rail")
+        .w(fit.rail)
+        .h_full()
+        .min_h(0.0)
+        .border_sides([0.0, 0.0, 0.0, 1.0], p.line)
+        .scroll(ScrollSpec { stick_bottom: false })
+        .child(c)
 }
 
 fn head(p: &Pal, name: &str, n: usize, aside: Option<El>) -> El {
@@ -49,7 +56,13 @@ fn interrupted_note(p: &Pal, n: usize) -> El {
         .fill(mix(p.bg, p.warning, 0.06))
         .border(1.0, mix(p.bg, p.warning, 0.28))
         .child(row().w_full().gap(8.0).items_start().child(glyph(&icons::PAUSE, p.warning)).child(sentence.grow(1.0).min_w(0.0)))
-        .child(row().gap(8.0).pl(24.0).child(button(p, "resume-interrupted".into(), copy::DL_INTERRUPTED_RESUME, Some(&icons::PLAY), false)).child(button(p, "discard-interrupted".into(), copy::DL_INTERRUPTED_DISCARD, None, false)))
+        .child(
+            row()
+                .gap(8.0)
+                .pl(24.0)
+                .child(button(p, "resume-interrupted".into(), copy::DL_INTERRUPTED_RESUME, Some(&icons::PLAY), false))
+                .child(button(p, "discard-interrupted".into(), copy::DL_INTERRUPTED_DISCARD, None, false)),
+        )
 }
 
 fn up_next(s: &State, p: &Pal, queued: &[&DownloadTask]) -> El {
@@ -61,7 +74,11 @@ fn up_next(s: &State, p: &Pal, queued: &[&DownloadTask]) -> El {
         return c.child(txt(copy::EMPTY_FILTER_ACTIVE, SMALL, p.muted));
     }
     for t in queued {
-        let line = row().gap(8.0).min_w(0.0).child(txt(copy::STATE_QUEUED, SMALL_M, p.muted)).child(txt(model::specs(t), FIG, p.muted).truncate().shrink());
+        let line = row()
+            .gap(8.0)
+            .min_w(0.0)
+            .child(txt(copy::STATE_QUEUED, SMALL_M, p.muted))
+            .child(txt(model::specs(t), FIG, p.muted).truncate().shrink());
         c = c.child(
             row()
                 .key(format!("next-{}", t.task_id))
@@ -72,8 +89,13 @@ fn up_next(s: &State, p: &Pal, queued: &[&DownloadTask]) -> El {
                 .hover_group()
                 .child(on_orbit(s, p, t, 48.0, 8.0))
                 .child(col().grow(1.0).min_w(0.0).gap(4.0).child(txt(model::label(t), BODY_M, p.text).truncate()).child(line))
-                .child(icon_button(p, format!("next-first-{}", t.task_id), copy::ACT_DO_THIS_NEXT, &icons::FORWARD, p.text2).group_opacity(0.0, 1.0))
-                .child(icon_button(p, format!("next-cancel-{}", t.task_id), copy::ACT_CANCEL, &icons::CANCEL, p.text2).group_opacity(0.0, 1.0)),
+                .child(
+                    icon_button(p, format!("next-first-{}", t.task_id), copy::ACT_DO_THIS_NEXT, &icons::FORWARD, p.text2)
+                        .group_opacity(0.0, 1.0),
+                )
+                .child(
+                    icon_button(p, format!("next-cancel-{}", t.task_id), copy::ACT_CANCEL, &icons::CANCEL, p.text2).group_opacity(0.0, 1.0),
+                ),
         );
     }
     c
@@ -99,9 +121,17 @@ fn problem(p: &Pal, t: &DownloadTask) -> El {
         let ink = if label == copy::ACT_RETRY { p.text } else { p.text2 };
         buttons = buttons.child(icon_button(p, format!("{label}-{}", t.task_id), label, i, ink));
     }
-    let title = row().w_full().h(32.0).gap(8.0).center_y().child(txt(model::label(t), BODY_M, if canceled { p.text2 } else { p.text }).truncate().shrink().help(t.url.clone())).child(spacer()).child(buttons);
+    let title = row()
+        .w_full()
+        .h(32.0)
+        .gap(8.0)
+        .center_y()
+        .child(txt(model::label(t), BODY_M, if canceled { p.text2 } else { p.text }).truncate().shrink().help(t.url.clone()))
+        .child(spacer())
+        .child(buttons);
     let (src, src_color) = model::source(p, t.source);
-    let mut words = col().grow(1.0).min_w(0.0).child(title).child(row().gap(8.0).child(txt(word, SMALL_M, tone)).child(txt(src, SMALL, src_color)));
+    let mut words =
+        col().grow(1.0).min_w(0.0).child(title).child(row().gap(8.0).child(txt(word, SMALL_M, tone)).child(txt(src, SMALL, src_color)));
     if let Some(reason) = model::reason(t) {
         words = words.child(txt(reason, SMALL, p.text2).wrap().max_lines(3).mt(4.0).help(t.progress.error.clone()));
     }

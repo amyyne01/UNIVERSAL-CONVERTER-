@@ -13,9 +13,9 @@ use ahg_engine::queue::{TaskInit, create_task};
 use ahg_engine::types::{SourcePlatform, Track};
 use ahg_runtime::download::{Downloader, Report};
 use ahg_runtime::ytdlp::{CANCELLED_MESSAGE, TIMEOUT_MESSAGE, Tools, YtDlp};
-use common::{runs, scratch, until_ended};
 #[cfg(windows)]
 use common::pid_is_running;
+use common::{runs, scratch, until_ended};
 
 const FAKE: &str = env!("CARGO_BIN_EXE_fake_ytdlp");
 
@@ -258,7 +258,11 @@ fn the_proxy_also_covers_lookups_and_searches() {
 
     y.set_proxy(Some("socks5h://127.0.0.1:9050"));
     y.fetch_metadata("https://youtu.be/dQw4w9WgXcQ").unwrap();
-    assert!(args_of(&dir).starts_with("--socket-timeout\n20\n--retries\n3\n--proxy\nsocks5h://127.0.0.1:9050\n--dump-json"), "{}", args_of(&dir));
+    assert!(
+        args_of(&dir).starts_with("--socket-timeout\n20\n--retries\n3\n--proxy\nsocks5h://127.0.0.1:9050\n--dump-json"),
+        "{}",
+        args_of(&dir)
+    );
     y.search_youtube("some song").unwrap();
     assert!(args_of(&dir).contains("--proxy\nsocks5h://127.0.0.1:9050\n"));
 
@@ -346,7 +350,8 @@ fn when_no_song_agrees_the_plain_search_is_scored_and_never_counts_as_confirmed(
 fn when_the_song_search_is_unreachable_yt_dlp_finds_the_song_and_a_lookup_confirms_it() {
     let dir = scratch("songbackup");
     // The stand-in answers the song search and the lookup alike: a song with its music metadata.
-    let song = "out {\"id\":\"right000001\",\"title\":\"The Song\",\"track\":\"The Song\",\"artist\":\"Artist\",\"duration\":201}\nexit 0\n";
+    let song =
+        "out {\"id\":\"right000001\",\"title\":\"The Song\",\"track\":\"The Song\",\"artist\":\"Artist\",\"duration\":201}\nexit 0\n";
     let (reports, _) = run_song_bridge(ytdlp(&dir, song, DOWNLOADS), None);
     assert_eq!(the_match(&reports), Some(("https://music.youtube.com/watch?v=right000001".to_owned(), 1.0)));
     assert!(fs::read_to_string(dir.join("args.txt")).unwrap().ends_with("https://music.youtube.com/watch?v=right000001"));
@@ -366,7 +371,8 @@ fn with_badge(response: &str, id: &str) -> String {
     let mut v: serde_json::Value = serde_json::from_str(response).unwrap();
     for item in v["contents"]["musicShelfRenderer"]["contents"].as_array_mut().unwrap() {
         if item["musicResponsiveListItemRenderer"]["playlistItemData"]["videoId"] == id {
-            item["musicResponsiveListItemRenderer"]["badges"] = serde_json::json!([{ "musicInlineBadgeRenderer": { "icon": { "iconType": "MUSIC_EXPLICIT_BADGE" } } }]);
+            item["musicResponsiveListItemRenderer"]["badges"] =
+                serde_json::json!([{ "musicInlineBadgeRenderer": { "icon": { "iconType": "MUSIC_EXPLICIT_BADGE" } } }]);
         }
     }
     v.to_string()
@@ -459,7 +465,11 @@ fn needs_review_holds_a_best_guess_and_still_says_which_song_it_was() {
     let (reports, ran) = run_held(&dir, Some(song_search(&[("clean000001", "The Song", "Artist • Album • 3:20")])), Some(true));
     assert!(refused(&reports), "{reports:?}");
     assert_eq!(ran, 0, "nothing may be downloaded");
-    assert_eq!(the_match(&reports).map(|(url, _)| url).as_deref(), Some("https://music.youtube.com/watch?v=clean000001"), "the guess is shown so it can be accepted or swapped");
+    assert_eq!(
+        the_match(&reports).map(|(url, _)| url).as_deref(),
+        Some("https://music.youtube.com/watch?v=clean000001"),
+        "the guess is shown so it can be accepted or swapped"
+    );
 }
 
 #[test]
@@ -483,7 +493,8 @@ fn needs_review_downloads_a_match_the_user_accepted() {
     task.match_confidence = Some(1.0);
     let (tx, rx) = channel();
     d.start(task, 3, tx);
-    let last = std::iter::from_fn(|| rx.recv_timeout(Duration::from_secs(20)).ok()).find(|r| matches!(r, Report::Done { .. } | Report::Error { .. }));
+    let last = std::iter::from_fn(|| rx.recv_timeout(Duration::from_secs(20)).ok())
+        .find(|r| matches!(r, Report::Done { .. } | Report::Error { .. }));
     assert!(matches!(last, Some(Report::Done { .. })), "{last:?}");
     assert_eq!(runs(&ran), 1);
 }
@@ -500,7 +511,10 @@ fn with_no_song_and_no_usable_video_nothing_is_downloaded() {
     let ran = dir.join("ran");
     let nothing_agrees = song_search(&[("other000001", "Another Song", "Someone Else • Album • 3:20")]);
     // The plain search fails too. Electron would download the first hit of a blind search here.
-    let (reports, _) = run_song_bridge(ytdlp(&dir, "err ERROR: Video unavailable\nexit 1\n", &format!("count {}\n{DOWNLOADS}", ran.display())), Some(nothing_agrees));
+    let (reports, _) = run_song_bridge(
+        ytdlp(&dir, "err ERROR: Video unavailable\nexit 1\n", &format!("count {}\n{DOWNLOADS}", ran.display())),
+        Some(nothing_agrees),
+    );
     assert!(no_match_found(&reports), "{reports:?}");
     assert!(the_match(&reports).is_none());
     assert_eq!(runs(&ran), 0, "nothing may be downloaded");
@@ -562,7 +576,11 @@ fn a_file_of_the_wrong_length_is_kept_but_no_longer_counts_as_confirmed() {
     assert_eq!(seen.len(), 2, "{seen:?}");
     assert!(seen[0] == 1.0 && seen[1] < 1.0, "{seen:?}");
     // The lowered confidence arrives before the download is reported as done.
-    assert!(matches!(reports[reports.len() - 2], Report::Match { .. }) || reports.iter().rposition(|r| matches!(r, Report::Match { .. })) < reports.iter().rposition(|r| matches!(r, Report::Done { .. })));
+    assert!(
+        matches!(reports[reports.len() - 2], Report::Match { .. })
+            || reports.iter().rposition(|r| matches!(r, Report::Match { .. }))
+                < reports.iter().rposition(|r| matches!(r, Report::Done { .. }))
+    );
 }
 
 #[test]
@@ -576,7 +594,11 @@ fn removing_sponsor_segments_shortens_the_file_so_its_length_is_not_judged() {
     use ahg_engine::types::{PartialExtras, SponsorBlockMode};
     let dir = scratch("lengthsponsor");
     let reports = run_with_file_length(&dir, "00:02:00.00", |task| {
-        task.extras = Some(PartialExtras { sponsor_block: Some(SponsorBlockMode::Remove), sponsor_block_categories: Some(vec!["sponsor".into()]), ..Default::default() });
+        task.extras = Some(PartialExtras {
+            sponsor_block: Some(SponsorBlockMode::Remove),
+            sponsor_block_categories: Some(vec!["sponsor".into()]),
+            ..Default::default()
+        });
     });
     assert_eq!(confidences(&reports), [1.0]);
 }

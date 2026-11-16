@@ -10,7 +10,10 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use ahg_engine::downloader::args::build_ytdlp_args;
-use ahg_engine::downloader::bridge::{CONFIRMED, GUESS_CEILING, GUESS_FLOOR, LENGTH_DIFFERS, Lookup, length_differs, media_seconds, NO_CONFIRMED_MATCH, NO_MATCH_FOUND, name_and_tag_from_spotify, note_the_source, Verdict, match_song, song_query, song_rows, song_search_page, song_url, verify};
+use ahg_engine::downloader::bridge::{
+    CONFIRMED, GUESS_CEILING, GUESS_FLOOR, LENGTH_DIFFERS, Lookup, NO_CONFIRMED_MATCH, NO_MATCH_FOUND, Verdict, length_differs, match_song,
+    media_seconds, name_and_tag_from_spotify, note_the_source, song_query, song_rows, song_search_page, song_url, verify,
+};
 use ahg_engine::downloader::metadata::search_results;
 use ahg_engine::downloader::progress::{Outcome, OutputScan};
 use ahg_engine::downloader::score::score_candidates;
@@ -24,11 +27,30 @@ use crate::ytdlp::YtDlp;
 /// handed out with the task.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Report {
-    Progress { id: String, attempt: u64, progress: DownloadProgress },
-    Done { id: String, attempt: u64, path: String, filepaths: Vec<String>, already_on_disk: bool },
-    Error { id: String, attempt: u64, message: String },
+    Progress {
+        id: String,
+        attempt: u64,
+        progress: DownloadProgress,
+    },
+    Done {
+        id: String,
+        attempt: u64,
+        path: String,
+        filepaths: Vec<String>,
+        already_on_disk: bool,
+    },
+    Error {
+        id: String,
+        attempt: u64,
+        message: String,
+    },
     /// The Spotify bridge chose this video; `confidence` is between 0 and 1.
-    Match { id: String, attempt: u64, url: String, confidence: f64 },
+    Match {
+        id: String,
+        attempt: u64,
+        url: String,
+        confidence: f64,
+    },
 }
 
 /// One download in flight.
@@ -106,7 +128,8 @@ impl Downloader {
     pub fn start(&self, task: DownloadTask, attempt: u64, reports: Sender<Report>) {
         let killed = Arc::new(AtomicBool::new(false));
         lock(&self.active).insert(task.task_id.clone(), Running { attempt, killed: killed.clone(), pid: None });
-        let (ytdlp, active, song_search, searching) = (self.ytdlp.clone(), self.active.clone(), self.song_search.clone(), self.searching.clone());
+        let (ytdlp, active, song_search, searching) =
+            (self.ytdlp.clone(), self.active.clone(), self.song_search.clone(), self.searching.clone());
         let hold = self.hold_unconfirmed.load(Ordering::SeqCst);
         thread::spawn(move || {
             let id = task.task_id.clone();
@@ -195,7 +218,14 @@ fn stop(running: &Running) {
 /// search cannot be reached, yt-dlp reads the same song list and a full lookup
 /// must confirm the song. Only then is the plain search scored, as in
 /// Electron, and what it finds is never reported as confirmed.
-fn spotify_bridge(ytdlp: &YtDlp, task: &DownloadTask, track: &Track, args: &mut [String], song_search: Option<&SongSearch>, killed: &AtomicBool) -> Option<(String, f64)> {
+fn spotify_bridge(
+    ytdlp: &YtDlp,
+    task: &DownloadTask,
+    track: &Track,
+    args: &mut [String],
+    song_search: Option<&SongSearch>,
+    killed: &AtomicBool,
+) -> Option<(String, f64)> {
     let query = song_query(track);
     let last = args.last_mut()?;
     *last = format!("ytsearch1:{query}");
@@ -203,7 +233,8 @@ fn spotify_bridge(ytdlp: &YtDlp, task: &DownloadTask, track: &Track, args: &mut 
     if let Some(search) = song_search {
         // Already chosen, by the playlist preview or by an earlier attempt:
         // no second search. The address may come from a saved file, so it is checked.
-        let chosen = task.matched_url.as_deref().and_then(song_url).map(|url| (url.to_owned(), task.match_confidence.unwrap_or(GUESS_CEILING)));
+        let chosen =
+            task.matched_url.as_deref().and_then(song_url).map(|url| (url.to_owned(), task.match_confidence.unwrap_or(GUESS_CEILING)));
         let song = chosen.or_else(|| match search(&query).map(|response| song_rows(&response)).filter(|rows| !rows.is_empty()) {
             Some(rows) => match_song(track, &rows).map(|found| (found.url, found.confidence)),
             None => confirmed_by_lookup(ytdlp, track, &query, killed).map(|url| (url, CONFIRMED)),
@@ -230,16 +261,28 @@ fn spotify_bridge(ytdlp: &YtDlp, task: &DownloadTask, track: &Track, args: &mut 
 /// music metadata of one confirms it.
 fn confirmed_by_lookup(ytdlp: &YtDlp, track: &Track, query: &str, killed: &AtomicBool) -> Option<String> {
     let songs = ytdlp.list_json(&["--playlist-end", &LOOKUPS.to_string(), &song_search_page(query)], Some(killed)).ok()?;
-    songs.iter().take(LOOKUPS).filter_map(|song| song["id"].as_str()).map(|id| format!("https://music.youtube.com/watch?v={id}")).find(|url| {
-        let found = ytdlp.run_json_until(&["--dump-json", "--no-warnings", "--no-playlist", "--", url], killed).ok();
-        let look = found.and_then(|items| items.into_iter().next()).and_then(|item| serde_json::from_value::<Lookup>(item).ok());
-        look.is_some_and(|look| verify(track, &look) == Verdict::Confirmed)
-    })
+    songs.iter().take(LOOKUPS).filter_map(|song| song["id"].as_str()).map(|id| format!("https://music.youtube.com/watch?v={id}")).find(
+        |url| {
+            let found = ytdlp.run_json_until(&["--dump-json", "--no-warnings", "--no-playlist", "--", url], killed).ok();
+            let look = found.and_then(|items| items.into_iter().next()).and_then(|item| serde_json::from_value::<Lookup>(item).ok());
+            look.is_some_and(|look| verify(track, &look) == Verdict::Confirmed)
+        },
+    )
 }
 
 /// Runs one download to its end, sending progress as it goes.
 #[allow(clippy::too_many_arguments)]
-fn run(ytdlp: &YtDlp, task: &DownloadTask, attempt: u64, active: &Active, killed: &AtomicBool, song_search: Option<&SongSearch>, hold: bool, searching: &AtomicUsize, send: &dyn Fn(Report)) -> Outcome {
+fn run(
+    ytdlp: &YtDlp,
+    task: &DownloadTask,
+    attempt: u64,
+    active: &Active,
+    killed: &AtomicBool,
+    song_search: Option<&SongSearch>,
+    hold: bool,
+    searching: &AtomicUsize,
+    send: &dyn Fn(Report),
+) -> Outcome {
     let id = task.task_id.as_str();
     let Some(bin) = ytdlp.bin() else {
         return Outcome::Failed("yt-dlp not found. Please ensure yt-dlp is installed or bundled in bin/.".to_owned());

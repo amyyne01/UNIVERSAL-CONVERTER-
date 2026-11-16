@@ -33,7 +33,9 @@ pub struct ScheduleConfig {
 pub enum Fire {
     None,
     /// Resume the queue now; `shutdown` asks for the PC to be shut down after.
-    Trigger { shutdown: bool },
+    Trigger {
+        shutdown: bool,
+    },
 }
 
 #[derive(Debug, Default)]
@@ -77,9 +79,7 @@ impl Scheduler {
 
 fn is_scheduled_day(cfg: &ScheduleConfig, is_premium: bool, now: &LocalTime) -> bool {
     // Scheduling is premium unless the free tier is granted it.
-    cfg.enabled
-        && (BASIC_LIMITS.scheduler || is_premium)
-        && (cfg.days.is_empty() || cfg.days.contains(&f64::from(now.weekday)))
+    cfg.enabled && (BASIC_LIMITS.scheduler || is_premium) && (cfg.days.is_empty() || cfg.days.contains(&f64::from(now.weekday)))
 }
 
 /// The schedule time as minutes since midnight, or `None` when scheduling is

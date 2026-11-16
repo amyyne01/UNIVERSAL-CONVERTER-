@@ -77,7 +77,15 @@ pub fn meter_held(frac: f64, n: usize, seg: Option<f32>, h: f32, gap: f32, lit: 
     let mut m = row().gap(gap).h(h);
     m = if seg.is_none() { m.w_full() } else { m };
     for i in 0..n {
-        let c = if i >= on { unlit } else if held { lit.alpha(0.5) } else if i + 1 == on { lit } else { lit.alpha(0.78) };
+        let c = if i >= on {
+            unlit
+        } else if held {
+            lit.alpha(0.5)
+        } else if i + 1 == on {
+            lit
+        } else {
+            lit.alpha(0.78)
+        };
         let s = el().h(h).radius(1.0).fill(c);
         m = m.child(match seg {
             Some(w) => s.w(w),
@@ -94,12 +102,32 @@ pub fn keycap(key: &str, p: &Pal) -> El {
 
 /// A square icon button whose label is its tooltip.
 pub fn icon_button(i: &'static Icon, help: &str, color: Color, p: &Pal) -> El {
-    el().size(28.0, 28.0).center().radius(6.0).hover(p.hover).press(p.press).cursor(rune::Cursor::Pointer).focusable(true).role("button").label(help).help(help).child(icon(i, 16.0).color(color))
+    el().size(28.0, 28.0)
+        .center()
+        .radius(6.0)
+        .hover(p.hover)
+        .press(p.press)
+        .cursor(rune::Cursor::Pointer)
+        .focusable(true)
+        .role("button")
+        .label(help)
+        .help(help)
+        .child(icon(i, 16.0).color(color))
 }
 
 /// A quiet text button with an optional leading icon.
 pub fn ghost(i: Option<&'static Icon>, words: &str, color: Color, p: &Pal) -> El {
-    let mut b = row().h(32.0).px(12.0).gap(8.0).center_y().radius(8.0).hover(p.hover).press(p.press).cursor(rune::Cursor::Pointer).focusable(true).role("button");
+    let mut b = row()
+        .h(32.0)
+        .px(12.0)
+        .gap(8.0)
+        .center_y()
+        .radius(8.0)
+        .hover(p.hover)
+        .press(p.press)
+        .cursor(rune::Cursor::Pointer)
+        .focusable(true)
+        .role("button");
     if let Some(i) = i {
         b = b.child(icon(i, 16.0).color(color));
     }

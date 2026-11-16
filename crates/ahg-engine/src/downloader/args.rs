@@ -3,13 +3,11 @@
 //! the output path.
 use crate::text::js_trim;
 use crate::types::{
-    CookieBrowser, LOSSLESS_FORMATS, SponsorBlockMode, SubtitleMode, VideoCodec, VideoContainer, VideoQuality,
-    DownloadTask, merge_extras,
+    CookieBrowser, DownloadTask, LOSSLESS_FORMATS, SponsorBlockMode, SubtitleMode, VideoCodec, VideoContainer, VideoQuality, merge_extras,
 };
 
 /// Categories SponsorBlock accepts (`SPONSORBLOCK_CATEGORIES`).
-const SPONSORBLOCK_CATEGORIES: [&str; 7] =
-    ["sponsor", "intro", "outro", "selfpromo", "interaction", "preview", "music_offtopic"];
+const SPONSORBLOCK_CATEGORIES: [&str; 7] = ["sponsor", "intro", "outro", "selfpromo", "interaction", "preview", "music_offtopic"];
 /// Targets yt-dlp can embed cover art into.
 const THUMB_TARGETS: [&str; 8] = ["mp3", "m4a", "alac", "ogg", "opus", "flac", "mp4", "mkv"];
 const FALLBACK_PLAYER_CLIENTS: &str = "android,mweb,tv_simply";
@@ -20,8 +18,18 @@ const FILEPATH_MARKER: &str = "[FILEPATH]";
 /// The full argument list; the target URL is the last element.
 pub fn build_ytdlp_args(task: &DownloadTask, ffmpeg_path: Option<&str>) -> Vec<String> {
     let mut args: Vec<String> = [
-        "--no-warnings", "--newline", "--socket-timeout", "30", "--continue", "--progress-template", PROGRESS_TEMPLATE,
-        "--retries", "10", "--concurrent-fragments", "4", "--print",
+        "--no-warnings",
+        "--newline",
+        "--socket-timeout",
+        "30",
+        "--continue",
+        "--progress-template",
+        PROGRESS_TEMPLATE,
+        "--retries",
+        "10",
+        "--concurrent-fragments",
+        "4",
+        "--print",
     ]
     .iter()
     .map(|s| s.to_string())
@@ -100,12 +108,8 @@ pub fn build_ytdlp_args(task: &DownloadTask, ffmpeg_path: Option<&str>) -> Vec<S
     }
 
     if x.sponsor_block != SponsorBlockMode::Off {
-        let cats: Vec<&str> = x
-            .sponsor_block_categories
-            .iter()
-            .map(String::as_str)
-            .filter(|c| SPONSORBLOCK_CATEGORIES.contains(c))
-            .collect();
+        let cats: Vec<&str> =
+            x.sponsor_block_categories.iter().map(String::as_str).filter(|c| SPONSORBLOCK_CATEGORIES.contains(c)).collect();
         if !cats.is_empty() {
             let flag = if x.sponsor_block == SponsorBlockMode::Remove { "--sponsorblock-remove" } else { "--sponsorblock-mark" };
             push(&mut args, &[flag, &cats.join(",")]);
@@ -242,11 +246,7 @@ pub(crate) fn replaceable_stem(task: &DownloadTask, track_name: &str) -> Option<
         return None;
     }
     let title = sanitize(&task.title);
-    if title.is_empty() {
-        Some("%(title)s".to_owned())
-    } else {
-        (title == sanitize(track_name)).then(|| template_literal(&title))
-    }
+    if title.is_empty() { Some("%(title)s".to_owned()) } else { (title == sanitize(track_name)).then(|| template_literal(&title)) }
 }
 
 /// D37 (Rust only): text that goes into an output template as a literal. yt-dlp
@@ -268,7 +268,8 @@ fn safe_template(template: &str) -> String {
 
 /// A file or folder name with path and control characters removed.
 pub(crate) fn sanitize(s: &str) -> String {
-    let stripped: String = s.chars().filter(|c| !matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*' | '\0'..='\u{1f}')).collect();
+    let stripped: String =
+        s.chars().filter(|c| !matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*' | '\0'..='\u{1f}')).collect();
     let t = js_trim(&stripped);
     if !t.is_empty() && t.bytes().all(|b| b == b'.') {
         return String::new();

@@ -17,7 +17,8 @@ const WIDE: f32 = 1120.0;
 
 pub fn downloads(s: &State, p: &Pal) -> El {
     let tasks = &s.tasks;
-    let mut filters = row().padding(4.0).gap(4.0).radius(8.0).fill(p.deep).border(1.0, p.line).role("radiogroup").label(copy::DL_FILTER_ARIA);
+    let mut filters =
+        row().padding(4.0).gap(4.0).radius(8.0).fill(p.deep).border(1.0, p.line).role("radiogroup").label(copy::DL_FILTER_ARIA);
     for (i, name) in SECTIONS.into_iter().enumerate() {
         let on = i == 0;
         let mut f = row()
@@ -31,7 +32,11 @@ pub fn downloads(s: &State, p: &Pal) -> El {
             .role("radio")
             .child(label(name, sans(13.0, if on { 500.0 } else { 400.0 }), if on { p.text } else { p.text2 }))
             .child(label(section_count(tasks, i).to_string(), mono(12.0, 400.0), p.muted));
-        f = if on { f.fill(p.raised).child(el().size(12.0, 2.0).radius(1.0).fill(p.accent).absolute(12.0, 24.0)) } else { f.fill(Color::TRANSPARENT) };
+        f = if on {
+            f.fill(p.raised).child(el().size(12.0, 2.0).radius(1.0).fill(p.accent).absolute(12.0, 24.0))
+        } else {
+            f.fill(Color::TRANSPARENT)
+        };
         filters = filters.child(f);
     }
     let search = row()
@@ -58,20 +63,32 @@ pub fn downloads(s: &State, p: &Pal) -> El {
     }
     let all_paused = model::all_paused(tasks);
     if tasks.iter().any(|t| matches!(t.progress.status, St::Queued | St::FetchingInfo | St::Downloading | St::Paused)) {
-        actions = actions.child(if all_paused { button(Some(&icons::PLAY), copy::DL_RESUME_ALL, p.accent_ink, p) } else { button(Some(&icons::PAUSE), copy::DL_PAUSE_ALL, p.text, p) });
+        actions = actions.child(if all_paused {
+            button(Some(&icons::PLAY), copy::DL_RESUME_ALL, p.accent_ink, p)
+        } else {
+            button(Some(&icons::PAUSE), copy::DL_PAUSE_ALL, p.text, p)
+        });
     }
     let active = model::active_count(tasks);
     if active > 0 {
         actions = actions.child(ghost(Some(&icons::CANCEL), copy::DL_CANCEL_ALL, p.text2, p));
     }
-    let summary = col()
-        .gap(4.0)
-        .min_w(0.0)
-        .child(label(copy::active_and_total(active, tasks.len(), all_paused), mono(12.0, 400.0), p.muted))
-        .child(label(copy::downloads_summary(tasks.len(), &model::summary_parts(tasks)), sans(13.0, 400.0), p.text2).single_line().truncate());
+    let summary =
+        col().gap(4.0).min_w(0.0).child(label(copy::active_and_total(active, tasks.len(), all_paused), mono(12.0, 400.0), p.muted)).child(
+            label(copy::downloads_summary(tasks.len(), &model::summary_parts(tasks)), sans(13.0, 400.0), p.text2).single_line().truncate(),
+        );
     let bulk = row().w_full().gap(16.0).center_y().child(summary.grow(1.0)).child(actions);
 
-    let column = col().w_full().max_w(WIDE).h_full().min_h(0.0).pt(24.0).gap(16.0).child(toolbar).child(bulk).child(stream::view(s, p, false).grow(1.0).min_h(0.0).mt(8.0));
+    let column = col()
+        .w_full()
+        .max_w(WIDE)
+        .h_full()
+        .min_h(0.0)
+        .pt(24.0)
+        .gap(16.0)
+        .child(toolbar)
+        .child(bulk)
+        .child(stream::view(s, p, false).grow(1.0).min_h(0.0).mt(8.0));
     col().w_full().grow(1.0).min_h(0.0).px(32.0).items_center().child(column)
 }
 
@@ -117,7 +134,11 @@ fn destination(p: &Pal) -> El {
 }
 
 fn appearance(p: &Pal) -> El {
-    section(w::APPEARANCE, "", p).child(reach::setting(w::LAYOUT, button(None, w::LAYOUT_CHOOSE, p.text, p).on_press(|s: &mut State| s.picker = true), p))
+    section(w::APPEARANCE, "", p).child(reach::setting(
+        w::LAYOUT,
+        button(None, w::LAYOUT_CHOOSE, p.text, p).on_press(|s: &mut State| s.picker = true),
+        p,
+    ))
 }
 
 fn software(p: &Pal) -> El {

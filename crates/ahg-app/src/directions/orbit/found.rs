@@ -81,7 +81,11 @@ fn waiting(p: &Pal) -> El {
 
 /// Artwork that has not arrived: a tile tinted by its source, its kind's glyph.
 fn art(p: &Pal, src: Src, w: f32, h: f32, glyph: &'static Icon) -> El {
-    el().size(w, h).radius(if w >= 160.0 { 12.0 } else { 8.0 }).fill(mix(p.raised, model::source(p, src).1, 0.12)).center().child(icon(glyph, 16.0).color(p.muted))
+    el().size(w, h)
+        .radius(if w >= 160.0 { 12.0 } else { 8.0 })
+        .fill(mix(p.raised, model::source(p, src).1, 0.12))
+        .center()
+        .child(icon(glyph, 16.0).color(p.muted))
 }
 
 /// The link the field holds, as a short mono line over the answer.
@@ -98,13 +102,26 @@ fn chip(p: &Pal, label: &str, on: bool, tag: Option<&str>, locked: bool) -> El {
         .gap(8.0)
         .center_y()
         .radius(8.0)
-        .border(1.0, if on { p.text2 } else if locked { p.track } else { p.line })
+        .border(
+            1.0,
+            if on {
+                p.text2
+            } else if locked {
+                p.track
+            } else {
+                p.line
+            },
+        )
         .role("radio")
         .checked(on)
         .focusable(true)
         .cursor(rune::Cursor::Pointer);
     if locked {
-        c = c.border_dash(3.0, 3.0).label(f::lock_chip_aria(label)).help(f::lock_chip_title(label)).child(icon(&icons::LOCK, 16.0).color(p.text2));
+        c = c
+            .border_dash(3.0, 3.0)
+            .label(f::lock_chip_aria(label))
+            .help(f::lock_chip_title(label))
+            .child(icon(&icons::LOCK, 16.0).color(p.text2));
     } else {
         c = c.label(label.to_string());
     }
@@ -157,13 +174,27 @@ pub(crate) fn notice(s: &State, p: &Pal) -> Option<El> {
             .child(icon(&icons::LOCK, 16.0).color(p.text2))
             .child(txt(words.clone(), SMALL, p.text).wrap().grow(1.0).min_w(0.0))
             .child(button(p, "notice-plans", f::SEE_PLANS, None, Tone::Ghost))
-            .child(icon_button(p, "notice-dismiss".into(), f::CLIPBOARD_DISMISS, &icons::CLOSE, p.text2).on_press(|s: &mut State| s.notice = None)),
+            .child(
+                icon_button(p, "notice-dismiss".into(), f::CLIPBOARD_DISMISS, &icons::CLOSE, p.text2)
+                    .on_press(|s: &mut State| s.notice = None),
+            ),
     )
 }
 
 /// A drop-down showing its value, its name over it.
 fn select(p: &Pal, label: &str, value: &str, glyph: Option<&'static Icon>) -> El {
-    let mut b = row().h(32.0).px(12.0).gap(8.0).center_y().radius(8.0).border(1.0, p.track).hover(p.raised).role("combobox").label(label.to_string()).focusable(true).cursor(rune::Cursor::Pointer);
+    let mut b = row()
+        .h(32.0)
+        .px(12.0)
+        .gap(8.0)
+        .center_y()
+        .radius(8.0)
+        .border(1.0, p.track)
+        .hover(p.raised)
+        .role("combobox")
+        .label(label.to_string())
+        .focusable(true)
+        .cursor(rune::Cursor::Pointer);
     if let Some(g) = glyph {
         b = b.child(icon(g, 16.0).color(p.text2));
     }
@@ -203,7 +234,8 @@ fn looking_up(p: &Pal, input: &str) -> El {
 // ── The lookup failed ───────────────────────────────────────────────────────
 
 fn failed(p: &Pal, input: &str, why: &str) -> El {
-    let mark = el().size(40.0, 40.0).radius(20.0).center().border(1.0, mix(p.error, p.card, 0.5)).child(icon(&icons::ALERT, 16.0).color(p.error));
+    let mark =
+        el().size(40.0, 40.0).radius(20.0).center().border(1.0, mix(p.error, p.card, 0.5)).child(icon(&icons::ALERT, 16.0).color(p.error));
     row().w_full().gap(16.0).items_start().role("alert").child(mark).child(
         col()
             .grow(1.0)
@@ -223,15 +255,29 @@ fn media(p: &Pal, m: &MediaMetadata, basic: bool) -> El {
     let duration = format::duration(m.duration);
     let mut cover = art(p, src, 320.0, 180.0, &icons::VIDEO);
     if !duration.is_empty() {
-        cover = cover.child(row().h(20.0).px(4.0).center().radius(4.0).fill(p.deep).child(txt(duration.clone(), FIG, p.text)).pin(None, None, Some(8.0), Some(8.0)));
+        cover = cover.child(row().h(20.0).px(4.0).center().radius(4.0).fill(p.deep).child(txt(duration.clone(), FIG, p.text)).pin(
+            None,
+            None,
+            Some(8.0),
+            Some(8.0),
+        ));
     }
-    let outcome = if VIDEO_CHOSEN { f::readout_video(f::VIDEO_QUALITIES[VIDEO_QUALITY]) } else { f::readout_audio(f::AUDIO_FORMATS[AUDIO_FORMAT], f::AUDIO_QUALITIES[AUDIO_QUALITY]) };
+    let outcome = if VIDEO_CHOSEN {
+        f::readout_video(f::VIDEO_QUALITIES[VIDEO_QUALITY])
+    } else {
+        f::readout_audio(f::AUDIO_FORMATS[AUDIO_FORMAT], f::AUDIO_QUALITIES[AUDIO_QUALITY])
+    };
     let mut meta = row().gap(8.0).center_y();
     if !duration.is_empty() {
         meta = meta.child(icon(&icons::CLOCK, 16.0).color(p.muted)).child(txt(duration, FIG, p.text2)).child(txt("·", FIG, p.muted));
     }
     meta = meta.child(txt(outcome.clone(), FIG, p.text2));
-    let mut words = col().grow(1.0).min_w(0.0).gap(4.0).child(txt(f::single_eyebrow_fallback(name, !VIDEO_CHOSEN), SMALL_M, color)).child(txt(m.title.clone(), TITLE, p.text).wrap().max_lines(2));
+    let mut words = col()
+        .grow(1.0)
+        .min_w(0.0)
+        .gap(4.0)
+        .child(txt(f::single_eyebrow_fallback(name, !VIDEO_CHOSEN), SMALL_M, color))
+        .child(txt(m.title.clone(), TITLE, p.text).wrap().max_lines(2));
     if !m.uploader.is_empty() {
         words = words.child(txt(m.uploader.clone(), BODY, p.text2).truncate());
     }
@@ -240,27 +286,56 @@ fn media(p: &Pal, m: &MediaMetadata, basic: bool) -> El {
     // Video or audio, then that kind's own choices.
     let mut kind = row().self_start().gap(4.0).padding(4.0).radius(8.0).border(1.0, p.track).role("radiogroup");
     for (label, glyph, on) in [(f::MEDIA_VIDEO, &icons::VIDEO, VIDEO_CHOSEN), (f::MEDIA_AUDIO, &icons::MUSIC, !VIDEO_CHOSEN)] {
-        let mut seg = row().h(24.0).px(12.0).gap(8.0).center_y().radius(4.0).role("radio").checked(on).focusable(true).label(label).cursor(rune::Cursor::Pointer);
+        let mut seg = row()
+            .h(24.0)
+            .px(12.0)
+            .gap(8.0)
+            .center_y()
+            .radius(4.0)
+            .role("radio")
+            .checked(on)
+            .focusable(true)
+            .label(label)
+            .cursor(rune::Cursor::Pointer);
         seg = if on { seg.fill(p.raised) } else { seg.hover(p.hover) };
-        kind = kind.child(seg.child(icon(glyph, 16.0).color(if on { p.text } else { p.muted })).child(txt(label, if on { SMALL_M } else { SMALL }, if on { p.text } else { p.text2 })));
+        kind = kind.child(seg.child(icon(glyph, 16.0).color(if on { p.text } else { p.muted })).child(txt(
+            label,
+            if on { SMALL_M } else { SMALL },
+            if on { p.text } else { p.text2 },
+        )));
     }
     let mut options = col().w_full().gap(16.0).child(kind);
     // The labels run in the order of the engine's qualities and formats.
-    const QUALITIES: [VideoQuality; 6] = [VideoQuality::P360, VideoQuality::P480, VideoQuality::P720, VideoQuality::P1080, VideoQuality::P2160, VideoQuality::Best];
+    const QUALITIES: [VideoQuality; 6] =
+        [VideoQuality::P360, VideoQuality::P480, VideoQuality::P720, VideoQuality::P1080, VideoQuality::P2160, VideoQuality::Best];
     if VIDEO_CHOSEN {
-        options = options.child(choices(p, f::VIDEO_QUALITY_LABEL, &f::VIDEO_QUALITIES, VIDEO_QUALITY, None, &|i| basic && tier::is_premium_video_quality(QUALITIES[i])));
+        options = options.child(choices(p, f::VIDEO_QUALITY_LABEL, &f::VIDEO_QUALITIES, VIDEO_QUALITY, None, &|i| {
+            basic && tier::is_premium_video_quality(QUALITIES[i])
+        }));
         if basic {
             options = options.child(basic_line(p, f::BASIC_VIDEO));
         }
     } else {
         options = options
-            .child(choices(p, f::PLAYLIST_FORMAT, &f::AUDIO_FORMATS, AUDIO_FORMAT, Some(5), &|i| basic && tier::is_premium_format(&f::AUDIO_FORMATS[i].to_lowercase())))
-            .child(choices(p, f::AUDIO_QUALITY_LABEL, &f::AUDIO_QUALITIES, AUDIO_QUALITY, None, &|i| basic && !BASIC_LIMITS.lossless && i == f::AUDIO_QUALITIES.len() - 1));
+            .child(choices(p, f::PLAYLIST_FORMAT, &f::AUDIO_FORMATS, AUDIO_FORMAT, Some(5), &|i| {
+                basic && tier::is_premium_format(&f::AUDIO_FORMATS[i].to_lowercase())
+            }))
+            .child(choices(p, f::AUDIO_QUALITY_LABEL, &f::AUDIO_QUALITIES, AUDIO_QUALITY, None, &|i| {
+                basic && !BASIC_LIMITS.lossless && i == f::AUDIO_QUALITIES.len() - 1
+            }));
         if basic {
             options = options.child(basic_line(p, f::BASIC_AUDIO));
         }
     }
-    let foot = row().w_full().gap(16.0).center_y().pt(16.0).border_sides([1.0, 0.0, 0.0, 0.0], p.line).child(readout(p, outcome)).child(spacer()).child(button(p, "found-download", f::SINGLE_DOWNLOAD, Some(&icons::DOWNLOAD), Tone::Primary));
+    let foot = row()
+        .w_full()
+        .gap(16.0)
+        .center_y()
+        .pt(16.0)
+        .border_sides([1.0, 0.0, 0.0, 0.0], p.line)
+        .child(readout(p, outcome))
+        .child(spacer())
+        .child(button(p, "found-download", f::SINGLE_DOWNLOAD, Some(&icons::DOWNLOAD), Tone::Primary));
     col()
         .w_full()
         .gap(24.0)
@@ -318,17 +393,22 @@ fn tracks(p: &Pal, pl: &Playlist, matched: &[Matched], selected: &[bool], basic:
     let mut counter = col()
         .items_end()
         .gap(4.0)
-        .child(row().items_end().child(txt(picked_n.to_string(), FIG_L, p.text)).child(txt(f::playlist_selected_total(total), FIG, p.muted).mb(4.0)))
-        .child(txt(if picked.is_empty() { f::PLAYLIST_NONE_SELECTED.to_string() } else { f::playlist_selected_span(&picked_span) }, FIG, p.text2));
+        .child(
+            row()
+                .items_end()
+                .child(txt(picked_n.to_string(), FIG_L, p.text))
+                .child(txt(f::playlist_selected_total(total), FIG, p.muted).mb(4.0)),
+        )
+        .child(txt(
+            if picked.is_empty() { f::PLAYLIST_NONE_SELECTED.to_string() } else { f::playlist_selected_span(&picked_span) },
+            FIG,
+            p.text2,
+        ));
     if basic && picked_n <= cap {
         counter = counter.child(txt(f::BASIC_COLLECTION, SMALL, p.muted));
     }
-    let head = row()
-        .w_full()
-        .gap(16.0)
-        .center_y()
-        .child(art(p, src, 64.0, 64.0, if spotify { &icons::MUSIC } else { &icons::VIDEO }))
-        .child(
+    let head =
+        row().w_full().gap(16.0).center_y().child(art(p, src, 64.0, 64.0, if spotify { &icons::MUSIC } else { &icons::VIDEO })).child(
             col()
                 .grow(1.0)
                 .min_w(0.0)
@@ -350,14 +430,20 @@ fn tracks(p: &Pal, pl: &Playlist, matched: &[Matched], selected: &[bool], basic:
         .focusable(true)
         .cursor(rune::Cursor::Pointer)
         .child(if pick_locked { icon(&icons::LOCK, 16.0).color(p.text2) } else { tick(p, all, true) })
-        .child(txt(if all { f::PLAYLIST_DESELECT_ALL } else { f::PLAYLIST_SELECT_ALL }, SMALL_M, if pick_locked { p.text2 } else { p.text }));
+        .child(txt(
+            if all { f::PLAYLIST_DESELECT_ALL } else { f::PLAYLIST_SELECT_ALL },
+            SMALL_M,
+            if pick_locked { p.text2 } else { p.text },
+        ));
     // Picking open: the chip sits on the column heading's line. Picking locked: a line of its
     // own, with the sentence that says why.
     let mut tools = None;
     let mut chip_at_head = None;
     if pick_locked {
         select_all = select_all.help(f::LOCK_PICK_PLAYLIST);
-        tools = Some(row().w_full().gap(16.0).center_y().child(select_all).child(txt(f::LOCK_PICK_PLAYLIST, SMALL, p.text2).truncate().shrink()));
+        tools = Some(
+            row().w_full().gap(16.0).center_y().child(select_all).child(txt(f::LOCK_PICK_PLAYLIST, SMALL, p.text2).truncate().shrink()),
+        );
     } else {
         chip_at_head = Some(select_all.hover(p.hover));
     }
@@ -424,7 +510,11 @@ fn tracks(p: &Pal, pl: &Playlist, matched: &[Matched], selected: &[bool], basic:
         list = list.child(r);
     }
 
-    let sum = if queued == 0 { f::PLAYLIST_NOTHING_SELECTED.to_string() } else { f::playlist_readout(queued, f::AUDIO_FORMATS[AUDIO_FORMAT], f::AUDIO_QUALITIES[AUDIO_QUALITY], &picked_span) };
+    let sum = if queued == 0 {
+        f::PLAYLIST_NOTHING_SELECTED.to_string()
+    } else {
+        f::playlist_readout(queued, f::AUDIO_FORMATS[AUDIO_FORMAT], f::AUDIO_QUALITIES[AUDIO_QUALITY], &picked_span)
+    };
     let bar = row()
         .w_full()
         .gap(16.0)
@@ -470,16 +560,17 @@ fn tracks(p: &Pal, pl: &Playlist, matched: &[Matched], selected: &[bool], basic:
     if let Some(t) = tools {
         c = c.child(t);
     }
-    c
-        .child(col().w_full().grow(1.0).min_h(0.0).child(columns).child(list))
-        .child(bar)
+    c.child(col().w_full().grow(1.0).min_h(0.0).child(columns).child(list)).child(bar)
 }
 
 // ── A search: one band per source ───────────────────────────────────────────
 
 fn search(p: &Pal, bands: &[Band; 3]) -> El {
-    let sources: [(&str, &'static Icon, rune::Color); 3] =
-        [(copy::SEARCH_BAND_YOUTUBE, &icons::YOUTUBE, p.youtube), (copy::SEARCH_BAND_SOUNDCLOUD, &icons::SOUNDCLOUD, p.soundcloud), (copy::SEARCH_BAND_SPOTIFY, &icons::SPOTIFY, p.spotify)];
+    let sources: [(&str, &'static Icon, rune::Color); 3] = [
+        (copy::SEARCH_BAND_YOUTUBE, &icons::YOUTUBE, p.youtube),
+        (copy::SEARCH_BAND_SOUNDCLOUD, &icons::SOUNDCLOUD, p.soundcloud),
+        (copy::SEARCH_BAND_SPOTIFY, &icons::SPOTIFY, p.spotify),
+    ];
     let mut cols = row().w_full().gap(24.0).items_start();
     for (i, band) in bands.iter().enumerate() {
         cols = cols.child(band_view(p, i, sources[i], band));
@@ -488,7 +579,8 @@ fn search(p: &Pal, bands: &[Band; 3]) -> El {
 }
 
 fn band_view(p: &Pal, i: usize, (name, glyph, color): (&str, &'static Icon, rune::Color), band: &Band) -> El {
-    let mut head = row().w_full().h(28.0).gap(8.0).center_y().child(icon(glyph, 16.0).color(color)).child(txt(name.to_string(), BODY_M, p.text));
+    let mut head =
+        row().w_full().h(28.0).gap(8.0).center_y().child(icon(glyph, 16.0).color(color)).child(txt(name.to_string(), BODY_M, p.text));
     match band {
         Band::Results(r) => head = head.child(txt(r.len().to_string(), FIG, p.muted)),
         Band::Loading => head = head.child(waiting(p)),
@@ -497,53 +589,47 @@ fn band_view(p: &Pal, i: usize, (name, glyph, color): (&str, &'static Icon, rune
     if i == 2 {
         head = head.child(spacer()).child(txt(copy::SEARCH_SPOTIFY_NOTE, FIG, p.muted).truncate().shrink());
     }
-    let body = match band {
-        Band::Loading => (0..2).fold(col().w_full(), |c, k| {
-            let w = if i == 0 { 64.0 } else { 40.0 };
-            c.child(
-                row()
-                    .w_full()
-                    .h(56.0)
-                    .px(8.0)
-                    .gap(12.0)
-                    .center_y()
-                    .child(bone(p, w, 36.0).radius(8.0))
-                    .child(col().grow(1.0).min_w(0.0).gap(8.0).child(bone(p, [200.0, 160.0][k], 12.0)).child(bone(p, [112.0, 136.0][k], 12.0))),
-            )
-        }),
-        Band::Results(r) => {
-            let mut c = r.iter().take(BAND_ROWS).fold(col().w_full(), |c, r| c.child(result_row(p, r)));
-            if r.len() > BAND_ROWS {
-                c = c.child(
-                    row()
-                        .key(format!("more-{i}"))
-                        .h(32.0)
-                        .px(8.0)
-                        .gap(8.0)
-                        .center_y()
-                        .radius(8.0)
-                        .hover(p.hover)
-                        .role("button")
-                        .focusable(true)
-                        .cursor(rune::Cursor::Pointer)
-                        .child(icon(&icons::CARET_DOWN, 16.0).color(p.text2))
-                        .child(txt(copy::search_show_more(r.len() - BAND_ROWS), SMALL_M, p.text2)),
-                );
+    let body =
+        match band {
+            Band::Loading => (0..2).fold(col().w_full(), |c, k| {
+                let w = if i == 0 { 64.0 } else { 40.0 };
+                c.child(row().w_full().h(56.0).px(8.0).gap(12.0).center_y().child(bone(p, w, 36.0).radius(8.0)).child(
+                    col().grow(1.0).min_w(0.0).gap(8.0).child(bone(p, [200.0, 160.0][k], 12.0)).child(bone(p, [112.0, 136.0][k], 12.0)),
+                ))
+            }),
+            Band::Results(r) => {
+                let mut c = r.iter().take(BAND_ROWS).fold(col().w_full(), |c, r| c.child(result_row(p, r)));
+                if r.len() > BAND_ROWS {
+                    c = c.child(
+                        row()
+                            .key(format!("more-{i}"))
+                            .h(32.0)
+                            .px(8.0)
+                            .gap(8.0)
+                            .center_y()
+                            .radius(8.0)
+                            .hover(p.hover)
+                            .role("button")
+                            .focusable(true)
+                            .cursor(rune::Cursor::Pointer)
+                            .child(icon(&icons::CARET_DOWN, 16.0).color(p.text2))
+                            .child(txt(copy::search_show_more(r.len() - BAND_ROWS), SMALL_M, p.text2)),
+                    );
+                }
+                c
             }
-            c
-        }
-        Band::Empty => col().w_full().py(16.0).px(8.0).child(txt(copy::search_no_matches(name), SMALL, p.text2).wrap()),
-        Band::Failed => row()
-            .w_full()
-            .py(12.0)
-            .px(8.0)
-            .gap(8.0)
-            .center_y()
-            .role("alert")
-            .child(icon(&icons::ALERT, 16.0).color(p.error))
-            .child(txt(copy::search_source_failed(name), SMALL, p.text).grow(1.0).min_w(0.0).truncate())
-            .child(button(p, &format!("retry-{i}"), copy::SEARCH_RETRY, Some(&icons::RETRY), Tone::Ghost)),
-    };
+            Band::Empty => col().w_full().py(16.0).px(8.0).child(txt(copy::search_no_matches(name), SMALL, p.text2).wrap()),
+            Band::Failed => row()
+                .w_full()
+                .py(12.0)
+                .px(8.0)
+                .gap(8.0)
+                .center_y()
+                .role("alert")
+                .child(icon(&icons::ALERT, 16.0).color(p.error))
+                .child(txt(copy::search_source_failed(name), SMALL, p.text).grow(1.0).min_w(0.0).truncate())
+                .child(button(p, &format!("retry-{i}"), copy::SEARCH_RETRY, Some(&icons::RETRY), Tone::Ghost)),
+        };
     col().grow(1.0).min_w(0.0).gap(8.0).child(head.pb(8.0).border_sides([0.0, 0.0, 1.0, 0.0], p.line)).child(body)
 }
 

@@ -57,9 +57,20 @@ fn a_spotify_request_may_carry_the_match_the_preview_found() {
     assert_eq!(task.matched_url.as_deref(), Some("https://music.youtube.com/watch?v=right000001"));
     assert_eq!(task.match_confidence, Some(0.9));
     // No confidence given: a chosen match is not a confirmed one.
-    assert!(build(request(json!("https://www.youtube.com/watch?v=right000001"), Value::Null)).unwrap().match_confidence.is_some_and(|c| c < 1.0));
+    assert!(
+        build(request(json!("https://www.youtube.com/watch?v=right000001"), Value::Null))
+            .unwrap()
+            .match_confidence
+            .is_some_and(|c| c < 1.0)
+    );
 
-    for bad in ["https://evil.example/watch?v=right000001", "http://music.youtube.com/watch?v=x", "--exec=calc", "ytsearch1:anything", "https://music.youtube.com.evil.example/watch?v=x"] {
+    for bad in [
+        "https://evil.example/watch?v=right000001",
+        "http://music.youtube.com/watch?v=x",
+        "--exec=calc",
+        "ytsearch1:anything",
+        "https://music.youtube.com.evil.example/watch?v=x",
+    ] {
         assert!(build(request(json!(bad), json!(1))).is_err(), "{bad} should be refused");
     }
     assert!(build(request(json!(42), json!(1))).is_err());

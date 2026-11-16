@@ -15,6 +15,7 @@ use ahg_engine::api::{build_task, retry_request};
 use ahg_engine::atomic_write::write_file_atomic;
 use ahg_engine::clock::LocalTime;
 use ahg_engine::config::ConfigManager;
+use ahg_engine::downloader::bridge::{CONFIRMED, SongMatch, match_song, song_query, song_rows, song_url};
 use ahg_engine::log::init_log;
 use ahg_engine::queue::{Event, new_task_id};
 use ahg_engine::scheduler::{Fire, POLL_MS, ScheduleConfig, Scheduler};
@@ -22,20 +23,19 @@ use ahg_engine::spotify::{self, Spotify, Thrown};
 use ahg_engine::stats::{DownloadStats, StatsStore, stats_file_path};
 use ahg_engine::text::{js_len, utf16_prefix};
 use ahg_engine::tier::{BASIC_LIMITS, Plan, clamp_concurrency};
-use ahg_engine::updater::UpdateState;
-use ahg_engine::ytdlp_updater::YtdlpStatus;
-use ahg_engine::downloader::bridge::{CONFIRMED, SongMatch, match_song, song_query, song_rows, song_url};
 use ahg_engine::types::{DownloadStatus, DownloadTask, MediaMetadata, Playlist, SearchResult, Track};
+use ahg_engine::updater::UpdateState;
 use ahg_engine::validate::{MAX_COOKIES_BYTES, is_netscape_cookies, media_url_arg, openable, revealable};
+use ahg_engine::ytdlp_updater::YtdlpStatus;
 use serde_json::{Map, Value, json};
 
 use crate::app_update::AppUpdater;
-use crate::{lock, now_ms};
 use crate::desktop::Desktop;
 use crate::download::{Downloader, SongSearch};
-use crate::engine_update::{EngineUpdater, Fetch, Fetched};
 use crate::engine::{Engine, Notice};
+use crate::engine_update::{EngineUpdater, Fetch, Fetched};
 use crate::ytdlp::YtDlp;
+use crate::{lock, now_ms};
 
 /// Where the app keeps its data and where downloads go by default.
 pub struct Paths {
@@ -58,7 +58,10 @@ pub enum CoreEvent {
     /// The app's own updater has news, as the engine names it: `update:available`
     /// (`version`), `update:not-available`, `update:progress` (`percent`),
     /// `update:downloaded` (`version`) or `update:error` (`message`).
-    Update { channel: &'static str, payload: Value },
+    Update {
+        channel: &'static str,
+        payload: Value,
+    },
     /// The yt-dlp updater's state changed: `current`, `latest`, `state`
     /// ("idle", "checking", "available", "uptodate", "downloading", "updated",
     /// "error") and, on an error, `message`.
@@ -110,8 +113,13 @@ fn remembered_file(user_data: &std::path::Path) -> PathBuf {
 /// The saved choices. The file is outside input: an entry is kept only if it
 /// is a whole match whose address is YouTube's.
 fn load_remembered(file: &std::path::Path) -> HashMap<String, SongMatch> {
-    let saved = std::fs::read_to_string(file).ok().and_then(|text| serde_json::from_str::<Map<String, Value>>(&text).ok()).unwrap_or_default();
-    saved.into_iter().filter_map(|(id, entry)| Some((id, serde_json::from_value::<SongMatch>(entry).ok()?))).filter(|(_, m)| song_url(&m.url).is_some()).collect()
+    let saved =
+        std::fs::read_to_string(file).ok().and_then(|text| serde_json::from_str::<Map<String, Value>>(&text).ok()).unwrap_or_default();
+    saved
+        .into_iter()
+        .filter_map(|(id, entry)| Some((id, serde_json::from_value::<SongMatch>(entry).ok()?)))
+        .filter(|(_, m)| song_url(&m.url).is_some())
+        .collect()
 }
 
 /// D11: the day the schedule last fired, kept across restarts.
@@ -274,12 +282,31 @@ impl Core {
 
     /// `start`, with the YouTube Music song search given: the real one, or a
     /// stand-in for tests.
-    pub fn start_with_search(paths: Paths, ytdlp: Arc<YtDlp>, plan: PlanSource, events: Sender<CoreEvent>, song_search: SongSearch) -> Self {
+    pub fn start_with_search(
+        paths: Paths,
+        ytdlp: Arc<YtDlp>,
+        plan: PlanSource,
+        events: Sender<CoreEvent>,
+        song_search: SongSearch,
+    ) -> Self {
         let spotify = {
             let ytdlp = ytdlp.clone();
             Box::new(crate::http::SpotifyHttp::new(move || ytdlp.proxy()))
         };
-        Self::start_with(paths, ytdlp, plan, events, Outside { song_search, spotify, releases: Arc::new(crate::http::Releases), desktop: Box::new(crate::desktop::Windows), cover: Box::new(crate::http::cover_get), resolve: Box::new(crate::http::lookup) })
+        Self::start_with(
+            paths,
+            ytdlp,
+            plan,
+            events,
+            Outside {
+                song_search,
+                spotify,
+                releases: Arc::new(crate::http::Releases),
+                desktop: Box::new(crate::desktop::Windows),
+                cover: Box::new(crate::http::cover_get),
+                resolve: Box::new(crate::http::lookup),
+            },
+        )
     }
 
     /// `start`, with everything that reaches the network given.
@@ -288,7 +315,12 @@ impl Core {
         let spotify = Mutex::new(Spotify::new(Dyn(spotify), Box::new(spotify::system_now_ms)));
         let app_updater = {
             let tell = events.clone();
-            AppUpdater::new(&paths.user_data.join("updates"), env!("CARGO_PKG_VERSION"), Box::new(releases.clone()), Box::new(move |event| drop(tell.send(CoreEvent::Update { channel: event.channel, payload: event.payload }))))
+            AppUpdater::new(
+                &paths.user_data.join("updates"),
+                env!("CARGO_PKG_VERSION"),
+                Box::new(releases.clone()),
+                Box::new(move |event| drop(tell.send(CoreEvent::Update { channel: event.channel, payload: event.payload }))),
+            )
         };
         // Whatever an earlier run staged is stale now, applied or not.
         app_updater.cleanup();
@@ -310,7 +342,8 @@ impl Core {
 
         let (notices, incoming) = channel();
         let remembered = Mutex::new(load_remembered(&remembered_file(&paths.user_data)));
-        let saved = std::fs::read_to_string(own_settings_file(&paths.user_data)).ok().and_then(|text| serde_json::from_str::<Value>(&text).ok());
+        let saved =
+            std::fs::read_to_string(own_settings_file(&paths.user_data)).ok().and_then(|text| serde_json::from_str::<Value>(&text).ok());
         let hold_unconfirmed = Arc::new(AtomicBool::new(saved.is_some_and(|v| v["holdUnconfirmed"] == true)));
         let mut downloader = Downloader::with(ytdlp.clone());
         downloader.set_song_search(song_search.clone());
@@ -329,7 +362,9 @@ impl Core {
                 let (config, events, engine) = (config.clone(), events.clone(), engine.clone());
                 move || -> Option<bool> {
                     let settings = serde_json::from_value::<ScheduleConfig>(Value::Object(lock(&config).get_all().clone())).ok()?;
-                    let Fire::Trigger { shutdown } = scheduler.poll(&settings, plan() == Plan::Premium, &LocalTime::now()) else { return None };
+                    let Fire::Trigger { shutdown } = scheduler.poll(&settings, plan() == Plan::Premium, &LocalTime::now()) else {
+                        return None;
+                    };
                     let _ = write_file_atomic(&state_file, &json!({ "lastFiredDate": scheduler.last_fired_date() }).to_string());
                     engine.resume_all();
                     let _ = events.send(CoreEvent::ScheduleFired);
@@ -391,7 +426,30 @@ impl Core {
                 }
             })
         };
-        let core = Self { paths, config, stats, ytdlp, plan, engine, events, stop, dispatcher: Mutex::new(Some(dispatcher)), down: AtomicBool::new(false), own_settings: Mutex::new(()), finish: Mutex::new(()), cover, resolve, song_search, spotify, hold_unconfirmed, remembered, lookups: Mutex::default(), engine_updater, app_updater, desktop };
+        let core = Self {
+            paths,
+            config,
+            stats,
+            ytdlp,
+            plan,
+            engine,
+            events,
+            stop,
+            dispatcher: Mutex::new(Some(dispatcher)),
+            down: AtomicBool::new(false),
+            own_settings: Mutex::new(()),
+            finish: Mutex::new(()),
+            cover,
+            resolve,
+            song_search,
+            spotify,
+            hold_unconfirmed,
+            remembered,
+            lookups: Mutex::default(),
+            engine_updater,
+            app_updater,
+            desktop,
+        };
         core.sync();
         core
     }
@@ -445,7 +503,9 @@ impl Core {
         let cookies = cookies.exists().then(|| cookies.to_string_lossy().into_owned());
         // A Spotify track the user chose a match for downloads that match,
         // unless the request names one itself.
-        let chosen = request["track"]["id"].as_str().filter(|_| request["source"] == "spotify" && request.get("matchedUrl").is_none_or(Value::is_null));
+        let chosen = request["track"]["id"]
+            .as_str()
+            .filter(|_| request["source"] == "spotify" && request.get("matchedUrl").is_none_or(Value::is_null));
         let chosen = chosen.and_then(|id| lock(&self.remembered).get(id).map(|m| m.url.clone()));
         let with_choice = chosen.map(|url| {
             let mut request = request.clone();
@@ -714,7 +774,10 @@ impl Core {
             if hops > MAX_COVER_REDIRECTS {
                 return Err("Cover refused: too many redirects".into());
             }
-            target = resolve_location(&target, reply.location.as_deref().filter(|l| !l.trim().is_empty()).ok_or("Cover fetch failed: redirect without a place")?);
+            target = resolve_location(
+                &target,
+                reply.location.as_deref().filter(|l| !l.trim().is_empty()).ok_or("Cover fetch failed: redirect without a place")?,
+            );
         };
         if !(200..300).contains(&reply.status) || !(reply.final_url.is_empty() || reply.final_url.starts_with("https://")) {
             return Err(format!("Cover fetch failed: HTTP {}", reply.status));
@@ -747,7 +810,8 @@ impl Core {
         let small_file = std::fs::metadata(file).is_ok_and(|m| m.is_file() && m.len() <= MAX_COOKIES_BYTES as u64);
         let text = small_file.then(|| std::fs::read_to_string(file).ok()).flatten().filter(|text| is_netscape_cookies(text));
         let Some(text) = text else { return CookiesImport::Invalid };
-        let saved = std::fs::create_dir_all(&self.paths.user_data).and_then(|()| write_file_atomic(&self.paths.user_data.join("cookies.txt"), &text));
+        let saved = std::fs::create_dir_all(&self.paths.user_data)
+            .and_then(|()| write_file_atomic(&self.paths.user_data.join("cookies.txt"), &text));
         if saved.is_ok() { CookiesImport::Ok } else { CookiesImport::Invalid }
     }
 
@@ -829,7 +893,9 @@ impl Core {
     /// setting is on, else check, and install when a newer one is found. Slow:
     /// call it from a worker thread, `ENGINE_UPDATE_DELAY` after launch.
     pub fn auto_update_engine(&self) {
-        if lock(&self.config).get("autoUpdateEngine").and_then(Value::as_bool) == Some(true) && self.check_engine(false).state == "available" {
+        if lock(&self.config).get("autoUpdateEngine").and_then(Value::as_bool) == Some(true)
+            && self.check_engine(false).state == "available"
+        {
             self.update_engine();
         }
     }
@@ -924,7 +990,9 @@ fn ip_forbidden(ip: IpAddr) -> bool {
             } else if s[0] == 0x2002 {
                 !v4_global(inside(s[1], s[2]))
             } else {
-                s[0] & 0xe000 != 0x2000 || (s[0] == 0x2001 && (s[1] & 0xfe00 == 0 || s[1] == 0xdb8)) || (s[0] == 0x3fff && s[1] & 0xf000 == 0)
+                s[0] & 0xe000 != 0x2000
+                    || (s[0] == 0x2001 && (s[1] & 0xfe00 == 0 || s[1] == 0xdb8))
+                    || (s[0] == 0x3fff && s[1] & 0xf000 == 0)
             }
         }
     }
@@ -932,7 +1000,10 @@ fn ip_forbidden(ip: IpAddr) -> bool {
 
 fn v4_global(v4: Ipv4Addr) -> bool {
     let o = v4.octets();
-    !(o[0] == 0 || o[0] == 10 || o[0] == 127 || o[0] >= 224
+    !(o[0] == 0
+        || o[0] == 10
+        || o[0] == 127
+        || o[0] >= 224
         || (o[0] == 100 && o[1] & 0xc0 == 64)
         || (o[0] == 169 && o[1] == 254)
         || (o[0] == 172 && o[1] & 0xf0 == 16)
@@ -947,13 +1018,39 @@ mod cover_host_tests {
 
     #[test]
     fn hosts_are_accepted_or_refused_without_resolving_anything() {
-        let accepted = ["https://i.scdn.co/image/a", "https://CDN.Example.com:8443/a.jpg?x=1", "https://i.ytimg.com", "https://a.b.c.example/#f", "https://example.com./a"];
+        let accepted = [
+            "https://i.scdn.co/image/a",
+            "https://CDN.Example.com:8443/a.jpg?x=1",
+            "https://i.ytimg.com",
+            "https://a.b.c.example/#f",
+            "https://example.com./a",
+        ];
         let refused = [
-            "http://i.example/a", "file:///c:/a", "", "i.example/a", "https:///a", "https://",
-            "https://127.0.0.1/a", "https://10.0.0.5:8080/a", "https://2130706433/a", "https://0x7f.1/a", "https://[::1]/a", "https://[2001:db8::1]:443/a",
-            "https://localhost/a", "https://LOCALHOST:80/a", "https://app.localhost/a", "https://localhost./a",
-            "https://user@i.example/a", "https://user:pw@i.example/a", "https://i.example@evil.example/a", "https://@i.example/a", "https://127.0.0.1\\.example.com/a",
-            "https://intranet/a", "https://intranet:8443/a", "https://intranet./a", "https://i/a",
+            "http://i.example/a",
+            "file:///c:/a",
+            "",
+            "i.example/a",
+            "https:///a",
+            "https://",
+            "https://127.0.0.1/a",
+            "https://10.0.0.5:8080/a",
+            "https://2130706433/a",
+            "https://0x7f.1/a",
+            "https://[::1]/a",
+            "https://[2001:db8::1]:443/a",
+            "https://localhost/a",
+            "https://LOCALHOST:80/a",
+            "https://app.localhost/a",
+            "https://localhost./a",
+            "https://user@i.example/a",
+            "https://user:pw@i.example/a",
+            "https://i.example@evil.example/a",
+            "https://@i.example/a",
+            "https://127.0.0.1\\.example.com/a",
+            "https://intranet/a",
+            "https://intranet:8443/a",
+            "https://intranet./a",
+            "https://i/a",
         ];
         assert!(!accepted.is_empty() && !refused.is_empty());
         for url in accepted {
@@ -968,17 +1065,94 @@ mod cover_host_tests {
     fn addresses_are_classified_without_resolving_anything() {
         let forbidden = [
             // IPv4: every special range, at both edges
-            "0.0.0.0", "0.255.255.255", "10.0.0.5", "10.255.255.255", "100.64.0.1", "100.127.255.255", "127.0.0.1", "127.255.255.254", "169.254.169.254", "172.16.0.1", "172.31.255.255",
-            "192.0.0.1", "192.0.0.255", "192.0.2.1", "192.88.99.1", "192.168.1.1", "198.18.0.1", "198.19.255.255", "198.51.100.7", "203.0.113.9", "224.0.0.1", "239.255.255.255", "240.0.0.1", "255.255.255.255",
+            "0.0.0.0",
+            "0.255.255.255",
+            "10.0.0.5",
+            "10.255.255.255",
+            "100.64.0.1",
+            "100.127.255.255",
+            "127.0.0.1",
+            "127.255.255.254",
+            "169.254.169.254",
+            "172.16.0.1",
+            "172.31.255.255",
+            "192.0.0.1",
+            "192.0.0.255",
+            "192.0.2.1",
+            "192.88.99.1",
+            "192.168.1.1",
+            "198.18.0.1",
+            "198.19.255.255",
+            "198.51.100.7",
+            "203.0.113.9",
+            "224.0.0.1",
+            "239.255.255.255",
+            "240.0.0.1",
+            "255.255.255.255",
             // IPv6: not global unicast, protocol assignments (Teredo), documentation, site/link/unique-local, multicast
-            "::1", "::", "fe80::1", "febf::1", "fec0::1", "fc00::1", "fdff::1", "ff02::1", "2001::1", "2001:1ff::1", "2001:db8::1", "3fff::1", "3fff:fff::1", "1::1", "4000::1", "64:ff9b:1::1",
+            "::1",
+            "::",
+            "fe80::1",
+            "febf::1",
+            "fec0::1",
+            "fc00::1",
+            "fdff::1",
+            "ff02::1",
+            "2001::1",
+            "2001:1ff::1",
+            "2001:db8::1",
+            "3fff::1",
+            "3fff:fff::1",
+            "1::1",
+            "4000::1",
+            "64:ff9b:1::1",
             // mapped, compatible, NAT64 and 6to4 with an internal IPv4 inside
-            "::ffff:127.0.0.1", "::ffff:10.0.0.5", "::ffff:192.168.1.1", "::ffff:169.254.169.254", "::127.0.0.1", "::10.0.0.5", "64:ff9b::7f00:1", "64:ff9b::a00:5", "2002:a00:5::1", "2002:7f00:1::1", "2002:c0a8:101::",
+            "::ffff:127.0.0.1",
+            "::ffff:10.0.0.5",
+            "::ffff:192.168.1.1",
+            "::ffff:169.254.169.254",
+            "::127.0.0.1",
+            "::10.0.0.5",
+            "64:ff9b::7f00:1",
+            "64:ff9b::a00:5",
+            "2002:a00:5::1",
+            "2002:7f00:1::1",
+            "2002:c0a8:101::",
         ];
         let allowed = [
-            "93.184.216.34", "8.8.8.8", "1.1.1.1", "9.255.255.255", "11.0.0.1", "100.63.255.255", "100.128.0.1", "126.255.255.255", "128.0.0.1", "169.253.255.255", "169.255.0.1", "172.15.255.255", "172.32.0.1",
-            "192.0.3.1", "192.88.98.1", "192.169.0.1", "198.17.255.255", "198.20.0.1", "198.51.99.1", "198.51.101.1", "203.0.112.1", "203.0.114.1", "223.255.255.255",
-            "2606:4700::1111", "2001:200::1", "2001:db9::1", "2a00:1450::1", "3ffe::1", "2fff::1", "::ffff:93.184.216.34", "::5db8:d822", "64:ff9b::5db8:d822", "2002:5db8:d822::1",
+            "93.184.216.34",
+            "8.8.8.8",
+            "1.1.1.1",
+            "9.255.255.255",
+            "11.0.0.1",
+            "100.63.255.255",
+            "100.128.0.1",
+            "126.255.255.255",
+            "128.0.0.1",
+            "169.253.255.255",
+            "169.255.0.1",
+            "172.15.255.255",
+            "172.32.0.1",
+            "192.0.3.1",
+            "192.88.98.1",
+            "192.169.0.1",
+            "198.17.255.255",
+            "198.20.0.1",
+            "198.51.99.1",
+            "198.51.101.1",
+            "203.0.112.1",
+            "203.0.114.1",
+            "223.255.255.255",
+            "2606:4700::1111",
+            "2001:200::1",
+            "2001:db9::1",
+            "2a00:1450::1",
+            "3ffe::1",
+            "2fff::1",
+            "::ffff:93.184.216.34",
+            "::5db8:d822",
+            "64:ff9b::5db8:d822",
+            "2002:5db8:d822::1",
         ];
         assert!(!forbidden.is_empty() && !allowed.is_empty());
         for ip in forbidden {

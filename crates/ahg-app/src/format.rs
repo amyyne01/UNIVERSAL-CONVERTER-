@@ -57,8 +57,13 @@ pub fn round_half_up(value: f64) -> u32 {
 
 /// `2026-11` to `November`; anything else comes back unchanged.
 pub fn month_name(year_month: &str) -> String {
-    const NAMES: [&str; 12] = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-    year_month.split_once('-').and_then(|(_, m)| m.parse::<usize>().ok()).and_then(|m| NAMES.get(m.wrapping_sub(1))).map_or_else(|| year_month.to_string(), |n| (*n).to_string())
+    const NAMES: [&str; 12] =
+        ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    year_month
+        .split_once('-')
+        .and_then(|(_, m)| m.parse::<usize>().ok())
+        .and_then(|m| NAMES.get(m.wrapping_sub(1)))
+        .map_or_else(|| year_month.to_string(), |n| (*n).to_string())
 }
 
 /// The stand-in title for a download that has none yet.
@@ -141,7 +146,22 @@ mod tests {
 
     #[test]
     fn bytes_match_the_old_app() {
-        let table = [(0.0, "—"), (-5.0, "—"), (1.0, "1 B"), (512.0, "512 B"), (1023.0, "1023 B"), (1024.0, "1.0 KB"), (1536.0, "1.5 KB"), (1_048_575.0, "1024.0 KB"), (1_048_576.0, "1.0 MB"), (3_565_158.0, "3.4 MB"), (13_002_342.0, "12.4 MB"), (1_073_741_824.0, "1.0 GB"), (1_649_267_441_664.0, "1.5 TB"), (512.5, "512.5 B")];
+        let table = [
+            (0.0, "—"),
+            (-5.0, "—"),
+            (1.0, "1 B"),
+            (512.0, "512 B"),
+            (1023.0, "1023 B"),
+            (1024.0, "1.0 KB"),
+            (1536.0, "1.5 KB"),
+            (1_048_575.0, "1024.0 KB"),
+            (1_048_576.0, "1.0 MB"),
+            (3_565_158.0, "3.4 MB"),
+            (13_002_342.0, "12.4 MB"),
+            (1_073_741_824.0, "1.0 GB"),
+            (1_649_267_441_664.0, "1.5 TB"),
+            (512.5, "512.5 B"),
+        ];
         for (input, want) in table {
             assert_eq!(bytes(input), want, "bytes({input})");
         }
@@ -152,7 +172,17 @@ mod tests {
         assert_eq!(speed(0.0), "");
         assert_eq!(speed(2_500_000.0), "2.4 MB/s");
         assert_eq!(speed(524_288.0), "512.0 KB/s");
-        for (input, want) in [(0.0, ""), (5.0, "0:05"), (59.9, "0:59"), (187.0, "3:07"), (600.0, "10:00"), (3599.0, "59:59"), (3600.0, "1:00:00"), (3723.0, "1:02:03"), (36000.0, "10:00:00")] {
+        for (input, want) in [
+            (0.0, ""),
+            (5.0, "0:05"),
+            (59.9, "0:59"),
+            (187.0, "3:07"),
+            (600.0, "10:00"),
+            (3599.0, "59:59"),
+            (3600.0, "1:00:00"),
+            (3723.0, "1:02:03"),
+            (36000.0, "10:00:00"),
+        ] {
             assert_eq!(duration(input), want, "duration({input})");
         }
         assert_eq!(duration(f64::NAN), "");

@@ -98,7 +98,8 @@ fn sentence(code: ErrorCode, src: Src) -> String {
         E::DiskFull => (copy::ERR_DISK_FULL_CAUSE, copy::ERR_DISK_FULL_REMEDY),
         E::Unknown => (copy::ERR_UNKNOWN_CAUSE, copy::ERR_UNKNOWN_REMEDY),
     };
-    let remedy = if src == Src::Spotify && matches!(code, E::Unknown | E::Removed | E::Unsupported) { copy::ERR_SPOTIFY_REMEDY } else { remedy };
+    let remedy =
+        if src == Src::Spotify && matches!(code, E::Unknown | E::Removed | E::Unsupported) { copy::ERR_SPOTIFY_REMEDY } else { remedy };
     let video = matches!(src, Src::Youtube | Src::Vimeo | Src::Dailymotion | Src::Rumble | Src::Twitch);
     copy::error_text(cause, remedy, video)
 }
@@ -133,8 +134,12 @@ pub fn percent(t: &DownloadTask) -> f32 {
 
 /// Full month name of `YYYY-MM`; anything else as given.
 pub fn month_name(ym: &str) -> String {
-    const NAMES: [&str; 12] = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-    ym.split_once('-').and_then(|(_, m)| m.parse::<usize>().ok()).and_then(|m| NAMES.get(m.wrapping_sub(1))).map_or_else(|| ym.to_string(), |n| n.to_string())
+    const NAMES: [&str; 12] =
+        ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    ym.split_once('-')
+        .and_then(|(_, m)| m.parse::<usize>().ok())
+        .and_then(|m| NAMES.get(m.wrapping_sub(1)))
+        .map_or_else(|| ym.to_string(), |n| n.to_string())
 }
 
 #[cfg(test)]

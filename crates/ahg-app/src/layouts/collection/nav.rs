@@ -101,13 +101,14 @@ fn item(s: &State, p: &Pal, nav: Nav, glyph: &'static Icon, label: &str, n: usiz
         .help(copy::nav_tooltip(label, n))
         .on_press(move |s: &mut State| s.nav = nav)
         .child(mark);
-    r = if on {
-        r.fill(theme::label_paper()).border(1.0, theme::label_ink().alpha(0.18))
-    } else {
-        r.hover(p.raised)
-    };
+    r = if on { r.fill(theme::label_paper()).border(1.0, theme::label_ink().alpha(0.18)) } else { r.hover(p.raised) };
     if open {
-        r = r.pr(12.0).child(text(label.to_string()).font(sans(13.0, if on { 500.0 } else { 400.0 })).color(if on { ink } else { p.text }).single_line()).child(el().grow(1.0));
+        r = r
+            .pr(12.0)
+            .child(
+                text(label.to_string()).font(sans(13.0, if on { 500.0 } else { 400.0 })).color(if on { ink } else { p.text }).single_line(),
+            )
+            .child(el().grow(1.0));
         if badge > 0 {
             r = r.child(text(badge.to_string()).font(mono(12.0, 500.0)).color(if on { ink } else { p.accent }).mr(12.0));
         }

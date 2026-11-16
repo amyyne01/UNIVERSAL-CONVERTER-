@@ -70,7 +70,8 @@ fn server() -> (String, Receiver<Seen>) {
                     "/big" => ("200 OK", String::new(), "x".repeat(300_000)),
                     _ => ("404 Not Found", String::new(), "nope".to_owned()),
                 };
-                let _ = write!(stream, "HTTP/1.1 {status}\r\n{extra}Content-Length: {}\r\nConnection: close\r\n\r\n{payload}", payload.len());
+                let _ =
+                    write!(stream, "HTTP/1.1 {status}\r\n{extra}Content-Length: {}\r\nConnection: close\r\n\r\n{payload}", payload.len());
             });
         }
     });
@@ -113,7 +114,10 @@ fn a_redirect_is_followed_and_the_final_address_reported() {
 fn an_https_only_client_refuses_a_plain_http_address() {
     let (base, _seen) = server();
     assert!(Http::new(None).https_only().send("GET", &format!("{base}/ok"), &[], None, T).is_none());
-    assert!(Http::new(None).https_only().send("GET", &format!("{base}/moved"), &[], None, T).is_none(), "a first hop on http is refused, so is a redirect to one");
+    assert!(
+        Http::new(None).https_only().send("GET", &format!("{base}/moved"), &[], None, T).is_none(),
+        "a first hop on http is refused, so is a redirect to one"
+    );
     assert_eq!(Http::new(None).send("GET", &format!("{base}/ok"), &[], None, T).unwrap().status, 200, "other callers are unchanged");
 }
 
@@ -126,7 +130,10 @@ fn a_pinned_client_connects_only_to_the_pinned_address_whatever_the_name_says() 
     assert!(Http::new(None).send("GET", &url, &[], None, T).is_none(), "the name alone leads nowhere");
     let res = Http::new(None).pinned(vec![addr]).send("GET", &url, &[], None, T).unwrap();
     assert_eq!(res.status, 200);
-    assert!(seen.recv().unwrap().headers.iter().any(|h| h.to_lowercase().starts_with("host: pin.invalid")), "the name is still what the request says");
+    assert!(
+        seen.recv().unwrap().headers.iter().any(|h| h.to_lowercase().starts_with("host: pin.invalid")),
+        "the name is still what the request says"
+    );
 }
 
 #[test]
@@ -276,11 +283,13 @@ fn the_real_spotify_states_which_tracks_are_explicit() {
     assert!(clean * 10 >= calm.tracks.len() * 9, "{clean} of {}", calm.tracks.len());
     // An album goes through a different response: Kendrick Lamar, "DAMN.".
     let album = spotify.fetch_album("4eLPsYPBmXABThSJ821sqY").ok().flatten().expect("the album should load");
-    let (stated, dirty) = (album.tracks.iter().filter(|t| t.explicit.is_some()).count(), album.tracks.iter().filter(|t| t.explicit == Some(true)).count());
+    let (stated, dirty) =
+        (album.tracks.iter().filter(|t| t.explicit.is_some()).count(), album.tracks.iter().filter(|t| t.explicit == Some(true)).count());
     println!("album: {} tracks, {stated} state the flag, {dirty} explicit", album.tracks.len());
     assert!(stated == album.tracks.len() && dirty > 0, "{stated} of {} stated, {dirty} explicit", album.tracks.len());
     // The same track read on its own says the same.
-    let alone = spotify.fetch_track(&format!("https://open.spotify.com/track/{}", explicit[0].id)).ok().flatten().expect("the track should load");
+    let alone =
+        spotify.fetch_track(&format!("https://open.spotify.com/track/{}", explicit[0].id)).ok().flatten().expect("the track should load");
     assert_eq!(alone.explicit, Some(true), "{} read alone", alone.name);
 }
 

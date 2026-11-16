@@ -50,8 +50,14 @@ fn a_looked_up_video_gets_the_same_verdict_as_in_the_reference() {
 /// own means a different cut.
 #[test]
 fn a_few_seconds_apart_is_confirmed_only_without_a_version_note_of_its_own() {
-    let wanted = track(&json!({ "name": "I Wanna Rock", "artist": "Twisted Sister", "artists": ["Twisted Sister"], "durationMs": 180_000 }));
-    let look = |title: &str, duration: f64| Lookup { duration: Some(duration), track: Some(title.into()), artist: Some("Twisted Sister".into()), creator: None };
+    let wanted =
+        track(&json!({ "name": "I Wanna Rock", "artist": "Twisted Sister", "artists": ["Twisted Sister"], "durationMs": 180_000 }));
+    let look = |title: &str, duration: f64| Lookup {
+        duration: Some(duration),
+        track: Some(title.into()),
+        artist: Some("Twisted Sister".into()),
+        creator: None,
+    };
     assert_eq!(verify(&wanted, &look("I Wanna Rock", 182.0)), Verdict::Confirmed);
     assert_eq!(verify(&wanted, &look("I Wanna Rock", 184.0)), Verdict::Confirmed);
     assert_eq!(verify(&wanted, &look("I Wanna Rock (2016 Remaster)", 184.0)), Verdict::Unknown);
@@ -70,7 +76,11 @@ fn a_song_search_row_agrees_or_not_as_in_the_reference() {
     assert!(cases.len() > 500, "bridge.json has too few search rows");
     let mut yes = 0;
     for c in cases {
-        let row = SongRow { title: c["row"]["title"].as_str().unwrap(), artist: c["row"]["artist"].as_str().unwrap_or(""), duration: c["row"]["duration"].as_f64() };
+        let row = SongRow {
+            title: c["row"]["title"].as_str().unwrap(),
+            artist: c["row"]["artist"].as_str().unwrap_or(""),
+            duration: c["row"]["duration"].as_f64(),
+        };
         let got = row_agrees(&track(&c["track"]), &row);
         assert_eq!(got, c["agrees"].as_bool().unwrap(), "{} against {}", c["track"], c["row"]);
         yes += usize::from(got);
@@ -83,7 +93,9 @@ fn a_song_search_row_agrees_or_not_as_in_the_reference() {
 #[test]
 fn a_shared_composer_is_not_the_same_performer() {
     use ahg_engine::downloader::bridge::{SongRow, row_agrees};
-    let wanted = track(&json!({ "name": "Prelude in C Major, BWV 846", "artist": "Johann Sebastian Bach, Lang Lang", "artists": ["Johann Sebastian Bach, Lang Lang"], "durationMs": 139_000 }));
+    let wanted = track(
+        &json!({ "name": "Prelude in C Major, BWV 846", "artist": "Johann Sebastian Bach, Lang Lang", "artists": ["Johann Sebastian Bach, Lang Lang"], "durationMs": 139_000 }),
+    );
     let row = |artist| SongRow { title: "Prelude in C Major, BWV 846", artist, duration: Some(139.0) };
     assert!(!row_agrees(&wanted, &row("Aurélien Pontier & Johann Sebastian Bach")));
     assert!(row_agrees(&wanted, &row("Lang Lang & Johann Sebastian Bach")));
@@ -225,7 +237,11 @@ fn a_spotify_download_is_named_and_tagged_from_the_spotify_track() {
 
 #[test]
 fn every_artist_is_tagged_and_missing_details_are_left_to_youtube() {
-    let args = spotify_args(json!({ "artist": "Taylor Swift", "artists": ["Taylor Swift", "Bon Iver"], "name": "exile (feat. Bon Iver)", "album": "", "albumYear": null, "trackNumber": 0 }), "", true);
+    let args = spotify_args(
+        json!({ "artist": "Taylor Swift", "artists": ["Taylor Swift", "Bon Iver"], "name": "exile (feat. Bon Iver)", "album": "", "albumYear": null, "trackNumber": 0 }),
+        "",
+        true,
+    );
     assert_eq!(tags(&args), ["exile (feat. Bon Iver):%(meta_title)s", "Taylor Swift, Bon Iver:%(meta_artist)s"]);
     assert_eq!(output(&args), "C:\\Music\\Taylor Swift - exile (feat. Bon Iver).%(ext)s");
 }
@@ -236,7 +252,11 @@ fn every_artist_is_tagged_and_missing_details_are_left_to_youtube() {
 /// a trailing backslash, which would swallow the separator.
 #[test]
 fn text_that_yt_dlp_would_read_as_its_own_language_is_made_plain() {
-    let args = spotify_args(json!({ "name": "100% %(id)s: Live\\", "artist": "AC/DC", "artists": ["AC/DC"], "album": "A: B", "albumYear": null, "trackNumber": 0 }), "", true);
+    let args = spotify_args(
+        json!({ "name": "100% %(id)s: Live\\", "artist": "AC/DC", "artists": ["AC/DC"], "album": "A: B", "albumYear": null, "trackNumber": 0 }),
+        "",
+        true,
+    );
     assert_eq!(tags(&args), ["100%% %%(id)s\\: Live:%(meta_title)s", "AC/DC:%(meta_artist)s", "A\\: B:%(meta_album)s"]);
     // In a file name the characters Windows forbids go, and "%" is doubled so yt-dlp fills nothing in.
     assert_eq!(output(&args), "C:\\Music\\ACDC - 100%% %%(id)s Live.%(ext)s");
@@ -257,8 +277,17 @@ fn a_name_the_request_chose_is_kept_and_tags_follow_the_embed_setting() {
 #[test]
 fn among_songs_that_agree_the_one_from_the_same_album_is_taken() {
     use ahg_engine::downloader::bridge::{SongHit, pick_row};
-    let hit = |id: &str, album: &str, explicit: bool| SongHit { id: id.into(), title: "Dreams".into(), artist: "Fleetwood Mac".into(), album: album.into(), duration: Some(258.0), explicit };
-    let wanted = |album: &str| track(&json!({ "name": "Dreams", "artist": "Fleetwood Mac", "artists": ["Fleetwood Mac"], "album": album, "durationMs": 257_800 }));
+    let hit = |id: &str, album: &str, explicit: bool| SongHit {
+        id: id.into(),
+        title: "Dreams".into(),
+        artist: "Fleetwood Mac".into(),
+        album: album.into(),
+        duration: Some(258.0),
+        explicit,
+    };
+    let wanted = |album: &str| {
+        track(&json!({ "name": "Dreams", "artist": "Fleetwood Mac", "artists": ["Fleetwood Mac"], "album": album, "durationMs": 257_800 }))
+    };
     let rows = [hit("deluxe", "Rumours (Deluxe Edition)", false), hit("bestof", "Greatest Hits", false), hit("original", "Rumours", false)];
 
     assert_eq!(pick_row(&wanted("Rumours"), &rows, None).unwrap().index, 2);
@@ -286,7 +315,10 @@ fn the_file_notes_the_video_it_came_from_and_whether_that_was_a_guess() {
 
     let mut guess = spotify_args(json!({}), "", true);
     note_the_source(&mut guess, 0.9);
-    assert_eq!(tags(&guess).last().copied(), Some("Best guess, not a confirmed match. Source\\: %(title)s (%(webpage_url)s):%(meta_comment)s"));
+    assert_eq!(
+        tags(&guess).last().copied(),
+        Some("Best guess, not a confirmed match. Source\\: %(title)s (%(webpage_url)s):%(meta_comment)s")
+    );
 
     for args in [&confirmed, &guess] {
         let end_of_options = args.iter().position(|a| a == "--").unwrap();
@@ -323,7 +355,12 @@ fn a_track_queued_from_a_playlist_is_named_like_any_other() {
 #[test]
 fn only_the_address_of_a_single_youtube_video_is_accepted_as_a_match() {
     use ahg_engine::downloader::bridge::song_url;
-    for good in ["https://music.youtube.com/watch?v=swJOIjjW69U", "https://www.youtube.com/watch?v=swJOIjjW69U&list=PL123", "https://youtube.com/watch?v=swJOIjjW69U", "https://youtu.be/swJOIjjW69U"] {
+    for good in [
+        "https://music.youtube.com/watch?v=swJOIjjW69U",
+        "https://www.youtube.com/watch?v=swJOIjjW69U&list=PL123",
+        "https://youtube.com/watch?v=swJOIjjW69U",
+        "https://youtu.be/swJOIjjW69U",
+    ] {
         assert_eq!(song_url(good), Some(good), "{good}");
     }
     for bad in [

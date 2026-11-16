@@ -73,7 +73,11 @@ pub enum TrayAction {
 pub enum MenuEntry {
     Separator,
     /// A disabled entry has no action.
-    Item { label: String, enabled: bool, action: Option<TrayAction> },
+    Item {
+        label: String,
+        enabled: bool,
+        action: Option<TrayAction>,
+    },
 }
 
 /// A small glyph per state so the queue reads at a glance.

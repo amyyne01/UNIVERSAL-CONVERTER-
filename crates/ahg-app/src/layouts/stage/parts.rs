@@ -65,7 +65,18 @@ pub fn button(p: &Pal, key: String, label: &str, i: Option<&'static Icon>, lit: 
 
 /// A quiet word that acts, for headers.
 pub fn text_button(p: &Pal, key: String, label: &str) -> El {
-    row().key(key).h(24.0).px(4.0).center_y().radius(4.0).hover(p.hover).cursor(Cursor::Pointer).role("button").focusable(true).label(label.to_string()).child(txt(label.to_string(), SMALL_M, p.text2))
+    row()
+        .key(key)
+        .h(24.0)
+        .px(4.0)
+        .center_y()
+        .radius(4.0)
+        .hover(p.hover)
+        .cursor(Cursor::Pointer)
+        .role("button")
+        .focusable(true)
+        .label(label.to_string())
+        .child(txt(label.to_string(), SMALL_M, p.text2))
 }
 
 pub fn icon_button(p: &Pal, key: String, label: &str, i: &'static Icon, ink: Color) -> El {
@@ -85,12 +96,22 @@ pub fn icon_button(p: &Pal, key: String, label: &str, i: &'static Icon, ink: Col
 
 /// A task's artwork: round while it travels, a square tile once it is yours.
 pub fn cover(s: &State, p: &Pal, t: &DownloadTask, size: f32, round: bool) -> El {
-    let r = if round { size / 2.0 } else if size >= 160.0 { 12.0 } else { 8.0 };
+    let r = if round {
+        size / 2.0
+    } else if size >= 160.0 {
+        12.0
+    } else {
+        8.0
+    };
     match s.cover(&t.task_id) {
         Some(img) => el().size(size, size).radius(r).fill(p.raised).pixels_fit(img.pixels(), SurfaceFit::Fill),
         None => {
             let tint = mix(p.raised, model::source(p, t.source).1, 0.12);
-            el().size(size, size).radius(r).fill(tint).center().child(glyph(if t.is_audio_only { &icons::MUSIC } else { &icons::VIDEO }, p.muted))
+            el().size(size, size)
+                .radius(r)
+                .fill(tint)
+                .center()
+                .child(glyph(if t.is_audio_only { &icons::MUSIC } else { &icons::VIDEO }, p.muted))
         }
     }
 }

@@ -35,16 +35,50 @@ fn tile(s: &State, index: usize, dark: bool) -> El {
     };
     let frame = el().radius(8.0).clip_rounded(8.0).border(if on { 2.0 } else { 1.0 }, if on { ink } else { edge }).child(picture);
     let kind = if layout.is_some() { "New layout" } else { "Classic layout" };
-    let caption = row().gap(8.0).center_y().child(text(name).font(TextStyle::new(14.0, 500.0)).color(ink)).child(text(kind).font(TextStyle::new(12.0, 400.0)).color(muted));
-    col().key(["pick-0", "pick-1", "pick-2", "pick-3", "pick-4", "pick-5"][index]).gap(8.0).cursor(rune::Cursor::Pointer).press_scale(0.98).child(frame).child(caption).on_press_tx(move |s: &mut State, tx: &mut Tx| gate::set_preset(s, index, tx))
+    let caption = row()
+        .gap(8.0)
+        .center_y()
+        .child(text(name).font(TextStyle::new(14.0, 500.0)).color(ink))
+        .child(text(kind).font(TextStyle::new(12.0, 400.0)).color(muted));
+    col()
+        .key(["pick-0", "pick-1", "pick-2", "pick-3", "pick-4", "pick-5"][index])
+        .gap(8.0)
+        .cursor(rune::Cursor::Pointer)
+        .press_scale(0.98)
+        .child(frame)
+        .child(caption)
+        .on_press_tx(move |s: &mut State, tx: &mut Tx| gate::set_preset(s, index, tx))
 }
 
 /// The picker, drawn over the whole window.
 pub fn view(s: &State, cx: &mut Cx<State>) -> El {
     let dark = cx.system_dark();
-    let (panel, ink, muted, edge) = if dark { (c("#1b1b1f"), c("#f2f2f4"), c("#9a9aa3"), c("#34343b")) } else { (c("#fbfbfc"), c("#17171a"), c("#6b6b74"), c("#d4d4da")) };
+    let (panel, ink, muted, edge) = if dark {
+        (c("#1b1b1f"), c("#f2f2f4"), c("#9a9aa3"), c("#34343b"))
+    } else {
+        (c("#fbfbfc"), c("#17171a"), c("#6b6b74"), c("#d4d4da"))
+    };
     let line = |from: usize| row().gap(24.0).child(tile(s, from, dark)).child(tile(s, from + 1, dark)).child(tile(s, from + 2, dark));
-    let head = row().center_y().child(text("Choose a layout").font(TextStyle::new(20.0, 500.0)).color(ink)).child(el().grow(1.0)).child(text("Esc closes").font(TextStyle::new(12.0, 400.0)).color(muted));
-    let sheet = col().padding(32.0).gap(24.0).radius(16.0).fill(panel).border(1.0, edge).shadow(24.0, 64.0, Color::BLACK.alpha(0.4)).child(head).child(line(0)).child(line(3));
-    el().key("picker").pin(Some(0.0), Some(0.0), Some(0.0), Some(0.0)).center().fill(Color::BLACK.alpha(0.5)).on_press(|s: &mut State| s.picker = false).transition(rune::Transition::opacity()).child(sheet.on_press(|_: &mut State| {}))
+    let head = row()
+        .center_y()
+        .child(text("Choose a layout").font(TextStyle::new(20.0, 500.0)).color(ink))
+        .child(el().grow(1.0))
+        .child(text("Esc closes").font(TextStyle::new(12.0, 400.0)).color(muted));
+    let sheet = col()
+        .padding(32.0)
+        .gap(24.0)
+        .radius(16.0)
+        .fill(panel)
+        .border(1.0, edge)
+        .shadow(24.0, 64.0, Color::BLACK.alpha(0.4))
+        .child(head)
+        .child(line(0))
+        .child(line(3));
+    el().key("picker")
+        .pin(Some(0.0), Some(0.0), Some(0.0), Some(0.0))
+        .center()
+        .fill(Color::BLACK.alpha(0.5))
+        .on_press(|s: &mut State| s.picker = false)
+        .transition(rune::Transition::opacity())
+        .child(sheet.on_press(|_: &mut State| {}))
 }

@@ -15,16 +15,18 @@ const MARGIN: f32 = 216.0;
 
 pub fn view(s: &State, p: &Pal) -> El {
     let head = col().w_full().gap(4.0).child(txt(w::TITLE, PAGE_TITLE, p.text)).child(txt(w::SAVES, SMALL, p.text2));
-    let page = col()
-        .w_full()
-        .max_w(1120.0)
-        .px(40.0)
-        .pt(32.0)
-        .pb(48.0)
-        .gap(32.0)
-        .child(head)
-        .child(destination(p))
-        .child(col().w_full().child(defaults(p)).child(more(p)).child(appearance(s, p)).child(schedule(p)).child(software(p)).child(advanced(p)).child(plan(p)).child(help(p)));
+    let page = col().w_full().max_w(1120.0).px(40.0).pt(32.0).pb(48.0).gap(32.0).child(head).child(destination(p)).child(
+        col()
+            .w_full()
+            .child(defaults(p))
+            .child(more(p))
+            .child(appearance(s, p))
+            .child(schedule(p))
+            .child(software(p))
+            .child(advanced(p))
+            .child(plan(p))
+            .child(help(p)),
+    );
     col().key("settings").scroll(ScrollSpec { stick_bottom: false }).grow(1.0).min_h(0.0).w_full().child(page)
 }
 
@@ -108,7 +110,11 @@ fn object(p: &Pal, name: &str, version: &str, say: &str, good: bool, control: El
     if good {
         state = state.child(el().size(8.0, 8.0).radius(4.0).fill(p.success));
     }
-    let mut words = col().grow(1.0).min_w(0.0).gap(4.0).child(row().gap(8.0).center_y().child(txt(name.to_string(), BODY_M, p.text)).child(txt(version.to_string(), FIG, p.text2)));
+    let mut words = col()
+        .grow(1.0)
+        .min_w(0.0)
+        .gap(4.0)
+        .child(row().gap(8.0).center_y().child(txt(name.to_string(), BODY_M, p.text)).child(txt(version.to_string(), FIG, p.text2)));
     if !say.is_empty() {
         words = words.child(state.child(txt(say.to_string(), SMALL, p.text2).wrap()));
     }
@@ -141,8 +147,17 @@ fn destination(p: &Pal) -> El {
 }
 
 fn defaults(p: &Pal) -> El {
-    let labelled = |label: &str, value: &str| col().grow(1.0).min_w(0.0).gap(8.0).child(txt(label.to_string(), SMALL, p.text2)).child(select(p, label, value).min_w(0.0));
-    let three = row().w_full().gap(12.0).pt(16.0).pb(16.0).child(labelled(w::AUDIO_FORMAT, "MP3")).child(labelled(w::AUDIO_QUALITY, "320 kbps")).child(labelled(w::VIDEO_QUALITY, "1080p Full HD"));
+    let labelled = |label: &str, value: &str| {
+        col().grow(1.0).min_w(0.0).gap(8.0).child(txt(label.to_string(), SMALL, p.text2)).child(select(p, label, value).min_w(0.0))
+    };
+    let three = row()
+        .w_full()
+        .gap(12.0)
+        .pt(16.0)
+        .pb(16.0)
+        .child(labelled(w::AUDIO_FORMAT, "MP3"))
+        .child(labelled(w::AUDIO_QUALITY, "320 kbps"))
+        .child(labelled(w::VIDEO_QUALITY, "1080p Full HD"));
     band(
         p,
         w::DEFAULTS,
@@ -205,7 +220,14 @@ fn appearance(s: &State, p: &Pal) -> El {
                 .help(name.to_string())
                 .focusable(true)
                 .cursor(rune::Cursor::Pointer)
-                .child(el().size(20.0, 20.0).radius(10.0).center().fill(sw.bg).border(1.0, mix(sw.bg, sw.text, 0.2)).child(el().size(8.0, 8.0).radius(4.0).fill(sw.accent))),
+                .child(
+                    el().size(20.0, 20.0)
+                        .radius(10.0)
+                        .center()
+                        .fill(sw.bg)
+                        .border(1.0, mix(sw.bg, sw.text, 0.2))
+                        .child(el().size(8.0, 8.0).radius(4.0).fill(sw.accent)),
+                ),
         );
     }
     // The preset on show, then the picker's shortcut and the button that opens it.
@@ -301,7 +323,14 @@ fn plan(p: &Pal) -> El {
             .role("button")
             .label(label.to_string())
             .cursor(rune::Cursor::Pointer)
-            .child(col().grow(1.0).min_w(0.0).gap(4.0).child(txt(label.to_string(), BODY, p.error)).child(txt(desc.to_string(), SMALL, p.text2).wrap()))
+            .child(
+                col()
+                    .grow(1.0)
+                    .min_w(0.0)
+                    .gap(4.0)
+                    .child(txt(label.to_string(), BODY, p.error))
+                    .child(txt(desc.to_string(), SMALL, p.text2).wrap()),
+            )
             .child(icon(&icons::CARET_RIGHT, 16.0).color(p.muted))
     };
     band(
@@ -317,6 +346,9 @@ fn help(p: &Pal) -> El {
         p,
         w::HELP,
         None,
-        vec![line(p, w::SHORTCUTS, ghost(p, w::SHOW_SHORTCUTS, None)), line(p, w::REPORT, ghost(p, w::GET_SUPPORT, Some(&icons::EXTERNAL)))],
+        vec![
+            line(p, w::SHORTCUTS, ghost(p, w::SHOW_SHORTCUTS, None)),
+            line(p, w::REPORT, ghost(p, w::GET_SUPPORT, Some(&icons::EXTERNAL))),
+        ],
     )
 }

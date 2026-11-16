@@ -119,7 +119,12 @@ fn item(s: &State, p: &Pal, nav: Nav, glyph: &'static Icon, label: &str, n: usiz
     if open {
         r = r
             .pr(12.0)
-            .child(text(label.to_string()).font(sans(13.0, if on { 500.0 } else { 400.0 })).color(if on { p.text } else { p.text2 }).single_line())
+            .child(
+                text(label.to_string())
+                    .font(sans(13.0, if on { 500.0 } else { 400.0 }))
+                    .color(if on { p.text } else { p.text2 })
+                    .single_line(),
+            )
             .child(el().grow(1.0));
         if badge > 0 {
             r = r.child(text(badge.to_string()).font(mono(12.0, 500.0)).color(p.accent).mr(12.0));

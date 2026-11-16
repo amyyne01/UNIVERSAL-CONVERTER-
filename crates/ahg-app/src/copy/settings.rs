@@ -50,7 +50,8 @@ pub const THEME: (&str, &str) = ("Theme", "Light, dark, or follow the system pre
 pub const THEMES: [&str; 3] = ["Light", "Dark", "System"];
 pub const PALETTE: (&str, &str) = ("Palette", "Accent and surface colors");
 pub const PALETTE_ARIA: &str = "Color palette";
-pub const CLIPBOARD_WATCHER: (&str, &str) = ("Clipboard watcher", "Offer a one-click download whenever you copy a link, even outside the app");
+pub const CLIPBOARD_WATCHER: (&str, &str) =
+    ("Clipboard watcher", "Offer a one-click download whenever you copy a link, even outside the app");
 pub const NOTIFICATIONS: (&str, &str) = ("Desktop notifications", "Notify when a download completes or fails");
 pub const DISCORD: (&str, &str) = ("Discord Rich Presence", "Show what you're downloading in your Discord status");
 /// New in the Rust app (the old one has a single layout): opens the preset picker.
@@ -85,7 +86,8 @@ pub const ENGINE_UPDATE: &str = "Update engine";
 pub const ENGINE_CHECKING: &str = "Checking for a newer yt-dlp…";
 pub const ENGINE_DOWNLOADING: &str = "Downloading and verifying the engine…";
 pub const ENGINE_FAILED: &str = "Engine check failed. Try again";
-pub const AUTO_UPDATE_ENGINE: (&str, &str) = ("Auto-update engine", "Keep yt-dlp current, and repair it when a site change breaks downloads");
+pub const AUTO_UPDATE_ENGINE: (&str, &str) =
+    ("Auto-update engine", "Keep yt-dlp current, and repair it when a site change breaks downloads");
 
 // ── Advanced
 pub const ADVANCED: &str = "Advanced";
@@ -107,12 +109,16 @@ pub const DEACTIVATE: (&str, &str) = ("Deactivate license", "Release this machin
 pub const DEACTIVATE_ARMED: &str = "This machine loses Premium immediately. Reactivating needs the key again.";
 pub const DEACTIVATE_CONFIRM: &str = "Confirm deactivate";
 pub const MOVE: (&str, &str) = ("Move to another PC", "Deactivate here and release the key so it can be activated on a different computer");
-pub const MOVE_ARMED: &str = "This PC deactivates now. The key becomes claimable on the new machine. The next transfer is allowed after 7 days.";
+pub const MOVE_ARMED: &str =
+    "This PC deactivates now. The key becomes claimable on the new machine. The next transfer is allowed after 7 days.";
 pub const MOVE_CONFIRM: &str = "Confirm move";
 
 // ── Help
 pub const HELP: &str = "Help";
 pub const SHORTCUTS: (&str, &str) = ("Keyboard shortcuts", "Ctrl+K opens the command palette; the full list is one click away");
 pub const SHOW_SHORTCUTS: &str = "Show shortcuts";
-pub const REPORT: (&str, &str) = ("Report a problem", "Say what you pasted and the message you saw. If asked, attach ahg.log, found in the app's folder under %APPDATA%.");
+pub const REPORT: (&str, &str) = (
+    "Report a problem",
+    "Say what you pasted and the message you saw. If asked, attach ahg.log, found in the app's folder under %APPDATA%.",
+);
 pub const GET_SUPPORT: &str = "Get support";

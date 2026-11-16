@@ -24,9 +24,7 @@ use crate::atomic_write::write_file_atomic;
 use crate::downloader::errors::{ErrorClass, classify_error, error_code_of, explain_error, needs_client_fallback};
 use crate::log::{host_of, scrub_urls, tail};
 use crate::state_machine::can_transition;
-use crate::types::{
-    DownloadProgress, DownloadStatus, DownloadTask, PartialExtras, RETRY_BACKOFF_MS, SourcePlatform, Track, VideoQuality,
-};
+use crate::types::{DownloadProgress, DownloadStatus, DownloadTask, PartialExtras, RETRY_BACKOFF_MS, SourcePlatform, Track, VideoQuality};
 
 const RECENT_CAP: usize = 8;
 const PROGRESS_INTERVAL_MS: u64 = 250;
@@ -148,14 +146,23 @@ pub enum Effect {
     /// The raw error text of a failed download, before any retry decision.
     Failure(String),
     /// Start this download. Report back with the same `attempt`.
-    Download { task: DownloadTask, attempt: u64 },
+    Download {
+        task: DownloadTask,
+        attempt: u64,
+    },
     /// Stop this task's process.
     Cancel(String),
     /// Stop every process.
     CancelAll,
     /// A download finished and wrote these files. Counted by the statistics.
-    Completed { task: DownloadTask, filepaths: Vec<String> },
-    Log { level: &'static str, message: String },
+    Completed {
+        task: DownloadTask,
+        filepaths: Vec<String>,
+    },
+    Log {
+        level: &'static str,
+        message: String,
+    },
 }
 
 /// Identity of one task object.
@@ -458,8 +465,7 @@ impl Queue {
         // Oldest first, finished rows only: finished work is the cheapest to forget.
         // ponytail: a soft cap. If nothing finished is left, every row is work in
         // flight, and an oversized history is the better failure than dropping it.
-        let finished: Vec<String> =
-            self.history.iter().filter(|(_, k)| is_terminal(self.status(**k))).map(|(id, _)| id.clone()).collect();
+        let finished: Vec<String> = self.history.iter().filter(|(_, k)| is_terminal(self.status(**k))).map(|(id, _)| id.clone()).collect();
         for id in finished {
             if self.history.len() <= HISTORY_CAP {
                 break;
@@ -560,8 +566,7 @@ impl Queue {
     }
 
     fn reorder_queued(&mut self, ids: &[String]) {
-        let slots: Vec<usize> =
-            (0..self.queue.len()).filter(|&i| self.status(self.queue[i]) == DownloadStatus::Queued).collect();
+        let slots: Vec<usize> = (0..self.queue.len()).filter(|&i| self.status(self.queue[i]) == DownloadStatus::Queued).collect();
         if slots.len() < 2 {
             return;
         }

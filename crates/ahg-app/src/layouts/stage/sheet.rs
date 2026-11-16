@@ -69,7 +69,16 @@ fn pair(p: &Pal, (name, desc): (&str, &str), control: El) -> El {
 fn toggle(p: &Pal, label: &str, on: bool) -> El {
     // The accent stays on the stage's ring: an on switch is ink, not colour.
     let knob = el().size(16.0, 16.0).radius(8.0).fill(if on { p.bg } else { p.text2 }).absolute(if on { 14.0 } else { 2.0 }, 2.0);
-    el().size(32.0, 20.0).radius(10.0).fill(if on { p.text } else { p.raised }).border(1.0, if on { p.text } else { p.track }).cursor(Cursor::Pointer).focusable(true).role("switch").label(label.to_string()).checked(on).child(knob)
+    el().size(32.0, 20.0)
+        .radius(10.0)
+        .fill(if on { p.text } else { p.raised })
+        .border(1.0, if on { p.text } else { p.track })
+        .cursor(Cursor::Pointer)
+        .focusable(true)
+        .role("switch")
+        .label(label.to_string())
+        .checked(on)
+        .child(knob)
 }
 
 /// A toggle row from a (label, description) pair.
@@ -78,14 +87,22 @@ fn switch(p: &Pal, row_words: (&str, &str), on: bool) -> El {
 }
 
 fn value(p: &Pal, v: &str) -> El {
-    row().h(28.0).px(8.0).gap(8.0).center_y().radius(8.0).border(1.0, p.track).cursor(Cursor::Pointer).role("combobox").child(txt(v.to_string(), FIG, p.text))
+    row().h(28.0).px(8.0).gap(8.0).center_y().radius(8.0).border(1.0, p.track).cursor(Cursor::Pointer).role("combobox").child(txt(
+        v.to_string(),
+        FIG,
+        p.text,
+    ))
 }
 
 fn segments(p: &Pal, items: &[&str], on: &[usize]) -> El {
     let mut r = row().h(28.0).radius(8.0).border(1.0, p.track).clip_rounded(8.0);
     for (i, item) in items.iter().enumerate() {
         let lit = on.contains(&i);
-        let mut cell = el().h_full().px(8.0).center().cursor(Cursor::Pointer).role("checkbox").checked(lit).child(txt(item.to_string(), SMALL_M, if lit { p.text } else { p.muted }));
+        let mut cell = el().h_full().px(8.0).center().cursor(Cursor::Pointer).role("checkbox").checked(lit).child(txt(
+            item.to_string(),
+            SMALL_M,
+            if lit { p.text } else { p.muted },
+        ));
         if i > 0 {
             cell = cell.border_sides([0.0, 0.0, 0.0, 1.0], p.line);
         }
@@ -118,7 +135,11 @@ fn defaults(p: &Pal) -> El {
 }
 
 fn more_options(p: &Pal) -> El {
-    section(p, w::MORE, Some(w::MORE_HINT)).child(setting(p, w::SIGN_IN_WITH, None, value(p, "Firefox"))).child(pair(p, w::IMPORT_COOKIES, small_button(p, "cookies", w::CHOOSE_FILE)))
+    section(p, w::MORE, Some(w::MORE_HINT)).child(setting(p, w::SIGN_IN_WITH, None, value(p, "Firefox"))).child(pair(
+        p,
+        w::IMPORT_COOKIES,
+        small_button(p, "cookies", w::CHOOSE_FILE),
+    ))
 }
 
 fn closed(p: &Pal, title: &str, hint: &str) -> El {
@@ -167,7 +188,9 @@ fn software(p: &Pal) -> El {
 
 fn plan(p: &Pal) -> El {
     // Deactivate and Move have no button word in the copy: the row itself is the control.
-    let act = |row_words: (&str, &str)| pair(p, row_words, glyph(&icons::CARET_RIGHT, p.muted)).cursor(Cursor::Pointer).role("button").label(row_words.0.to_string());
+    let act = |row_words: (&str, &str)| {
+        pair(p, row_words, glyph(&icons::CARET_RIGHT, p.muted)).cursor(Cursor::Pointer).role("button").label(row_words.0.to_string())
+    };
     section(p, w::PLAN, None)
         .child(status(p, w::YOUR_PLAN, w::PLAN_PREMIUM.0, glyph(&icons::CHECK, p.success)))
         .child(txt(w::PLAN_PREMIUM.1, SMALL, p.muted).pb(8.0))
@@ -180,7 +203,11 @@ fn appearance(p: &Pal) -> El {
     for i in 1..=7 {
         let c = Pal::new(i, p.dark).accent;
         let dot = el().size(16.0, 16.0).radius(8.0).fill(c).cursor(Cursor::Pointer).role("radio");
-        swatches = swatches.child(if i == 1 { el().size(24.0, 24.0).center().radius(12.0).border(1.0, p.text2).child(dot) } else { el().size(24.0, 24.0).center().child(dot) });
+        swatches = swatches.child(if i == 1 {
+            el().size(24.0, 24.0).center().radius(12.0).border(1.0, p.text2).child(dot)
+        } else {
+            el().size(24.0, 24.0).center().child(dot)
+        });
     }
     let theme = if p.dark { 1 } else { 0 };
     let layout = button(p, "set-layout".into(), w::LAYOUT_CHOOSE, None, false).on_press(|s: &mut State| s.picker = true);
@@ -194,5 +221,9 @@ fn appearance(p: &Pal) -> El {
 }
 
 fn help(p: &Pal) -> El {
-    section(p, w::HELP, None).child(pair(p, w::SHORTCUTS, small_button(p, "show-shortcuts", w::SHOW_SHORTCUTS))).child(pair(p, w::REPORT, small_button(p, "support", w::GET_SUPPORT)))
+    section(p, w::HELP, None).child(pair(p, w::SHORTCUTS, small_button(p, "show-shortcuts", w::SHOW_SHORTCUTS))).child(pair(
+        p,
+        w::REPORT,
+        small_button(p, "support", w::GET_SUPPORT),
+    ))
 }

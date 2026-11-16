@@ -126,10 +126,7 @@ fn youtubes_own_relayed_wordings_are_recognised() {
 /// geo-restricted", "geo-blocked"); Electron's loose "geo" caught those too.
 #[test]
 fn the_hyphenated_geo_wording_is_geo() {
-    for line in [
-        "ERROR: This content is geo-restricted",
-        "ERROR: [vimeo] 1: This video is geo-blocked in your area",
-    ] {
+    for line in ["ERROR: This content is geo-restricted", "ERROR: [vimeo] 1: This video is geo-blocked in your area"] {
         expect(line, ErrorClass::Geo, ErrorCode::GeoBlocked);
     }
     // A stray "geo" in a name still means nothing.

@@ -23,9 +23,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::text::{js_trim, truthy};
-use crate::updater::{
-    Event, Request, assets_list, event, find_named, is_trusted_release_host, js_string, parse_checksum, prop, win_join,
-};
+use crate::updater::{Event, Request, assets_list, event, find_named, is_trusted_release_host, js_string, parse_checksum, prop, win_join};
 
 pub const RELEASE_API: &str = "https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest";
 pub const SUMS_ASSET: &str = "SHA2-256SUMS";
@@ -107,13 +105,19 @@ pub struct SwapPlan {
 pub enum CheckBegin {
     /// Cached, or another call is in flight: the status as it is, no events.
     Return(YtdlpStatus),
-    Fetch { request: Request, events: Vec<Event> },
+    Fetch {
+        request: Request,
+        events: Vec<Event>,
+    },
 }
 
 pub enum UpdateBegin {
     /// Another call is in flight: the status as it is, no events.
     Busy(YtdlpStatus),
-    Go { request: Request, events: Vec<Event> },
+    Go {
+        request: Request,
+        events: Vec<Event>,
+    },
 }
 
 pub struct YtdlpUpdater {

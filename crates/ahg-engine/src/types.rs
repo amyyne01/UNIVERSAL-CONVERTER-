@@ -256,11 +256,7 @@ pub mod num {
     use serde::Serializer;
 
     pub fn serialize<S: Serializer>(v: &f64, s: S) -> Result<S::Ok, S::Error> {
-        if v.fract() == 0.0 && v.abs() < 9_007_199_254_740_992.0 {
-            s.serialize_i64(*v as i64)
-        } else {
-            s.serialize_f64(*v)
-        }
+        if v.fract() == 0.0 && v.abs() < 9_007_199_254_740_992.0 { s.serialize_i64(*v as i64) } else { s.serialize_f64(*v) }
     }
 
     pub fn option<S: Serializer>(v: &Option<f64>, s: S) -> Result<S::Ok, S::Error> {

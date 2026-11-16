@@ -123,7 +123,11 @@ impl Http {
             // built-in list refuses Google's chain.
             .tls_config(TlsConfig::builder().provider(TlsProvider::NativeTls).root_certs(RootCerts::PlatformVerifier).build())
             .build();
-        let agent = if self.pinned.is_empty() { Agent::from(config) } else { Agent::with_parts(config, DefaultConnector::default(), Pinned(self.pinned.clone())) };
+        let agent = if self.pinned.is_empty() {
+            Agent::from(config)
+        } else {
+            Agent::with_parts(config, DefaultConnector::default(), Pinned(self.pinned.clone()))
+        };
         let mut request = ureq::http::Request::builder().method(method).uri(url);
         for (name, value) in headers {
             request = request.header(name.as_str(), value.as_str());
@@ -143,8 +147,15 @@ impl Http {
 pub fn song_search(proxy: impl Fn() -> Option<String> + Send + Sync + 'static) -> crate::download::SongSearch {
     use ahg_engine::downloader::bridge::{SONG_SEARCH_URL, song_search_body};
     std::sync::Arc::new(move |query: &str| {
-        let headers = [("Content-Type", "application/json"), ("Origin", "https://music.youtube.com"), ("User-Agent", "Mozilla/5.0")].map(|(k, v)| (k.to_owned(), v.to_owned()));
-        let response = Http::new(proxy().as_deref()).send("POST", SONG_SEARCH_URL, &headers, Some(&song_search_body(query)), Duration::from_secs(10))?;
+        let headers = [("Content-Type", "application/json"), ("Origin", "https://music.youtube.com"), ("User-Agent", "Mozilla/5.0")]
+            .map(|(k, v)| (k.to_owned(), v.to_owned()));
+        let response = Http::new(proxy().as_deref()).send(
+            "POST",
+            SONG_SEARCH_URL,
+            &headers,
+            Some(&song_search_body(query)),
+            Duration::from_secs(10),
+        )?;
         response.ok().then(|| response.text()).flatten()
     })
 }
@@ -164,7 +175,9 @@ impl SpotifyHttp {
 
 impl spotify::Transport for SpotifyHttp {
     fn fetch(&mut self, req: &spotify::Request) -> Option<String> {
-        Http::new((self.proxy)().as_deref()).send(req.method, &req.url, &req.headers, req.body.as_deref(), Duration::from_millis(req.timeout_ms))?.text()
+        Http::new((self.proxy)().as_deref())
+            .send(req.method, &req.url, &req.headers, req.body.as_deref(), Duration::from_millis(req.timeout_ms))?
+            .text()
     }
 }
 
@@ -174,7 +187,8 @@ impl spotify::Transport for SpotifyHttp {
 pub fn cover_get(url: &str, proxy: Option<&str>, addrs: &[SocketAddr]) -> Option<crate::engine_update::Fetched> {
     let headers = [("User-Agent".to_owned(), "Mozilla/5.0".to_owned())];
     let response = Http::new(proxy).https_only().pinned(addrs.to_vec()).send("GET", url, &headers, None, Duration::from_secs(20))?;
-    let (status, final_url, content_length, location) = (response.status, response.final_url.clone(), response.content_length.clone(), response.location.clone());
+    let (status, final_url, content_length, location) =
+        (response.status, response.final_url.clone(), response.content_length.clone(), response.location.clone());
     Some(crate::engine_update::Fetched { status, final_url, content_length, location, body: Box::new(response.into_reader()) })
 }
 
@@ -199,6 +213,12 @@ impl crate::engine_update::Fetch for Releases {
         let status = response.status().as_u16();
         let final_url = response.get_uri().to_string();
         let content_length = response.headers().get("content-length").and_then(|v| v.to_str().ok()).map(str::to_owned);
-        Some(crate::engine_update::Fetched { status, final_url, content_length, location: None, body: Box::new(response.into_body().into_with_config().limit(u64::MAX).reader()) })
+        Some(crate::engine_update::Fetched {
+            status,
+            final_url,
+            content_length,
+            location: None,
+            body: Box::new(response.into_body().into_with_config().limit(u64::MAX).reader()),
+        })
     }
 }

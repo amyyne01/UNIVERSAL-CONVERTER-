@@ -35,19 +35,11 @@ fn build(url: &str, platform: SourcePlatform, content_type: ContentType, id: Opt
         Generic => format!("{} {}", id.as_deref().unwrap_or(Generic.label()), content_type.as_str()),
         _ => format!("{} {}", platform.label(), content_type.as_str()),
     };
-    UrlDetection {
-        url: url.to_owned(),
-        platform,
-        content_type,
-        id,
-        is_collection: matches!(content_type, Playlist | Album),
-        label,
-    }
+    UrlDetection { url: url.to_owned(), platform, content_type, id, is_collection: matches!(content_type, Playlist | Album), label }
 }
 
-static SPOTIFY: LazyLock<Regex> = LazyLock::new(|| {
-    re(r"(?:open\.spotify\.com/(?:intl-[A-Za-z]{2}/)?|spotify:)(track|playlist|album|artist)[/:]([A-Za-z0-9]+)")
-});
+static SPOTIFY: LazyLock<Regex> =
+    LazyLock::new(|| re(r"(?:open\.spotify\.com/(?:intl-[A-Za-z]{2}/)?|spotify:)(track|playlist|album|artist)[/:]([A-Za-z0-9]+)"));
 
 /// Recognises Spotify links in web (`open.spotify.com/[intl-xx/]<type>/<id>`)
 /// and URI (`spotify:<type>:<id>`) notation. Returns the lower-cased type and the id.
@@ -101,21 +93,17 @@ static YT_PLAYLIST: LazyLock<Regex> = LazyLock::new(|| {
     // `.` in the original excludes JavaScript's four line terminators.
     re(r"youtube\.com/playlist\?[^\n\r\x{2028}\x{2029}]*(?<![A-Za-z0-9_])list=([A-Za-z0-9_-]+)")
 });
-static YT_VIDEO: LazyLock<Regex> = LazyLock::new(|| {
-    re(r"(?:youtube\.com/(?:watch\?(?:[^#]*&)?v=|embed/|shorts/|live/)|youtu\.be/)([A-Za-z0-9_-]{11})")
-});
+static YT_VIDEO: LazyLock<Regex> =
+    LazyLock::new(|| re(r"(?:youtube\.com/(?:watch\?(?:[^#]*&)?v=|embed/|shorts/|live/)|youtu\.be/)([A-Za-z0-9_-]{11})"));
 static SC_SET: LazyLock<Regex> = LazyLock::new(|| re(r"soundcloud\.com/[^/]+/sets/([^/?#]+)"));
-static SC_TRACK: LazyLock<Regex> = LazyLock::new(|| {
-    re(r"soundcloud\.com/[^/]+/(?!(?:sets|likes|reposts|followers|following|tracks|albums|you)(?:[/?#]|$))([^/?#]+)")
-});
+static SC_TRACK: LazyLock<Regex> =
+    LazyLock::new(|| re(r"soundcloud\.com/[^/]+/(?!(?:sets|likes|reposts|followers|following|tracks|albums|you)(?:[/?#]|$))([^/?#]+)"));
 static INSTAGRAM: LazyLock<Regex> = LazyLock::new(|| re(r"instagram\.com/(?:reel|reels|p|tv)/([^/?#]+)"));
 static TIKTOK: LazyLock<Regex> = LazyLock::new(|| re(r"tiktok\.com"));
 static TIKTOK_CANONICAL: LazyLock<Regex> = LazyLock::new(|| re(r"@[^/]+/video/([0-9]+)"));
-static TIKTOK_SHORT: LazyLock<Regex> =
-    LazyLock::new(|| re(r"(?:vm\.|vt\.)tiktok\.com/([A-Za-z0-9]+)|tiktok\.com/t/([A-Za-z0-9]+)"));
+static TIKTOK_SHORT: LazyLock<Regex> = LazyLock::new(|| re(r"(?:vm\.|vt\.)tiktok\.com/([A-Za-z0-9]+)|tiktok\.com/t/([A-Za-z0-9]+)"));
 static FACEBOOK: LazyLock<Regex> = LazyLock::new(|| re(r"(?:facebook\.com|fb\.watch)"));
-static FACEBOOK_VIDEO: LazyLock<Regex> =
-    LazyLock::new(|| re(r"(?:/videos/|/reel/|[?&]v=|fb\.watch/)([A-Za-z0-9]+)"));
+static FACEBOOK_VIDEO: LazyLock<Regex> = LazyLock::new(|| re(r"(?:/videos/|/reel/|[?&]v=|fb\.watch/)([A-Za-z0-9]+)"));
 static DIRECT: LazyLock<Regex> = LazyLock::new(|| re(r"\.(?:mp4|mkv|webm|avi|mov)(?:[?#]|$)"));
 static REAL_HOST: LazyLock<Regex> = LazyLock::new(|| re(r"^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$"));
 

@@ -19,11 +19,7 @@ const PIN_LABEL: &str = "Keep open";
 
 pub fn view(s: &State, p: &Pal) -> El {
     let open = s.nav_open || s.nav_pinned;
-    let mut slot = el()
-        .key("nav")
-        .w(if s.nav_pinned { OPEN } else { STRIP })
-        .h_full()
-        .child(panel(s, p, open));
+    let mut slot = el().key("nav").w(if s.nav_pinned { OPEN } else { STRIP }).h_full().child(panel(s, p, open));
     if open && !s.nav_pinned {
         slot = slot.raise();
     }
@@ -64,7 +60,11 @@ fn item(s: &State, p: &Pal, nav: Nav, glyph: &'static Icon, name: &str, n: usize
     let mut mark = el().size(40.0, 40.0).center().child(icon(glyph, 16.0).color(ink));
     if badge > 0 && !open {
         // The count as a lit segment beside the glyph, clear of its corner.
-        mark = mark.child(el().h(16.0).min_w(16.0).px(4.0).center().radius(4.0).fill(p.accent).absolute(28.0, 2.0).child(label(badge.to_string(), mono(12.0, 500.0), p.deep)));
+        mark = mark.child(el().h(16.0).min_w(16.0).px(4.0).center().radius(4.0).fill(p.accent).absolute(28.0, 2.0).child(label(
+            badge.to_string(),
+            mono(12.0, 500.0),
+            p.deep,
+        )));
     }
     let mut r = row()
         .key(format!("nav-{n}"))
@@ -86,7 +86,11 @@ fn item(s: &State, p: &Pal, nav: Nav, glyph: &'static Icon, name: &str, n: usize
         r = r.child(el().size(4.0, 16.0).radius(1.0).fill(p.accent).absolute(-8.0, 12.0));
     }
     if open {
-        r = r.pr(12.0).gap(8.0).child(label(name.to_string(), sans(13.0, if on { 500.0 } else { 400.0 }), if on { p.text } else { p.text2 }).single_line()).child(el().grow(1.0));
+        r = r
+            .pr(12.0)
+            .gap(8.0)
+            .child(label(name.to_string(), sans(13.0, if on { 500.0 } else { 400.0 }), if on { p.text } else { p.text2 }).single_line())
+            .child(el().grow(1.0));
         if badge > 0 {
             r = r.child(label(badge.to_string(), mono(12.0, 500.0), p.accent_ink));
         }
@@ -117,5 +121,10 @@ fn pin(s: &State, p: &Pal) -> El {
         .child(label(PIN_LABEL, sans(13.0, 400.0), if on { p.text } else { p.text2 }).ml(8.0))
         .child(el().grow(1.0))
         // A two-segment indicator: lit while pinned.
-        .child(row().gap(4.0).child(el().size(8.0, 4.0).radius(1.0).fill(if on { p.accent } else { p.unlit })).child(el().size(8.0, 4.0).radius(1.0).fill(if on { p.accent } else { p.unlit })))
+        .child(
+            row()
+                .gap(4.0)
+                .child(el().size(8.0, 4.0).radius(1.0).fill(if on { p.accent } else { p.unlit }))
+                .child(el().size(8.0, 4.0).radius(1.0).fill(if on { p.accent } else { p.unlit })),
+        )
 }

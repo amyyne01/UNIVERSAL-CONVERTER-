@@ -368,7 +368,14 @@ pub fn resolve_target_exe(injected: Option<Option<&str>>, env_portable: Option<&
 impl Updater {
     /// `update_dir` is `<userData>/updates`.
     pub fn new(update_dir: &str) -> Self {
-        Self { update_dir: update_dir.to_string(), available: None, target: None, downloaded: None, state: UpdateState::phase("idle"), job: None }
+        Self {
+            update_dir: update_dir.to_string(),
+            available: None,
+            target: None,
+            downloaded: None,
+            state: UpdateState::phase("idle"),
+            job: None,
+        }
     }
 
     pub fn get_state(&self) -> &UpdateState {
@@ -447,7 +454,8 @@ impl Updater {
         match parse_checksum(text, &target.asset_name) {
             None => Err(self.error("Update refused: no checksum published for this release".into())),
             Some(expected) => {
-                self.job = Some(Job { expected, version: target.version, asset: target.asset_name, total: 0.0, received: 0.0, last_sent: -1.0 });
+                self.job =
+                    Some(Job { expected, version: target.version, asset: target.asset_name, total: 0.0, received: 0.0, last_sent: -1.0 });
                 Ok(Request::new(&target.asset_url))
             }
         }
@@ -585,8 +593,8 @@ fn latest_release(json: &Value) -> Result<Option<Available>, String> {
 /// or space) and no reserved device name.
 pub fn is_plain_file_name(name: &str) -> bool {
     const RESERVED: [&str; 22] = [
-        "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2", "LPT3",
-        "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+        "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4",
+        "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
     ];
     let stem = name.split('.').next().unwrap_or("");
     !name.is_empty()

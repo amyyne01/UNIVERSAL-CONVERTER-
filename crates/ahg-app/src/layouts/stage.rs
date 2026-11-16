@@ -93,7 +93,14 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> El {
     cx.caption_color(p.text2);
     let insets = cx.chrome_insets();
     let (wide, tall) = cx.layout_with("stage-root", |r| (r[2] >= 1100.0, r[3] >= 760.0)).unwrap_or((true, true));
-    let fit = Fit { ring: if tall { 296.0 } else { 192.0 }, rail: if wide { 400.0 } else { 320.0 }, tile: if tall { 80.0 } else { 56.0 }, pad: if tall { 24.0 } else { 16.0 }, tall, wide };
+    let fit = Fit {
+        ring: if tall { 296.0 } else { 192.0 },
+        rail: if wide { 400.0 } else { 320.0 },
+        tile: if tall { 80.0 } else { 56.0 },
+        pad: if tall { 24.0 } else { 16.0 },
+        tall,
+        wide,
+    };
     let first = s.tasks.is_empty() && s.stats.is_none();
     let home = |s: &State| if first { first_launch(&p).grow(1.0).min_h(0.0) } else { player(s, &p, fit) };
     let body = match s.nav {
@@ -104,7 +111,14 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> El {
         Nav::Downloads => list::view(s, &p, fit),
         Nav::Settings => sheet::view(&p, fit),
     };
-    col().key("stage-root").w_full().h_full().fill(p.bg).child(titlebar(s, &p, fit, insets.leading, insets.trailing)).child(body).child(transport(s, &p, fit))
+    col()
+        .key("stage-root")
+        .w_full()
+        .h_full()
+        .fill(p.bg)
+        .child(titlebar(s, &p, fit, insets.leading, insets.trailing))
+        .child(body)
+        .child(transport(s, &p, fit))
 }
 
 fn titlebar(s: &State, p: &Pal, fit: Fit, leading: f32, trailing: f32) -> El {
@@ -141,11 +155,16 @@ fn tools(p: &Pal, fit: Fit) -> El {
         .radius(8.0)
         .hover(p.hover)
         .cursor(Cursor::Pointer)
-        .role("button").no_window_drag()
+        .role("button")
+        .no_window_drag()
         .label(copy::REST_CHANGE_ARIA)
         .help(OUTPUT_DIR)
         .child(glyph(&icons::FOLDER, p.text2));
-    let folder = if fit.wide { folder.child(txt(folder_name, BODY_M, p.text)).child(txt(AUDIO_FORMAT.to_uppercase(), FIG, p.muted)) } else { folder };
+    let folder = if fit.wide {
+        folder.child(txt(folder_name, BODY_M, p.text)).child(txt(AUDIO_FORMAT.to_uppercase(), FIG, p.muted))
+    } else {
+        folder
+    };
     let search = row()
         .key("search")
         .h(32.0)
@@ -155,7 +174,8 @@ fn tools(p: &Pal, fit: Fit) -> El {
         .radius(8.0)
         .hover(p.hover)
         .cursor(Cursor::Pointer)
-        .role("button").no_window_drag()
+        .role("button")
+        .no_window_drag()
         .label(copy::SEARCH_CAPSULE_ARIA)
         .help(copy::SEARCH_CAPSULE_ARIA)
         .child(glyph(&icons::SEARCH, p.text2))
@@ -182,8 +202,11 @@ fn staged(tasks: &[DownloadTask]) -> Option<&DownloadTask> {
 fn player(s: &State, p: &Pal, fit: Fit) -> El {
     let on_stage = staged(&s.tasks);
     let landed: Vec<&DownloadTask> = s.tasks.iter().filter(|t| t.progress.status == St::Done).collect();
-    let satellites: Vec<&DownloadTask> =
-        s.tasks.iter().filter(|t| is_active(t) && t.progress.status != St::Queued && on_stage.is_none_or(|o| o.task_id != t.task_id)).collect();
+    let satellites: Vec<&DownloadTask> = s
+        .tasks
+        .iter()
+        .filter(|t| is_active(t) && t.progress.status != St::Queued && on_stage.is_none_or(|o| o.task_id != t.task_id))
+        .collect();
 
     let stage = match (on_stage, landed.first()) {
         (Some(t), _) => live_stage(s, p, t, fit),
@@ -251,7 +274,11 @@ fn reading(p: &Pal, label: &str, value: String) -> El {
 fn live_stage(s: &State, p: &Pal, t: &DownloadTask, fit: Fit) -> El {
     let pr = &t.progress;
     let or_dash = |v: String| if v.is_empty() { copy::RATE_UNKNOWN.to_string() } else { v };
-    let size = if pr.total > 0.0 { format!("{} of {}", copy::format_bytes(pr.downloaded), copy::format_bytes(pr.total)) } else { copy::RATE_UNKNOWN.to_string() };
+    let size = if pr.total > 0.0 {
+        format!("{} of {}", copy::format_bytes(pr.downloaded), copy::format_bytes(pr.total))
+    } else {
+        copy::RATE_UNKNOWN.to_string()
+    };
     let figure = if pr.status == St::Downloading {
         txt(format!("{}%", pr.percent.clamp(0.0, 100.0).round()), FIG_XL, p.text)
     } else {
@@ -279,7 +306,13 @@ fn live_stage(s: &State, p: &Pal, t: &DownloadTask, fit: Fit) -> El {
         .child(figure.mt(if fit.tall { 24.0 } else { 12.0 }))
         .child(readings.mt(8.0))
         .child(acts.mt(if fit.tall { 24.0 } else { 16.0 }));
-    row().w_full().min_h(fit.ring).gap(if fit.tall { 48.0 } else { 32.0 }).center_y().child(on_orbit(s, p, t, fit.ring, 28.0).key("stage-ring").label(copy::row_progress_aria(&t.title))).child(info)
+    row()
+        .w_full()
+        .min_h(fit.ring)
+        .gap(if fit.tall { 48.0 } else { 32.0 })
+        .center_y()
+        .child(on_orbit(s, p, t, fit.ring, 28.0).key("stage-ring").label(copy::row_progress_aria(&t.title)))
+        .child(info)
 }
 
 /// Nothing in flight: the last file that landed, square, and the month under it.
@@ -313,7 +346,13 @@ fn month_stage(s: &State, p: &Pal, fit: Fit) -> El {
         Some(st) => month(p, st, true, false),
         None => txt(copy::MONTH_NOTHING_YET_NO_PREV, BODY, p.text2),
     };
-    row().w_full().min_h(fit.ring).gap(if fit.tall { 48.0 } else { 32.0 }).center_y().child(art).child(col().grow(1.0).min_w(0.0).max_w(520.0).child(info))
+    row()
+        .w_full()
+        .min_h(fit.ring)
+        .gap(if fit.tall { 48.0 } else { 32.0 })
+        .center_y()
+        .child(art)
+        .child(col().grow(1.0).min_w(0.0).max_w(520.0).child(info))
 }
 
 /// This month: the count, the sentence against last month, and where it came from.
@@ -339,7 +378,14 @@ fn month(p: &Pal, st: &DownloadStats, split: bool, rule: bool) -> El {
         None => copy::MONTH_FIRST_ON_RECORD.to_string(),
     };
     c = c
-        .child(row().gap(8.0).items_end().mt(8.0).child(txt(files.to_string(), FIG_XL, p.text)).child(txt(copy::file_word(files), BODY, p.text2).mb(8.0)))
+        .child(
+            row()
+                .gap(8.0)
+                .items_end()
+                .mt(8.0)
+                .child(txt(files.to_string(), FIG_XL, p.text))
+                .child(txt(copy::file_word(files), BODY, p.text2).mb(8.0)),
+        )
         .child(row().flex_wrap().child(txt(copy::format_bytes(cur.bytes), FIG, p.text2)).child(txt(ending, SMALL, p.text2)));
     if split {
         c = c.child(sources(p, cur).mt(16.0));
@@ -350,8 +396,13 @@ fn month(p: &Pal, st: &DownloadStats, split: bool, rule: bool) -> El {
 /// Where it came from: one bar split by source, and its legend.
 fn sources(p: &Pal, cur: &ahg_engine::stats::MonthBucket) -> El {
     let total = cur.files.max(1.0);
-    let mut groups: [(&'static str, Color, f64); 5] =
-        [(copy::SPLIT_YOUTUBE, p.youtube, 0.0), (copy::SPLIT_SPOTIFY, p.spotify, 0.0), (copy::SPLIT_SOUNDCLOUD, p.soundcloud, 0.0), (copy::SPLIT_REELS, p.reels, 0.0), (copy::SPLIT_OTHER, p.muted, 0.0)];
+    let mut groups: [(&'static str, Color, f64); 5] = [
+        (copy::SPLIT_YOUTUBE, p.youtube, 0.0),
+        (copy::SPLIT_SPOTIFY, p.spotify, 0.0),
+        (copy::SPLIT_SOUNDCLOUD, p.soundcloud, 0.0),
+        (copy::SPLIT_REELS, p.reels, 0.0),
+        (copy::SPLIT_OTHER, p.muted, 0.0),
+    ];
     for (key, n) in &cur.by_platform {
         let at = match key.as_str() {
             "youtube" => 0,
@@ -369,9 +420,24 @@ fn sources(p: &Pal, cur: &ahg_engine::stats::MonthBucket) -> El {
     for (name, color, n) in &ranked {
         bar = bar.child(el().grow(*n as f32).h_full().radius(2.0).fill(*color));
         let pct = (n / total * 100.0).round() as u64;
-        legend = legend.child(row().gap(8.0).center_y().child(el().size(8.0, 8.0).radius(4.0).fill(*color)).child(txt(*name, SMALL, p.text2)).child(txt(copy::split_row_figures(pct, *n as u64), FIG, p.muted)));
+        legend = legend.child(
+            row().gap(8.0).center_y().child(el().size(8.0, 8.0).radius(4.0).fill(*color)).child(txt(*name, SMALL, p.text2)).child(txt(
+                copy::split_row_figures(pct, *n as u64),
+                FIG,
+                p.muted,
+            )),
+        );
     }
-    col().w_full().gap(12.0).child(row().child(txt(copy::CELL_WHERE_FROM, SMALL_M, p.text2)).child(spacer()).child(txt(copy::split_aside(cur.files as u64), FIG, p.muted))).child(bar).child(legend)
+    col()
+        .w_full()
+        .gap(12.0)
+        .child(row().child(txt(copy::CELL_WHERE_FROM, SMALL_M, p.text2)).child(spacer()).child(txt(
+            copy::split_aside(cur.files as u64),
+            FIG,
+            p.muted,
+        )))
+        .child(bar)
+        .child(legend)
 }
 
 /// The summed speed of the running downloads over the last two minutes, rebuilt from when
@@ -395,8 +461,18 @@ fn speed(s: &State, p: &Pal) -> El {
     let now: f64 = running.iter().map(|t| t.progress.speed).sum();
     let peak = samples.iter().copied().fold(0.0f32, f32::max).max(1.0) as f64;
     let scale = (0..16).flat_map(|k| [1.0, 2.0, 5.0].map(|m| m * 10f64.powi(k))).find(|v| *v >= peak).unwrap_or(peak);
-    let head = row().w_full().gap(8.0).center_y().child(txt(copy::CELL_SPEED, BODY_M, p.text2)).child(txt(copy::speed_now(&copy::format_bytes(now)), FIG, p.text)).child(spacer()).child(txt(copy::speed_scale(&copy::format_bytes(scale)), FIG, p.muted));
-    let chart = canvas(rune_trace(&samples, scale as f32, p).view_box(800.0, 64.0)).w_full().h(64.0).label(copy::speed_aria(&copy::format_bytes(now)));
+    let head = row()
+        .w_full()
+        .gap(8.0)
+        .center_y()
+        .child(txt(copy::CELL_SPEED, BODY_M, p.text2))
+        .child(txt(copy::speed_now(&copy::format_bytes(now)), FIG, p.text))
+        .child(spacer())
+        .child(txt(copy::speed_scale(&copy::format_bytes(scale)), FIG, p.muted));
+    let chart = canvas(rune_trace(&samples, scale as f32, p).view_box(800.0, 64.0))
+        .w_full()
+        .h(64.0)
+        .label(copy::speed_aria(&copy::format_bytes(now)));
     col().w_full().gap(12.0).child(head).child(chart)
 }
 
@@ -426,7 +502,11 @@ fn summary(tasks: &[DownloadTask]) -> String {
 }
 
 fn orbiting(s: &State, p: &Pal, sats: &[&DownloadTask], fit: Fit) -> El {
-    let head = row().w_full().center_y().child(txt(copy::GROUP_IN_PROGRESS, BODY_M, p.text2)).child(spacer()).child(txt(summary(&s.tasks), FIG, p.muted));
+    let head = row().w_full().center_y().child(txt(copy::GROUP_IN_PROGRESS, BODY_M, p.text2)).child(spacer()).child(txt(
+        summary(&s.tasks),
+        FIG,
+        p.muted,
+    ));
     let mut grid = col().w_full().gap(8.0);
     for pair in sats.chunks(2) {
         let mut r = row().w_full().gap(24.0);
@@ -438,7 +518,13 @@ fn orbiting(s: &State, p: &Pal, sats: &[&DownloadTask], fit: Fit) -> El {
         }
         grid = grid.child(r);
     }
-    col().w_full().gap(if fit.tall { 12.0 } else { 8.0 }).pt(if fit.tall { 16.0 } else { 12.0 }).border_sides([1.0, 0.0, 0.0, 0.0], p.line).child(head).child(grid)
+    col()
+        .w_full()
+        .gap(if fit.tall { 12.0 } else { 8.0 })
+        .pt(if fit.tall { 16.0 } else { 12.0 })
+        .border_sides([1.0, 0.0, 0.0, 0.0], p.line)
+        .child(head)
+        .child(grid)
 }
 
 /// What a moving task reads as on one line.
@@ -450,7 +536,12 @@ pub(crate) fn motion_line(p: &Pal, t: &DownloadTask) -> El {
             row().gap(8.0).child(txt(format!("{}%", pr.percent.round()), FIG, p.text)).child(txt(rate, FIG, p.muted))
         }
         St::Retrying => row().gap(8.0).center_y().child(glyph(&icons::RETRY, p.warning)).child(txt(parts::retry_line(t), SMALL, p.warning)),
-        St::Paused => row().gap(8.0).center_y().child(glyph(&icons::PAUSE, p.warning)).child(txt(copy::STATE_PAUSED, SMALL_M, p.warning)).child(txt(format!("{}%", pr.percent.round()), FIG, p.muted)),
+        St::Paused => row()
+            .gap(8.0)
+            .center_y()
+            .child(glyph(&icons::PAUSE, p.warning))
+            .child(txt(copy::STATE_PAUSED, SMALL_M, p.warning))
+            .child(txt(format!("{}%", pr.percent.round()), FIG, p.muted)),
         _ => {
             let (word, tone) = state_word(p, t);
             row().gap(8.0).child(txt(word, SMALL_M, tone)).child(txt(model::specs(t), FIG, p.muted).truncate().shrink())
@@ -488,11 +579,29 @@ fn shelf(s: &State, p: &Pal, landed: &[&DownloadTask], fit: Fit) -> El {
     let mut tiles = row().w_full().gap(16.0);
     for t in landed.iter().take(7) {
         let size = copy::format_bytes(t.progress.downloaded);
-        let mut tile = col().key(format!("tile-{}", t.task_id)).w(fit.tile + 24.0).gap(8.0).cursor(Cursor::Pointer).help(copy::recent_open_aria(&model::label(t))).child(cover(s, p, t, fit.tile, false));
-        tile = tile.child(col().w_full().gap(0.0).child(txt(model::label(t), SMALL_M, p.text).truncate()).child(txt(format!("{} · {size}", t.format.to_uppercase()), FIG, p.muted).truncate()));
+        let mut tile = col()
+            .key(format!("tile-{}", t.task_id))
+            .w(fit.tile + 24.0)
+            .gap(8.0)
+            .cursor(Cursor::Pointer)
+            .help(copy::recent_open_aria(&model::label(t)))
+            .child(cover(s, p, t, fit.tile, false));
+        tile = tile.child(
+            col()
+                .w_full()
+                .gap(0.0)
+                .child(txt(model::label(t), SMALL_M, p.text).truncate())
+                .child(txt(format!("{} · {size}", t.format.to_uppercase()), FIG, p.muted).truncate()),
+        );
         tiles = tiles.child(tile);
     }
-    col().w_full().gap(12.0).pt(if fit.tall { 16.0 } else { 12.0 }).border_sides([1.0, 0.0, 0.0, 0.0], p.line).child(head).child(tiles.clip_rounded(0.0))
+    col()
+        .w_full()
+        .gap(12.0)
+        .pt(if fit.tall { 16.0 } else { 12.0 })
+        .border_sides([1.0, 0.0, 0.0, 0.0], p.line)
+        .child(head)
+        .child(tiles.clip_rounded(0.0))
 }
 
 // ── First launch ───────────────────────────────────────────────────────────
@@ -500,7 +609,13 @@ fn shelf(s: &State, p: &Pal, landed: &[&DownloadTask], fit: Fit) -> El {
 fn first_launch(p: &Pal) -> El {
     let w = 400.0;
     let mark = canvas(planet(w, mix(p.text, p.bg, 0.08), p.bg)).key("planet").size(w, w * 0.592);
-    let mut caption = row().center_y().child(keys(p, &[copy::KEY_CTRL])).child(txt(copy::REST_PLUS_SPACED, SMALL, p.muted)).child(keys(p, &[copy::REST_KEY_V])).child(txt(copy::REST_PASTES_A_LINK, SMALL, p.text2)).child(txt(copy::REST_HOTKEY_LEAD, SMALL, p.text2));
+    let mut caption = row()
+        .center_y()
+        .child(keys(p, &[copy::KEY_CTRL]))
+        .child(txt(copy::REST_PLUS_SPACED, SMALL, p.muted))
+        .child(keys(p, &[copy::REST_KEY_V]))
+        .child(txt(copy::REST_PASTES_A_LINK, SMALL, p.text2))
+        .child(txt(copy::REST_HOTKEY_LEAD, SMALL, p.text2));
     for (i, part) in HOTKEY.split('+').enumerate() {
         if i > 0 {
             caption = caption.child(txt("+", SMALL, p.muted).mx(4.0));
@@ -508,7 +623,8 @@ fn first_launch(p: &Pal) -> El {
         caption = caption.child(keys(p, &[if part == "CommandOrControl" { copy::KEY_CTRL } else { part }]));
     }
     caption = caption.child(txt(copy::REST_HOTKEY_TRAIL, SMALL, p.text2));
-    let source = |i: &'static Icon, name: &'static str, c: Color| row().gap(8.0).center_y().child(glyph(i, c)).child(txt(name, SMALL_M, p.text));
+    let source =
+        |i: &'static Icon, name: &'static str, c: Color| row().gap(8.0).center_y().child(glyph(i, c)).child(txt(name, SMALL_M, p.text));
     let works = row()
         .gap(16.0)
         .center_y()
@@ -518,13 +634,7 @@ fn first_launch(p: &Pal) -> El {
         .child(source(&icons::SOUNDCLOUD, copy::WORKS_WITH_SOUNDCLOUD, p.soundcloud))
         .child(source(&icons::REELS, copy::WORKS_WITH_REELS, p.reels))
         .child(txt(copy::WORKS_WITH_TAIL, SMALL, p.muted));
-    col()
-        .w_full()
-        .center()
-        .child(mark)
-        .child(txt(copy::HOME_HEADLINE, HERO, p.text).mt(40.0))
-        .child(caption.mt(16.0))
-        .child(works.mt(32.0))
+    col().w_full().center().child(mark).child(txt(copy::HOME_HEADLINE, HERO, p.text).mt(40.0)).child(caption.mt(16.0)).child(works.mt(32.0))
 }
 
 // ── What the field found ───────────────────────────────────────────────────
@@ -547,7 +657,11 @@ fn found_sheet(s: &State, p: &Pal, fit: Fit, under: El, answer: El) -> El {
         .corners([16.0, 16.0, 0.0, 0.0])
         .shadow(-8.0, 32.0, Color::BLACK.alpha(if p.dark { 0.45 } else { 0.10 }))
         .child(head);
-    sheet = if found::fills(s) { sheet.child(answer.grow(1.0).min_h(0.0)).pin(Some(side), Some(fit.pad), Some(side), Some(0.0)) } else { sheet.child(answer).pin(Some(side), None, Some(side), Some(0.0)) };
+    sheet = if found::fills(s) {
+        sheet.child(answer.grow(1.0).min_h(0.0)).pin(Some(side), Some(fit.pad), Some(side), Some(0.0))
+    } else {
+        sheet.child(answer).pin(Some(side), None, Some(side), Some(0.0))
+    };
     let mut c = col().w_full().grow(1.0).min_h(0.0).child(under.opacity(0.24).inert()).child(sheet);
     // A notice rises above the bar's right end, over the sheet.
     if let Some(n) = found::notice(s, p) {
@@ -579,24 +693,47 @@ fn transport(s: &State, p: &Pal, fit: Fit) -> El {
         .border(1.0, p.track)
         .label(copy::FIELD_ARIA)
         .child(glyph(&icons::LINK, p.muted))
-        .child(if s.input.is_empty() { txt(copy::FIELD_PLACEHOLDER, BODY, p.muted) } else { txt(s.input.clone(), BODY, p.text) }.truncate().grow(1.0).min_w(0.0))
+        .child(
+            if s.input.is_empty() { txt(copy::FIELD_PLACEHOLDER, BODY, p.muted) } else { txt(s.input.clone(), BODY, p.text) }
+                .truncate()
+                .grow(1.0)
+                .min_w(0.0),
+        )
         // While an answer is open its Download is the lit control, so Look up steps down.
         .child(button(p, "look-up".into(), copy::FIELD_BUTTON_LOOK_UP, None, matches!(s.found, Found::Nothing)).radius(4.0));
 
     // Play-pause and stop, as on any player: one for everything in flight.
     let (pp_label, pp_icon) = if all_paused { (copy::DL_RESUME_ALL, &icons::PLAY) } else { (copy::DL_PAUSE_ALL, &icons::PAUSE) };
     let ink = if active.is_empty() { p.muted } else { p.text };
-    let play = el().key("pause-all").size(40.0, 40.0).center().radius(20.0).border(1.0, p.track).hover(p.raised).cursor(Cursor::Pointer).role("button").label(pp_label).help(pp_label).focusable(true).child(glyph(pp_icon, ink));
+    let play = el()
+        .key("pause-all")
+        .size(40.0, 40.0)
+        .center()
+        .radius(20.0)
+        .border(1.0, p.track)
+        .hover(p.raised)
+        .cursor(Cursor::Pointer)
+        .role("button")
+        .label(pp_label)
+        .help(pp_label)
+        .focusable(true)
+        .child(glyph(pp_icon, ink));
     let stop = icon_button(p, "cancel-all".into(), copy::DL_CANCEL_ALL, &icons::CANCEL, if active.is_empty() { p.muted } else { p.text2 });
 
     // The whole flight: everything known in bytes, as one line.
-    let (done, total) = active.iter().filter(|t| t.progress.total > 0.0).fold((0.0, 0.0), |(d, n), t| (d + t.progress.downloaded, n + t.progress.total));
+    let (done, total) =
+        active.iter().filter(|t| t.progress.total > 0.0).fold((0.0, 0.0), |(d, n), t| (d + t.progress.downloaded, n + t.progress.total));
     let speed: f64 = active.iter().map(|t| t.progress.speed).sum();
     let overall = if active.is_empty() {
         col().w(if fit.tall { 240.0 } else { 160.0 }).child(txt(copy::EMPTY_FILTER_ACTIVE, SMALL, p.muted).truncate())
     } else {
         let frac = if total > 0.0 { (done / total) as f32 } else { 0.0 };
-        let mut figures = row().w_full().gap(8.0).child(txt(active.len().to_string(), FIG, p.text)).child(txt(copy::HOME_IN_FLIGHT_SUFFIX.trim_start(), SMALL, p.text2)).child(spacer());
+        let mut figures = row()
+            .w_full()
+            .gap(8.0)
+            .child(txt(active.len().to_string(), FIG, p.text))
+            .child(txt(copy::HOME_IN_FLIGHT_SUFFIX.trim_start(), SMALL, p.text2))
+            .child(spacer());
         if speed > 0.0 {
             figures = figures.child(txt(copy::format_speed(speed), FIG, p.text2));
         }
@@ -628,12 +765,24 @@ fn transport(s: &State, p: &Pal, fit: Fit) -> El {
 /// The three places, as three bodies on one orbit line: the current one is a solid body
 /// with its name in full ink, the others hollow. Always shown, Ctrl+1, 2, 3.
 fn dock(s: &State, p: &Pal, active: usize) -> El {
-    let places: [(Nav, &str, &'static Icon); 3] = [(Nav::Home, copy::NAV_HOME, &icons::HOME), (Nav::Downloads, copy::NAV_DOWNLOADS, &icons::DOWNLOAD), (Nav::Settings, copy::NAV_SETTINGS, &icons::SETTINGS)];
+    let places: [(Nav, &str, &'static Icon); 3] = [
+        (Nav::Home, copy::NAV_HOME, &icons::HOME),
+        (Nav::Downloads, copy::NAV_DOWNLOADS, &icons::DOWNLOAD),
+        (Nav::Settings, copy::NAV_SETTINGS, &icons::SETTINGS),
+    ];
     let mut items = row().gap(4.0).role("tablist").label(copy::RAIL_ARIA);
     for (i, (nav, name, i_con)) in places.into_iter().enumerate() {
         let on = s.nav == nav;
-        let body = if on { el().size(8.0, 8.0).radius(4.0).fill(p.text) } else { el().size(8.0, 8.0).radius(4.0).fill(p.deep).border(1.0, p.track) };
-        let mut label = row().gap(8.0).center_y().child(glyph(i_con, if on { p.text } else { p.muted })).child(txt(name, BODY_M, if on { p.text } else { p.text2 }));
+        let body = if on {
+            el().size(8.0, 8.0).radius(4.0).fill(p.text)
+        } else {
+            el().size(8.0, 8.0).radius(4.0).fill(p.deep).border(1.0, p.track)
+        };
+        let mut label = row().gap(8.0).center_y().child(glyph(i_con, if on { p.text } else { p.muted })).child(txt(
+            name,
+            BODY_M,
+            if on { p.text } else { p.text2 },
+        ));
         if nav == Nav::Downloads && active > 0 {
             label = label.child(txt(active.to_string(), FIG, p.muted));
         }

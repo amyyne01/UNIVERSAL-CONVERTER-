@@ -30,21 +30,42 @@ pub fn view(s: &State, p: &Pal) -> El {
         return col().w_full().h_full().px(40.0).pb(72.0).items_center().justify_center().child(hero);
     }
 
-    let mut headline = row().w_full().center_y().justify_between().child(label(copy::HOME_HEADLINE, sans(30.0, 500.0).tracking(-0.5), p.text));
+    let mut headline =
+        row().w_full().center_y().justify_between().child(label(copy::HOME_HEADLINE, sans(30.0, 500.0).tracking(-0.5), p.text));
     if active > 0 {
         headline = headline.child(in_flight(active, p));
     }
     // What the field found takes the body's place, under the field it came out of.
     if let Some(found) = super::found::view(s, p) {
-        let page = col().w_full().max_w(1600.0).h_full().min_h(0.0).px(40.0).pt(36.0).pb(40.0).gap(16.0).child(headline).child(stack(12.0).mt(4.0).child(field(s, p)).child(status(p))).child(found.mt(8.0));
+        let page = col()
+            .w_full()
+            .max_w(1600.0)
+            .h_full()
+            .min_h(0.0)
+            .px(40.0)
+            .pt(36.0)
+            .pb(40.0)
+            .gap(16.0)
+            .child(headline)
+            .child(stack(12.0).mt(4.0).child(field(s, p)).child(status(p)))
+            .child(found.mt(8.0));
         return col().w_full().h_full().min_h(0.0).items_center().child(page);
     }
-    let mut page = col().w_full().max_w(1600.0).px(40.0).pt(36.0).pb(40.0).gap(16.0).child(headline).child(stack(12.0).mt(4.0).child(field(s, p)).child(status(p)));
+    let mut page = col()
+        .w_full()
+        .max_w(1600.0)
+        .px(40.0)
+        .pt(36.0)
+        .pb(40.0)
+        .gap(16.0)
+        .child(headline)
+        .child(stack(12.0).mt(4.0).child(field(s, p)).child(status(p)));
     let mut bento = col().w_full().gap(16.0).mt(16.0);
     if active > 0 {
         bento = bento.child(speed_cell(&s.tasks, p));
     }
-    bento = bento.child(row().w_full().gap(16.0).child(month_cell(s.stats.as_ref(), p).grow(3.0)).child(split_cell(s.stats.as_ref(), p).grow(2.0)));
+    bento = bento
+        .child(row().w_full().gap(16.0).child(month_cell(s.stats.as_ref(), p).grow(3.0)).child(split_cell(s.stats.as_ref(), p).grow(2.0)));
     if !done.is_empty() {
         bento = bento.child(recent_cell(s, &done, p));
     }
@@ -79,7 +100,13 @@ fn field(s: &State, p: &Pal) -> El {
     let words = if !input.is_empty() && !input.contains("://") { copy::FIELD_BUTTON_SEARCH } else { copy::FIELD_BUTTON_LOOK_UP };
     // A failed lookup leaves the input's level red, as the old field's strip did.
     let (lit, level_color) = if matches!(s.found, Found::LookupFailed(_)) { (1.0, p.error.alpha(0.6)) } else { (0.0, p.accent) };
-    let jack = el().size(40.0, 40.0).radius(8.0).fill(p.deep).border(1.0, p.line).center().child(icon(&icons::LINK, 16.0).color(if input.is_empty() { p.muted } else { p.accent_ink }));
+    let jack = el()
+        .size(40.0, 40.0)
+        .radius(8.0)
+        .fill(p.deep)
+        .border(1.0, p.line)
+        .center()
+        .child(icon(&icons::LINK, 16.0).color(if input.is_empty() { p.muted } else { p.accent_ink }));
     let go = row()
         .h(44.0)
         .pl(16.0)
@@ -95,18 +122,23 @@ fn field(s: &State, p: &Pal) -> El {
         .role("button")
         .child(label(words, sans(14.0, 500.0), p.bg))
         .child(icon(&icons::FORWARD, 16.0).color(p.bg));
-    let typed = if input.is_empty() { label(copy::FIELD_PLACEHOLDER, sans(16.0, 400.0), p.muted) } else { label(input.to_string(), sans(16.0, 400.0), p.text) };
-    let line = row().w_full().h(64.0).pl(12.0).pr(12.0).gap(12.0).center_y().child(jack).child(typed.grow(1.0).single_line().truncate().min_w(0.0)).child(go);
-    let level = el().w_full().h(16.0).px(12.0).pb(8.0).child(meter(lit, 120, None, 8.0, 2.0, level_color, p.unlit));
-    col()
+    let typed = if input.is_empty() {
+        label(copy::FIELD_PLACEHOLDER, sans(16.0, 400.0), p.muted)
+    } else {
+        label(input.to_string(), sans(16.0, 400.0), p.text)
+    };
+    let line = row()
         .w_full()
-        .radius(12.0)
-        .fill(p.surface)
-        .border(1.0, p.line_strong)
-        .role("textbox")
-        .label(copy::FIELD_ARIA)
-        .child(line)
-        .child(level)
+        .h(64.0)
+        .pl(12.0)
+        .pr(12.0)
+        .gap(12.0)
+        .center_y()
+        .child(jack)
+        .child(typed.grow(1.0).single_line().truncate().min_w(0.0))
+        .child(go);
+    let level = el().w_full().h(16.0).px(12.0).pb(8.0).child(meter(lit, 120, None, 8.0, 2.0, level_color, p.unlit));
+    col().w_full().radius(12.0).fill(p.surface).border(1.0, p.line_strong).role("textbox").label(copy::FIELD_ARIA).child(line).child(level)
 }
 
 /// The rest-state status line (reading 8).
@@ -116,7 +148,12 @@ fn status(p: &Pal) -> El {
         .center_y()
         .min_w(0.0)
         .child(Line::new().add(&copy::rest_saves_as(AUDIO_FORMAT), p.text2).add(OUTPUT_DIR, p.text).one(sans(13.0, 400.0)).help(OUTPUT_DIR))
-        .child(label(copy::REST_CHANGE, sans(13.0, 500.0), p.accent_ink).cursor(rune::Cursor::Pointer).role("link").label(copy::REST_CHANGE_ARIA));
+        .child(
+            label(copy::REST_CHANGE, sans(13.0, 500.0), p.accent_ink)
+                .cursor(rune::Cursor::Pointer)
+                .role("link")
+                .label(copy::REST_CHANGE_ARIA),
+        );
     let right = row()
         .gap(0.0)
         .center_y()
@@ -228,7 +265,11 @@ fn month_cell(stats: Option<&DownloadStats>, p: &Pal) -> El {
             .items_end()
             .child(label(files.to_string(), mono(60.0, 400.0).tracking(-2.0).lh(60.0), p.text))
             .child(label(copy::file_word(files), sans(16.0, 400.0), p.text2).pb(8.0));
-        let mut b = stack(16.0).child(stack(12.0).child(counter).child(Line::new().fig(&copy::format_bytes(cur.bytes), p.text).add(&ending, p.text2).wrap(sans(13.0, 400.0))));
+        let mut b = stack(16.0).child(
+            stack(12.0)
+                .child(counter)
+                .child(Line::new().fig(&copy::format_bytes(cur.bytes), p.text).add(&ending, p.text2).wrap(sans(13.0, 400.0))),
+        );
         if let Some(m) = prev {
             let top = cur.files.max(m.files);
             b = b.child(
@@ -248,7 +289,11 @@ fn month_bar(m: &MonthBucket, top: f64, color: Color, p: &Pal) -> El {
     let frac = if top > 0.0 { (m.files / top).max(0.03) } else { 0.0 };
     stack(8.0)
         .w_full()
-        .child(row().w_full().child(label(model::month_name(&m.month), sans(12.0, 400.0), p.text2)).child(spacer()).child(label((m.files as u64).to_string(), mono(12.0, 500.0), p.text)))
+        .child(row().w_full().child(label(model::month_name(&m.month), sans(12.0, 400.0), p.text2)).child(spacer()).child(label(
+            (m.files as u64).to_string(),
+            mono(12.0, 500.0),
+            p.text,
+        )))
         .child(meter(frac, 48, None, 8.0, 2.0, color, p.unlit))
 }
 
@@ -304,7 +349,9 @@ fn split_cell(stats: Option<&DownloadStats>, p: &Pal) -> El {
                         .child(dot(c, 6.0))
                         .child(label(*name, sans(13.0, if lead { 500.0 } else { 400.0 }), if lead { p.text } else { p.text2 }))
                         .child(spacer())
-                        .child(Line::new().fig(pct_part, if lead { p.text } else { p.text2 }).fig(count_part, p.muted).one(mono(12.0, 400.0))),
+                        .child(
+                            Line::new().fig(pct_part, if lead { p.text } else { p.text2 }).fig(count_part, p.muted).one(mono(12.0, 400.0)),
+                        ),
                 )
                 .child(meter((*n as f64 / total as f64).max(0.02), 40, None, 4.0, 2.0, c, p.unlit)),
         );
@@ -338,7 +385,15 @@ fn title_of(t: &DownloadTask) -> &str {
 }
 
 fn duration_chip(t: &DownloadTask, p: &Pal) -> Option<El> {
-    (t.duration > 0.0).then(|| el().h(20.0).px(8.0).center().radius(4.0).fill(p.media_scrim).child(label(copy::format_duration(t.duration), mono(11.0, 500.0), p.on_media)).pin(None, Some(8.0), Some(8.0), None))
+    (t.duration > 0.0).then(|| {
+        el().h(20.0)
+            .px(8.0)
+            .center()
+            .radius(4.0)
+            .fill(p.media_scrim)
+            .child(label(copy::format_duration(t.duration), mono(11.0, 500.0), p.on_media))
+            .pin(None, Some(8.0), Some(8.0), None)
+    })
 }
 
 const ART_H: f32 = 104.0;
@@ -349,7 +404,15 @@ fn poster(s: &State, t: &DownloadTask, p: &Pal) -> El {
         .fill(p.media_scrim)
         .pin(Some(0.0), None, Some(0.0), Some(0.0))
         .child(label(title_of(t), sans(14.0, 500.0), p.on_media).single_line().truncate())
-        .child(label(copy::recent_poster_meta(&t.format, &copy::format_bytes(t.progress.downloaded), &t.uploader), mono(11.0, 400.0), p.on_media.alpha(0.78)).single_line().truncate());
+        .child(
+            label(
+                copy::recent_poster_meta(&t.format, &copy::format_bytes(t.progress.downloaded), &t.uploader),
+                mono(11.0, 400.0),
+                p.on_media.alpha(0.78),
+            )
+            .single_line()
+            .truncate(),
+        );
     let mut a = art(s, t, None, ART_H + 46.0, 10.0, p).clip_rounded(10.0).child(caption);
     if let Some(chip) = duration_chip(t, p) {
         a = a.child(chip);
@@ -367,5 +430,9 @@ fn tile(s: &State, t: &DownloadTask, p: &Pal) -> El {
         .cursor(rune::Cursor::Pointer)
         .child(a)
         .child(label(title_of(t), sans(13.0, 500.0), p.text).single_line().truncate().min_w(0.0))
-        .child(row().w_full().child(label(t.format.to_uppercase(), mono(11.0, 400.0), p.muted)).child(spacer()).child(label(copy::format_bytes(t.progress.downloaded), mono(11.0, 400.0), p.muted)))
+        .child(row().w_full().child(label(t.format.to_uppercase(), mono(11.0, 400.0), p.muted)).child(spacer()).child(label(
+            copy::format_bytes(t.progress.downloaded),
+            mono(11.0, 400.0),
+            p.muted,
+        )))
 }

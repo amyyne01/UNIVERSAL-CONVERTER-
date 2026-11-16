@@ -38,8 +38,7 @@ use crate::url_detector::parse_spotify_url;
 pub const EMBED: &str = "https://open.spotify.com/embed";
 pub const GQL_URL: &str = "https://api-partner.spotify.com/pathfinder/v1/query";
 pub const HOME: &str = "https://open.spotify.com/";
-pub const UA: &str =
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
+pub const UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
 
 /// The anonymous token is cached for 25 minutes, whatever expiry the page states.
 pub const TOKEN_TTL_MS: f64 = 25.0 * 60.0 * 1000.0;
@@ -439,14 +438,11 @@ pub fn build_collection(kind: Kind, id: &str, entity: Option<&Value>, meta: Opti
         Kind::Album => artist_names(first(&[g(meta, "artists"), g(entity, "artists")])).into_iter().next().unwrap_or_default(),
         Kind::Playlist => text_of(first(&[path(meta, &["ownerV2", "data", "name"]), path(entity, &["owner", "name"])])),
     };
-    let thumbnail_url = [
-        cover_url(index0(path(meta, &["images", "items"]))),
-        cover_url(g(meta, "coverArt")),
-        cover_url(g(entity, "coverArt")),
-    ]
-    .into_iter()
-    .find(|c| !c.is_empty())
-    .unwrap_or_default();
+    let thumbnail_url =
+        [cover_url(index0(path(meta, &["images", "items"]))), cover_url(g(meta, "coverArt")), cover_url(g(entity, "coverArt"))]
+            .into_iter()
+            .find(|c| !c.is_empty())
+            .unwrap_or_default();
     Playlist {
         id: id.to_owned(),
         name: text_of(first(&[g(meta, "name"), g(entity, "name"), g(entity, "title")])),
@@ -571,7 +567,8 @@ pub fn chunk_urls(js: &str, base: &str) -> Vec<(String, String)> {
         LazyLock::new(|| Regex::new(r#"\(\{([^}]*)\}\)\[e\]\|\|e\)\+"\."\+\(\{([^}]*)\}\)\[e\]\+"\.js""#).unwrap());
     static ENTRY: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"(\d+):"([^"]+)""#).unwrap());
     let Some(maps) = MAPS.captures(js) else { return vec![] };
-    let hashes: HashMap<&str, &str> = ENTRY.captures_iter(maps.get(2).unwrap().as_str()).map(|c| (c.get(1).unwrap().as_str(), c.get(2).unwrap().as_str())).collect();
+    let hashes: HashMap<&str, &str> =
+        ENTRY.captures_iter(maps.get(2).unwrap().as_str()).map(|c| (c.get(1).unwrap().as_str(), c.get(2).unwrap().as_str())).collect();
     ENTRY
         .captures_iter(maps.get(1).unwrap().as_str())
         .filter_map(|c| hashes.get(&c[1]).map(|h| (c[2].to_owned(), format!("{base}{}.{h}.js", &c[2]))))

@@ -275,12 +275,7 @@ fn temp_dir(tag: &str) -> PathBuf {
 }
 
 fn seal(args: &[&str]) -> std::process::Output {
-    Command::new("node")
-        .arg("scripts/seal-secrets.mjs")
-        .args(args)
-        .current_dir(repo_root())
-        .output()
-        .expect("run node")
+    Command::new("node").arg("scripts/seal-secrets.mjs").args(args).current_dir(repo_root()).output().expect("run node")
 }
 
 /// The numbers inside the `[...]` that follows `pub static <name>`.

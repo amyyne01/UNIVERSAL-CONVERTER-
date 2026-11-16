@@ -23,7 +23,11 @@ fn feed(tag: &str, asset: &str, sums: &str) -> Vec<u8> {
 
 /// A release with a good binary and its published checksum.
 fn good_release() -> Net {
-    Net::default().with(FEED, 200, &feed("2026.11.01", ASSET, SUMS)).with(ASSET, 200, BINARY).with(SUMS, 200, format!("{}  yt-dlp.exe\n{}  yt-dlp\n", sha(BINARY), sha(b"other")).as_bytes())
+    Net::default().with(FEED, 200, &feed("2026.11.01", ASSET, SUMS)).with(ASSET, 200, BINARY).with(
+        SUMS,
+        200,
+        format!("{}  yt-dlp.exe\n{}  yt-dlp\n", sha(BINARY), sha(b"other")).as_bytes(),
+    )
 }
 
 struct Rig {
@@ -113,7 +117,11 @@ fn a_binary_that_does_not_match_the_published_checksum_is_never_installed() {
 fn nothing_is_fetched_from_or_accepted_through_a_host_that_is_not_githubs() {
     // The feed points the binary somewhere else: refused before that host is ever asked.
     let evil = "https://evil.example/yt-dlp.exe";
-    let net = Net::default().with(FEED, 200, &feed("2026.11.01", evil, SUMS)).with(evil, 200, BINARY).with(SUMS, 200, format!("{}  yt-dlp.exe\n", sha(BINARY)).as_bytes());
+    let net = Net::default().with(FEED, 200, &feed("2026.11.01", evil, SUMS)).with(evil, 200, BINARY).with(
+        SUMS,
+        200,
+        format!("{}  yt-dlp.exe\n", sha(BINARY)).as_bytes(),
+    );
     let r = rig("evilfeed", &net, "2026.06.30");
     let status = r.updater.update();
     assert_eq!(status.message.as_deref(), Some("Engine update refused: untrusted host \"https://evil.example/yt-dlp.exe\""));
@@ -123,7 +131,10 @@ fn nothing_is_fetched_from_or_accepted_through_a_host_that_is_not_githubs() {
     // A trusted address that answers from somewhere else is refused too, checksum or not.
     let net = good_release().redirected(ASSET, "https://evil.example/yt-dlp.exe", BINARY);
     let r = rig("redirect", &net, "2026.06.30");
-    assert_eq!(r.updater.update().message.as_deref(), Some("Engine update refused: redirected to untrusted host \"https://evil.example/yt-dlp.exe\""));
+    assert_eq!(
+        r.updater.update().message.as_deref(),
+        Some("Engine update refused: redirected to untrusted host \"https://evil.example/yt-dlp.exe\"")
+    );
     assert!(r.nothing_installed());
 }
 
@@ -177,7 +188,13 @@ fn an_outdated_yt_dlp_error_asks_for_an_update_once_and_only_when_allowed() {
 #[ignore = "downloads the real yt-dlp"]
 fn the_real_latest_yt_dlp_is_fetched_verified_installed_and_runs() {
     let bin = scratch("real").join("bin");
-    let updater = EngineUpdater::new(bin.to_str().unwrap(), Box::new(ahg_runtime::http::Releases), Box::new(String::new), Box::new(|| {}), Box::new(|_| {}));
+    let updater = EngineUpdater::new(
+        bin.to_str().unwrap(),
+        Box::new(ahg_runtime::http::Releases),
+        Box::new(String::new),
+        Box::new(|| {}),
+        Box::new(|_| {}),
+    );
     let seen = updater.check(true);
     println!("check: {} latest {} {:?}", seen.state, seen.latest, seen.message);
     assert_eq!(seen.state, "available", "{:?}", seen.message);

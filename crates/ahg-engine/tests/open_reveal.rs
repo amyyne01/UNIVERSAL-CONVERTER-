@@ -18,9 +18,19 @@ fn a_file_inside_the_download_folder_may_be_shown() {
 
 #[test]
 fn a_path_outside_the_download_folder_is_refused() {
-    for outside in ["..\\Windows\\System32\\cmd.exe", "C:\\Windows\\notepad.exe", "D:\\Music\\x.mp3", "\\\\server\\share\\x.mp3", "..\\Downloads-evil\\x.mp3"] {
+    for outside in [
+        "..\\Windows\\System32\\cmd.exe",
+        "C:\\Windows\\notepad.exe",
+        "D:\\Music\\x.mp3",
+        "\\\\server\\share\\x.mp3",
+        "..\\Downloads-evil\\x.mp3",
+    ] {
         assert_eq!(revealable(outside, ROOT), Err("Invalid input: path escapes the output directory".to_owned()), "{outside}");
-        assert_eq!(openable(outside, ROOT), Err("Invalid input: not an openable media file in the output directory".to_owned()), "{outside}");
+        assert_eq!(
+            openable(outside, ROOT),
+            Err("Invalid input: not an openable media file in the output directory".to_owned()),
+            "{outside}"
+        );
     }
 }
 
@@ -37,7 +47,8 @@ fn only_media_the_app_produces_may_be_opened() {
     for media in ["song.mp3", "song.M4A", "a.flac", "a.opus", "a.wav", "clip.mp4", "clip.MKV", "clip.webm", "sub\\a.ogg"] {
         assert!(matches!(openable(media, ROOT), Ok(Some(_))), "{media}");
     }
-    for other in ["setup.exe", "run.bat", "a.mp3.exe", "script.ps1", "page.html", "mp3", "noextension", "a.mp3 ", "a.lnk", "C:\\Downloads"] {
+    for other in ["setup.exe", "run.bat", "a.mp3.exe", "script.ps1", "page.html", "mp3", "noextension", "a.mp3 ", "a.lnk", "C:\\Downloads"]
+    {
         assert_eq!(openable(other, ROOT), Err("Invalid input: not an openable media file in the output directory".to_owned()), "{other}");
     }
 }

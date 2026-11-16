@@ -65,12 +65,8 @@ const HOSTS: &[(&str, bool)] = &[
 
 /// Never a link, pasted or not (a tab, newline, CR or DEL inside the host);
 /// refused through `ahg://` all the same.
-const MALFORMED: &[&str] = &[
-    "https://exa\tmple.com/x",
-    "https://example.com\n.evil/x",
-    "https://example.com\r.evil/x",
-    "https://example.com\x7f.evil/x",
-];
+const MALFORMED: &[&str] =
+    &["https://exa\tmple.com/x", "https://example.com\n.evil/x", "https://example.com\r.evil/x", "https://example.com\x7f.evil/x"];
 
 #[test]
 fn hosts_through_ahg_links() {

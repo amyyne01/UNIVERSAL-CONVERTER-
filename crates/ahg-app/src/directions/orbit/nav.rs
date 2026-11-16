@@ -80,7 +80,17 @@ fn item(s: &State, p: &Pal, nav: Nav, glyph: &'static Icon, label: &str, n: usiz
     }
     body = body.child(disc);
     if count > 0 && !open {
-        body = body.child(row().h(16.0).px(4.0).center().radius(8.0).fill(p.deep).border(1.0, p.track).child(txt(count.to_string(), FIG, p.text)).absolute(28.0, 0.0));
+        body = body.child(
+            row()
+                .h(16.0)
+                .px(4.0)
+                .center()
+                .radius(8.0)
+                .fill(p.deep)
+                .border(1.0, p.track)
+                .child(txt(count.to_string(), FIG, p.text))
+                .absolute(28.0, 0.0),
+        );
     }
     let mut r = row()
         .key(format!("nav-{n}"))
@@ -101,7 +111,10 @@ fn item(s: &State, p: &Pal, nav: Nav, glyph: &'static Icon, label: &str, n: usiz
         r = r.hover(p.hover);
     }
     if open {
-        r = r.pr(16.0).child(txt(label.to_string(), if on { BODY_M } else { BODY }, if on { p.text } else { p.text2 }).single_line()).child(spacer());
+        r = r
+            .pr(16.0)
+            .child(txt(label.to_string(), if on { BODY_M } else { BODY }, if on { p.text } else { p.text2 }).single_line())
+            .child(spacer());
         if count > 0 {
             r = r.child(txt(count.to_string(), FIG, p.text).mr(8.0));
         }

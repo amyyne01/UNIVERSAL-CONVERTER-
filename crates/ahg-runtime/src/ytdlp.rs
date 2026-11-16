@@ -201,7 +201,9 @@ impl YtDlp {
 
     fn run_json_with(&self, args: &[&str], cancel: Option<&AtomicBool>) -> Result<Vec<Value>, String> {
         match self.run_json_once(args, cancel) {
-            Err(msg) if msg != TIMEOUT_MESSAGE && msg != CANCELLED_MESSAGE && classify_error(&msg) == ErrorClass::Retryable => self.run_json_once(args, cancel),
+            Err(msg) if msg != TIMEOUT_MESSAGE && msg != CANCELLED_MESSAGE && classify_error(&msg) == ErrorClass::Retryable => {
+                self.run_json_once(args, cancel)
+            }
             other => other,
         }
     }

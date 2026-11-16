@@ -179,10 +179,17 @@ pub enum Found {
     /// The lookup failed; the sentence to show.
     LookupFailed(String),
     /// Words were typed: one band per source, in the order YouTube, SoundCloud, Spotify.
-    Search { query: String, bands: [Band; 3] },
+    Search {
+        query: String,
+        bands: [Band; 3],
+    },
     /// A playlist or album link: its tracks, to pick from. `matched` and
     /// `selected` run parallel to `playlist.tracks`.
-    Playlist { playlist: Playlist, matched: Vec<Matched>, selected: Vec<bool> },
+    Playlist {
+        playlist: Playlist,
+        matched: Vec<Matched>,
+        selected: Vec<bool>,
+    },
     /// One video or track: choose audio or video, format and quality, then download.
     Media(MediaMetadata),
 }
@@ -260,7 +267,27 @@ pub fn init() -> State {
     let direction = direction_from_args();
     let palette = arg("--palette").and_then(|p| p.parse().ok()).filter(|p| *p <= 7).unwrap_or(0);
     // With no scene asked for, the fullest state: Home with history.
-    State { direction, layout: layout_from_args(), reach: false, nav: Nav::Home, nav_open: false, plan: if arg("--plan") == Some("basic") { Plan::Basic } else { Plan::Premium }, notice: None, found: Found::Nothing, nav_pinned: false, picker: false, previews: Vec::new(), screen: Screen::Home, palette, tasks: sample::everything(), stats: Some(sample::stats()), covers: HashMap::new(), logo: None, input: String::new(), cache: None }
+    State {
+        direction,
+        layout: layout_from_args(),
+        reach: false,
+        nav: Nav::Home,
+        nav_open: false,
+        plan: if arg("--plan") == Some("basic") { Plan::Basic } else { Plan::Premium },
+        notice: None,
+        found: Found::Nothing,
+        nav_pinned: false,
+        picker: false,
+        previews: Vec::new(),
+        screen: Screen::Home,
+        palette,
+        tasks: sample::everything(),
+        stats: Some(sample::stats()),
+        covers: HashMap::new(),
+        logo: None,
+        input: String::new(),
+        cache: None,
+    }
 }
 
 /// Loads the sample covers. It waits for each to decode, so a headless
@@ -350,12 +377,21 @@ pub const SCENES: &[(&str, fn(&mut State))] = &[
     }),
     ("lookup-failed", |s| {
         s.input = "https://www.youtube.com/watch?v=example".into();
-        s.found = Found::LookupFailed(ahg_engine::downloader::errors::explain_error("ERROR: [youtube] example: Video unavailable. This video has been removed by the uploader"));
+        s.found = Found::LookupFailed(ahg_engine::downloader::errors::explain_error(
+            "ERROR: [youtube] example: Video unavailable. This video has been removed by the uploader",
+        ));
     }),
     // Matches at every stage: confirmed, a best guess, still matching, none found.
     ("playlist", |s| {
         let playlist = sample::playlist();
-        let matched = (0..playlist.tracks.len()).map(|i| match i { 3 => Matched::BestGuess(0.9), 6 => Matched::NoMatch, 7.. => Matched::Matching, _ => Matched::Confirmed }).collect();
+        let matched = (0..playlist.tracks.len())
+            .map(|i| match i {
+                3 => Matched::BestGuess(0.9),
+                6 => Matched::NoMatch,
+                7.. => Matched::Matching,
+                _ => Matched::Confirmed,
+            })
+            .collect();
         let selected = (0..playlist.tracks.len()).map(|i| i != 4 && i != 6).collect();
         s.input = "https://open.spotify.com/album/example".into();
         s.found = Found::Playlist { playlist, matched, selected };

@@ -12,24 +12,12 @@ use crate::gate::State;
 
 /// Counts toward "active": everything not finished.
 pub fn is_active(st: St) -> bool {
-    matches!(
-        st,
-        St::Queued
-            | St::FetchingInfo
-            | St::Downloading
-            | St::Converting
-            | St::Embedding
-            | St::Paused
-            | St::Retrying
-    )
+    matches!(st, St::Queued | St::FetchingInfo | St::Downloading | St::Converting | St::Embedding | St::Paused | St::Retrying)
 }
 
 /// Transferring or about to: the rows that sweep.
 pub fn is_live(st: St) -> bool {
-    matches!(
-        st,
-        St::FetchingInfo | St::Downloading | St::Converting | St::Embedding | St::Retrying
-    )
+    matches!(st, St::FetchingInfo | St::Downloading | St::Converting | St::Embedding | St::Retrying)
 }
 
 pub fn source_name(p: SourcePlatform) -> &'static str {
@@ -67,27 +55,13 @@ pub fn link_label(url: &str) -> String {
     };
     let (before_hash, _) = rest.split_once('#').unwrap_or((rest, ""));
     let (host_path, query) = before_hash.split_once('?').unwrap_or((before_hash, ""));
-    let (host, path) = host_path
-        .split_once('/')
-        .map(|(h, p)| (h, format!("/{p}")))
-        .unwrap_or((host_path, String::new()));
-    let host = host
-        .strip_prefix("www.")
-        .or_else(|| host.strip_prefix("m."))
-        .unwrap_or(host);
-    if let Some(v) = query
-        .split('&')
-        .find_map(|kv| kv.strip_prefix("v="))
-        .filter(|v| !v.is_empty())
-    {
+    let (host, path) = host_path.split_once('/').map(|(h, p)| (h, format!("/{p}"))).unwrap_or((host_path, String::new()));
+    let host = host.strip_prefix("www.").or_else(|| host.strip_prefix("m.")).unwrap_or(host);
+    if let Some(v) = query.split('&').find_map(|kv| kv.strip_prefix("v=")).filter(|v| !v.is_empty()) {
         return format!("{host} · {v}");
     }
     let label = format!("{host}{}", path.trim_end_matches('/'));
-    if label.chars().count() > 48 {
-        format!("{}…", label.chars().take(47).collect::<String>())
-    } else {
-        label
-    }
+    if label.chars().count() > 48 { format!("{}…", label.chars().take(47).collect::<String>()) } else { label }
 }
 
 /// A row's label: the title, else the saved file's name, else the link.
@@ -102,10 +76,7 @@ pub fn label(t: &DownloadTask) -> String {
 }
 
 pub fn is_permanent(t: &DownloadTask) -> bool {
-    matches!(
-        t.error_code,
-        Some(ErrorCode::Removed | ErrorCode::Unsupported | ErrorCode::Drm | ErrorCode::GeoBlocked)
-    )
+    matches!(t.error_code, Some(ErrorCode::Removed | ErrorCode::Unsupported | ErrorCode::Drm | ErrorCode::GeoBlocked))
 }
 
 /// The readable sentence on a failed or cancelled row (CONTENT.md 3.7), or the raw error.
@@ -123,39 +94,25 @@ pub fn reason(t: &DownloadTask) -> Option<String> {
     let (cause, remedy) = match kind {
         Private => (copy::ERR_PRIVATE_CAUSE, copy::ERR_PRIVATE_REMEDY),
         Removed => (copy::ERR_REMOVED_CAUSE, copy::ERR_REMOVED_REMEDY),
-        AgeRestricted => (
-            copy::ERR_AGE_RESTRICTED_CAUSE,
-            copy::ERR_AGE_RESTRICTED_REMEDY,
-        ),
-        LoginRequired => (
-            copy::ERR_LOGIN_REQUIRED_CAUSE,
-            copy::ERR_LOGIN_REQUIRED_REMEDY,
-        ),
+        AgeRestricted => (copy::ERR_AGE_RESTRICTED_CAUSE, copy::ERR_AGE_RESTRICTED_REMEDY),
+        LoginRequired => (copy::ERR_LOGIN_REQUIRED_CAUSE, copy::ERR_LOGIN_REQUIRED_REMEDY),
         GeoBlocked => (copy::ERR_GEO_BLOCKED_CAUSE, copy::ERR_GEO_BLOCKED_REMEDY),
         Drm => (copy::ERR_DRM_CAUSE, copy::ERR_DRM_REMEDY),
         RateLimited => (copy::ERR_RATE_LIMITED_CAUSE, copy::ERR_RATE_LIMITED_REMEDY),
         Network => (copy::ERR_NETWORK_CAUSE, copy::ERR_NETWORK_REMEDY),
         Unsupported => (copy::ERR_UNSUPPORTED_CAUSE, copy::ERR_UNSUPPORTED_REMEDY),
-        FfmpegMissing => (
-            copy::ERR_FFMPEG_MISSING_CAUSE,
-            copy::ERR_FFMPEG_MISSING_REMEDY,
-        ),
+        FfmpegMissing => (copy::ERR_FFMPEG_MISSING_CAUSE, copy::ERR_FFMPEG_MISSING_REMEDY),
         DiskFull => (copy::ERR_DISK_FULL_CAUSE, copy::ERR_DISK_FULL_REMEDY),
         Unknown => (copy::ERR_UNKNOWN_CAUSE, copy::ERR_UNKNOWN_REMEDY),
     };
-    let remedy =
-        if t.source == SourcePlatform::Spotify && matches!(kind, Unknown | Removed | Unsupported) {
-            copy::ERR_SPOTIFY_REMEDY
-        } else {
-            remedy
-        };
+    let remedy = if t.source == SourcePlatform::Spotify && matches!(kind, Unknown | Removed | Unsupported) {
+        copy::ERR_SPOTIFY_REMEDY
+    } else {
+        remedy
+    };
     let video = matches!(
         t.source,
-        SourcePlatform::Youtube
-            | SourcePlatform::Vimeo
-            | SourcePlatform::Dailymotion
-            | SourcePlatform::Rumble
-            | SourcePlatform::Twitch
+        SourcePlatform::Youtube | SourcePlatform::Vimeo | SourcePlatform::Dailymotion | SourcePlatform::Rumble | SourcePlatform::Twitch
     );
     Some(copy::error_text(cause, remedy, video))
 }
@@ -164,37 +121,19 @@ pub fn reason(t: &DownloadTask) -> Option<String> {
 pub fn specs(t: &DownloadTask) -> String {
     let p = &t.progress;
     let size = if p.total > 0.0 { p.total } else { p.downloaded };
-    let position = (t.is_playlist && p.playlist_total > 0.0)
-        .then(|| format!("{}/{}", p.playlist_index, p.playlist_total));
-    [
-        position,
-        Some(copy::format_duration(t.duration)),
-        (size > 0.0).then(|| copy::format_bytes(size)),
-        Some(t.format.clone()),
-    ]
-    .into_iter()
-    .flatten()
-    .filter(|s| !s.is_empty())
-    .collect::<Vec<_>>()
-    .join(" · ")
+    let position = (t.is_playlist && p.playlist_total > 0.0).then(|| format!("{}/{}", p.playlist_index, p.playlist_total));
+    [position, Some(copy::format_duration(t.duration)), (size > 0.0).then(|| copy::format_bytes(size)), Some(t.format.clone())]
+        .into_iter()
+        .flatten()
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join(" · ")
 }
 
 /// A full month name from `YYYY-MM` (CONTENT.md 4.6); anything else as is.
 pub fn month_name(ym: &str) -> String {
-    const NAMES: [&str; 12] = [
-        "January",
-        "February",
-        "March",
-        "April",
-        "May",
-        "June",
-        "July",
-        "August",
-        "September",
-        "October",
-        "November",
-        "December",
-    ];
+    const NAMES: [&str; 12] =
+        ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
     ym.split_once('-')
         .and_then(|(_, m)| m.parse::<usize>().ok())
         .and_then(|m| NAMES.get(m.wrapping_sub(1)))
@@ -212,21 +151,11 @@ pub struct Run {
 }
 
 pub fn run(text: impl Into<String>, color: Color) -> Run {
-    Run {
-        text: text.into(),
-        color,
-        mono: false,
-        weight: None,
-    }
+    Run { text: text.into(), color, mono: false, weight: None }
 }
 
 pub fn run_mono(text: impl Into<String>, color: Color) -> Run {
-    Run {
-        text: text.into(),
-        color,
-        mono: true,
-        weight: None,
-    }
+    Run { text: text.into(), color, mono: true, weight: None }
 }
 
 /// Runs joined into one text, each keeping its colour, weight and family.
@@ -239,16 +168,8 @@ pub fn runs(parts: Vec<Run>) -> El {
         // cause not isolated), so a leading ` · ` is set in the figures face.
         if !p.mono && p.text.starts_with(" · ") && p.text.len() > 4 {
             let (dot, rest) = p.text.split_at(" · ".len());
-            parts_out.push(Run {
-                text: dot.to_string(),
-                color: p.color,
-                mono: true,
-                weight: None,
-            });
-            parts_out.push(Run {
-                text: rest.to_string(),
-                ..p
-            });
+            parts_out.push(Run { text: dot.to_string(), color: p.color, mono: true, weight: None });
+            parts_out.push(Run { text: rest.to_string(), ..p });
         } else {
             parts_out.push(p);
         }
@@ -272,13 +193,7 @@ pub fn runs(parts: Vec<Run>) -> El {
 
 /// A key, as printed on the keyboard.
 pub fn keycap(p: &Pal, key: &str) -> El {
-    el().h(20.0)
-        .px(4.0)
-        .center()
-        .radius(4.0)
-        .fill(p.raised)
-        .border(1.0, p.line)
-        .child(text(key).font(mono(11.0, 400.0)).color(p.text2))
+    el().h(20.0).px(4.0).center().radius(4.0).fill(p.raised).border(1.0, p.line).child(text(key).font(mono(11.0, 400.0)).color(p.text2))
 }
 
 /// A quiet button with an optional icon: the default for every secondary action.
@@ -357,23 +272,14 @@ pub const DISC_TRAVEL: f32 = 0.7;
 /// with the file's format, on every sleeve and nowhere else.
 pub fn sleeve(s: &State, p: &Pal, t: &DownloadTask, size: f32, disc: Disc, faded: bool) -> El {
     let travel = (size * DISC_TRAVEL).round();
-    let width = if disc == Disc::None {
-        size
-    } else {
-        size + travel
-    };
+    let width = if disc == Disc::None { size } else { size + travel };
     let mut holder = el().size(width, size);
     if let Disc::Out(out) = disc {
-        holder = holder.child(
-            record(p, t.source, size * 0.94)
-                .absolute(size * 0.03 + travel * out.clamp(0.0, 1.0), size * 0.03),
-        );
+        holder = holder.child(record(p, t.source, size * 0.94).absolute(size * 0.03 + travel * out.clamp(0.0, 1.0), size * 0.03));
     }
     let r = (size * 0.06).round().max(3.0);
     let face = match s.cover(&t.task_id) {
-        Some(img) => el()
-            .size(size, size)
-            .pixels_fit(img.pixels(), SurfaceFit::Fill),
+        Some(img) => el().size(size, size).pixels_fit(img.pixels(), SurfaceFit::Fill),
         None => blank_face(p, t.source, size),
     };
     let spine_w = (size * 0.25).round().clamp(14.0, 24.0);
@@ -384,25 +290,13 @@ pub fn sleeve(s: &State, p: &Pal, t: &DownloadTask, size: f32, disc: Disc, faded
         .center()
         .absolute(spine_w / 2.0 - size / 2.0, size / 2.0 - spine_w / 2.0)
         .rotate(-std::f32::consts::FRAC_PI_2)
-        .child(
-            text(format)
-                .font(mono(label_size, 500.0).tracking(label_size * 0.12))
-                .color(theme::label_ink())
-                .single_line(),
-        );
+        .child(text(format).font(mono(label_size, 500.0).tracking(label_size * 0.12)).color(theme::label_ink()).single_line());
     let spine = el()
         .size(spine_w, size)
         .absolute(0.0, 0.0)
         .fill(theme::label_paper())
         .border_sides([0.0, 1.0, 0.0, 0.0], theme::label_ink().alpha(0.18));
-    let mut cover = el()
-        .size(size, size)
-        .absolute(0.0, 0.0)
-        .clip_rounded(r)
-        .fill(p.raised)
-        .child(face)
-        .child(spine)
-        .child(printed);
+    let mut cover = el().size(size, size).absolute(0.0, 0.0).clip_rounded(r).fill(p.raised).child(face).child(spine).child(printed);
     if !p.dark {
         cover = cover.shadow(1.0, 3.0, theme::label_ink().alpha(0.18));
     }
@@ -418,23 +312,11 @@ fn blank_face(p: &Pal, source: SourcePlatform, size: f32) -> El {
     let hole = (size * 0.56).round();
     let label = (size * 0.30).round();
     let shift = (size * 0.22).round() / 2.0;
-    el().size(size, size)
-        .center()
-        .fill(p.card.mix(hue, 0.16))
-        .child(
-            el().size(hole, hole)
-                .ml(shift)
-                .radius(hole / 2.0)
-                .center()
-                .fill(theme::vinyl())
-                .child(
-                    el().size(label, label)
-                        .radius(label / 2.0)
-                        .center()
-                        .fill(hue)
-                        .child(el().size(3.0, 3.0).radius(1.5).fill(theme::vinyl())),
-                ),
-        )
+    el().size(size, size).center().fill(p.card.mix(hue, 0.16)).child(
+        el().size(hole, hole).ml(shift).radius(hole / 2.0).center().fill(theme::vinyl()).child(
+            el().size(label, label).radius(label / 2.0).center().fill(hue).child(el().size(3.0, 3.0).radius(1.5).fill(theme::vinyl())),
+        ),
+    )
 }
 
 /// The record: vinyl with a groove and a label in the source's colour.
@@ -444,25 +326,12 @@ fn record(p: &Pal, source: SourcePlatform, d: f32) -> El {
     let label = (d * 0.40).round();
     // Vinyl catches the light along one diagonal.
     let sheen = theme::groove().mix(theme::vinyl(), 0.55);
-    let ring = |size: f32| {
-        el().size(size, size)
-            .radius(size / 2.0)
-            .center()
-            .border(1.0, theme::groove().alpha(0.7))
-    };
+    let ring = |size: f32| el().size(size, size).radius(size / 2.0).center().border(1.0, theme::groove().alpha(0.7));
     el().size(d, d)
         .radius(d / 2.0)
         .center()
         .fill(theme::vinyl())
-        .linear_gradient(
-            135.0,
-            [
-                (0.0, theme::vinyl()),
-                (0.48, sheen),
-                (0.52, sheen),
-                (1.0, theme::vinyl()),
-            ],
-        )
+        .linear_gradient(135.0, [(0.0, theme::vinyl()), (0.48, sheen), (0.52, sheen), (1.0, theme::vinyl())])
         .border(1.0, theme::rim())
         .child(
             ring(outer).child(

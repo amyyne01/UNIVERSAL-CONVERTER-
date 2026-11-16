@@ -33,7 +33,11 @@ fn feed(tag: &str, name: &str, exe: &str) -> Vec<u8> {
 }
 
 fn good_release() -> Net {
-    Net::default().with(FEED, 200, &feed("v2.1.0", "AHG-Converter.exe", EXE)).with(EXE, 200, &new_exe()).with(SUMS, 200, format!("{}  AHG-Converter.exe\n", sha(&new_exe())).as_bytes())
+    Net::default().with(FEED, 200, &feed("v2.1.0", "AHG-Converter.exe", EXE)).with(EXE, 200, &new_exe()).with(
+        SUMS,
+        200,
+        format!("{}  AHG-Converter.exe\n", sha(&new_exe())).as_bytes(),
+    )
 }
 
 struct Rig {
@@ -56,7 +60,13 @@ impl Rig {
     }
 
     fn error(&self) -> Option<String> {
-        self.events.lock().unwrap().iter().rev().find(|e| e.channel == "update:error").map(|e| e.payload["message"].as_str().unwrap().to_owned())
+        self.events
+            .lock()
+            .unwrap()
+            .iter()
+            .rev()
+            .find(|e| e.channel == "update:error")
+            .map(|e| e.payload["message"].as_str().unwrap().to_owned())
     }
 
     fn nothing_staged(&self) -> bool {
@@ -106,7 +116,8 @@ fn a_download_is_staged_only_when_it_matches_the_published_checksum() {
     assert_eq!(net.asked(), [FEED, SUMS, EXE], "the checksum list is read before the EXE");
     // Progress climbs to 100 and the download is announced last.
     let events = r.events.lock().unwrap();
-    let percents: Vec<u64> = events.iter().filter(|e| e.channel == "update:progress").map(|e| e.payload["percent"].as_u64().unwrap()).collect();
+    let percents: Vec<u64> =
+        events.iter().filter(|e| e.channel == "update:progress").map(|e| e.payload["percent"].as_u64().unwrap()).collect();
     assert!(percents.len() >= 3 && percents.windows(2).all(|w| w[0] < w[1]) && percents.last() == Some(&100), "{percents:?}");
     assert_eq!(events.last().unwrap().channel, "update:downloaded");
 }
@@ -119,7 +130,10 @@ fn a_tampered_or_unlisted_download_is_refused_and_leaves_nothing_behind() {
     assert_eq!(r.updater.download().unwrap().phase, "error");
     assert_eq!(r.error().as_deref(), Some("Update refused: the download did not match its published checksum"));
     assert!(r.nothing_staged());
-    assert_eq!(r.updater.install(Path::new("C:\\nowhere\\AHG-Converter.exe")).unwrap_err(), "Update refused: nothing downloaded to install");
+    assert_eq!(
+        r.updater.install(Path::new("C:\\nowhere\\AHG-Converter.exe")).unwrap_err(),
+        "Update refused: nothing downloaded to install"
+    );
 
     let unlisted = good_release().with(SUMS, 200, format!("{}  Some-Other.exe\n", sha(&new_exe())).as_bytes());
     let r = rig("unlisted", &unlisted, "2.0.0");
@@ -236,7 +250,15 @@ fn the_real_release_is_found_downloaded_and_verified() {
     let real = |name: &str, version: &str| {
         let seen = events.clone();
         let updates = scratch(name).join("updates");
-        (AppUpdater::new(&updates, version, Box::new(ahg_runtime::http::Releases), Box::new(move |e: Event| seen.lock().unwrap().push(e))), updates)
+        (
+            AppUpdater::new(
+                &updates,
+                version,
+                Box::new(ahg_runtime::http::Releases),
+                Box::new(move |e: Event| seen.lock().unwrap().push(e)),
+            ),
+            updates,
+        )
     };
     let (current, _) = real("realcurrent", "2.0.0");
     let state = current.check();
@@ -250,7 +272,13 @@ fn the_real_release_is_found_downloaded_and_verified() {
     let began = std::time::Instant::now();
     let state = old.download().unwrap();
     let file = updates.join("AHG-Converter.exe");
-    println!("download: {} in {:.0} s, {} bytes {:?}", state.phase, began.elapsed().as_secs_f64(), fs::metadata(&file).map(|m| m.len()).unwrap_or(0), state.message);
+    println!(
+        "download: {} in {:.0} s, {} bytes {:?}",
+        state.phase,
+        began.elapsed().as_secs_f64(),
+        fs::metadata(&file).map(|m| m.len()).unwrap_or(0),
+        state.message
+    );
     assert_eq!(state.phase, "ready", "{:?}", state.message);
     assert!(fs::metadata(&file).unwrap().len() > 100_000_000);
     let _ = fs::remove_dir_all(updates.parent().unwrap());

@@ -20,14 +20,7 @@ pub(super) static CARET_RIGHT: Icon = Icon {
 };
 
 pub fn view(p: &Pal) -> El {
-    let left = col()
-        .grow(1.0)
-        .min_w(0.0)
-        .gap(16.0)
-        .child(destination(p))
-        .child(defaults(p))
-        .child(more(p))
-        .child(appearance(p));
+    let left = col().grow(1.0).min_w(0.0).gap(16.0).child(destination(p)).child(defaults(p)).child(more(p)).child(appearance(p));
     let right = col()
         .grow(1.0)
         .min_w(0.0)
@@ -60,14 +53,7 @@ pub fn view(p: &Pal) -> El {
                 .child(text("Machine ID").font(sans(12.0, 400.0)).color(p.muted))
                 .child(text("7f3a-91c2-e0d4-58b6").font(mono(12.0, 400.0)).color(p.muted)),
         );
-    col()
-        .key("settings-place")
-        .grow(1.0)
-        .h_full()
-        .min_w(0.0)
-        .min_h(0.0)
-        .scroll(ScrollSpec { stick_bottom: false })
-        .child(page)
+    col().key("settings-place").grow(1.0).h_full().min_w(0.0).min_h(0.0).scroll(ScrollSpec { stick_bottom: false }).child(page)
 }
 
 /// A section's paper: a card on the page.
@@ -151,15 +137,11 @@ fn destination(p: &Pal) -> El {
             .gap(16.0)
             .center_y()
             .child(
-                col()
-                    .grow(1.0)
-                    .gap(4.0)
-                    .child(text("Saving to").font(sans(12.0, 500.0)).color(p.text2))
-                    .child(
-                        row()
-                            .child(text("C:\\Users\\Alex\\").font(mono(13.0, 400.0)).color(p.text2))
-                            .child(text("Music").font(mono(13.0, 500.0)).color(p.text)),
-                    ),
+                col().grow(1.0).gap(4.0).child(text("Saving to").font(sans(12.0, 500.0)).color(p.text2)).child(
+                    row()
+                        .child(text("C:\\Users\\Alex\\").font(mono(13.0, 400.0)).color(p.text2))
+                        .child(text("Music").font(mono(13.0, 500.0)).color(p.text)),
+                ),
             )
             .child(bordered(p, &icons::FOLDER, "Change")),
     )
@@ -203,7 +185,12 @@ fn more(p: &Pal) -> El {
         .child(setting(p, "Subtitles", "", field(p, "Subtitles", "Off", true, false)))
         .child(setting(p, "Sponsor segments", "", field(p, "Sponsor segments", "Off", true, false)))
         .child(setting(p, "Video container", "", field(p, "Video container", "MP4 (most compatible)", true, false)))
-        .child(setting(p, "File naming", "yt-dlp template, e.g. %(uploader)s/%(title)s. Leave empty for the title.", field(p, "File naming", "%(title)s", false, true)))
+        .child(setting(
+            p,
+            "File naming",
+            "yt-dlp template, e.g. %(uploader)s/%(title)s. Leave empty for the title.",
+            field(p, "File naming", "%(title)s", false, true),
+        ))
 }
 
 fn appearance(p: &Pal) -> El {
@@ -238,9 +225,19 @@ fn appearance(p: &Pal) -> El {
     section(p, "Appearance & behavior", None)
         .child(setting(p, "Theme", "Light, dark, or follow the system preference", theme))
         .child(setting(p, "Palette", "Accent and surface colors", swatches))
-        .child(setting(p, "Clipboard watcher", "Offer a one-click download whenever you copy a link, even outside the app", toggle(p, "Clipboard watcher", true)))
+        .child(setting(
+            p,
+            "Clipboard watcher",
+            "Offer a one-click download whenever you copy a link, even outside the app",
+            toggle(p, "Clipboard watcher", true),
+        ))
         .child(setting(p, "Desktop notifications", "Notify when a download completes or fails", toggle(p, "Desktop notifications", true)))
-        .child(setting(p, "Discord Rich Presence", "Show what you're downloading in your Discord status", toggle(p, "Discord Rich Presence", false)))
+        .child(setting(
+            p,
+            "Discord Rich Presence",
+            "Show what you're downloading in your Discord status",
+            toggle(p, "Discord Rich Presence", false),
+        ))
 }
 
 fn schedule(p: &Pal) -> El {
@@ -279,7 +276,12 @@ fn schedule(p: &Pal) -> El {
         .child(head)
         .child(setting(p, "Start time", "Local time the schedule starts", field(p, "Start time", "02:00", false, false)))
         .child(setting(p, "Active days", "Days of the week the schedule is active", days))
-        .child(setting(p, "Shutdown after queue", "Power off the PC when scheduled downloads finish", toggle(p, "Shutdown after queue", false)))
+        .child(setting(
+            p,
+            "Shutdown after queue",
+            "Power off the PC when scheduled downloads finish",
+            toggle(p, "Shutdown after queue", false),
+        ))
 }
 
 /// An updater: name and version, its state in a sentence, its one button.
@@ -314,9 +316,26 @@ fn status_object(p: &Pal, name: &str, version: &str, desc: &str, button: El) -> 
 
 fn software(p: &Pal) -> El {
     section(p, "Software", Some("Two moving parts: the app itself, and the yt-dlp engine that does the downloading."))
-        .child(status_object(p, "AHG Universal Converter", "v2.0.0", "You're on the latest version", bordered(p, &icons::REFRESH, "Check for updates")))
-        .child(status_object(p, "Download engine", "2026.11.01", "yt-dlp is up to date", bordered(p, &icons::REFRESH, "Check for engine update")))
-        .child(setting(p, "Auto-update engine", "Keep yt-dlp current, and repair it when a site change breaks downloads", toggle(p, "Auto-update engine", true)))
+        .child(status_object(
+            p,
+            "AHG Universal Converter",
+            "v2.0.0",
+            "You're on the latest version",
+            bordered(p, &icons::REFRESH, "Check for updates"),
+        ))
+        .child(status_object(
+            p,
+            "Download engine",
+            "2026.11.01",
+            "yt-dlp is up to date",
+            bordered(p, &icons::REFRESH, "Check for engine update"),
+        ))
+        .child(setting(
+            p,
+            "Auto-update engine",
+            "Keep yt-dlp current, and repair it when a site change breaks downloads",
+            toggle(p, "Auto-update engine", true),
+        ))
 }
 
 fn plan(p: &Pal) -> El {
@@ -347,7 +366,12 @@ fn plan(p: &Pal) -> El {
 
 fn help(p: &Pal) -> El {
     section(p, "Help", None)
-        .child(setting(p, "Keyboard shortcuts", "Ctrl+K opens the command palette; the full list is one click away", bordered(p, &icons::EXTERNAL, "Show shortcuts")))
+        .child(setting(
+            p,
+            "Keyboard shortcuts",
+            "Ctrl+K opens the command palette; the full list is one click away",
+            bordered(p, &icons::EXTERNAL, "Show shortcuts"),
+        ))
         .child(setting(
             p,
             "Report a problem",

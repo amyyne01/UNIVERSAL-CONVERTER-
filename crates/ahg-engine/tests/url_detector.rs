@@ -38,7 +38,6 @@ fn parse_spotify_url_matches_electron_for_every_golden_input() {
 
 #[test]
 fn the_golden_file_covers_every_platform() {
-    let seen: std::collections::BTreeSet<String> =
-        cases().iter().map(|c| c["detect"]["platform"].as_str().unwrap().to_owned()).collect();
+    let seen: std::collections::BTreeSet<String> = cases().iter().map(|c| c["detect"]["platform"].as_str().unwrap().to_owned()).collect();
     assert_eq!(seen.len(), 17, "{seen:?}");
 }

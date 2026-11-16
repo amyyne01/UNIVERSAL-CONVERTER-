@@ -81,9 +81,22 @@ fn validate_track(v: &Value) -> Result<Track, String> {
 /// left out, so that field takes its default.
 fn extras_from_settings(config: &Map<String, Value>, cookies_file: Option<&str>) -> PartialExtras {
     const KEYS: [&str; 16] = [
-        "subtitleMode", "subtitleLangs", "subtitleAuto", "embedChapters", "splitChapters", "sponsorBlock",
-        "sponsorBlockCategories", "writeThumbnail", "writeInfoJson", "writeDescription", "videoContainer", "videoCodec",
-        "cookieBrowser", "outputTemplate", "rateLimit", "proxy",
+        "subtitleMode",
+        "subtitleLangs",
+        "subtitleAuto",
+        "embedChapters",
+        "splitChapters",
+        "sponsorBlock",
+        "sponsorBlockCategories",
+        "writeThumbnail",
+        "writeInfoJson",
+        "writeDescription",
+        "videoContainer",
+        "videoCodec",
+        "cookieBrowser",
+        "outputTemplate",
+        "rateLimit",
+        "proxy",
     ];
     let mut known = Map::new();
     for key in KEYS {
@@ -149,9 +162,7 @@ pub fn build_task(
     }
     .to_owned();
     let playlist_items = match req.get("playlistItems") {
-        Some(items) if !basic => Some(
-            playlist_items_arg(items.as_str().ok_or("Invalid input: playlistItems")?)?.to_owned(),
-        ),
+        Some(items) if !basic => Some(playlist_items_arg(items.as_str().ok_or("Invalid input: playlistItems")?)?.to_owned()),
         _ => None,
     };
     let playlist_name = opt_text(req.get("playlistName"), 512)?;
@@ -223,8 +234,23 @@ pub fn build_request(config: Option<&Value>, overrides: &Map<String, Value>) -> 
 /// `skip_existing` replaces the task's own value when given.
 pub fn retry_request(task: &DownloadTask, skip_existing: Option<bool>) -> Value {
     const FIELDS: [&str; 17] = [
-        "url", "source", "format", "quality", "videoQuality", "isAudioOnly", "isPlaylist", "playlistName", "embedThumbnail",
-        "embedMetadata", "skipExisting", "title", "thumbnailUrl", "duration", "uploader", "track", "playlistItems",
+        "url",
+        "source",
+        "format",
+        "quality",
+        "videoQuality",
+        "isAudioOnly",
+        "isPlaylist",
+        "playlistName",
+        "embedThumbnail",
+        "embedMetadata",
+        "skipExisting",
+        "title",
+        "thumbnailUrl",
+        "duration",
+        "uploader",
+        "track",
+        "playlistItems",
     ];
     let mut request = serde_json::to_value(task).unwrap_or_default();
     if let Value::Object(fields) = &mut request {

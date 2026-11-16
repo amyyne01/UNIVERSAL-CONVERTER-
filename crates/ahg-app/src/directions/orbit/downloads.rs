@@ -112,7 +112,14 @@ fn summary(tasks: &[DownloadTask]) -> String {
 // ── Control strip and banner ────────────────────────────────────────────────
 
 fn checkbox(p: &Pal, label: &'static str) -> El {
-    el().size(16.0, 16.0).radius(4.0).border(1.5, p.track).role("checkbox").label(label).focusable(true).cursor(rune::Cursor::Pointer).hover(p.raised)
+    el().size(16.0, 16.0)
+        .radius(4.0)
+        .border(1.5, p.track)
+        .role("checkbox")
+        .label(label)
+        .focusable(true)
+        .cursor(rune::Cursor::Pointer)
+        .hover(p.raised)
 }
 
 fn strip(tasks: &[DownloadTask], p: &Pal) -> El {
@@ -212,7 +219,10 @@ fn list(s: &State, p: &Pal) -> El {
             let mut aside = row().gap(8.0).center_y();
             if !live.is_empty() {
                 let figure = if speed > 0.0 { format!("{} · {}", live.len(), copy::format_speed(speed)) } else { live.len().to_string() };
-                aside = aside.child(icon(&icons::DOWNLOAD, 16.0).color(p.muted)).child(txt(figure, FIG, p.text2)).label(copy::transferring_aria(live.len(), &copy::format_speed(speed)));
+                aside = aside
+                    .child(icon(&icons::DOWNLOAD, 16.0).color(p.muted))
+                    .child(txt(figure, FIG, p.text2))
+                    .label(copy::transferring_aria(live.len(), &copy::format_speed(speed)));
             }
             out = out.child(group_head(p, copy::GROUP_IN_PROGRESS, in_progress, all_paused, aside, first));
             first = false;
@@ -220,7 +230,11 @@ fn list(s: &State, p: &Pal) -> El {
         let lead: Vec<&DownloadTask> = live.iter().chain(paused.iter()).copied().collect();
         out = rows(out, &lead, &mut first);
         if !lead.is_empty() && !queued.is_empty() {
-            out = out.child(row().w_full().h(28.0).px(16.0).center_y().fill(p.card).border_sides([1.0, 0.0, 0.0, 0.0], p.line).child(txt(copy::up_next(queued.len()), FIG_S, p.muted)));
+            out = out.child(row().w_full().h(28.0).px(16.0).center_y().fill(p.card).border_sides([1.0, 0.0, 0.0, 0.0], p.line).child(txt(
+                copy::up_next(queued.len()),
+                FIG_S,
+                p.muted,
+            )));
             first = true;
         }
         out = rows(out, &queued, &mut first);
@@ -270,8 +284,16 @@ fn empty_row(p: &Pal) -> El {
         .pr(16.0)
         .gap(12.0)
         .center_y()
-        .child(el().size(RING, RING).center().child(el().size(40.0, 40.0).radius(8.0).fill(p.raised).center().child(icon(&icons::DOWNLOAD, 16.0).color(p.muted))))
-        .child(col().grow(1.0).gap(4.0).child(txt(copy::EMPTY_NONE_TITLE, BODY_M, p.text)).child(txt(copy::EMPTY_NONE_BODY, SMALL, p.text2)))
+        .child(
+            el().size(RING, RING)
+                .center()
+                .child(el().size(40.0, 40.0).radius(8.0).fill(p.raised).center().child(icon(&icons::DOWNLOAD, 16.0).color(p.muted))),
+        )
+        .child(col().grow(1.0).gap(4.0).child(txt(copy::EMPTY_NONE_TITLE, BODY_M, p.text)).child(txt(
+            copy::EMPTY_NONE_BODY,
+            SMALL,
+            p.text2,
+        )))
         .child(go)
 }
 
@@ -316,13 +338,21 @@ fn task_row(s: &State, p: &Pal, t: &DownloadTask, rule: bool, grip: bool) -> El 
     // Where it is: on its orbit, or landed.
     let art = match pass(p, t) {
         Some((pass, ink)) => el().size(RING, RING).center().shape(orbit(RING, pass, p.track, ink, under)).child(cover(s, p, t, 32.0, true)),
-        None => el().size(RING, RING).center().child(cover(s, p, t, 40.0, false).opacity(if failed || st == St::Cancelled { 0.55 } else { 1.0 })),
+        None => el().size(RING, RING).center().child(cover(s, p, t, 40.0, false).opacity(if failed || st == St::Cancelled {
+            0.55
+        } else {
+            1.0
+        })),
     };
 
     // Line 1: the label, and the link on failed rows that have a title.
     let label = model::label(t);
     let mut line1 = row().w_full().min_w(0.0).center_y().child(
-        txt(label.clone(), if landed { BODY } else { BODY_M }, if landed { p.text2 } else { p.text }).truncate().shrink().help(if failed { t.url.clone() } else { label.clone() }),
+        txt(label.clone(), if landed { BODY } else { BODY_M }, if landed { p.text2 } else { p.text }).truncate().shrink().help(if failed {
+            t.url.clone()
+        } else {
+            label.clone()
+        }),
     );
     if failed && !t.title.is_empty() {
         line1 = line1.child(txt(copy::row_dot_part(&model::link_label(&t.url)), BODY, p.muted).truncate().shrink());
@@ -332,7 +362,14 @@ fn task_row(s: &State, p: &Pal, t: &DownloadTask, rule: bool, grip: bool) -> El 
     let name = model::file_name(&t.progress.filename);
     let folder = t.progress.filename.strip_suffix(name).unwrap_or("").trim_end_matches(['\\', '/']);
     if st == St::Done && !folder.is_empty() {
-        line1 = line1.child(spacer()).child(row().ml(16.0).gap(8.0).center_y().child(icon(&icons::FOLDER, 16.0).color(p.muted)).child(txt(folder.to_string(), FIG, p.muted).truncate_middle()));
+        line1 = line1.child(spacer()).child(
+            row()
+                .ml(16.0)
+                .gap(8.0)
+                .center_y()
+                .child(icon(&icons::FOLDER, 16.0).color(p.muted))
+                .child(txt(folder.to_string(), FIG, p.muted).truncate_middle()),
+        );
     }
 
     // Line 2: the source in its colour, then the first reading that applies.
@@ -340,7 +377,9 @@ fn task_row(s: &State, p: &Pal, t: &DownloadTask, rule: bool, grip: bool) -> El 
     let mut line2 = row().w_full().min_w(0.0).child(txt(src_name, SMALL_M, src_color));
     let file = model::file_name(&t.progress.filename).to_string();
     if let Some(reason) = model::reason(t) {
-        line2 = line2.items_start().child(txt(copy::row_dot_part(&reason), SMALL, p.error).wrap().max_lines(2).shrink().help(t.progress.error.clone()));
+        line2 = line2
+            .items_start()
+            .child(txt(copy::row_dot_part(&reason), SMALL, p.error).wrap().max_lines(2).shrink().help(t.progress.error.clone()));
     } else if st == St::Done && t.progress.already_on_disk == Some(true) {
         line2 = line2.child(txt(copy::ROW_ALREADY_DOWNLOADED, SMALL, p.text2));
         if !file.is_empty() {
@@ -368,7 +407,12 @@ fn task_row(s: &State, p: &Pal, t: &DownloadTask, rule: bool, grip: bool) -> El 
 
     // The state column: the percent while it moves, else a word.
     let state = if st == St::Downloading {
-        col().w(128.0).items_end().gap(4.0).child(txt(format!("{}%", t.progress.percent.clamp(0.0, 100.0).round()), FIG_M, p.text)).child(txt(copy::rate_line(t.progress.speed, t.progress.eta), FIG_S, p.muted))
+        col()
+            .w(128.0)
+            .items_end()
+            .gap(4.0)
+            .child(txt(format!("{}%", t.progress.percent.clamp(0.0, 100.0).round()), FIG_M, p.text))
+            .child(txt(copy::rate_line(t.progress.speed, t.progress.eta), FIG_S, p.muted))
     } else {
         let (glyph, word, tone) = state_word(p, t);
         row().w(128.0).justify_end().gap(8.0).center_y().child(icon(glyph, 16.0).color(tone)).child(txt(word, SMALL_M, tone))
@@ -396,7 +440,11 @@ fn task_row(s: &State, p: &Pal, t: &DownloadTask, rule: bool, grip: bool) -> El 
 
 fn grip_cell(p: &Pal, grip: bool, label: &str) -> El {
     let cell = el().size(16.0, 32.0).center();
-    if grip { cell.label(copy::row_reorder_aria(label)).group_opacity(0.0, 1.0).child(icon(&icons::GRIP, 16.0).color(p.muted)) } else { cell }
+    if grip {
+        cell.label(copy::row_reorder_aria(label)).group_opacity(0.0, 1.0).child(icon(&icons::GRIP, 16.0).color(p.muted))
+    } else {
+        cell
+    }
 }
 
 /// The row's buttons, in Electron's order; `Remove` waits for hover.
@@ -439,4 +487,3 @@ fn actions(p: &Pal, t: &DownloadTask) -> El {
     }
     a
 }
-

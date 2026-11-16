@@ -264,8 +264,7 @@ pub fn parse_line(line: &str, progress: &mut DownloadProgress, last_percent: f64
 
 // ── A whole download's output ────────────────────────────────────────────────
 
-static ALREADY: LazyLock<Regex> =
-    LazyLock::new(|| re(r"^\[download\] ([^\n\r\u{2028}\u{2029}]+) has already been downloaded".to_owned()));
+static ALREADY: LazyLock<Regex> = LazyLock::new(|| re(r"^\[download\] ([^\n\r\u{2028}\u{2029}]+) has already been downloaded".to_owned()));
 static DRIVE_PATH: LazyLock<Regex> = LazyLock::new(|| re(r"^[a-zA-Z]:[\\/]".to_owned()));
 
 /// How a download ended, as `spawnDownload` reports it on close.
@@ -273,7 +272,11 @@ static DRIVE_PATH: LazyLock<Regex> = LazyLock::new(|| re(r"^[a-zA-Z]:[\\/]".to_o
 pub enum Outcome {
     /// `filepaths` leaves out files yt-dlp found already on disk;
     /// `already_on_disk` means it skipped every one.
-    Done { path: String, filepaths: Vec<String>, already_on_disk: bool },
+    Done {
+        path: String,
+        filepaths: Vec<String>,
+        already_on_disk: bool,
+    },
     Failed(String),
 }
 

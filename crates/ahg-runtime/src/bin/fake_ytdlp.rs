@@ -41,10 +41,8 @@ fn main() {
         return;
     }
     let for_json = std::env::var("FAKE_YTDLP_SCRIPT_JSON").ok().filter(|_| inspect);
-    let script = for_json
-        .or_else(|| std::env::var("FAKE_YTDLP_SCRIPT").ok())
-        .and_then(|f| std::fs::read_to_string(f).ok())
-        .unwrap_or_default();
+    let script =
+        for_json.or_else(|| std::env::var("FAKE_YTDLP_SCRIPT").ok()).and_then(|f| std::fs::read_to_string(f).ok()).unwrap_or_default();
     let (mut out, mut err) = (std::io::stdout(), std::io::stderr());
     for line in script.lines() {
         let (op, rest) = line.split_once(' ').unwrap_or((line, ""));
@@ -77,14 +75,22 @@ fn main() {
             }
             "pid" => {
                 if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(rest) {
-                    let _ = f.write_all(format!("{}
-", std::process::id()).as_bytes());
+                    let _ = f.write_all(
+                        format!(
+                            "{}
+",
+                            std::process::id()
+                        )
+                        .as_bytes(),
+                    );
                 }
             }
             "count" => {
                 if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(rest) {
-                    let _ = f.write_all(b"run
-");
+                    let _ = f.write_all(
+                        b"run
+",
+                    );
                 }
             }
             "failonce" => {

@@ -4,9 +4,7 @@
 use ahg_engine::state_machine::{can_transition, transitions};
 use ahg_engine::types::DownloadStatus::{self, *};
 
-const ALL: [DownloadStatus; 10] = [
-    Queued, FetchingInfo, Downloading, Converting, Embedding, Paused, Retrying, Failed, Done, Cancelled,
-];
+const ALL: [DownloadStatus; 10] = [Queued, FetchingInfo, Downloading, Converting, Embedding, Paused, Retrying, Failed, Done, Cancelled];
 
 #[test]
 fn the_table_is_the_one_in_electron_state_machine_ts() {

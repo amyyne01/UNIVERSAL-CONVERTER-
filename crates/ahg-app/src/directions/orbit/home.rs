@@ -28,7 +28,8 @@ pub fn view(s: &State, p: &Pal) -> El {
     let planet_w = if quiet { 380.0 } else { 260.0 };
     let mark = canvas(planet(planet_w, mix(p.text, p.bg, 0.08), p.bg)).key("planet").size(planet_w, planet_w * 0.592);
 
-    let mut launch = col().grow(1.0).min_w(0.0).gap(20.0).child(headline(p, active.len())).child(field(p, &s.input, false)).child(status(s, p));
+    let mut launch =
+        col().grow(1.0).min_w(0.0).gap(20.0).child(headline(p, active.len())).child(field(p, &s.input, false)).child(status(s, p));
     if quiet {
         launch = launch.child(works_with(p).mt(12.0));
     }
@@ -73,7 +74,11 @@ fn headline(p: &Pal, in_flight: usize) -> El {
                 .focusable(true)
                 .on_press(|s: &mut State| s.nav = Nav::Downloads)
                 .child(el().size(8.0, 8.0).radius(4.0).fill(p.text2))
-                .child(row().center_y().child(txt(in_flight.to_string(), FIG, p.text)).child(txt(copy::HOME_IN_FLIGHT_SUFFIX, SMALL, p.text2)))
+                .child(row().center_y().child(txt(in_flight.to_string(), FIG, p.text)).child(txt(
+                    copy::HOME_IN_FLIGHT_SUFFIX,
+                    SMALL,
+                    p.text2,
+                )))
                 .child(icon(&icons::FORWARD, 16.0).color(p.text2)),
         );
     }
@@ -83,7 +88,8 @@ fn headline(p: &Pal, in_flight: usize) -> El {
 /// The paste field. `open`: it has opened into the found surface, so it carries the way back
 /// and Look up steps down to an outline (the surface's Download is the lit control then).
 fn field(p: &Pal, input: &str, open: bool) -> El {
-    let (fill, ink, edge, over) = if open { (Color::TRANSPARENT, p.text, p.track, p.raised) } else { (p.accent, p.on_accent, p.accent, mix(p.accent, p.text, 0.15)) };
+    let (fill, ink, edge, over) =
+        if open { (Color::TRANSPARENT, p.text, p.track, p.raised) } else { (p.accent, p.on_accent, p.accent, mix(p.accent, p.text, 0.15)) };
     let go = row()
         .key("look-up")
         .h(44.0)
@@ -110,7 +116,15 @@ fn field(p: &Pal, input: &str, open: bool) -> El {
         .center_y()
         .label(copy::FIELD_ARIA)
         .child(icon(&icons::LINK, 16.0).color(p.muted))
-        .child(if input.is_empty() { txt(copy::FIELD_PLACEHOLDER, BODY.lh(22.0), p.muted) } else { txt(input.to_string(), BODY.lh(22.0), p.text) }.grow(1.0).truncate());
+        .child(
+            if input.is_empty() {
+                txt(copy::FIELD_PLACEHOLDER, BODY.lh(22.0), p.muted)
+            } else {
+                txt(input.to_string(), BODY.lh(22.0), p.text)
+            }
+            .grow(1.0)
+            .truncate(),
+        );
     if open {
         r = r.child(found::dismiss(p));
     }
@@ -146,12 +160,14 @@ fn status(s: &State, p: &Pal) -> El {
     if let Some(folder) = s.tasks.first().map(|t| t.output_dir.clone()).filter(|f| !f.is_empty()) {
         // Only `/` separates here, as in Electron: a Windows path prints in full.
         let name = folder.rsplit('/').next().unwrap_or(&folder).to_string();
-        line = line.child(row()
-            .center_y()
-            .child(txt(copy::rest_saves_as(AUDIO_FORMAT), SMALL, p.text2))
-            .child(txt(name, SMALL_M, p.text).help(folder))
-            .child(txt(" ", SMALL, p.text2))
-            .child(txt(copy::REST_CHANGE, SMALL_M, p.text2).label(copy::REST_CHANGE_ARIA).cursor(rune::Cursor::Pointer)));
+        line = line.child(
+            row()
+                .center_y()
+                .child(txt(copy::rest_saves_as(AUDIO_FORMAT), SMALL, p.text2))
+                .child(txt(name, SMALL_M, p.text).help(folder))
+                .child(txt(" ", SMALL, p.text2))
+                .child(txt(copy::REST_CHANGE, SMALL_M, p.text2).label(copy::REST_CHANGE_ARIA).cursor(rune::Cursor::Pointer)),
+        );
     }
     // The strings carry their own spaces, so the pieces sit flush.
     let mut right = row()
@@ -234,8 +250,15 @@ fn speed(s: &State, p: &Pal) -> El {
     let now: f64 = running.iter().map(|t| t.progress.speed).sum();
     let peak = samples.iter().copied().fold(0.0f32, f32::max).max(1.0) as f64;
     let scale = (0..16).flat_map(|k| [1.0, 2.0, 5.0].map(|m| m * 10f64.powi(k))).find(|v| *v >= peak).unwrap_or(peak);
-    let figures = col().w(112.0).gap(4.0).child(txt(copy::speed_now(&copy::format_bytes(now)), FIG_L, p.text)).child(txt(copy::speed_scale(&copy::format_bytes(scale)), FIG_S, p.muted));
-    let chart = canvas(trace(&samples, scale as f32, 600.0, 56.0, p.line, p.text2).view_box(600.0, 56.0)).grow(1.0).h(56.0).label(copy::speed_aria(&copy::format_bytes(now)));
+    let figures = col().w(112.0).gap(4.0).child(txt(copy::speed_now(&copy::format_bytes(now)), FIG_L, p.text)).child(txt(
+        copy::speed_scale(&copy::format_bytes(scale)),
+        FIG_S,
+        p.muted,
+    ));
+    let chart = canvas(trace(&samples, scale as f32, 600.0, 56.0, p.line, p.text2).view_box(600.0, 56.0))
+        .grow(1.0)
+        .h(56.0)
+        .label(copy::speed_aria(&copy::format_bytes(now)));
     cell(p, copy::CELL_SPEED, None, row().w_full().gap(24.0).center_y().child(figures).child(chart))
 }
 
@@ -256,7 +279,11 @@ fn this_month(p: &Pal, st: &DownloadStats) -> El {
             Some(b) => copy::month_diff(files as i64 - b.files as i64, &model::month_name(&b.month)),
             None => copy::MONTH_FIRST_ON_RECORD.to_string(),
         };
-        let figure = row().gap(8.0).items_end().child(txt(files.to_string(), FIG_XL, p.text)).child(txt(copy::file_word(files), BODY, p.text2).mb(8.0));
+        let figure = row()
+            .gap(8.0)
+            .items_end()
+            .child(txt(files.to_string(), FIG_XL, p.text))
+            .child(txt(copy::file_word(files), BODY, p.text2).mb(8.0));
         let line = row().flex_wrap().center_y().child(txt(copy::format_bytes(cur.bytes), FIG, p.text2)).child(txt(ending, SMALL, p.text2));
         let mut b = col().gap(16.0).child(col().gap(8.0).child(figure).child(line));
         if let Some(prev) = prev {
@@ -266,9 +293,19 @@ fn this_month(p: &Pal, st: &DownloadStats) -> El {
                     .w_full()
                     .gap(8.0)
                     .child(row().w_full().child(txt(name, SMALL, p.text2)).child(spacer()).child(txt((n as u64).to_string(), FIG, p.text2)))
-                    .child(el().w_full().h(8.0).radius(4.0).fill(p.raised).child(el().w_frac(((n / most) as f32).max(0.03)).h_full().radius(4.0).fill(color)))
+                    .child(
+                        el().w_full()
+                            .h(8.0)
+                            .radius(4.0)
+                            .fill(p.raised)
+                            .child(el().w_frac(((n / most) as f32).max(0.03)).h_full().radius(4.0).fill(color)),
+                    )
             };
-            b = b.child(col().w_full().max_w(520.0).gap(12.0).child(bar(month.clone(), cur.files, p.text2)).child(bar(model::month_name(&prev.month), prev.files, p.track)));
+            b = b.child(col().w_full().max_w(520.0).gap(12.0).child(bar(month.clone(), cur.files, p.text2)).child(bar(
+                model::month_name(&prev.month),
+                prev.files,
+                p.track,
+            )));
         }
         b
     };
@@ -277,7 +314,13 @@ fn this_month(p: &Pal, st: &DownloadStats) -> El {
 
 fn sources(p: &Pal, cur: &MonthBucket) -> El {
     let total = cur.files as u64;
-    let mut groups: [(&'static str, Color, u64); 5] = [(copy::SPLIT_YOUTUBE, p.youtube, 0), (copy::SPLIT_SPOTIFY, p.spotify, 0), (copy::SPLIT_SOUNDCLOUD, p.soundcloud, 0), (copy::SPLIT_REELS, p.reels, 0), (copy::SPLIT_OTHER, p.muted, 0)];
+    let mut groups: [(&'static str, Color, u64); 5] = [
+        (copy::SPLIT_YOUTUBE, p.youtube, 0),
+        (copy::SPLIT_SPOTIFY, p.spotify, 0),
+        (copy::SPLIT_SOUNDCLOUD, p.soundcloud, 0),
+        (copy::SPLIT_REELS, p.reels, 0),
+        (copy::SPLIT_OTHER, p.muted, 0),
+    ];
     for (key, n) in &cur.by_platform {
         let at = match key.as_str() {
             "youtube" => 0,
@@ -309,7 +352,13 @@ fn sources(p: &Pal, cur: &MonthBucket) -> El {
                         .child(spacer())
                         .child(txt(copy::split_row_figures(pct, *n), FIG, ink)),
                 )
-                .child(el().w_full().h(8.0).radius(4.0).fill(p.raised).child(el().w_frac((*n as f32 / total as f32).max(0.02)).h_full().radius(4.0).fill(*color)))
+                .child(
+                    el().w_full()
+                        .h(8.0)
+                        .radius(4.0)
+                        .fill(p.raised)
+                        .child(el().w_frac((*n as f32 / total as f32).max(0.02)).h_full().radius(4.0).fill(*color)),
+                )
         });
         col().w_full().max_w(560.0).gap(12.0).children(rows)
     };
@@ -326,7 +375,9 @@ fn recent(s: &State, p: &Pal, done: &[&DownloadTask]) -> El {
     let title = |t: &DownloadTask| if t.title.is_empty() { copy::RECENT_UNTITLED.to_string() } else { t.title.clone() };
     let duration_chip = |t: &DownloadTask| {
         let d = copy::format_duration(t.duration);
-        (!d.is_empty()).then(|| row().h(20.0).px(4.0).center().radius(4.0).fill(scrim).child(txt(d, FIG_S, on_media)).pin(None, Some(8.0), Some(8.0), None))
+        (!d.is_empty()).then(|| {
+            row().h(20.0).px(4.0).center().radius(4.0).fill(scrim).child(txt(d, FIG_S, on_media)).pin(None, Some(8.0), Some(8.0), None)
+        })
     };
     let mut tiles = row().w_full().gap(16.0);
     for (i, t) in done.iter().take(4).enumerate() {
@@ -351,15 +402,12 @@ fn recent(s: &State, p: &Pal, done: &[&DownloadTask]) -> El {
             if let Some(chip) = duration_chip(t) {
                 art = art.child(chip);
             }
-            col()
-                .grow(1.0)
-                .min_w(0.0)
-                .gap(8.0)
-                .child(art)
-                .child(txt(title(t), SMALL_M, p.text).truncate())
-                .child(row().w_full().child(txt(t.format.to_uppercase(), FIG_S, p.text2)).child(spacer()).child(txt(size(t), FIG_S, p.muted)))
+            col().grow(1.0).min_w(0.0).gap(8.0).child(art).child(txt(title(t), SMALL_M, p.text).truncate()).child(
+                row().w_full().child(txt(t.format.to_uppercase(), FIG_S, p.text2)).child(spacer()).child(txt(size(t), FIG_S, p.muted)),
+            )
         };
-        tiles = tiles.child(tile.key(format!("recent-{}", t.task_id)).cursor(rune::Cursor::Pointer).help(copy::recent_details_aria(&title(t))));
+        tiles =
+            tiles.child(tile.key(format!("recent-{}", t.task_id)).cursor(rune::Cursor::Pointer).help(copy::recent_details_aria(&title(t))));
     }
     for _ in done.len().min(4)..4 {
         tiles = tiles.child(el().grow(1.0));

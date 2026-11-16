@@ -97,17 +97,23 @@ pub fn engine_stopped(last_line: &str) -> String {
 // The twelve cause + remedy sentences (`describe_error`). `{thing}` in a cause
 // becomes `video` for YouTube, Vimeo, Dailymotion, Rumble and Twitch, else `link`.
 // The two are joined with one space.
-pub const ERROR_PRIVATE: (&str, &str) = ("This {thing} is private.", "Ask the owner for access, or sign in with your browser in Settings, then retry.");
+pub const ERROR_PRIVATE: (&str, &str) =
+    ("This {thing} is private.", "Ask the owner for access, or sign in with your browser in Settings, then retry.");
 pub const ERROR_REMOVED: (&str, &str) = ("We couldn’t find anything at this link.", "Check the link, or paste a different one.");
 pub const ERROR_AGE_RESTRICTED: (&str, &str) = ("This {thing} is age-restricted.", "Sign in with your browser in Settings, then retry.");
-pub const ERROR_LOGIN_REQUIRED: (&str, &str) = ("This site wants you to sign in first.", "Sign in with your browser in Settings, then retry.");
-pub const ERROR_GEO_BLOCKED: (&str, &str) = ("This {thing} isn’t available in your country.", "Paste a different link, or use a VPN you trust.");
+pub const ERROR_LOGIN_REQUIRED: (&str, &str) =
+    ("This site wants you to sign in first.", "Sign in with your browser in Settings, then retry.");
+pub const ERROR_GEO_BLOCKED: (&str, &str) =
+    ("This {thing} isn’t available in your country.", "Paste a different link, or use a VPN you trust.");
 pub const ERROR_DRM: (&str, &str) = ("This {thing} is copy-protected.", "It can’t be downloaded. Paste a different link.");
 pub const ERROR_RATE_LIMITED: (&str, &str) = ("The site is asking us to slow down.", "Wait a few minutes, then retry.");
 pub const ERROR_NETWORK: (&str, &str) = ("The connection dropped.", "Check your internet, then retry.");
-pub const ERROR_UNSUPPORTED: (&str, &str) = ("This link isn’t something we can download.", "Check the link, or paste one from YouTube, Spotify, SoundCloud, Vimeo and more.");
-pub const ERROR_FFMPEG_MISSING: (&str, &str) = ("A part of the app needed for conversion is missing.", "Download the app again, or restore the files it came with.");
-pub const ERROR_DISK_FULL: (&str, &str) = ("There is no space left on the drive.", "Free up some space or pick another folder in Settings, then retry.");
+pub const ERROR_UNSUPPORTED: (&str, &str) =
+    ("This link isn’t something we can download.", "Check the link, or paste one from YouTube, Spotify, SoundCloud, Vimeo and more.");
+pub const ERROR_FFMPEG_MISSING: (&str, &str) =
+    ("A part of the app needed for conversion is missing.", "Download the app again, or restore the files it came with.");
+pub const ERROR_DISK_FULL: (&str, &str) =
+    ("There is no space left on the drive.", "Free up some space or pick another folder in Settings, then retry.");
 pub const ERROR_UNKNOWN: (&str, &str) = ("Something went wrong.", "Try again in a moment.");
 /// Replaces the whole sentence for a `removed` failure on a site with no tab of its own.
 pub const ERROR_GENERIC_DEAD_END: &str = "We couldn’t find anything at this link. The site may not be supported, or the address is wrong. Supported sites include YouTube, Vimeo, X, TikTok, Twitch, SoundCloud, Bandcamp and Reddit.";
@@ -173,11 +179,7 @@ pub fn results_count(count: usize) -> String {
 }
 
 pub fn results_row_aria(title: &str, subtitle: &str) -> String {
-    if subtitle.is_empty() {
-        format!("Download {title}")
-    } else {
-        format!("Download {title}, {subtitle}")
-    }
+    if subtitle.is_empty() { format!("Download {title}") } else { format!("Download {title}, {subtitle}") }
 }
 
 pub fn results_pick_aria(title: &str) -> String {
@@ -233,11 +235,7 @@ pub fn playlist_meta(track_count: usize, runtime: &str, owner: &str) -> String {
 /// Milliseconds as `1h 42m` or `42m`.
 pub fn playlist_span(ms: f64) -> String {
     let min = (ms / 60000.0).round() as u64;
-    if min >= 60 {
-        format!("{}h {}m", min / 60, min % 60)
-    } else {
-        format!("{min}m")
-    }
+    if min >= 60 { format!("{}h {}m", min / 60, min % 60) } else { format!("{min}m") }
 }
 
 /// Live selection counter: `3` then `/10` in a smaller size.
@@ -330,7 +328,8 @@ pub fn short_likes(formatted_count: &str) -> String {
 pub const YOUTUBE_CAPABILITY: &str = "Video + Audio · MP4/MP3 · Playlists";
 pub const YOUTUBE_HINT: &str = "Paste a video or playlist link, or type what you want to search YouTube";
 pub const SPOTIFY_CAPABILITY: &str = "Audio · MP3/FLAC · Playlists + Albums";
-pub const SPOTIFY_HINT: &str = "Paste a track, album or playlist link, or search by song and artist. Tracks are matched to the best available audio source.";
+pub const SPOTIFY_HINT: &str =
+    "Paste a track, album or playlist link, or search by song and artist. Tracks are matched to the best available audio source.";
 pub const SOUNDCLOUD_CAPABILITY: &str = "Audio · MP3/FLAC · Artist sets";
 pub const SOUNDCLOUD_HINT: &str = "Paste a track or set link, or search SoundCloud by artist, title or set";
 
@@ -344,4 +343,5 @@ pub fn clipboard_title(label: &str) -> String {
 }
 
 /// The Settings row that switches the offer on (also in `copy/settings.rs` if present there).
-pub const CLIPBOARD_SETTING: (&str, &str) = ("Clipboard watcher", "Offer a one-click download whenever you copy a link, even outside the app");
+pub const CLIPBOARD_SETTING: (&str, &str) =
+    ("Clipboard watcher", "Offer a one-click download whenever you copy a link, even outside the app");

@@ -18,7 +18,17 @@ pub fn view(s: &State, p: &Pal, fit: Fit) -> El {
     let tasks = &s.tasks;
     let mut page = col().w_full().px(fit.pad + 8.0).pt(fit.pad).pb(fit.pad + 8.0).gap(16.0).child(header(tasks, p));
     if tasks.is_empty() {
-        page = page.child(row().w_full().h(ROW_H).gap(12.0).center_y().border_sides([1.0, 0.0, 1.0, 0.0], p.line).child(glyph(&icons::DOWNLOAD, p.muted)).child(txt(copy::EMPTY_NONE_TITLE, BODY_M, p.text)).child(txt(copy::EMPTY_NONE_BODY, SMALL, p.text2)));
+        page = page.child(
+            row()
+                .w_full()
+                .h(ROW_H)
+                .gap(12.0)
+                .center_y()
+                .border_sides([1.0, 0.0, 1.0, 0.0], p.line)
+                .child(glyph(&icons::DOWNLOAD, p.muted))
+                .child(txt(copy::EMPTY_NONE_TITLE, BODY_M, p.text))
+                .child(txt(copy::EMPTY_NONE_BODY, SMALL, p.text2)),
+        );
     } else {
         page = page.child(strip(tasks, p));
         let interrupted = tasks.iter().filter(|t| t.progress.status == St::Paused && t.interrupted == Some(true)).count();
@@ -51,7 +61,11 @@ fn summary(tasks: &[DownloadTask]) -> String {
 fn header(tasks: &[DownloadTask], p: &Pal) -> El {
     let active = tasks.iter().filter(|t| is_active(t)).count();
     let all_paused = tasks.iter().any(|t| t.progress.status == St::Paused) && !tasks.iter().any(is_live);
-    let mut left = col().gap(4.0).child(txt(copy::DL_TITLE, HERO, p.text)).child(txt(copy::active_and_total(active, tasks.len(), all_paused), FIG, p.muted));
+    let mut left = col().gap(4.0).child(txt(copy::DL_TITLE, HERO, p.text)).child(txt(
+        copy::active_and_total(active, tasks.len(), all_paused),
+        FIG,
+        p.muted,
+    ));
     if tasks.len() >= 2 {
         left = left.child(txt(summary(tasks), SMALL, p.text2));
     }
@@ -72,7 +86,14 @@ fn header(tasks: &[DownloadTask], p: &Pal) -> El {
 }
 
 fn checkbox(p: &Pal, label: &'static str) -> El {
-    el().size(16.0, 16.0).radius(4.0).border(1.0, p.track).role("checkbox").label(label).focusable(true).cursor(Cursor::Pointer).hover(p.raised)
+    el().size(16.0, 16.0)
+        .radius(4.0)
+        .border(1.0, p.track)
+        .role("checkbox")
+        .label(label)
+        .focusable(true)
+        .cursor(Cursor::Pointer)
+        .hover(p.raised)
 }
 
 fn strip(tasks: &[DownloadTask], p: &Pal) -> El {
@@ -86,7 +107,19 @@ fn strip(tasks: &[DownloadTask], p: &Pal) -> El {
     let mut seg = row().h(32.0).padding(4.0).gap(4.0).radius(8.0).border(1.0, p.line).role("radiogroup").label(copy::DL_FILTER_ARIA);
     for (i, (label, n)) in filters.iter().enumerate() {
         let on = i == 0;
-        let cell = row().key(format!("filter-{i}")).h_full().px(8.0).gap(8.0).center_y().radius(4.0).role("radio").checked(on).focusable(true).cursor(Cursor::Pointer).child(txt(*label, SMALL_M, if on { p.text } else { p.text2 })).child(txt(n.to_string(), FIG, p.muted));
+        let cell = row()
+            .key(format!("filter-{i}"))
+            .h_full()
+            .px(8.0)
+            .gap(8.0)
+            .center_y()
+            .radius(4.0)
+            .role("radio")
+            .checked(on)
+            .focusable(true)
+            .cursor(Cursor::Pointer)
+            .child(txt(*label, SMALL_M, if on { p.text } else { p.text2 }))
+            .child(txt(n.to_string(), FIG, p.muted));
         seg = seg.child(if on { cell.fill(p.raised) } else { cell.hover(p.hover) });
     }
 
@@ -140,7 +173,16 @@ fn list(s: &State, p: &Pal) -> El {
     ];
     let mut out = col().w_full();
     for (name, items) in groups.iter().filter(|(_, items)| !items.is_empty()) {
-        out = out.child(row().w_full().h(32.0).gap(8.0).center_y().border_sides([0.0, 0.0, 1.0, 0.0], p.line).child(txt(*name, SMALL_M, p.text2)).child(txt(items.len().to_string(), FIG, p.muted)));
+        out = out.child(
+            row()
+                .w_full()
+                .h(32.0)
+                .gap(8.0)
+                .center_y()
+                .border_sides([0.0, 0.0, 1.0, 0.0], p.line)
+                .child(txt(*name, SMALL_M, p.text2))
+                .child(txt(items.len().to_string(), FIG, p.muted)),
+        );
         for t in items {
             out = out.child(task_row(s, p, t));
         }
@@ -161,7 +203,14 @@ fn task_row(s: &State, p: &Pal, t: &DownloadTask) -> El {
     if let Some(reason) = model::reason(t) {
         line2 = line2.child(txt(reason, SMALL, p.text2).truncate().shrink().help(t.progress.error.clone()));
     } else if st == St::Done {
-        line2 = line2.child(txt(model::file_name(&t.progress.filename).to_string(), SMALL, p.text2).truncate().shrink().help(t.progress.filename.clone())).child(txt(model::specs(t), FIG, p.muted).single_line());
+        line2 = line2
+            .child(
+                txt(model::file_name(&t.progress.filename).to_string(), SMALL, p.text2)
+                    .truncate()
+                    .shrink()
+                    .help(t.progress.filename.clone()),
+            )
+            .child(txt(model::specs(t), FIG, p.muted).single_line());
     } else {
         if !t.uploader.is_empty() {
             line2 = line2.child(txt(t.uploader.clone(), SMALL, p.text2).truncate().shrink());
@@ -176,10 +225,17 @@ fn task_row(s: &State, p: &Pal, t: &DownloadTask) -> El {
     };
     let mut acts = row().w(136.0).justify_end().gap(0.0);
     for (label, i) in actions(t) {
-        acts = acts.child(icon_button(p, format!("dl-{label}-{}", t.task_id), label, i, if label == copy::ACT_RETRY || label == copy::ACT_RESUME { p.text } else { p.text2 }));
+        acts = acts.child(icon_button(
+            p,
+            format!("dl-{label}-{}", t.task_id),
+            label,
+            i,
+            if label == copy::ACT_RETRY || label == copy::ACT_RESUME { p.text } else { p.text2 },
+        ));
     }
     if model::is_finished(t) {
-        acts = acts.child(icon_button(p, format!("dl-remove-{}", t.task_id), copy::ACT_REMOVE, &icons::REMOVE, p.muted).group_opacity(0.0, 1.0));
+        acts = acts
+            .child(icon_button(p, format!("dl-remove-{}", t.task_id), copy::ACT_REMOVE, &icons::REMOVE, p.muted).group_opacity(0.0, 1.0));
     }
     row()
         .key(format!("dl-row-{}", t.task_id))
@@ -192,7 +248,17 @@ fn task_row(s: &State, p: &Pal, t: &DownloadTask) -> El {
         .hover_group()
         .child(checkbox(p, copy::ROW_SELECT_ARIA))
         .child(art)
-        .child(col().grow(1.0).min_w(0.0).gap(4.0).child(txt(model::label(t), if landed { BODY } else { BODY_M }, if st == St::Done || !landed { p.text } else { p.text2 }).truncate()).child(line2))
+        .child(
+            col()
+                .grow(1.0)
+                .min_w(0.0)
+                .gap(4.0)
+                .child(
+                    txt(model::label(t), if landed { BODY } else { BODY_M }, if st == St::Done || !landed { p.text } else { p.text2 })
+                        .truncate(),
+                )
+                .child(line2),
+        )
         .child(state)
         .child(acts)
 }

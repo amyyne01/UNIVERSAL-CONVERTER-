@@ -46,11 +46,7 @@ pub fn playlist_items_arg(value: &str) -> Result<&str, String> {
         Some((from, to)) => digits(from) && digits(to),
         None => digits(s),
     };
-    if js_len(value) <= MAX_PLAYLIST_ITEMS && value.split(',').all(item) {
-        Ok(value)
-    } else {
-        Err("Invalid input: playlistItems".into())
-    }
+    if js_len(value) <= MAX_PLAYLIST_ITEMS && value.split(',').all(item) { Ok(value) } else { Err("Invalid input: playlistItems".into()) }
 }
 
 /// Measured in UTF-16 units, like the original's `text.length`.
@@ -222,7 +218,10 @@ pub fn openable(raw: &str, output_dir: &str) -> Result<Option<String>, String> {
         return Ok(None);
     }
     let is_media = |abs: &String| abs.rsplit_once('.').is_some_and(|(_, ext)| OPENABLE.iter().any(|known| ext.eq_ignore_ascii_case(known)));
-    confine_to_root(raw, output_dir).filter(is_media).map(Some).ok_or_else(|| "Invalid input: not an openable media file in the output directory".to_owned())
+    confine_to_root(raw, output_dir)
+        .filter(is_media)
+        .map(Some)
+        .ok_or_else(|| "Invalid input: not an openable media file in the output directory".to_owned())
 }
 
 /// Confines a path to an allowed root. Returns the absolute path when it sits

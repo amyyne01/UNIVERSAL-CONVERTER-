@@ -12,22 +12,11 @@ use crate::copy;
 use crate::gate::{Nav, State};
 
 pub fn view(s: &State, p: &Pal, active: usize) -> El {
-    let finished: Vec<&DownloadTask> = s
-        .tasks
-        .iter()
-        .filter(|t| t.progress.status == St::Done)
-        .collect();
-    let counted = s.stats.as_ref().is_some_and(|st| {
-        st.current.files > 0.0 || st.previous.as_ref().is_some_and(|b| b.files > 0.0)
-    });
+    let finished: Vec<&DownloadTask> = s.tasks.iter().filter(|t| t.progress.status == St::Done).collect();
+    let counted = s.stats.as_ref().is_some_and(|st| st.current.files > 0.0 || st.previous.as_ref().is_some_and(|b| b.files > 0.0));
     let quiet = !counted && finished.is_empty() && active == 0;
 
-    let top = col()
-        .w_full()
-        .gap(16.0)
-        .child(headline(p, active))
-        .child(field(p, &s.input))
-        .child(status_line(s, p));
+    let top = col().w_full().gap(16.0).child(headline(p, active)).child(field(p, &s.input)).child(status_line(s, p));
     if quiet {
         // First launch: the field is the whole screen, set a little above the middle.
         return col()
@@ -38,26 +27,9 @@ pub fn view(s: &State, p: &Pal, active: usize) -> El {
             .justify_center()
             .px(56.0)
             .pb(96.0)
-            .child(
-                col()
-                    .w_full()
-                    .max_w(880.0)
-                    .self_center()
-                    .gap(32.0)
-                    .child(top)
-                    .child(works_with(p))
-                    .child(empty_shelf(p)),
-            );
+            .child(col().w_full().max_w(880.0).self_center().gap(32.0).child(top).child(works_with(p)).child(empty_shelf(p)));
     }
-    let mut page = col()
-        .w_full()
-        .max_w(1480.0)
-        .self_center()
-        .px(40.0)
-        .pt(28.0)
-        .pb(40.0)
-        .gap(24.0)
-        .child(top);
+    let mut page = col().w_full().max_w(1480.0).self_center().px(40.0).pt(28.0).pb(40.0).gap(24.0).child(top);
     if active > 0 {
         page = page.child(speed(s, p));
     }
@@ -75,25 +47,13 @@ pub fn view(s: &State, p: &Pal, active: usize) -> El {
     if !finished.is_empty() {
         page = page.child(shelf(s, p, &finished));
     }
-    col()
-        .key("home")
-        .w_full()
-        .grow(1.0)
-        .min_h(0.0)
-        .scroll(ScrollSpec {
-            stick_bottom: false,
-        })
-        .child(page)
+    col().key("home").w_full().grow(1.0).min_h(0.0).scroll(ScrollSpec { stick_bottom: false }).child(page)
 }
 
 // ── The top: headline, field, status ───────────────────────────────────────
 
 fn headline(p: &Pal, active: usize) -> El {
-    let mut r = row().w_full().items_end().child(
-        text(copy::HOME_HEADLINE)
-            .font(serif(44.0).lh(48.0))
-            .color(p.text),
-    );
+    let mut r = row().w_full().items_end().child(text(copy::HOME_HEADLINE).font(serif(44.0).lh(48.0)).color(p.text));
     if active > 0 {
         let pill = row()
             .key("in-flight")
@@ -111,12 +71,9 @@ fn headline(p: &Pal, active: usize) -> El {
             .on_press(|s: &mut State| s.nav = Nav::Downloads)
             .child(el().size(8.0, 8.0).radius(4.0).fill(p.accent))
             .child(
-                runs(vec![
-                    run_mono(active.to_string(), p.text),
-                    run(copy::HOME_IN_FLIGHT_SUFFIX, p.text2),
-                ])
-                .font(sans(13.0, 400.0))
-                .single_line(),
+                runs(vec![run_mono(active.to_string(), p.text), run(copy::HOME_IN_FLIGHT_SUFFIX, p.text2)])
+                    .font(sans(13.0, 400.0))
+                    .single_line(),
             )
             .child(icon(&icons::FORWARD, 16.0).color(p.muted));
         r = r.child(el().grow(1.0)).child(pill);
@@ -125,11 +82,7 @@ fn headline(p: &Pal, active: usize) -> El {
 }
 
 fn field(p: &Pal, input: &str) -> El {
-    let (shown, ink) = if input.is_empty() {
-        (copy::FIELD_PLACEHOLDER, p.muted)
-    } else {
-        (input, p.text)
-    };
+    let (shown, ink) = if input.is_empty() { (copy::FIELD_PLACEHOLDER, p.muted) } else { (input, p.text) };
     let button = row()
         .key("look-up")
         .h(48.0)
@@ -143,11 +96,7 @@ fn field(p: &Pal, input: &str) -> El {
         .focusable(true)
         .role("button")
         .label(copy::FIELD_BUTTON_LOOK_UP)
-        .child(
-            text(copy::FIELD_BUTTON_LOOK_UP)
-                .font(sans(15.0, 500.0))
-                .color(p.bg),
-        )
+        .child(text(copy::FIELD_BUTTON_LOOK_UP).font(sans(15.0, 500.0)).color(p.bg))
         .child(icon(&icons::FORWARD, 16.0).color(p.bg));
     row()
         .key("paste")
@@ -163,34 +112,17 @@ fn field(p: &Pal, input: &str) -> El {
         .role("textbox")
         .label(copy::FIELD_ARIA)
         .child(icon(&icons::LINK, 16.0).color(p.muted))
-        .child(
-            text(shown)
-                .font(sans(15.0, 400.0))
-                .color(ink)
-                .grow(1.0)
-                .single_line()
-                .truncate(),
-        )
+        .child(text(shown).font(sans(15.0, 400.0)).color(ink).grow(1.0).single_line().truncate())
         .child(button)
 }
 
 /// The rest-state caption: where files go, and the two ways to paste.
 fn status_line(s: &State, p: &Pal) -> El {
     let config = default_config();
-    let setting = |k: &str| {
-        config
-            .get(k)
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_string()
-    };
+    let setting = |k: &str| config.get(k).and_then(|v| v.as_str()).unwrap_or_default().to_string();
     // ponytail: the gate has no settings, so the folder is the one the sample downloads went to, else the
     // engine's default (empty, so the folder part is left out); the format and hotkey are the engine's defaults.
-    let folder = s
-        .tasks
-        .first()
-        .map(|t| t.output_dir.clone())
-        .unwrap_or_else(|| setting("outputDir"));
+    let folder = s.tasks.first().map(|t| t.output_dir.clone()).unwrap_or_else(|| setting("outputDir"));
     let format = setting("defaultFormat");
     let hotkey = setting("globalHotkey");
 
@@ -200,16 +132,10 @@ fn status_line(s: &State, p: &Pal) -> El {
         let shown = folder.rsplit('/').next().unwrap_or(&folder).to_string();
         left = left
             .child(
-                runs(vec![
-                    run(
-                        copy::rest_saves_as(if format.is_empty() { "mp3" } else { &format }),
-                        p.text2,
-                    ),
-                    run(shown, p.text),
-                ])
-                .font(sans(13.0, 400.0))
-                .single_line()
-                .help(folder.clone()),
+                runs(vec![run(copy::rest_saves_as(if format.is_empty() { "mp3" } else { &format }), p.text2), run(shown, p.text)])
+                    .font(sans(13.0, 400.0))
+                    .single_line()
+                    .help(folder.clone()),
             )
             .child(
                 text(copy::REST_CHANGE)
@@ -232,35 +158,16 @@ fn status_line(s: &State, p: &Pal) -> El {
     if hotkey.is_empty() {
         right = right.child(quiet(copy::REST_PASTES_A_LINK));
     } else {
-        right = right.child(quiet(&format!(
-            "{}{}",
-            copy::REST_PASTES_A_LINK,
-            copy::REST_HOTKEY_LEAD.trim_end()
-        )));
+        right = right.child(quiet(&format!("{}{}", copy::REST_PASTES_A_LINK, copy::REST_HOTKEY_LEAD.trim_end())));
         for (i, key) in hotkey.split('+').enumerate() {
             if i > 0 {
                 right = right.child(quiet("+"));
             }
-            right = right.child(keycap(
-                p,
-                if key == "CommandOrControl" {
-                    copy::KEY_CTRL
-                } else {
-                    key
-                },
-            ));
+            right = right.child(keycap(p, if key == "CommandOrControl" { copy::KEY_CTRL } else { key }));
         }
         right = right.child(quiet(copy::REST_HOTKEY_TRAIL));
     }
-    row()
-        .w_full()
-        .px(4.0)
-        .gap(16.0)
-        .center_y()
-        .flex_wrap()
-        .child(left)
-        .child(el().grow(1.0))
-        .child(right)
+    row().w_full().px(4.0).gap(16.0).center_y().flex_wrap().child(left).child(el().grow(1.0)).child(right)
 }
 
 /// First launch: where links can come from.
@@ -287,50 +194,18 @@ fn works_with(p: &Pal) -> El {
         .gap(8.0)
         .center_y()
         .flex_wrap()
-        .child(
-            text(copy::WORKS_WITH)
-                .font(sans(13.0, 400.0))
-                .color(p.text2)
-                .mr(4.0),
-        )
-        .child(site(
-            "works-youtube",
-            copy::WORKS_WITH_YOUTUBE,
-            p.youtube(),
-        ))
-        .child(site(
-            "works-spotify",
-            copy::WORKS_WITH_SPOTIFY,
-            p.spotify(),
-        ))
-        .child(site(
-            "works-soundcloud",
-            copy::WORKS_WITH_SOUNDCLOUD,
-            p.soundcloud(),
-        ))
-        .child(site(
-            "works-reels",
-            copy::WORKS_WITH_REELS,
-            p.reels(),
-        ))
-        .child(
-            text(copy::WORKS_WITH_TAIL)
-                .font(sans(13.0, 400.0))
-                .color(p.text2)
-                .ml(4.0),
-        )
+        .child(text(copy::WORKS_WITH).font(sans(13.0, 400.0)).color(p.text2).mr(4.0))
+        .child(site("works-youtube", copy::WORKS_WITH_YOUTUBE, p.youtube()))
+        .child(site("works-spotify", copy::WORKS_WITH_SPOTIFY, p.spotify()))
+        .child(site("works-soundcloud", copy::WORKS_WITH_SOUNDCLOUD, p.soundcloud()))
+        .child(site("works-reels", copy::WORKS_WITH_REELS, p.reels()))
+        .child(text(copy::WORKS_WITH_TAIL).font(sans(13.0, 400.0)).color(p.text2).ml(4.0))
 }
 
 /// First launch: the shelf the files will stand on, still bare.
 fn empty_shelf(p: &Pal) -> El {
     let ghost = |size: f32| el().size(size, size).radius(4.0).fill(p.raised.alpha(0.45));
-    let sleeves = row()
-        .gap(28.0)
-        .items_end()
-        .pl(8.0)
-        .child(ghost(136.0))
-        .child(ghost(104.0))
-        .child(ghost(104.0));
+    let sleeves = row().gap(28.0).items_end().pl(8.0).child(ghost(136.0)).child(ghost(104.0)).child(ghost(104.0));
     col().w_full().mt(24.0).child(sleeves).child(board(p))
 }
 
@@ -346,11 +221,7 @@ fn board(p: &Pal) -> El {
 // ── The figures ─────────────────────────────────────────────────────────────
 
 fn heading(p: &Pal, title: &str, aside: Option<El>) -> El {
-    let mut r = row()
-        .w_full()
-        .h(20.0)
-        .center_y()
-        .child(text(title).font(sans(15.0, 500.0)).color(p.text));
+    let mut r = row().w_full().h(20.0).center_y().child(text(title).font(sans(15.0, 500.0)).color(p.text));
     if let Some(a) = aside {
         r = r.child(el().grow(1.0)).child(a);
     }
@@ -375,28 +246,13 @@ fn nice_ceiling(v: f64) -> f64 {
 
 /// Speed: the summed rate now, against the chart's scale.
 fn speed(s: &State, p: &Pal) -> El {
-    let now: f64 = s
-        .tasks
-        .iter()
-        .filter(|t| t.progress.status == St::Downloading)
-        .map(|t| t.progress.speed)
-        .sum();
+    let now: f64 = s.tasks.iter().filter(|t| t.progress.status == St::Downloading).map(|t| t.progress.speed).sum();
     let ceil = nice_ceiling(now);
     let figure = col()
         .w(152.0)
         .gap(4.0)
-        .child(
-            text(copy::speed_now(&copy::format_bytes(now)))
-                .font(mono(22.0, 500.0))
-                .color(p.text)
-                .single_line(),
-        )
-        .child(
-            text(copy::speed_scale(&copy::format_bytes(ceil)))
-                .font(mono(12.0, 400.0))
-                .color(p.muted)
-                .single_line(),
-        );
+        .child(text(copy::speed_now(&copy::format_bytes(now))).font(mono(22.0, 500.0)).color(p.text).single_line())
+        .child(text(copy::speed_scale(&copy::format_bytes(ceil))).font(mono(12.0, 400.0)).color(p.muted).single_line());
     // The chart starts empty: one sample so far, at the right edge (the app gathers one a second).
     let level = (now / ceil).clamp(0.0, 1.0) as f32;
     let h = 40.0;
@@ -408,23 +264,9 @@ fn speed(s: &State, p: &Pal) -> El {
         .child(grid(0.0))
         .child(grid(h / 2.0))
         .child(grid(h - 1.0))
-        .child(el().size(8.0, 8.0).radius(4.0).fill(p.accent).pin(
-            None,
-            Some(((h - 8.0) * (1.0 - level)).round()),
-            Some(-4.0),
-            None,
-        ));
-    let title = text(copy::CELL_SPEED)
-        .font(sans(15.0, 500.0))
-        .color(p.text)
-        .w(120.0);
-    row()
-        .w_full()
-        .gap(24.0)
-        .center_y()
-        .child(title)
-        .child(figure)
-        .child(chart)
+        .child(el().size(8.0, 8.0).radius(4.0).fill(p.accent).pin(None, Some(((h - 8.0) * (1.0 - level)).round()), Some(-4.0), None));
+    let title = text(copy::CELL_SPEED).font(sans(15.0, 500.0)).color(p.text).w(120.0);
+    row().w_full().gap(24.0).center_y().child(title).child(figure).child(chart)
 }
 
 fn this_month(p: &Pal, stats: &DownloadStats) -> El {
@@ -439,44 +281,23 @@ fn this_month(p: &Pal, stats: &DownloadStats) -> El {
         };
         col()
             .gap(8.0)
-            .child(
-                text(copy::MONTH_NOTHING_YET)
-                    .font(sans(15.0, 400.0))
-                    .color(p.text),
-            )
+            .child(text(copy::MONTH_NOTHING_YET).font(sans(15.0, 400.0)).color(p.text))
             .child(text(second).font(sans(13.0, 400.0)).color(p.text2).wrap())
     } else {
         let ending = match prev {
             Some(b) => {
                 let prev_name = parts::month_name(&b.month);
                 let diff = files as i64 - b.files as i64;
-                if diff == 0 {
-                    copy::month_same_count(&prev_name)
-                } else {
-                    copy::month_diff(diff, &prev_name)
-                }
+                if diff == 0 { copy::month_same_count(&prev_name) } else { copy::month_diff(diff, &prev_name) }
             }
             None => copy::MONTH_FIRST_ON_RECORD.to_string(),
         };
         let figure = row()
             .gap(8.0)
             .items_end()
-            .child(
-                text(files.to_string())
-                    .font(mono(44.0, 400.0).lh(48.0))
-                    .color(p.text),
-            )
-            .child(
-                text(copy::file_word(files))
-                    .font(sans(15.0, 400.0))
-                    .color(p.text2)
-                    .mb(4.0),
-            );
-        let line = runs(vec![
-            run_mono(copy::format_bytes(cur.bytes), p.text),
-            run(ending, p.text2),
-        ])
-        .font(sans(13.0, 400.0));
+            .child(text(files.to_string()).font(mono(44.0, 400.0).lh(48.0)).color(p.text))
+            .child(text(copy::file_word(files)).font(sans(15.0, 400.0)).color(p.text2).mb(4.0));
+        let line = runs(vec![run_mono(copy::format_bytes(cur.bytes), p.text), run(ending, p.text2)]).font(sans(13.0, 400.0));
         let mut c = col().gap(8.0).child(figure).child(line);
         if let Some(b) = prev {
             let top = cur.files.max(b.files).max(1.0);
@@ -491,19 +312,9 @@ fn this_month(p: &Pal, stats: &DownloadStats) -> El {
                             .w_full()
                             .child(text(month).font(sans(12.0, 400.0)).color(p.text2))
                             .child(el().grow(1.0))
-                            .child(
-                                text((n as u64).to_string())
-                                    .font(mono(12.0, 400.0))
-                                    .color(p.text2),
-                            ),
+                            .child(text((n as u64).to_string()).font(mono(12.0, 400.0)).color(p.text2)),
                     )
-                    .child(
-                        el().w_full()
-                            .h(6.0)
-                            .radius(3.0)
-                            .fill(p.raised)
-                            .child(el().w_frac(share).h_full().radius(3.0).fill(fill)),
-                    )
+                    .child(el().w_full().h(6.0).radius(3.0).fill(p.raised).child(el().w_frac(share).h_full().radius(3.0).fill(fill)))
             };
             c = c.child(
                 col()
@@ -511,19 +322,9 @@ fn this_month(p: &Pal, stats: &DownloadStats) -> El {
                     .max_w(520.0)
                     .mt(4.0)
                     .gap(8.0)
-                    .label(copy::month_bars_aria(
-                        &name,
-                        files,
-                        &parts::month_name(&b.month),
-                        b.files as u64,
-                    ))
+                    .label(copy::month_bars_aria(&name, files, &parts::month_name(&b.month), b.files as u64))
                     .child(bar("bar-now", name.clone(), cur.files, p.accent))
-                    .child(bar(
-                        "bar-prev",
-                        parts::month_name(&b.month),
-                        b.files,
-                        p.muted.alpha(0.55),
-                    )),
+                    .child(bar("bar-prev", parts::month_name(&b.month), b.files, p.muted.alpha(0.55))),
             );
         }
         c
@@ -532,11 +333,7 @@ fn this_month(p: &Pal, stats: &DownloadStats) -> El {
         .grow(1.0)
         .min_w(0.0)
         .gap(12.0)
-        .child(heading(
-            p,
-            copy::CELL_THIS_MONTH,
-            Some(text(name.clone()).font(sans(13.0, 400.0)).color(p.muted)),
-        ))
+        .child(heading(p, copy::CELL_THIS_MONTH, Some(text(name.clone()).font(sans(13.0, 400.0)).color(p.muted))))
         .child(body)
 }
 
@@ -566,22 +363,13 @@ fn where_from(p: &Pal, stats: &DownloadStats) -> El {
         let words = copy::split_aside(total);
         let n = total.to_string();
         let at = words.find(&n).unwrap_or(0);
-        runs(vec![
-            run(&words[..at], p.muted),
-            run_mono(n.clone(), p.text2),
-            run(&words[at + n.len()..], p.muted),
-        ])
-        .font(sans(13.0, 400.0))
-        .single_line()
+        runs(vec![run(&words[..at], p.muted), run_mono(n.clone(), p.text2), run(&words[at + n.len()..], p.muted)])
+            .font(sans(13.0, 400.0))
+            .single_line()
     });
     let mut list = col().w_full().max_w(560.0).gap(12.0);
     if total == 0 {
-        list = list.child(
-            text(copy::SPLIT_EMPTY)
-                .font(sans(13.0, 400.0))
-                .color(p.text2)
-                .wrap(),
-        );
+        list = list.child(text(copy::SPLIT_EMPTY).font(sans(13.0, 400.0)).color(p.text2).wrap());
     }
     for (i, (name, n, hue)) in groups.iter().enumerate() {
         let pct = ((*n as f64 / total.max(1) as f64) * 100.0).round() as u64;
@@ -602,29 +390,15 @@ fn where_from(p: &Pal, stats: &DownloadStats) -> El {
                         .child(text(*name).font(sans(13.0, 400.0)).color(lead))
                         .child(el().grow(1.0))
                         .child(
-                            runs(vec![
-                                run_mono(&figures[..cut], lead),
-                                run_mono(&figures[cut..], p.muted),
-                            ])
-                            .font(mono(12.0, 400.0))
-                            .single_line(),
+                            runs(vec![run_mono(&figures[..cut], lead), run_mono(&figures[cut..], p.muted)])
+                                .font(mono(12.0, 400.0))
+                                .single_line(),
                         ),
                 )
-                .child(
-                    el().w_full()
-                        .h(4.0)
-                        .radius(2.0)
-                        .fill(p.raised)
-                        .child(el().w_frac(share).h_full().radius(2.0).fill(*hue)),
-                ),
+                .child(el().w_full().h(4.0).radius(2.0).fill(p.raised).child(el().w_frac(share).h_full().radius(2.0).fill(*hue))),
         );
     }
-    col()
-        .grow(1.0)
-        .min_w(0.0)
-        .gap(12.0)
-        .child(heading(p, copy::CELL_WHERE_FROM, aside))
-        .child(list)
+    col().grow(1.0).min_w(0.0).gap(12.0).child(heading(p, copy::CELL_WHERE_FROM, aside)).child(list)
 }
 
 // ── The shelf ───────────────────────────────────────────────────────────────
@@ -639,11 +413,7 @@ fn shelf(s: &State, p: &Pal, finished: &[&DownloadTask]) -> El {
         .focusable(true)
         .role("button")
         .on_press(|s: &mut State| s.nav = Nav::Downloads)
-        .child(
-            text(copy::CELL_RECENT_VIEW_ALL)
-                .font(sans(13.0, 500.0))
-                .color(p.text2),
-        )
+        .child(text(copy::CELL_RECENT_VIEW_ALL).font(sans(13.0, 500.0)).color(p.text2))
         .child(icon(&icons::FORWARD, 16.0).color(p.text2));
     let gap = 28.0;
     let mut sleeves = row().gap(gap).items_end().pl(8.0);
@@ -651,9 +421,7 @@ fn shelf(s: &State, p: &Pal, finished: &[&DownloadTask]) -> El {
     // ponytail: four shown, the 1240-point window's width; the full app shows up to seven as the window widens.
     for (i, t) in finished.iter().take(4).enumerate() {
         let size = if i == 0 { 136.0 } else { 104.0 };
-        let mut art = el()
-            .size(size, size)
-            .child(parts::sleeve(s, p, t, size, Disc::None, false));
+        let mut art = el().size(size, size).child(parts::sleeve(s, p, t, size, Disc::None, false));
         let duration = copy::format_duration(t.duration);
         if !duration.is_empty() {
             art = art.child(
@@ -666,51 +434,22 @@ fn shelf(s: &State, p: &Pal, finished: &[&DownloadTask]) -> El {
                     .child(text(duration).font(mono(11.0, 500.0)).color(label_paper())),
             );
         }
-        let title = if t.title.is_empty() {
-            copy::RECENT_UNTITLED.to_string()
-        } else {
-            t.title.clone()
-        };
+        let title = if t.title.is_empty() { copy::RECENT_UNTITLED.to_string() } else { t.title.clone() };
         let size_text = copy::format_bytes(t.progress.downloaded);
-        let caption = if i == 0 {
-            col()
-                .w(size)
-                .gap(4.0)
-                .child(
-                    text(title.clone())
-                        .font(sans(13.0, 500.0))
-                        .color(p.text)
-                        .max_lines(2)
-                        .wrap(),
+        let caption =
+            if i == 0 {
+                col().w(size).gap(4.0).child(text(title.clone()).font(sans(13.0, 500.0)).color(p.text).max_lines(2).wrap()).child(
+                    text(copy::recent_poster_meta(&t.format, &size_text, &t.uploader)).font(mono(11.0, 400.0)).color(p.muted).truncate(),
                 )
-                .child(
-                    text(copy::recent_poster_meta(&t.format, &size_text, &t.uploader))
-                        .font(mono(11.0, 400.0))
-                        .color(p.muted)
-                        .truncate(),
-                )
-        } else {
-            col()
-                .w(size)
-                .gap(4.0)
-                .child(
-                    text(title.clone())
-                        .font(sans(13.0, 400.0))
-                        .color(p.text)
-                        .truncate(),
-                )
-                .child(
+            } else {
+                col().w(size).gap(4.0).child(text(title.clone()).font(sans(13.0, 400.0)).color(p.text).truncate()).child(
                     row()
                         .w_full()
-                        .child(
-                            text(t.format.to_uppercase())
-                                .font(mono(11.0, 400.0))
-                                .color(p.muted),
-                        )
+                        .child(text(t.format.to_uppercase()).font(mono(11.0, 400.0)).color(p.muted))
                         .child(el().grow(1.0))
                         .child(text(size_text).font(mono(11.0, 400.0)).color(p.muted)),
                 )
-        };
+            };
         let tile = el()
             .key(format!("recent-{}", t.task_id))
             .focusable(true)

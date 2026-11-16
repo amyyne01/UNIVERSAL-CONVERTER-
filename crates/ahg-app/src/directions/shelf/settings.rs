@@ -47,13 +47,7 @@ pub fn view(s: &State, p: &Pal) -> El {
         .child(section(p, 6, w::ADVANCED, Some(w::ADVANCED_HINT), advanced(p)))
         .child(section(p, 7, w::PLAN, None, plan(p)))
         .child(section(p, 8, w::HELP, None, help(p)));
-    col()
-        .key("settings")
-        .w_full()
-        .grow(1.0)
-        .min_h(0.0)
-        .scroll(ScrollSpec { stick_bottom: false })
-        .child(page)
+    col().key("settings").w_full().grow(1.0).min_h(0.0).scroll(ScrollSpec { stick_bottom: false }).child(page)
 }
 
 // ── Structure ───────────────────────────────────────────────────────────────
@@ -77,14 +71,7 @@ fn section(p: &Pal, n: usize, title: &str, hint: Option<&str>, rows: El) -> El {
     if let Some(h) = hint {
         name = name.child(text(h.to_string()).font(sans(12.0, 400.0)).color(p.muted).wrap());
     }
-    row()
-        .w_full()
-        .pt(24.0)
-        .pb(16.0)
-        .items_start()
-        .border_sides([1.0, 0.0, 0.0, 0.0], p.line)
-        .child(name)
-        .child(rows.grow(1.0).min_w(0.0))
+    row().w_full().pt(24.0).pb(16.0).items_start().border_sides([1.0, 0.0, 0.0, 0.0], p.line).child(name).child(rows.grow(1.0).min_w(0.0))
 }
 
 /// The settings of a section, a hairline between each.
@@ -236,7 +223,8 @@ fn more(p: &Pal) -> El {
 
 fn appearance(s: &State, p: &Pal) -> El {
     // The gate follows the system (Rune's --theme), so System is the one chosen.
-    let mut theme = row().h(32.0).padding(4.0).gap(4.0).radius(8.0).fill(p.sunk).border(1.0, p.line_soft).role("radiogroup").label(w::THEME.0);
+    let mut theme =
+        row().h(32.0).padding(4.0).gap(4.0).radius(8.0).fill(p.sunk).border(1.0, p.line_soft).role("radiogroup").label(w::THEME.0);
     for (i, name) in w::THEMES.into_iter().enumerate() {
         let on = i == 2;
         theme = theme.child(
@@ -320,17 +308,13 @@ fn schedule(p: &Pal) -> El {
 
 /// An updater: its name and version, what it is doing, its one button.
 fn updater(p: &Pal, name: &str, version: &str, desc: &str, action: El) -> El {
-    let mut words = col()
-        .grow(1.0)
-        .min_w(0.0)
-        .gap(4.0)
-        .child(
-            row()
-                .gap(8.0)
-                .center_y()
-                .child(text(name.to_string()).font(sans(13.0, 500.0)).color(p.text))
-                .child(text(version.to_string()).font(mono(12.0, 400.0)).color(p.muted)),
-        );
+    let mut words = col().grow(1.0).min_w(0.0).gap(4.0).child(
+        row()
+            .gap(8.0)
+            .center_y()
+            .child(text(name.to_string()).font(sans(13.0, 500.0)).color(p.text))
+            .child(text(version.to_string()).font(mono(12.0, 400.0)).color(p.muted)),
+    );
     if !desc.is_empty() {
         words = words.child(text(desc.to_string()).font(sans(12.0, 400.0)).color(p.text2).wrap());
     }
@@ -391,14 +375,7 @@ fn plan(p: &Pal) -> El {
             )
             .child(icon(&icons::CARET_RIGHT, 16.0).color(p.muted))
     };
-    lines(
-        vec![
-            setting(p, (w::YOUR_PLAN, w::PLAN_PREMIUM.1), stamp),
-            danger("deactivate", w::DEACTIVATE),
-            danger("move-pc", w::MOVE),
-        ],
-        p,
-    )
+    lines(vec![setting(p, (w::YOUR_PLAN, w::PLAN_PREMIUM.1), stamp), danger("deactivate", w::DEACTIVATE), danger("move-pc", w::MOVE)], p)
 }
 
 fn help(p: &Pal) -> El {

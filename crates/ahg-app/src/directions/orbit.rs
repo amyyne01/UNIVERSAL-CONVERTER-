@@ -9,11 +9,11 @@ mod downloads;
 pub(crate) mod draw;
 pub(crate) mod found;
 mod home;
-mod nav;
-mod settings;
 pub(crate) mod icons;
 pub(crate) mod look;
 pub(crate) mod model;
+mod nav;
+mod settings;
 
 use rune::{ChromeInsets, Color, Cx, El, Icon, SurfaceFit, col, el, icon, row, spacer};
 
@@ -32,12 +32,14 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> El {
         Nav::Downloads => downloads::view(s, &p),
         Nav::Settings => settings::view(s, &p),
     };
-    col()
-        .w_full()
-        .h_full()
-        .fill(p.bg)
-        .child(titlebar(s, &p, insets))
-        .child(row().w_full().grow(1.0).min_h(0.0).child(nav::view(s, &p)).child(col().key("content").grow(1.0).min_w(0.0).h_full().child(content)))
+    col().w_full().h_full().fill(p.bg).child(titlebar(s, &p, insets)).child(
+        row()
+            .w_full()
+            .grow(1.0)
+            .min_h(0.0)
+            .child(nav::view(s, &p))
+            .child(col().key("content").grow(1.0).min_w(0.0).h_full().child(content)),
+    )
 }
 
 // ── Shell ───────────────────────────────────────────────────────────────────
@@ -47,7 +49,8 @@ fn titlebar(s: &State, p: &Pal, insets: ChromeInsets) -> El {
         Some(img) if img.is_ready() => el().size(18.0, 18.0).radius(4.0).pixels_fit(img.pixels(), SurfaceFit::Fill),
         _ => el().size(18.0, 18.0),
     };
-    let brand = row().gap(12.0).center_y().child(mark).child(row().child(txt(copy::BRAND, FIG, p.text)).child(txt(copy::BRAND_REST, FIG, p.muted)));
+    let brand =
+        row().gap(12.0).center_y().child(mark).child(row().child(txt(copy::BRAND, FIG, p.text)).child(txt(copy::BRAND_REST, FIG, p.muted)));
     let search = row()
         .key("search")
         .w(420.0)

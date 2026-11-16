@@ -19,22 +19,18 @@ const TAIL_CHARS: usize = 2000;
 /// `\b` before a word character, with JavaScript's ASCII idea of a word.
 const WORD_START: &str = "(?<![A-Za-z0-9_])";
 
-static GITHUB_TOKEN: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(&format!("{WORD_START}(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]{{10,}}")).expect("constant pattern")
-});
-static AUTH_SCHEME: LazyLock<Regex> = LazyLock::new(|| {
-    ascii_ci_regex(&format!("{WORD_START}(Bearer|Basic)[{JS_SPACE}]+[A-Za-z0-9._~+/=-]+"))
-});
-static HEADER: LazyLock<Regex> = LazyLock::new(|| {
-    ascii_ci_regex(&format!(r"{WORD_START}((?:set-)?cookie|authorization)[{JS_SPACE}]*[:=][{JS_SPACE}]*[^\r\n]*"))
-});
+static GITHUB_TOKEN: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(&format!("{WORD_START}(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]{{10,}}")).expect("constant pattern"));
+static AUTH_SCHEME: LazyLock<Regex> =
+    LazyLock::new(|| ascii_ci_regex(&format!("{WORD_START}(Bearer|Basic)[{JS_SPACE}]+[A-Za-z0-9._~+/=-]+")));
+static HEADER: LazyLock<Regex> =
+    LazyLock::new(|| ascii_ci_regex(&format!(r"{WORD_START}((?:set-)?cookie|authorization)[{JS_SPACE}]*[:=][{JS_SPACE}]*[^\r\n]*")));
 static SECRET_VALUE: LazyLock<Regex> = LazyLock::new(|| {
     ascii_ci_regex(&format!(
         r#"((?:access_|refresh_|api_)?(?:token|secret|key|sig|password)["']?[{JS_SPACE}]*[=:][{JS_SPACE}]*["']?)[^&{JS_SPACE}"',}}]+"#
     ))
 });
-static URL: LazyLock<Regex> =
-    LazyLock::new(|| ascii_ci_regex(&format!(r#"{WORD_START}[a-zA-Z][a-zA-Z0-9+.-]*://[^{JS_SPACE}"'<>]+"#)));
+static URL: LazyLock<Regex> = LazyLock::new(|| ascii_ci_regex(&format!(r#"{WORD_START}[a-zA-Z][a-zA-Z0-9+.-]*://[^{JS_SPACE}"'<>]+"#)));
 
 /// Masks credentials: GitHub tokens, Bearer and Basic auth, cookie headers,
 /// and token-like query or JSON values.

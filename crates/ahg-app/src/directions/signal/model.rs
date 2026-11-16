@@ -93,7 +93,10 @@ pub fn reason(t: &DownloadTask) -> Option<String> {
     if t.source == SourcePlatform::Spotify && matches!(code, Unknown | Removed | Unsupported) {
         remedy = copy::ERR_SPOTIFY_REMEDY;
     }
-    let video = matches!(t.source, SourcePlatform::Youtube | SourcePlatform::Vimeo | SourcePlatform::Dailymotion | SourcePlatform::Rumble | SourcePlatform::Twitch);
+    let video = matches!(
+        t.source,
+        SourcePlatform::Youtube | SourcePlatform::Vimeo | SourcePlatform::Dailymotion | SourcePlatform::Rumble | SourcePlatform::Twitch
+    );
     Some(copy::error_text(cause, remedy, video))
 }
 
@@ -140,7 +143,8 @@ pub fn timecode(seconds: f64) -> String {
 /// Full month name for `YYYY-MM`; an unparsable value is shown as is (4.6).
 /// The shared `copy` has no helper for this, so the English names live here.
 pub fn month_name(ym: &str) -> String {
-    const NAMES: [&str; 12] = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    const NAMES: [&str; 12] =
+        ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
     ym.split_once('-')
         .and_then(|(_, m)| m.parse::<usize>().ok())
         .and_then(|m| NAMES.get(m.wrapping_sub(1)))

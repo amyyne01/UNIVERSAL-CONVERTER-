@@ -43,7 +43,8 @@ fn until_end(rx: &Receiver<Report>) -> Vec<Report> {
 #[test]
 fn a_download_reports_progress_then_the_file_it_wrote() {
     let dir = scratch("happy");
-    let script = "err [PROGRESS]1048576|4194304|NA|524288|6\nerr [ExtractAudio] Destination: a.mp3\nout [FILEPATH]C:\\Music\\a.mp3\nexit 0\n";
+    let script =
+        "err [PROGRESS]1048576|4194304|NA|524288|6\nerr [ExtractAudio] Destination: a.mp3\nout [FILEPATH]C:\\Music\\a.mp3\nexit 0\n";
     let d = downloader(&dir, script);
     let (tx, rx) = channel();
     d.start(task("t1"), 7, tx);

@@ -53,7 +53,8 @@ fn run(sp: &mut Spotify<Replay>, step: &Value) -> Result<Value, ()> {
         "resolveId" => Ok(json!(ahg_engine::spotify::resolve_id(arg))),
         "token" => Ok(json!(sp.token())),
         "seedToken" => {
-            sp.state.token = Some(Token { value: step["value"].as_str().unwrap().to_owned(), expires_at: step["expiresAt"].as_f64().unwrap() });
+            sp.state.token =
+                Some(Token { value: step["value"].as_str().unwrap().to_owned(), expires_at: step["expiresAt"].as_f64().unwrap() });
             Ok(Value::Null)
         }
         "heal" => Ok(json!(sp.heal(arg))),
@@ -77,10 +78,13 @@ fn spotify_matches_electron() {
         let calls = Rc::new(RefCell::new(VecDeque::new()));
         let at = Rc::new(RefCell::new(String::new()));
         let transport = Replay { calls: calls.clone(), clock: clock.clone(), at: at.clone() };
-        let mut sp = Spotify::new(transport, Box::new({
-            let clock = clock.clone();
-            move || *clock.lock().unwrap()
-        }));
+        let mut sp = Spotify::new(
+            transport,
+            Box::new({
+                let clock = clock.clone();
+                move || *clock.lock().unwrap()
+            }),
+        );
         // D45: Rust starts `searchDesktop` from a verified hash; the golden file was recorded
         // from Electron's placeholder, so replay from that one.
         sp.state.hashes.insert("searchDesktop".into(), "919c08e0c4c5b0a8e8a3b1e6f2e0a6d0c4c5b0a8e8a3b1e6f2e0a6d0c4c5b0a8".into());

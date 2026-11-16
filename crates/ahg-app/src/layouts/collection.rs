@@ -57,12 +57,7 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> El {
         Nav::Settings => settings::view(&p),
     };
     let body = row().grow(1.0).min_h(0.0).w_full().child(nav::view(s, &p)).child(place);
-    col()
-        .w_full()
-        .h_full()
-        .fill(p.bg)
-        .child(titlebar(s, &p, insets.leading, insets.trailing))
-        .child(body)
+    col().w_full().h_full().fill(p.bg).child(titlebar(s, &p, insets.leading, insets.trailing)).child(body)
 }
 
 // ── Title bar: the brand, the add field, the palette and the sheet ─────────
@@ -175,8 +170,7 @@ fn wall(s: &State, p: &Pal) -> El {
     } else {
         page = page.child(masthead(s, p));
         let active: Vec<&DownloadTask> = s.tasks.iter().filter(|t| is_active(t.progress.status)).collect();
-        let attention: Vec<&DownloadTask> =
-            s.tasks.iter().filter(|t| matches!(t.progress.status, St::Failed | St::Cancelled)).collect();
+        let attention: Vec<&DownloadTask> = s.tasks.iter().filter(|t| matches!(t.progress.status, St::Failed | St::Cancelled)).collect();
         let done: Vec<&DownloadTask> = s.tasks.iter().filter(|t| t.progress.status == St::Done).collect();
         if !active.is_empty() {
             page = page.child(in_progress(s, p, &active, attention.is_empty() && done.is_empty()));
@@ -190,14 +184,7 @@ fn wall(s: &State, p: &Pal) -> El {
             page = page.child(completed(s, p, &done, size));
         }
     }
-    col()
-        .key("wall")
-        .grow(1.0)
-        .h_full()
-        .min_w(0.0)
-        .min_h(0.0)
-        .scroll(ScrollSpec { stick_bottom: false })
-        .child(page)
+    col().key("wall").grow(1.0).h_full().min_w(0.0).min_h(0.0).scroll(ScrollSpec { stick_bottom: false }).child(page)
 }
 
 // ── First launch: an empty wall that asks for the first link ───────────────
@@ -224,23 +211,11 @@ fn first_run(p: &Pal) -> El {
         shelf = shelf.child(
             col()
                 .gap(12.0)
-                .child(
-                    el().size(200.0, 200.0)
-                        .center()
-                        .radius(12.0)
-                        .border(1.0, p.line)
-                        .border_dash(4.0, 4.0)
-                        .child(record(hue, 128.0)),
-                )
+                .child(el().size(200.0, 200.0).center().radius(12.0).border(1.0, p.line).border_dash(4.0, 4.0).child(record(hue, 128.0)))
                 .child(text(name).font(sans(13.0, 500.0)).color(p.text2)),
         );
     }
-    shelf = shelf.child(
-        col()
-            .w(160.0)
-            .pb(28.0)
-            .child(text(copy::WORKS_WITH_TAIL).font(sans(13.0, 400.0)).color(p.muted).wrap()),
-    );
+    shelf = shelf.child(col().w(160.0).pb(28.0).child(text(copy::WORKS_WITH_TAIL).font(sans(13.0, 400.0)).color(p.muted).wrap()));
     col()
         .w_full()
         .pt(64.0)
@@ -254,39 +229,24 @@ fn first_run(p: &Pal) -> El {
 fn record(hue: Color, d: f32) -> El {
     let groove = (d * 0.68).round();
     let label = (d * 0.36).round();
-    el().size(d, d)
-        .radius(d / 2.0)
-        .center()
-        .fill(theme::vinyl())
-        .border(1.0, theme::rim())
-        .child(
-            el().size(groove, groove).radius(groove / 2.0).center().border(1.0, theme::groove()).child(
-                el().size(label, label)
-                    .radius(label / 2.0)
-                    .center()
-                    .fill(hue)
-                    .child(el().size(4.0, 4.0).radius(2.0).fill(theme::vinyl())),
-            ),
-        )
+    el().size(d, d).radius(d / 2.0).center().fill(theme::vinyl()).border(1.0, theme::rim()).child(
+        el().size(groove, groove).radius(groove / 2.0).center().border(1.0, theme::groove()).child(
+            el().size(label, label).radius(label / 2.0).center().fill(hue).child(el().size(4.0, 4.0).radius(2.0).fill(theme::vinyl())),
+        ),
+    )
 }
 
 // ── Masthead: the collection's own facts ───────────────────────────────────
 
 fn masthead(s: &State, p: &Pal) -> El {
     let Some(stats) = &s.stats else {
-        return col()
-            .pb(32.0)
-            .child(text(copy::HOME_HEADLINE).font(serif(44.0).lh(48.0)).color(p.text));
+        return col().pb(32.0).child(text(copy::HOME_HEADLINE).font(serif(44.0).lh(48.0)).color(p.text));
     };
     let cur = &stats.current;
     let files = cur.files as u64;
-    let month = runs(vec![
-        run(copy::CELL_THIS_MONTH, p.text2),
-        run_mono(" · ", p.muted),
-        run(parts::month_name(&cur.month), p.text2),
-    ])
-    .font(sans(13.0, 400.0))
-    .single_line();
+    let month = runs(vec![run(copy::CELL_THIS_MONTH, p.text2), run_mono(" · ", p.muted), run(parts::month_name(&cur.month), p.text2)])
+        .font(sans(13.0, 400.0))
+        .single_line();
     let compare = match &stats.previous {
         Some(prev) if files > 0 => {
             let name = parts::month_name(&prev.month);
@@ -332,7 +292,13 @@ fn masthead(s: &State, p: &Pal) -> El {
             let pct = (n / total * 100.0).round() as u64;
             legend = legend.child(
                 row()
-                    .w(152.0).h(24.0).radius(4.0).hover(p.raised).focusable(true).role("button").label(name.to_string())
+                    .w(152.0)
+                    .h(24.0)
+                    .radius(4.0)
+                    .hover(p.raised)
+                    .focusable(true)
+                    .role("button")
+                    .label(name.to_string())
                     .gap(8.0)
                     .center_y()
                     .child(el().size(8.0, 8.0).radius(4.0).fill(*hue))
@@ -343,13 +309,9 @@ fn masthead(s: &State, p: &Pal) -> El {
         }
         right = right
             .child(
-                runs(vec![
-                    run(copy::CELL_WHERE_FROM, p.text2),
-                    run_mono(" · ", p.muted),
-                    run(copy::split_aside(total as u64), p.muted),
-                ])
-                .font(sans(13.0, 400.0))
-                .single_line(),
+                runs(vec![run(copy::CELL_WHERE_FROM, p.text2), run_mono(" · ", p.muted), run(copy::split_aside(total as u64), p.muted)])
+                    .font(sans(13.0, 400.0))
+                    .single_line(),
             )
             .child(bar)
             .child(legend);
@@ -375,7 +337,9 @@ fn tab(p: &Pal, key: &str, label: &str, count: Option<usize>, dot: Option<Color>
     if let Some(hue) = dot {
         t = t.child(el().size(8.0, 8.0).radius(4.0).fill(hue));
     }
-    t = t.child(text(label.to_string()).font(sans(13.0, if on { 500.0 } else { 400.0 })).color(if on { p.text } else { p.text2 }).single_line());
+    t = t.child(
+        text(label.to_string()).font(sans(13.0, if on { 500.0 } else { 400.0 })).color(if on { p.text } else { p.text2 }).single_line(),
+    );
     if let Some(c) = count {
         t = t.child(text(c.to_string()).font(mono(12.0, 400.0)).color(p.muted));
     }
@@ -393,15 +357,7 @@ fn shelf_header(p: &Pal, title: &str, count: usize, aside: Option<El>, actions: 
     if let Some(a) = aside {
         left = left.child(a.ml(8.0));
     }
-    row()
-        .w_full()
-        .mb(8.0)
-        .gaps(8.0, 16.0)
-        .flex_wrap()
-        .center_y()
-        .justify_between()
-        .child(left)
-        .child(actions)
+    row().w_full().mb(8.0).gaps(8.0, 16.0).flex_wrap().center_y().justify_between().child(left).child(actions)
 }
 
 fn in_progress(s: &State, p: &Pal, tasks: &[&DownloadTask], alone: bool) -> El {
@@ -424,11 +380,13 @@ fn in_progress(s: &State, p: &Pal, tasks: &[&DownloadTask], alone: bool) -> El {
         actions = actions.child(interrupted_line(p, interrupted));
     }
     actions = actions.child(
-        row()
-            .gap(4.0)
-            .center_y()
-            .child(quiet(p, "pause-all", Some(&icons::PAUSE), copy::DL_PAUSE_ALL, p.text2))
-            .child(quiet(p, "cancel-all", Some(&icons::CANCEL), copy::DL_CANCEL_ALL, p.text2)),
+        row().gap(4.0).center_y().child(quiet(p, "pause-all", Some(&icons::PAUSE), copy::DL_PAUSE_ALL, p.text2)).child(quiet(
+            p,
+            "cancel-all",
+            Some(&icons::CANCEL),
+            copy::DL_CANCEL_ALL,
+            p.text2,
+        )),
     );
 
     // Arriving now leads, large; what waits stands smaller beside it.
@@ -436,14 +394,20 @@ fn in_progress(s: &State, p: &Pal, tasks: &[&DownloadTask], alone: bool) -> El {
     order.sort_by_key(|t| !arriving(t.progress.status));
     let mut wall = row().w_full().flex_wrap().gaps(32.0, 12.0).items_end();
     for t in order {
-        let size = if arriving(t.progress.status) { if alone { 200.0 } else { 120.0 } } else if alone { 120.0 } else { 80.0 };
-        wall = wall.child(if alone && t.task_id == OPEN { notes(s, p, t) } else { item(s, p, t, size, if alone { size + 8.0 } else { 128.0 }, 144.0) });
+        let size = if arriving(t.progress.status) {
+            if alone { 200.0 } else { 120.0 }
+        } else if alone {
+            120.0
+        } else {
+            80.0
+        };
+        wall = wall.child(if alone && t.task_id == OPEN {
+            notes(s, p, t)
+        } else {
+            item(s, p, t, size, if alone { size + 8.0 } else { 128.0 }, 144.0)
+        });
     }
-    col()
-        .w_full()
-        .mb(24.0)
-        .child(shelf_header(p, copy::GROUP_IN_PROGRESS, tasks.len(), Some(aside), actions))
-        .child(wall)
+    col().w_full().mb(24.0).child(shelf_header(p, copy::GROUP_IN_PROGRESS, tasks.len(), Some(aside), actions)).child(wall)
 }
 
 fn arriving(st: St) -> bool {
@@ -560,10 +524,7 @@ fn caption(p: &Pal, t: &DownloadTask) -> El {
     let small = |r: Vec<parts::Run>| runs(r).font(sans(12.0, 400.0)).single_line().truncate();
     let pct = format!("{}%", pr.percent.round());
     match pr.status {
-        St::Downloading => small(vec![
-            run_mono(pct, p.text),
-            run_mono(copy::row_dot_part(&copy::rate_line(pr.speed, pr.eta)), p.muted),
-        ]),
+        St::Downloading => small(vec![run_mono(pct, p.text), run_mono(copy::row_dot_part(&copy::rate_line(pr.speed, pr.eta)), p.muted)]),
         St::FetchingInfo => small(vec![run(copy::STATE_STARTING, p.text2)]),
         St::Converting => small(vec![run(copy::STATE_CONVERTING, p.warning)]),
         St::Embedding => small(vec![run(copy::STATE_TAGGING, p.warning)]),
@@ -605,10 +566,13 @@ fn trouble(p: &Pal, t: &DownloadTask) -> El {
         .gap(8.0)
         .center_y()
         .child(
-            runs(vec![run(word, if failed { p.error } else { p.muted }), run(copy::row_dot_part(parts::source_name(t.source)), p.source(t.source))])
-                .font(sans(12.0, 500.0))
-                .single_line()
-                .grow(1.0),
+            runs(vec![
+                run(word, if failed { p.error } else { p.muted }),
+                run(copy::row_dot_part(parts::source_name(t.source)), p.source(t.source)),
+            ])
+            .font(sans(12.0, 500.0))
+            .single_line()
+            .grow(1.0),
         )
         .child(icon_button(p, format!("{key}-{}", t.task_id), glyph, label, p.text2));
     let mut c = col().w_full().gap(4.0).mt(-4.0).child(state);
@@ -639,7 +603,9 @@ fn interrupted_line(p: &Pal, n: usize) -> El {
         .gap(4.0)
         .center_y()
         .child(icon(&icons::PAUSE, 16.0).color(p.warning).mr(8.0))
-        .child(runs(vec![run_mono(n.to_string(), p.text), run(copy::interrupted_sentence(n), p.text2)]).font(sans(13.0, 400.0)).single_line())
+        .child(
+            runs(vec![run_mono(n.to_string(), p.text), run(copy::interrupted_sentence(n), p.text2)]).font(sans(13.0, 400.0)).single_line(),
+        )
         .child(quiet(p, "resume-interrupted", None, copy::DL_INTERRUPTED_RESUME, p.text).ml(8.0))
         .child(quiet(p, "discard-interrupted", None, copy::DL_INTERRUPTED_DISCARD, p.text2))
 }
@@ -687,30 +653,37 @@ fn notes(s: &State, p: &Pal, t: &DownloadTask) -> El {
         );
     }
     let folder = if pr.filename.is_empty() { t.output_dir.clone() } else { pr.filename.clone() };
-    text_col = text_col
-        .child(text(parts::specs(t)).font(mono(12.0, 400.0)).color(p.muted).single_line().mt(8.0))
-        .child(
-            row()
-                .w_full()
-                .gap(8.0)
-                .center_y()
-                .help(folder.clone())
-                .child(icon(&icons::FOLDER, 16.0).color(p.muted))
-                .child(text(folder).font(mono(12.0, 400.0)).color(p.text2).single_line().truncate_middle().shrink()),
-        );
+    text_col = text_col.child(text(parts::specs(t)).font(mono(12.0, 400.0)).color(p.muted).single_line().mt(8.0)).child(
+        row()
+            .w_full()
+            .gap(8.0)
+            .center_y()
+            .help(folder.clone())
+            .child(icon(&icons::FOLDER, 16.0).color(p.muted))
+            .child(text(folder).font(mono(12.0, 400.0)).color(p.text2).single_line().truncate_middle().shrink()),
+    );
     if let Some(r) = parts::reason(t) {
         text_col = text_col.child(text(r).font(sans(13.0, 400.0)).color(p.error).wrap().mt(8.0));
     }
     let actions = if pr.status == St::Done {
-        row()
-            .child(quiet(p, "n-open", Some(&icons::EXTERNAL), copy::ACT_OPEN_FILE, p.text))
-            .child(quiet(p, "n-folder", Some(&icons::FOLDER), copy::ACT_SHOW_IN_FOLDER, p.text))
+        row().child(quiet(p, "n-open", Some(&icons::EXTERNAL), copy::ACT_OPEN_FILE, p.text)).child(quiet(
+            p,
+            "n-folder",
+            Some(&icons::FOLDER),
+            copy::ACT_SHOW_IN_FOLDER,
+            p.text,
+        ))
     } else {
-        row()
-            .child(quiet(p, "n-pause", Some(&icons::PAUSE), copy::ACT_PAUSE, p.text))
-            .child(quiet(p, "n-cancel", Some(&icons::CANCEL), copy::ACT_CANCEL, p.text))
+        row().child(quiet(p, "n-pause", Some(&icons::PAUSE), copy::ACT_PAUSE, p.text)).child(quiet(
+            p,
+            "n-cancel",
+            Some(&icons::CANCEL),
+            copy::ACT_CANCEL,
+            p.text,
+        ))
     };
-    text_col = text_col.child(actions.gap(4.0).mt(12.0).ml(-8.0).child(quiet(p, "n-copy", Some(&icons::COPY), copy::ACT_COPY_DETAILS, p.text2)));
+    text_col =
+        text_col.child(actions.gap(4.0).mt(12.0).ml(-8.0).child(quiet(p, "n-copy", Some(&icons::COPY), copy::ACT_COPY_DETAILS, p.text2)));
     row()
         .key(format!("notes-{}", t.task_id))
         .padding(16.0)

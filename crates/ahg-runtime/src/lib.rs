@@ -10,6 +10,7 @@ pub mod engine;
 pub mod engine_update;
 pub mod http;
 #[cfg(feature = "license")]
+#[rustfmt::skip]
 pub mod machine;
 pub mod proc;
 pub mod sealed;

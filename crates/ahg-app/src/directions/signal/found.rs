@@ -30,8 +30,14 @@ const NO_MATCH: &str = "No match found";
 pub fn view(s: &State, p: &Pal) -> Option<El> {
     let (head, body, foot) = match &s.found {
         Found::Nothing => return None,
-        Found::LookingUp => (head(s, glyph(&icons::LINK, p.muted), label(format::link_label(&s.input), mono(12.0, 400.0), p.text2), p), looking_up(p), None),
-        Found::LookupFailed(why) => (head(s, glyph(&icons::ALERT, p.error), label(format::link_label(&s.input), mono(12.0, 400.0), p.text2), p), failed(why, &s.input, p), None),
+        Found::LookingUp => {
+            (head(s, glyph(&icons::LINK, p.muted), label(format::link_label(&s.input), mono(12.0, 400.0), p.text2), p), looking_up(p), None)
+        }
+        Found::LookupFailed(why) => (
+            head(s, glyph(&icons::ALERT, p.error), label(format::link_label(&s.input), mono(12.0, 400.0), p.text2), p),
+            failed(why, &s.input, p),
+            None,
+        ),
         Found::Media(m) => media(s, m, p),
         Found::Playlist { playlist, matched, selected } => album(s, playlist, matched, selected, p),
         Found::Search { query, bands } => (search_head(s, query, bands, p), search(bands, p), None),
@@ -50,8 +56,7 @@ pub fn view(s: &State, p: &Pal) -> Option<El> {
     if let Some(n) = &s.notice {
         c = c.child(notice(n, p));
     }
-    let mut c = c
-        .child(body.shrink().min_h(0.0).scroll(ScrollSpec { stick_bottom: false }));
+    let mut c = c.child(body.shrink().min_h(0.0).scroll(ScrollSpec { stick_bottom: false }));
     if let Some(foot) = foot {
         c = c.child(foot);
     }
@@ -171,18 +176,40 @@ fn primary(words: &str, p: &Pal) -> El {
 
 /// The output strip under the body.
 fn strip(left: El, right: El, p: &Pal) -> El {
-    row().w_full().min_h(64.0).px(24.0).py(12.0).gap(16.0).center_y().fill(p.deep.alpha(0.6)).border_sides([1.0, 0.0, 0.0, 0.0], p.line).child(left.grow(1.0).min_w(0.0)).child(right)
+    row()
+        .w_full()
+        .min_h(64.0)
+        .px(24.0)
+        .py(12.0)
+        .gap(16.0)
+        .center_y()
+        .fill(p.deep.alpha(0.6))
+        .border_sides([1.0, 0.0, 0.0, 0.0], p.line)
+        .child(left.grow(1.0).min_w(0.0))
+        .child(right)
 }
 
 // ── Looking up: the shape of a single video, still empty ───────────────────
 
 fn looking_up(p: &Pal) -> El {
-    let warming = row().w_full().gap(16.0).center_y().child(label(f::NOTE_READING, mono(12.0, 400.0), p.text2).w(160.0)).child(el().grow(1.0).min_w(0.0).child(sweep(64, 18, 14, p)));
-    let card = row()
+    let warming = row()
         .w_full()
-        .gap(24.0)
-        .child(bone(Some(192.0), 108.0, p))
-        .child(col().grow(1.0).min_w(0.0).gap(12.0).pt(4.0).child(bone(Some(96.0), 12.0, p)).child(bone(Some(440.0), 16.0, p)).child(bone(Some(320.0), 16.0, p)).child(bone(Some(160.0), 12.0, p)).child(bone(Some(120.0), 12.0, p).mt(8.0)));
+        .gap(16.0)
+        .center_y()
+        .child(label(f::NOTE_READING, mono(12.0, 400.0), p.text2).w(160.0))
+        .child(el().grow(1.0).min_w(0.0).child(sweep(64, 18, 14, p)));
+    let card = row().w_full().gap(24.0).child(bone(Some(192.0), 108.0, p)).child(
+        col()
+            .grow(1.0)
+            .min_w(0.0)
+            .gap(12.0)
+            .pt(4.0)
+            .child(bone(Some(96.0), 12.0, p))
+            .child(bone(Some(440.0), 16.0, p))
+            .child(bone(Some(320.0), 16.0, p))
+            .child(bone(Some(160.0), 12.0, p))
+            .child(bone(Some(120.0), 12.0, p).mt(8.0)),
+    );
     let mut well = col().w_full().padding(16.0).gap(16.0).radius(8.0).fill(p.deep).border(1.0, p.line).child(bone(Some(176.0), 28.0, p));
     for widths in [[56.0, 56.0, 56.0, 56.0, 56.0, 64.0], [72.0, 72.0, 72.0, 72.0, 72.0, 0.0]] {
         let mut r = row().w_full().gap(8.0).center_y().child(bone(Some(96.0), 12.0, p).mr(24.0));
@@ -191,7 +218,16 @@ fn looking_up(p: &Pal) -> El {
         }
         well = well.child(r);
     }
-    col().w_full().padding(24.0).gap(24.0).role("status").label(f::NOTE_READING).child(warming).child(card).child(well).child(row().w_full().center_y().child(bone(Some(200.0), 12.0, p)).child(spacer()).child(bone(Some(128.0), 40.0, p)))
+    col()
+        .w_full()
+        .padding(24.0)
+        .gap(24.0)
+        .role("status")
+        .label(f::NOTE_READING)
+        .child(warming)
+        .child(card)
+        .child(well)
+        .child(row().w_full().center_y().child(bone(Some(200.0), 12.0, p)).child(spacer()).child(bone(Some(128.0), 40.0, p)))
 }
 
 // ── The lookup failed ───────────────────────────────────────────────────────
@@ -205,8 +241,24 @@ fn failed(why: &str, input: &str, p: &Pal) -> El {
         .fill(p.error_soft)
         .border(1.0, p.error.alpha(0.35))
         .role("alert")
-        .child(row().w_full().gap(12.0).items_start().child(glyph(&icons::ALERT, p.error).mt(2.0)).child(label(why, sans(14.0, 400.0), p.text).wrap().grow(1.0).min_w(0.0)))
-        .child(row().w_full().gap(8.0).pl(28.0).center_y().child(label(input, mono(12.0, 400.0), p.muted).single_line().truncate().min_w(0.0).shrink()).child(spacer()).child(button(Some(&icons::RETRY), f::ERROR_TRY_AGAIN, p.text, p)));
+        .child(
+            row()
+                .w_full()
+                .gap(12.0)
+                .items_start()
+                .child(glyph(&icons::ALERT, p.error).mt(2.0))
+                .child(label(why, sans(14.0, 400.0), p.text).wrap().grow(1.0).min_w(0.0)),
+        )
+        .child(
+            row()
+                .w_full()
+                .gap(8.0)
+                .pl(28.0)
+                .center_y()
+                .child(label(input, mono(12.0, 400.0), p.muted).single_line().truncate().min_w(0.0).shrink())
+                .child(spacer())
+                .child(button(Some(&icons::RETRY), f::ERROR_TRY_AGAIN, p.text, p)),
+        );
     // The meter after a dead lookup: every segment dark.
     col().w_full().padding(24.0).gap(20.0).child(sweep(64, 0, 0, p)).child(panel)
 }
@@ -230,7 +282,8 @@ fn choices(items: &[&str], on: usize, tag: impl Fn(&str) -> bool, locked: impl F
     let mut g = row().padding(4.0).gap(4.0).radius(8.0).fill(p.deep).border(1.0, p.line).role("radiogroup");
     for (i, name) in items.iter().enumerate() {
         let lit = i == on;
-        let mut c = row().h(28.0).px(12.0).gap(8.0).center_y().radius(6.0).hover(p.hover).cursor(Cursor::Pointer).role("radio").checked(lit);
+        let mut c =
+            row().h(28.0).px(12.0).gap(8.0).center_y().radius(6.0).hover(p.hover).cursor(Cursor::Pointer).role("radio").checked(lit);
         if locked(i) {
             c = c.pl(8.0).label(f::lock_chip_aria(name)).help(f::lock_chip_title(name)).child(lock(p));
         }
@@ -253,15 +306,36 @@ fn media(s: &State, m: &MediaMetadata, p: &Pal) -> (El, El, Option<El>) {
     let basic = s.plan == Plan::Basic;
     let (video, format_on, audio_on, video_on) = (true, 0, 3, if basic { 3 } else { 5 });
     let eyebrow = f::single_eyebrow_fallback(model::source_name(source), !video);
-    let readout = if video { f::readout_video(f::VIDEO_QUALITIES[video_on]) } else { f::readout_audio(f::AUDIO_FORMATS[format_on], f::AUDIO_QUALITIES[audio_on]) };
+    let readout = if video {
+        f::readout_video(f::VIDEO_QUALITIES[video_on])
+    } else {
+        f::readout_audio(f::AUDIO_FORMATS[format_on], f::AUDIO_QUALITIES[audio_on])
+    };
     // On Basic the strip says what Basic includes here, with the way to lift it.
-    let aside = basic.then(|| row().gap(8.0).center_y().child(lock(p)).child(label(if video { f::BASIC_VIDEO } else { f::BASIC_AUDIO }, sans(13.0, 400.0), p.text2)).child(button(None, f::SEE_PLANS, p.text, p).h(28.0)));
-    let h = head_with(s, glyph(super::parts::platform_icon(source), source_color(p, source)), label(eyebrow, mono(12.0, 400.0), source_color(p, source)), aside, p);
+    let aside = basic.then(|| {
+        row()
+            .gap(8.0)
+            .center_y()
+            .child(lock(p))
+            .child(label(if video { f::BASIC_VIDEO } else { f::BASIC_AUDIO }, sans(13.0, 400.0), p.text2))
+            .child(button(None, f::SEE_PLANS, p.text, p).h(28.0))
+    });
+    let h = head_with(
+        s,
+        glyph(super::parts::platform_icon(source), source_color(p, source)),
+        label(eyebrow, mono(12.0, 400.0), source_color(p, source)),
+        aside,
+        p,
+    );
 
     let mut facts = row().gap(8.0).center_y();
     let length = format::duration(m.duration);
     if !length.is_empty() {
-        facts = facts.child(glyph(&icons::CLOCK, p.muted)).child(label(length, mono(12.0, 400.0), p.text2)).child(label("·", mono(12.0, 400.0), p.muted));
+        facts = facts.child(glyph(&icons::CLOCK, p.muted)).child(label(length, mono(12.0, 400.0), p.text2)).child(label(
+            "·",
+            mono(12.0, 400.0),
+            p.muted,
+        ));
     }
     facts = facts.child(label(readout.clone(), mono(12.0, 400.0), p.text2));
     let info = col()
@@ -277,20 +351,40 @@ fn media(s: &State, m: &MediaMetadata, p: &Pal) -> (El, El, Option<El>) {
     // the current choice does not use sit dark, one press away.
     let capsule = {
         let side = |i: &'static Icon, words: &str, on: bool| {
-            let mut c = row().h(28.0).px(12.0).gap(8.0).center_y().radius(6.0).hover(p.hover).cursor(Cursor::Pointer).role("radio").checked(on).child(icon(i, 16.0).color(if on { p.text } else { p.muted })).child(label(words, sans(13.0, if on { 500.0 } else { 400.0 }), if on { p.text } else { p.text2 }));
+            let mut c = row()
+                .h(28.0)
+                .px(12.0)
+                .gap(8.0)
+                .center_y()
+                .radius(6.0)
+                .hover(p.hover)
+                .cursor(Cursor::Pointer)
+                .role("radio")
+                .checked(on)
+                .child(icon(i, 16.0).color(if on { p.text } else { p.muted }))
+                .child(label(words, sans(13.0, if on { 500.0 } else { 400.0 }), if on { p.text } else { p.text2 }));
             if on {
                 c = c.fill(p.raised).child(el().size(12.0, 2.0).radius(1.0).fill(p.text).absolute(12.0, 24.0));
             }
             c
         };
-        row().padding(4.0).gap(4.0).radius(8.0).fill(p.deep).border(1.0, p.line).role("radiogroup").child(side(&icons::VIDEO, f::MEDIA_VIDEO, video)).child(side(&icons::TRACK, f::MEDIA_AUDIO, !video))
+        row()
+            .padding(4.0)
+            .gap(4.0)
+            .radius(8.0)
+            .fill(p.deep)
+            .border(1.0, p.line)
+            .role("radiogroup")
+            .child(side(&icons::VIDEO, f::MEDIA_VIDEO, video))
+            .child(side(&icons::TRACK, f::MEDIA_AUDIO, !video))
     };
     let named = |name: &str, control: El, routed: bool| {
         let r = row().w_full().gap(16.0).center_y().child(label(name, sans(13.0, 400.0), p.text2).w(112.0)).child(control);
         if routed { r } else { r.opacity(0.4) }
     };
     let lossless = |n: &str| matches!(n, "FLAC" | "WAV" | "ALAC");
-    let qualities = [VideoQuality::P360, VideoQuality::P480, VideoQuality::P720, VideoQuality::P1080, VideoQuality::P2160, VideoQuality::Best];
+    let qualities =
+        [VideoQuality::P360, VideoQuality::P480, VideoQuality::P720, VideoQuality::P1080, VideoQuality::P2160, VideoQuality::Best];
     let mut well = col()
         .w_full()
         .padding(16.0)
@@ -299,9 +393,21 @@ fn media(s: &State, m: &MediaMetadata, p: &Pal) -> (El, El, Option<El>) {
         .fill(p.bg)
         .border(1.0, p.line)
         .child(named("", capsule, true))
-        .child(named(f::VIDEO_QUALITY_LABEL, choices(&f::VIDEO_QUALITIES, video_on, |_| false, |i| basic && is_premium_video_quality(qualities[i]), p), video))
-        .child(named(f::PLAYLIST_FORMAT, choices(&f::AUDIO_FORMATS, format_on, lossless, |i| basic && is_premium_format(&f::AUDIO_FORMATS[i].to_lowercase()), p), !video))
-        .child(named(f::AUDIO_QUALITY_LABEL, choices(&f::AUDIO_QUALITIES, audio_on, |_| false, |i| basic && i == f::AUDIO_QUALITIES.len() - 1, p), !video));
+        .child(named(
+            f::VIDEO_QUALITY_LABEL,
+            choices(&f::VIDEO_QUALITIES, video_on, |_| false, |i| basic && is_premium_video_quality(qualities[i]), p),
+            video,
+        ))
+        .child(named(
+            f::PLAYLIST_FORMAT,
+            choices(&f::AUDIO_FORMATS, format_on, lossless, |i| basic && is_premium_format(&f::AUDIO_FORMATS[i].to_lowercase()), p),
+            !video,
+        ))
+        .child(named(
+            f::AUDIO_QUALITY_LABEL,
+            choices(&f::AUDIO_QUALITIES, audio_on, |_| false, |i| basic && i == f::AUDIO_QUALITIES.len() - 1, p),
+            !video,
+        ));
     if basic {
         // What the locks mean: the old dropdowns' title, on the routing as a whole.
         well = well.help(f::LOCK_SELECT_TITLE);
@@ -358,7 +464,13 @@ fn album(s: &State, pl: &Playlist, matched: &[Matched], selected: &[bool], p: &P
     let spotify = pl.url.contains("spotify");
     let source = if spotify { SourcePlatform::Spotify } else { SourcePlatform::Youtube };
     let tint = source_color(p, source);
-    let eyebrow = if !spotify { model::source_name(source) } else if pl.url.contains("/album/") { f::PLAYLIST_EYEBROW_ALBUM } else { f::PLAYLIST_EYEBROW_PLAYLIST };
+    let eyebrow = if !spotify {
+        model::source_name(source)
+    } else if pl.url.contains("/album/") {
+        f::PLAYLIST_EYEBROW_ALBUM
+    } else {
+        f::PLAYLIST_EYEBROW_PLAYLIST
+    };
     let h = head(s, glyph(super::parts::platform_icon(source), tint), label(eyebrow, mono(12.0, 400.0), tint), p);
     let basic = s.plan == Plan::Basic;
     // On Basic a YouTube playlist is taken from the top: its rows cannot be picked.
@@ -379,16 +491,37 @@ fn album(s: &State, pl: &Playlist, matched: &[Matched], selected: &[bool], p: &P
     let mut counter = col()
         .items_end()
         .gap(4.0)
-        .child(row().items_end().gap(4.0).child(label(picked_n.to_string(), mono(32.0, 500.0).lh(32.0), p.text)).child(label(f::playlist_selected_total(total_n), mono(16.0, 400.0), p.muted).pb(2.0)))
-        .child(label(if picked.is_empty() { f::PLAYLIST_NONE_SELECTED.to_string() } else { f::playlist_selected_span(&picked_span) }, mono(12.0, 400.0), p.muted));
+        .child(
+            row()
+                .items_end()
+                .gap(4.0)
+                .child(label(picked_n.to_string(), mono(32.0, 500.0).lh(32.0), p.text))
+                .child(label(f::playlist_selected_total(total_n), mono(16.0, 400.0), p.muted).pb(2.0)),
+        )
+        .child(label(
+            if picked.is_empty() { f::PLAYLIST_NONE_SELECTED.to_string() } else { f::playlist_selected_span(&picked_span) },
+            mono(12.0, 400.0),
+            p.muted,
+        ));
     if basic && picked_n <= cap {
         counter = counter.child(label(f::BASIC_COLLECTION, sans(12.0, 400.0), p.muted));
     }
     let all = picked.len() == tracks.len();
     let selectors = if fixed {
-        row().h(32.0).pl(12.0).gap(8.0).center_y().child(lock(p)).child(label(f::LOCK_PICK_PLAYLIST, sans(13.0, 400.0), p.text2).single_line().truncate().min_w(0.0))
+        row()
+            .h(32.0)
+            .pl(12.0)
+            .gap(8.0)
+            .center_y()
+            .child(lock(p))
+            .child(label(f::LOCK_PICK_PLAYLIST, sans(13.0, 400.0), p.text2).single_line().truncate().min_w(0.0))
     } else {
-        row().gap(4.0).child(ghost(Some(&icons::CHECK), f::PLAYLIST_SELECT_ALL, if all { p.muted } else { p.text }, p)).child(ghost(None, f::PLAYLIST_DESELECT_ALL, if picked.is_empty() { p.muted } else { p.text2 }, p))
+        row().gap(4.0).child(ghost(Some(&icons::CHECK), f::PLAYLIST_SELECT_ALL, if all { p.muted } else { p.text }, p)).child(ghost(
+            None,
+            f::PLAYLIST_DESELECT_ALL,
+            if picked.is_empty() { p.muted } else { p.text2 },
+            p,
+        ))
     };
     let top = row()
         .w_full()
@@ -409,19 +542,34 @@ fn album(s: &State, pl: &Playlist, matched: &[Matched], selected: &[bool], p: &P
         )
         .child(counter);
 
-    let cols = |a: El, b: El, c: El, d: El, e: El, t: El| row().w_full().px(24.0).gap(16.0).center_y().child(a.w(20.0)).child(b.w(24.0)).child(t.grow(1.0).min_w(0.0)).child(c.w(160.0)).child(d).child(e.w(48.0));
+    let cols = |a: El, b: El, c: El, d: El, e: El, t: El| {
+        row()
+            .w_full()
+            .px(24.0)
+            .gap(16.0)
+            .center_y()
+            .child(a.w(20.0))
+            .child(b.w(24.0))
+            .child(t.grow(1.0).min_w(0.0))
+            .child(c.w(160.0))
+            .child(d)
+            .child(e.w(48.0))
+    };
     let hdr = |w: &str| label(w, sans(12.0, 500.0), p.muted);
-    let header = cols(
-        el(),
-        hdr(f::PLAYLIST_COL_NUMBER),
-        hdr(f::PLAYLIST_COL_ARTIST),
-        if spotify { el().w(176.0) } else { el() },
-        row().justify_end().child(hdr(f::PLAYLIST_COL_TIME)),
-        row().gap(12.0).center_y().child(hdr(f::PLAYLIST_COL_TITLE)).child(label(if fixed { "" } else { f::PLAYLIST_COL_HINT }, sans(12.0, 400.0), p.muted.alpha(0.7)).single_line().truncate()),
-    )
-    .h(32.0)
-    .fill(p.deep.alpha(0.6))
-    .border_sides([0.0, 0.0, 1.0, 0.0], p.line);
+    let header =
+        cols(
+            el(),
+            hdr(f::PLAYLIST_COL_NUMBER),
+            hdr(f::PLAYLIST_COL_ARTIST),
+            if spotify { el().w(176.0) } else { el() },
+            row().justify_end().child(hdr(f::PLAYLIST_COL_TIME)),
+            row().gap(12.0).center_y().child(hdr(f::PLAYLIST_COL_TITLE)).child(
+                label(if fixed { "" } else { f::PLAYLIST_COL_HINT }, sans(12.0, 400.0), p.muted.alpha(0.7)).single_line().truncate(),
+            ),
+        )
+        .h(32.0)
+        .fill(p.deep.alpha(0.6))
+        .border_sides([0.0, 0.0, 1.0, 0.0], p.line);
 
     let mut list = col().w_full().role("list").label(pl.name.clone());
     for (i, t) in tracks.iter().enumerate() {
@@ -434,7 +582,11 @@ fn album(s: &State, pl: &Playlist, matched: &[Matched], selected: &[bool], p: &P
             label(format!("{:02}", i + 1), mono(12.0, 400.0), p.muted),
             label(t.artist.clone(), sans(13.0, 400.0), if can { p.text2 } else { p.muted }).single_line().truncate(),
             if spotify { match_cell(m, p) } else { el() },
-            row().justify_end().child(label(format::duration(t.duration_ms / 1000.0), mono(12.0, 400.0), if can { p.text2 } else { p.muted })),
+            row().justify_end().child(label(
+                format::duration(t.duration_ms / 1000.0),
+                mono(12.0, 400.0),
+                if can { p.text2 } else { p.muted },
+            )),
             label(t.name.clone(), sans(13.0, if on { 500.0 } else { 400.0 }), ink).single_line().truncate(),
         )
         .h(40.0)
@@ -453,30 +605,80 @@ fn album(s: &State, pl: &Playlist, matched: &[Matched], selected: &[bool], p: &P
     let mut body = col().w_full().child(top);
     if basic && picked_n > cap {
         // The cap strip: what Basic will take, what it leaves, the way to take it all.
-        let skipped = Line::new().add(f::LIMIT_SKIPPED_LEAD, p.text2).fig(&(picked_n - cap).to_string(), p.text2).add(f::LIMIT_SKIPPED_TRAIL, p.text2).wrap(sans(13.0, 400.0));
+        let skipped = Line::new()
+            .add(f::LIMIT_SKIPPED_LEAD, p.text2)
+            .fig(&(picked_n - cap).to_string(), p.text2)
+            .add(f::LIMIT_SKIPPED_TRAIL, p.text2)
+            .wrap(sans(13.0, 400.0));
         let words = col().gap(4.0).child(label(f::LIMIT_COLLECTION, sans(13.0, 500.0), p.text).wrap()).child(skipped);
-        body = body.child(row().w_full().px(24.0).py(12.0).gap(12.0).center_y().fill(p.raised).border_sides([0.0, 0.0, 1.0, 0.0], p.line).child(lock(p)).child(words.grow(1.0).min_w(0.0)).child(see_plans(p)));
+        body = body.child(
+            row()
+                .w_full()
+                .px(24.0)
+                .py(12.0)
+                .gap(12.0)
+                .center_y()
+                .fill(p.raised)
+                .border_sides([0.0, 0.0, 1.0, 0.0], p.line)
+                .child(lock(p))
+                .child(words.grow(1.0).min_w(0.0))
+                .child(see_plans(p)),
+        );
     }
     let body = body.child(header).child(list);
 
     // The output strip: format, quality and folder for the whole batch, then Download.
     let pick = |name: &str, value: El, w: f32| {
-        col().gap(4.0).child(label(name, sans(12.0, 400.0), p.muted)).child(row().w(w).h(32.0).px(12.0).gap(8.0).center_y().radius(6.0).fill(p.surface).border(1.0, p.line_strong).hover(p.hover).cursor(Cursor::Pointer).role("button").child(value.grow(1.0).min_w(0.0)).child(icon(&icons::CARET_DOWN, 16.0).color(p.muted)))
+        col().gap(4.0).child(label(name, sans(12.0, 400.0), p.muted)).child(
+            row()
+                .w(w)
+                .h(32.0)
+                .px(12.0)
+                .gap(8.0)
+                .center_y()
+                .radius(6.0)
+                .fill(p.surface)
+                .border(1.0, p.line_strong)
+                .hover(p.hover)
+                .cursor(Cursor::Pointer)
+                .role("button")
+                .child(value.grow(1.0).min_w(0.0))
+                .child(icon(&icons::CARET_DOWN, 16.0).color(p.muted)),
+        )
     };
-    let readout = if queued == 0 { f::PLAYLIST_NOTHING_SELECTED.to_string() } else { f::playlist_readout(queued, f::AUDIO_FORMATS[0], f::AUDIO_QUALITIES[3], &picked_span) };
+    let readout = if queued == 0 {
+        f::PLAYLIST_NOTHING_SELECTED.to_string()
+    } else {
+        f::playlist_readout(queued, f::AUDIO_FORMATS[0], f::AUDIO_QUALITIES[3], &picked_span)
+    };
     let left = row()
         .gap(12.0)
         .items_end()
         .child(pick(f::PLAYLIST_FORMAT, label(f::AUDIO_FORMATS[0], mono(13.0, 400.0), p.text), 96.0).label(f::PLAYLIST_FORMAT_ARIA))
         .child(pick(f::PLAYLIST_QUALITY, label(f::AUDIO_QUALITIES[3], mono(13.0, 400.0), p.text), 120.0).label(f::PLAYLIST_QUALITY_ARIA))
-        .child(pick(f::PLAYLIST_FOLDER, row().gap(8.0).center_y().child(glyph(&icons::FOLDER, p.muted)).child(label(FOLDER, mono(13.0, 400.0), p.text).single_line().truncate().min_w(0.0)), 208.0).help(FOLDER))
+        .child(
+            pick(
+                f::PLAYLIST_FOLDER,
+                row()
+                    .gap(8.0)
+                    .center_y()
+                    .child(glyph(&icons::FOLDER, p.muted))
+                    .child(label(FOLDER, mono(13.0, 400.0), p.text).single_line().truncate().min_w(0.0)),
+                208.0,
+            )
+            .help(FOLDER),
+        )
         .child(label(readout, mono(12.0, 400.0), p.text2).single_line().truncate().min_w(0.0).shrink().pb(8.0));
     (h, body, Some(strip(left, primary(&f::playlist_download_label(matched_n, queued), p), p)))
 }
 
 // ── A search: three source strips side by side ─────────────────────────────
 
-const SOURCES: [(SourcePlatform, &str); 3] = [(SourcePlatform::Youtube, copy::SEARCH_BAND_YOUTUBE), (SourcePlatform::Soundcloud, copy::SEARCH_BAND_SOUNDCLOUD), (SourcePlatform::Spotify, copy::SEARCH_BAND_SPOTIFY)];
+const SOURCES: [(SourcePlatform, &str); 3] = [
+    (SourcePlatform::Youtube, copy::SEARCH_BAND_YOUTUBE),
+    (SourcePlatform::Soundcloud, copy::SEARCH_BAND_SOUNDCLOUD),
+    (SourcePlatform::Spotify, copy::SEARCH_BAND_SPOTIFY),
+];
 /// Rows a band shows before `Show n more`.
 const SHOWN: usize = 5;
 
@@ -502,7 +704,15 @@ fn search(bands: &[Band; 3], p: &Pal) -> El {
 }
 
 fn band_head(source: SourcePlatform, name: &str, band: &Band, p: &Pal) -> El {
-    let mut r = row().w_full().h(40.0).px(16.0).gap(8.0).center_y().border_sides([0.0, 0.0, 1.0, 0.0], p.line).child(icon(super::parts::platform_icon(source), 16.0).color(source_color(p, source))).child(label(name, sans(13.0, 500.0), p.text));
+    let mut r = row()
+        .w_full()
+        .h(40.0)
+        .px(16.0)
+        .gap(8.0)
+        .center_y()
+        .border_sides([0.0, 0.0, 1.0, 0.0], p.line)
+        .child(icon(super::parts::platform_icon(source), 16.0).color(source_color(p, source)))
+        .child(label(name, sans(13.0, 500.0), p.text));
     r = match band {
         Band::Results(rs) => r.child(label(rs.len().to_string(), mono(12.0, 400.0), p.muted)),
         Band::Loading => r.child(spacer()).child(glyph(&icons::LOADING, p.muted)),
@@ -517,7 +727,16 @@ fn band_body(source: SourcePlatform, name: &str, band: &Band, p: &Pal) -> El {
         Band::Loading => {
             let mut c = c.role("status");
             for w in [[168.0, 104.0], [136.0, 88.0]] {
-                c = c.child(row().w_full().h(56.0).px(16.0).gap(12.0).center_y().child(bone(Some(art_w(source)), 36.0, p)).child(col().gap(8.0).child(bone(Some(w[0]), 12.0, p)).child(bone(Some(w[1]), 8.0, p))));
+                c = c.child(
+                    row()
+                        .w_full()
+                        .h(56.0)
+                        .px(16.0)
+                        .gap(12.0)
+                        .center_y()
+                        .child(bone(Some(art_w(source)), 36.0, p))
+                        .child(col().gap(8.0).child(bone(Some(w[0]), 12.0, p)).child(bone(Some(w[1]), 8.0, p))),
+                );
             }
             c
         }
@@ -526,7 +745,11 @@ fn band_body(source: SourcePlatform, name: &str, band: &Band, p: &Pal) -> El {
             .padding(16.0)
             .gap(12.0)
             .role("alert")
-            .child(row().gap(8.0).center_y().child(glyph(&icons::ALERT, p.error)).child(label(copy::search_source_failed(name), sans(13.0, 400.0), p.text)))
+            .child(row().gap(8.0).center_y().child(glyph(&icons::ALERT, p.error)).child(label(
+                copy::search_source_failed(name),
+                sans(13.0, 400.0),
+                p.text,
+            )))
             .child(row().ml(-12.0).child(ghost(Some(&icons::RETRY), copy::SEARCH_RETRY, p.text, p))),
         Band::Results(rs) => {
             let mut c = c;
@@ -568,6 +791,13 @@ fn result_row(r: &SearchResult, p: &Pal) -> El {
         .role("button")
         .label(copy::search_row_aria(&r.title, &r.uploader))
         .child(cover(r.source, art_w(r.source), 36.0, p))
-        .child(col().grow(1.0).min_w(0.0).gap(4.0).child(label(r.title.clone(), sans(13.0, 500.0), p.text).single_line().truncate()).child(sub.one(sans(12.0, 400.0))))
+        .child(
+            col()
+                .grow(1.0)
+                .min_w(0.0)
+                .gap(4.0)
+                .child(label(r.title.clone(), sans(13.0, 500.0), p.text).single_line().truncate())
+                .child(sub.one(sans(12.0, 400.0))),
+        )
         .child(glyph(&icons::DOWNLOAD, p.muted).help(copy::SEARCH_ROW_DOWNLOAD))
 }

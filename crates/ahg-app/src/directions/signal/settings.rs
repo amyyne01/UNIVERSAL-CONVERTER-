@@ -60,7 +60,14 @@ fn destination(p: &Pal) -> El {
         .radius(12.0)
         .fill(p.deep)
         .border(1.0, p.line_strong)
-        .child(el().size(40.0, 40.0).center().radius(8.0).fill(p.surface).border(1.0, p.line).child(icon(&icons::FOLDER, 16.0).color(p.accent_ink)))
+        .child(
+            el().size(40.0, 40.0)
+                .center()
+                .radius(8.0)
+                .fill(p.surface)
+                .border(1.0, p.line)
+                .child(icon(&icons::FOLDER, 16.0).color(p.accent_ink)),
+        )
         .child(
             col()
                 .grow(1.0)
@@ -121,7 +128,16 @@ fn switch(name: &str, on: bool, p: &Pal) -> El {
 }
 
 fn well(w_: Option<f32>, name: &str, role: &'static str) -> El {
-    let r = row().h(32.0).px(12.0).gap(8.0).center_y().radius(8.0).focusable(true).role(role).label(name.to_string()).cursor(rune::Cursor::Pointer);
+    let r = row()
+        .h(32.0)
+        .px(12.0)
+        .gap(8.0)
+        .center_y()
+        .radius(8.0)
+        .focusable(true)
+        .role(role)
+        .label(name.to_string())
+        .cursor(rune::Cursor::Pointer);
     match w_ {
         Some(v) => r.w(v),
         None => r.w_full(),
@@ -141,7 +157,10 @@ fn select(name: &str, value: &str, w_: Option<f32>, p: &Pal) -> El {
 /// A typed field: figures in mono; an empty one shows its placeholder.
 fn input(name: &str, value: &str, placeholder: &str, w_: Option<f32>, p: &Pal) -> El {
     let (t, c) = if value.is_empty() { (placeholder, p.muted) } else { (value, p.text) };
-    well(w_, name, "textbox").fill(p.deep).border(1.0, p.line_strong).child(label(t, mono(13.0, 400.0), c).single_line().truncate().min_w(0.0))
+    well(w_, name, "textbox")
+        .fill(p.deep)
+        .border(1.0, p.line_strong)
+        .child(label(t, mono(13.0, 400.0), c).single_line().truncate().min_w(0.0))
 }
 
 /// Choices set side by side, each with its name above it.
@@ -298,7 +317,13 @@ fn status(name: &str, version: &str, state: &str, tone: Color, action: El, p: &P
         .min_w(0.0)
         .gap(4.0)
         .child(row().gap(8.0).center_y().child(label(name, sans(14.0, 400.0), p.text)).child(label(version, mono(12.0, 400.0), p.muted)))
-        .child(row().gap(8.0).center_y().child(dot(tone, 8.0)).child(label(state, sans(12.0, 400.0), p.text2).single_line().truncate().min_w(0.0)));
+        .child(
+            row()
+                .gap(8.0)
+                .center_y()
+                .child(dot(tone, 8.0))
+                .child(label(state, sans(12.0, 400.0), p.text2).single_line().truncate().min_w(0.0)),
+        );
     row().w_full().min_h(64.0).px(16.0).py(12.0).gap(16.0).center_y().child(words).child(action)
 }
 
@@ -309,7 +334,14 @@ fn software(p: &Pal) -> El {
     panel(
         vec![
             status(w::APP_NAME, "v2.0.0", w::APP_REST, p.muted, button(Some(&icons::REFRESH), w::CHECK_FOR_UPDATES, p.text, p), p),
-            status(w::ENGINE_NAME, "2026.11.01", ENGINE_UP_TO_DATE, p.success, button(Some(&icons::REFRESH), w::ENGINE_CHECK, p.text, p), p),
+            status(
+                w::ENGINE_NAME,
+                "2026.11.01",
+                ENGINE_UP_TO_DATE,
+                p.success,
+                button(Some(&icons::REFRESH), w::ENGINE_CHECK, p.text, p),
+                p,
+            ),
             setting(w::AUTO_UPDATE_ENGINE, switch(w::AUTO_UPDATE_ENGINE.0, true, p), p),
         ],
         p,
@@ -343,7 +375,14 @@ fn plan(p: &Pal) -> El {
             .focusable(true)
             .role("button")
             .label(name.to_string())
-            .child(col().grow(1.0).min_w(0.0).gap(4.0).child(label(name, sans(14.0, 400.0), p.error)).child(label(desc, sans(12.0, 400.0).lh(16.0), p.text2).wrap()))
+            .child(
+                col()
+                    .grow(1.0)
+                    .min_w(0.0)
+                    .gap(4.0)
+                    .child(label(name, sans(14.0, 400.0), p.error))
+                    .child(label(desc, sans(12.0, 400.0).lh(16.0), p.text2).wrap()),
+            )
             .child(icon(&icons::CARET_RIGHT, 16.0).color(p.muted))
     };
     let (premium, desc) = w::PLAN_PREMIUM;
@@ -355,7 +394,11 @@ fn plan(p: &Pal) -> El {
         .py(12.0)
         .gap(16.0)
         .center_y()
-        .child(col().grow(1.0).min_w(0.0).gap(4.0).child(label(w::YOUR_PLAN, sans(14.0, 400.0), p.text)).child(label(desc, sans(12.0, 400.0), p.text2)))
+        .child(col().grow(1.0).min_w(0.0).gap(4.0).child(label(w::YOUR_PLAN, sans(14.0, 400.0), p.text)).child(label(
+            desc,
+            sans(12.0, 400.0),
+            p.text2,
+        )))
         .child(lit);
     panel(vec![yours, danger("plan-deactivate", w::DEACTIVATE), danger("plan-move", w::MOVE)], p)
 }

@@ -96,9 +96,8 @@ const SYSTEM_DIR_VARS: [&str; 5] = ["SystemRoot", "windir", "ProgramFiles", "Pro
 /// directory. The system drive's own root is refused; other drive roots are allowed.
 fn is_output_dir(p: &str) -> bool {
     let mut chars = p.chars();
-    let drive_path = chars.next().is_some_and(|c| c.is_ascii_alphabetic())
-        && chars.next() == Some(':')
-        && matches!(chars.next(), Some('\\' | '/'));
+    let drive_path =
+        chars.next().is_some_and(|c| c.is_ascii_alphabetic()) && chars.next() == Some(':') && matches!(chars.next(), Some('\\' | '/'));
     if !drive_path || p.split(['\\', '/']).any(|seg| seg == "..") {
         return false;
     }
@@ -347,10 +346,6 @@ impl ConfigManager {
     /// An emptied output folder is re-anchored on every write, not only at
     /// construction, so downloads never land in the working directory.
     fn normalize(&self, key: &str, value: Value) -> Value {
-        if key == "outputDir" && value.as_str().is_some_and(str::is_empty) {
-            json!(self.downloads_dir)
-        } else {
-            value
-        }
+        if key == "outputDir" && value.as_str().is_some_and(str::is_empty) { json!(self.downloads_dir) } else { value }
     }
 }

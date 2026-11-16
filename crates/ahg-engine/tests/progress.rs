@@ -1,7 +1,7 @@
 //! Compares the progress parsing and the output handling of a download with
 //! electron/downloader.ts (tests/golden/progress.json, written by
 //! scripts/rust-golden/progress.mjs).
-use ahg_engine::downloader::progress::{OutputScan, Outcome, parse_eta, parse_line, parse_size, parse_speed};
+use ahg_engine::downloader::progress::{Outcome, OutputScan, parse_eta, parse_line, parse_size, parse_speed};
 use ahg_engine::types::{DownloadProgress, DownloadStatus};
 use serde_json::{Value, json};
 

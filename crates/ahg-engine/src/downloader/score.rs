@@ -52,11 +52,8 @@ pub fn score_candidates(track: &Track, candidates: &[SearchResult]) -> Vec<Score
         }
 
         let title_set: HashSet<String> = tokenize(&c.title).into_iter().collect();
-        let overlap = if wanted.is_empty() {
-            0.0
-        } else {
-            wanted.iter().filter(|t| title_set.contains(*t)).count() as f64 / wanted.len() as f64
-        };
+        let overlap =
+            if wanted.is_empty() { 0.0 } else { wanted.iter().filter(|t| title_set.contains(*t)).count() as f64 / wanted.len() as f64 };
 
         let uploader = c.uploader.to_lowercase();
         let uploader_boost = if uploader.ends_with("- topic")
@@ -74,10 +71,7 @@ pub fn score_candidates(track: &Track, candidates: &[SearchResult]) -> Vec<Score
             }
         }
 
-        out.push(ScoredCandidate {
-            candidate: c.clone(),
-            score: overlap + uploader_boost - duration_penalty - keyword_penalty,
-        });
+        out.push(ScoredCandidate { candidate: c.clone(), score: overlap + uploader_boost - duration_penalty - keyword_penalty });
     }
 
     // Stable, like Array.prototype.sort; a NaN comparison counts as a tie.

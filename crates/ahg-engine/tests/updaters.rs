@@ -7,7 +7,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use ahg_engine::updater::{self, Event, Request, Updater, USER_AGENT};
+use ahg_engine::updater::{self, Event, Request, USER_AGENT, Updater};
 use ahg_engine::ytdlp_updater::{self as yt, CheckBegin, UpdateBegin, YtdlpStatus, YtdlpUpdater};
 use serde_json::{Map, Value, json};
 
@@ -33,7 +33,12 @@ fn short(v: &Value) -> String {
 }
 
 fn report(what: &str, total: usize, wrong: Vec<String>) {
-    assert!(wrong.is_empty(), "{what}: {} of {total} differ:\n{}", wrong.len(), wrong.iter().take(25).cloned().collect::<Vec<_>>().join("\n"));
+    assert!(
+        wrong.is_empty(),
+        "{what}: {} of {total} differ:\n{}",
+        wrong.len(),
+        wrong.iter().take(25).cloned().collect::<Vec<_>>().join("\n")
+    );
 }
 
 // ── pure functions ───────────────────────────────────────────────────────────
@@ -340,7 +345,8 @@ fn the_app_updater_behaves_as_electron_does() {
         fs::create_dir_all(&sandbox).unwrap();
         let sandbox_s = sandbox.to_str().unwrap();
         let update_dir = updater::win_join(sandbox_s, sc.get("dir").and_then(Value::as_str).unwrap_or("upd"));
-        let mut run = Run { u: Updater::new(&update_dir), net: Net::new(&sc["routes"]), current: sc["current"].as_str().unwrap().to_string(), sc };
+        let mut run =
+            Run { u: Updater::new(&update_dir), net: Net::new(&sc["routes"]), current: sc["current"].as_str().unwrap().to_string(), sc };
         let no_window = sc.get("noWindow").is_some();
         // D32: Rust refuses a release whose asset name is not a plain file name;
         // Electron uses it as given. Such a scenario is expected to differ.
@@ -381,8 +387,16 @@ fn the_app_updater_behaves_as_electron_does() {
             expect["requests"] = want_requests(&want["requests"]);
             refused_name |= got.to_string().contains("refused: unsafe file name");
             if got != expect {
-                let field = ["requests", "events", "state", "threw", "files", "spawns", "quits"].into_iter().find(|f| got[*f] != expect[*f]).unwrap();
-                differing.push(format!("{} / {step}\n  {field}: rust {}\n  {field}: electron {}", sc["name"], short(&got[field]), short(&expect[field])));
+                let field = ["requests", "events", "state", "threw", "files", "spawns", "quits"]
+                    .into_iter()
+                    .find(|f| got[*f] != expect[*f])
+                    .unwrap();
+                differing.push(format!(
+                    "{} / {step}\n  {field}: rust {}\n  {field}: electron {}",
+                    sc["name"],
+                    short(&got[field]),
+                    short(&expect[field])
+                ));
             }
         }
         if refused_name {
@@ -572,8 +586,16 @@ fn the_engine_updater_behaves_as_electron_does() {
             let mut expect = want.clone();
             expect["requests"] = want_requests(&want["requests"]);
             if got != expect {
-                let field = ["result", "during", "requests", "events", "status", "files", "resets", "fired"].into_iter().find(|f| got[*f] != expect[*f]).unwrap();
-                wrong.push(format!("{} / {step}\n  {field}: rust {}\n  {field}: electron {}", sc["name"], short(&got[field]), short(&expect[field])));
+                let field = ["result", "during", "requests", "events", "status", "files", "resets", "fired"]
+                    .into_iter()
+                    .find(|f| got[*f] != expect[*f])
+                    .unwrap();
+                wrong.push(format!(
+                    "{} / {step}\n  {field}: rust {}\n  {field}: electron {}",
+                    sc["name"],
+                    short(&got[field]),
+                    short(&expect[field])
+                ));
             }
         }
     }
