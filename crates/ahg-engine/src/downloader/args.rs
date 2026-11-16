@@ -143,14 +143,15 @@ pub fn build_ytdlp_args(task: &DownloadTask, ffmpeg_path: Option<&str>) -> Vec<S
         let stem = if task.is_playlist {
             "%(title)s".to_owned()
         } else {
-            let t = sanitize(&task.title);
+            let t = template_literal(&sanitize(&task.title));
             if t.is_empty() { "%(title)s".to_owned() } else { t }
         };
         format!("{stem}{tag}.%(ext)s")
     };
-    push(&mut args, &["-o", &win32_join(&[&task.output_dir, &sub, &name])]);
+    let folder = template_literal(&sub);
+    push(&mut args, &["-o", &win32_join(&[&task.output_dir, &folder, &name])]);
     if x.split_chapters {
-        let chapter = win32_join(&[&task.output_dir, &sub, "%(title)s - %(section_number)03d %(section_title)s.%(ext)s"]);
+        let chapter = win32_join(&[&task.output_dir, &folder, "%(title)s - %(section_number)03d %(section_title)s.%(ext)s"]);
         push(&mut args, &["-o", &format!("chapter:{chapter}")]);
     }
     if task.is_playlist {
@@ -243,8 +244,14 @@ pub(crate) fn replaceable_stem(task: &DownloadTask, track_name: &str) -> Option<
     if title.is_empty() {
         Some("%(title)s".to_owned())
     } else {
-        (title == sanitize(track_name)).then_some(title)
+        (title == sanitize(track_name)).then(|| template_literal(&title))
     }
+}
+
+/// D37 (Rust only): text that goes into an output template as a literal. yt-dlp
+/// reads "%%" as one "%", so a "%" in a title or folder name is doubled.
+fn template_literal(s: &str) -> String {
+    s.replace('%', "%%")
 }
 
 fn safe_template(template: &str) -> String {
