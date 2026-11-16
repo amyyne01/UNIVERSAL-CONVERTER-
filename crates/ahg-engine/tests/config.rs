@@ -88,6 +88,8 @@ fn set_accepts_and_rejects_what_electron_does() {
         }
     }
     assert!(wrong.is_empty(), "{} mismatches:\n{}", wrong.len(), wrong.join("\n"));
+    // Rust only: a key lookup is a map lookup, never the prototype chain.
+    assert_eq!(s.manager(&s.0.join("u").join("proto")).get("__proto__"), None);
 }
 
 #[test]

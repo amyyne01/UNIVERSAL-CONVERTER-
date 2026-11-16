@@ -203,7 +203,8 @@ const extra = [
   const specific = {
     outputDir: ['{TMP}\\out', '{TMP}/out', '{TMP}\\file.txt', '{TMP}\\missing', '{TMP}\\out\\..\\out', '{TMP}\\out\\', 'relative',
       'out', '\\\\server\\share\\dir', 'C:\\Windows', 'c:\\windows\\Temp', 'C:/Windows', 'C:\\', 'c:', 'C:\\Program Files',
-      'C:\\ProgramData\\x', 'C:\\Users'],
+      'C:\\ProgramData\\x', 'C:\\Users',
+      'C:\\Program Files (x86)', 'C:\\Windows\\System32', 'D:\\Music\\..\\..\\Windows', 'D:\\'],
     proxy: ['http://a:1', 'https://a', 'socks5://127.0.0.1:9050', 'socks5h://a', 'socks4://a', 'HTTP://a', 'host:8080', ' http://a'],
     rateLimit: ['2M', '500K', '1G', '100', '2 MB', '2m', '2MB', '\u0661', '2M\n', '0', 'K'],
     palette: ['aurora', 'slate', 'moss', 'ember', 'paper', 'lagoon', 'orchid', 'Aurora', 'nope', ' moss'],
@@ -239,6 +240,7 @@ const extra = [
     { file: '{', backups: [good({ theme: 'dark' })] },
     { file: null, backups: ['{', good({ theme: 'light' }), good({ theme: 'dark' })] },
     { file: '', backups: ['null', '5', good({ palette: 'ember' })] },
+    { file: '{', backups: [good({ theme: 'light' }), good({ theme: 'dark' })] },
     { file: '{', backups: ['[]'] },
     { file: '{', backups: ['{', '{', '{'] },
     { file: 'null', backups: [good({ theme: 'dark' })] },
