@@ -110,6 +110,14 @@ fn a_redirect_is_followed_and_the_final_address_reported() {
 }
 
 #[test]
+fn an_https_only_client_refuses_a_plain_http_address() {
+    let (base, _seen) = server();
+    assert!(Http::new(None).https_only().send("GET", &format!("{base}/ok"), &[], None, T).is_none());
+    assert!(Http::new(None).https_only().send("GET", &format!("{base}/moved"), &[], None, T).is_none(), "a first hop on http is refused, so is a redirect to one");
+    assert_eq!(Http::new(None).send("GET", &format!("{base}/ok"), &[], None, T).unwrap().status, 200, "other callers are unchanged");
+}
+
+#[test]
 fn a_body_is_sent_with_a_patch() {
     let (base, seen) = server();
     let headers = vec![("Content-Type".to_owned(), "application/json".to_owned())];

@@ -213,6 +213,9 @@ pub struct Core {
     /// Held while `settings-rust.json` is read, changed and written, so that two
     /// callers never save over each other.
     own_settings: Mutex<()>,
+    /// Held for the whole of `shutdown`, so a second caller waits for the first
+    /// to finish (the settings saved) instead of returning early.
+    finish: Mutex<()>,
     cover: CoverFetch,
     song_search: SongSearch,
     /// One reader for every Spotify lookup, so that two lookups that both need
@@ -356,7 +359,7 @@ impl Core {
                 }
             })
         };
-        let core = Self { paths, config, stats, ytdlp, plan, engine, events, stop, dispatcher: Mutex::new(Some(dispatcher)), down: AtomicBool::new(false), own_settings: Mutex::new(()), cover, song_search, spotify, hold_unconfirmed, remembered, lookups: Mutex::default(), engine_updater, app_updater, desktop };
+        let core = Self { paths, config, stats, ytdlp, plan, engine, events, stop, dispatcher: Mutex::new(Some(dispatcher)), down: AtomicBool::new(false), own_settings: Mutex::new(()), finish: Mutex::new(()), cover, song_search, spotify, hold_unconfirmed, remembered, lookups: Mutex::default(), engine_updater, app_updater, desktop };
         core.sync();
         core
     }
@@ -402,6 +405,9 @@ impl Core {
 
     /// Check a download request, clamp it to the plan and queue it.
     pub fn start_download(&self, request: &Value) -> Result<DownloadTask, String> {
+        if self.down.load(Ordering::SeqCst) {
+            return Err("The app is closing".into());
+        }
         let now = now_ms();
         let cookies = self.paths.user_data.join("cookies.txt");
         let cookies = cookies.exists().then(|| cookies.to_string_lossy().into_owned());
@@ -530,6 +536,10 @@ impl Core {
     fn lookup<T>(&self, run: impl FnOnce(&AtomicBool) -> T) -> T {
         let flag = Arc::new(AtomicBool::new(false));
         lock(&self.lookups).push(flag.clone());
+        // Pushed first, then checked: a shutdown that began meanwhile either sees the flag or is seen here.
+        if self.down.load(Ordering::SeqCst) {
+            flag.store(true, Ordering::SeqCst);
+        }
         let result = run(&flag);
         lock(&self.lookups).retain(|f| !Arc::ptr_eq(f, &flag));
         result
@@ -643,8 +653,8 @@ impl Core {
     /// Electron's CSP lets pages show images from any https host (`img-src
     /// https:`), so there is no host list here either.
     pub fn fetch_cover(&self, url: &str) -> Result<Vec<u8>, String> {
-        if !url.strip_prefix("https://").is_some_and(|rest| !rest.is_empty() && !rest.starts_with('/')) {
-            return Err("Cover refused: not an https address".into());
+        if !cover_url_allowed(url) {
+            return Err("Cover refused: not an https address of a named host".into());
         }
         let reply = (self.cover)(url, self.ytdlp.proxy().as_deref()).ok_or("Cover fetch failed")?;
         if !(200..300).contains(&reply.status) || !(reply.final_url.is_empty() || reply.final_url.starts_with("https://")) {
@@ -781,8 +791,11 @@ impl Core {
 
     /// Stop the lookups and every download, and save the history and the
     /// settings. Callable through a shared handle (`Arc<Core>`) and any number
-    /// of times: the first call does the work, the others return at once.
+    /// of times: the first call does the work, the others wait until it is
+    /// done and then return. Make no calls after it: settings changes are no
+    /// longer saved and `start_download` is refused.
     pub fn shutdown(&self) {
+        let _finish = lock(&self.finish);
         if self.down.swap(true, Ordering::SeqCst) {
             return;
         }
@@ -809,3 +822,43 @@ const _: fn() = || {
     fn is<T: Send + Sync>() {}
     is::<Core>();
 };
+
+/// Whether `url` may be fetched as cover art: https, with a real host name. No
+/// IP literal (IPv4 in any spelling, or IPv6 in brackets), no `localhost` or
+/// `*.localhost`, no user name in the address. Pure: nothing is resolved.
+// ponytail: a name that resolves to a private address (DNS rebinding) still passes;
+// upgrade path: resolve, pin the address for the request, refuse private ranges.
+pub fn cover_url_allowed(url: &str) -> bool {
+    let Some(rest) = url.strip_prefix("https://") else { return false };
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    if authority.contains('@') || authority.starts_with('[') {
+        return false;
+    }
+    let host = authority.split(':').next().unwrap_or_default().trim_end_matches('.').to_ascii_lowercase();
+    let last = host.rsplit('.').next().unwrap_or_default();
+    let numeric = !last.is_empty() && (last.bytes().all(|b| b.is_ascii_digit()) || last.starts_with("0x"));
+    !host.is_empty() && host != "localhost" && !host.ends_with(".localhost") && !numeric
+}
+
+#[cfg(test)]
+mod cover_host_tests {
+    use super::cover_url_allowed;
+
+    #[test]
+    fn hosts_are_accepted_or_refused_without_resolving_anything() {
+        let accepted = ["https://i.scdn.co/image/a", "https://CDN.Example.com:8443/a.jpg?x=1", "https://i.ytimg.com", "https://a.b.c.example/#f", "https://example.com./a"];
+        let refused = [
+            "http://i.example/a", "file:///c:/a", "", "i.example/a", "https:///a", "https://",
+            "https://127.0.0.1/a", "https://10.0.0.5:8080/a", "https://2130706433/a", "https://0x7f.1/a", "https://[::1]/a", "https://[2001:db8::1]:443/a",
+            "https://localhost/a", "https://LOCALHOST:80/a", "https://app.localhost/a", "https://localhost./a",
+            "https://user@i.example/a", "https://user:pw@i.example/a", "https://i.example@evil.example/a", "https://@i.example/a",
+        ];
+        assert!(!accepted.is_empty() && !refused.is_empty());
+        for url in accepted {
+            assert!(cover_url_allowed(url), "should be accepted: {url}");
+        }
+        for url in refused {
+            assert!(!cover_url_allowed(url), "should be refused: {url}");
+        }
+    }
+}

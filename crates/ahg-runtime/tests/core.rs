@@ -1425,7 +1425,7 @@ fn a_cover_over_five_mib_is_refused_and_five_mib_is_not() {
 #[test]
 fn only_https_covers_are_fetched_and_a_bad_answer_is_an_error() {
     let (core, asked) = start_cover("coverrefused", b"x".to_vec());
-    for url in ["http://i.example/a.jpg", "file:///c:/a.jpg", "ftp://i.example/a.jpg", "", "i.example/a.jpg", "https:///a.jpg"] {
+    for url in ["http://i.example/a.jpg", "file:///c:/a.jpg", "ftp://i.example/a.jpg", "", "i.example/a.jpg", "https:///a.jpg", "https://127.0.0.1/a.jpg", "https://[::1]/a.jpg", "https://localhost/a.jpg", "https://u@i.example/a.jpg"] {
         assert!(core.fetch_cover(url).is_err(), "{url}");
     }
     assert!(asked.lock().unwrap().is_empty(), "a refused address is never requested");
@@ -1444,4 +1444,38 @@ fn a_changed_proxy_reaches_the_next_cover_request() {
     assert_eq!(asked[0].1, None);
     assert_eq!(asked[1].1.as_deref(), Some("socks5h://127.0.0.1:9050"));
     core.shutdown();
+}
+
+#[test]
+fn two_threads_shutting_down_at_once_both_return_after_the_settings_are_saved() {
+    let dir = scratch("twoshutdowns");
+    let (core, _rx) = start(&dir, "", Plan::Premium);
+    let core = Arc::new(core);
+    core.update_settings(json!({ "maxConcurrentDownloads": 3 }).as_object().unwrap());
+    let config = dir.join("userData").join("config.json");
+    let both: Vec<_> = (0..2)
+        .map(|_| {
+            let (core, config) = (core.clone(), config.clone());
+            std::thread::spawn(move || {
+                core.shutdown();
+                fs::read_to_string(config).unwrap_or_default().contains("maxConcurrentDownloads")
+            })
+        })
+        .collect();
+    for caller in both {
+        assert!(caller.join().unwrap(), "a caller came back before the settings were saved");
+    }
+}
+
+#[test]
+fn a_lookup_started_after_shutdown_is_cancelled_and_starts_no_process() {
+    let dir = scratch("lookupafter");
+    let count = dir.join("count");
+    let (core, _rx) = start_split(&dir, &format!("count {}\nsleep 60000\n", count.display()), "");
+    core.shutdown();
+    let began = Instant::now();
+    assert_eq!(core.fetch_metadata("https://youtu.be/dQw4w9WgXcQ").unwrap_err(), CANCELLED_MESSAGE);
+    assert!(began.elapsed() < Duration::from_secs(2), "{:?}", began.elapsed());
+    assert_eq!(runs(&count), 0, "no process was started");
+    assert!(core.start_download(&request()).is_err(), "no download is queued after shutdown");
 }

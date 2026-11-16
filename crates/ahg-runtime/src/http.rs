@@ -13,6 +13,9 @@ pub struct Http {
     /// A proxy was asked for but its address could not be used. Requests are
     /// then refused: going direct would expose the traffic the proxy was for.
     proxy_broken: bool,
+    /// Refuse any plain-http address, the first or after a redirect, and follow
+    /// at most 3 redirects (cover art, which comes from addresses a track names).
+    strict: bool,
 }
 
 pub struct Response {
@@ -48,10 +51,16 @@ impl Http {
     /// The address is used exactly as written.
     pub fn new(proxy: Option<&str>) -> Self {
         match proxy.filter(|p| !p.is_empty()).map(Proxy::new) {
-            None => Self { proxy: None, proxy_broken: false },
-            Some(Ok(proxy)) => Self { proxy: Some(proxy), proxy_broken: false },
-            Some(Err(_)) => Self { proxy: None, proxy_broken: true },
+            None => Self { proxy: None, proxy_broken: false, strict: false },
+            Some(Ok(proxy)) => Self { proxy: Some(proxy), proxy_broken: false, strict: false },
+            Some(Err(_)) => Self { proxy: None, proxy_broken: true, strict: false },
         }
+    }
+
+    /// This client takes https addresses only and follows at most 3 redirects.
+    pub fn https_only(mut self) -> Self {
+        self.strict = true;
+        self
     }
 
     /// False when a proxy was asked for and its address could not be used.
@@ -69,6 +78,8 @@ impl Http {
             .http_status_as_error(false)
             .timeout_global(Some(timeout))
             .proxy(self.proxy.clone())
+            .https_only(self.strict)
+            .max_redirects(if self.strict { 3 } else { 10 })
             // Windows' own TLS and Windows' own list of trusted authorities:
             // nothing extra to ship, and a certificate the system trusts (a
             // company proxy, an antivirus) is trusted here too. The library's
@@ -123,7 +134,7 @@ impl spotify::Transport for SpotifyHttp {
 /// right now (D10). The caller limits how much of the body it reads.
 pub fn cover_get(url: &str, proxy: Option<&str>) -> Option<crate::engine_update::Fetched> {
     let headers = [("User-Agent".to_owned(), "Mozilla/5.0".to_owned())];
-    let response = Http::new(proxy).send("GET", url, &headers, None, Duration::from_secs(20))?;
+    let response = Http::new(proxy).https_only().send("GET", url, &headers, None, Duration::from_secs(20))?;
     let (status, final_url, content_length) = (response.status, response.final_url.clone(), response.content_length.clone());
     Some(crate::engine_update::Fetched { status, final_url, content_length, body: Box::new(response.into_reader()) })
 }
