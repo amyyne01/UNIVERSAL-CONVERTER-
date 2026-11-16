@@ -15,7 +15,14 @@ const HOSTS: &[(&str, bool)] = &[
     ("https://example.com/clip.mp4", true),
     ("https://localhost.example.com/a", true),
     ("https://youtu.be/dQw4w9WgXcQ", true),
-    ("https://user@www.youtube.com/watch?v=dQw4w9WgXcQ", true),
+    ("https://user@www.youtube.com/watch?v=dQw4w9WgXcQ", false),
+    ("https://user:pass@www.youtube.com/watch?v=dQw4w9WgXcQ", false),
+    // parser differentials: the downloader may read these hosts differently
+    (r"http://example.com\@127.0.0.1/a", false),
+    (r"http://127.0.0.1\@example.com/a", false),
+    ("https://example.com%5c@127.0.0.1/a", false),
+    ("https://example.com%5C@127.0.0.1/a", false),
+    ("https://example.com@127.0.0.1/x", false),
     ("https://www.youtube.com:8443/watch?v=dQw4w9WgXcQ", true),
     ("https://www.youtube.com@127.0.0.1/watch?v=dQw4w9WgXcQ", false),
     // an inside host with a platform name in the path or query
@@ -56,6 +63,15 @@ const HOSTS: &[(&str, bool)] = &[
     ("http://[2001:db8::1]/clip.mp4", false),
 ];
 
+/// Never a link, pasted or not (a tab, newline, CR or DEL inside the host);
+/// refused through `ahg://` all the same.
+const MALFORMED: &[&str] = &[
+    "https://exa\tmple.com/x",
+    "https://example.com\n.evil/x",
+    "https://example.com\r.evil/x",
+    "https://example.com\x7f.evil/x",
+];
+
 #[test]
 fn hosts_through_ahg_links() {
     assert!(!HOSTS.is_empty());
@@ -64,6 +80,11 @@ fn hosts_through_ahg_links() {
         let got = resolve_protocol_link(&format!("ahg://{link}")).is_some();
         if got != *accepted {
             wrong.push(format!("ahg://{link}: accepted={got}, want {accepted}"));
+        }
+    }
+    for link in MALFORMED {
+        if resolve_protocol_link(&format!("ahg://{link}")).is_some() {
+            wrong.push(format!("ahg://{link:?}: accepted"));
         }
     }
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));
@@ -85,5 +106,5 @@ fn the_same_links_pasted_are_still_accepted() {
             inside_and_detected += 1;
         }
     }
-    assert_eq!(inside_and_detected, 19);
+    assert_eq!(inside_and_detected, 24);
 }

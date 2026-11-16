@@ -47,18 +47,29 @@ pub fn resolve_protocol_link(raw: &str) -> Option<UrlDetection> {
     let detection = detect_url(target);
     // Whatever platform was detected: its patterns match anywhere in the text,
     // so a platform name in the path of an inside host would pass for a site.
-    (detection.platform != SourcePlatform::Unknown && !points_inside(target)).then_some(detection)
+    (detection.platform != SourcePlatform::Unknown && !points_inside(&detection.url)).then_some(detection)
 }
 
 /// D36 (Rust only): a link that arrives through `ahg://` may not name this PC
 /// or the home network. Judged on the host text alone, no DNS: an IP literal
 /// (any spelling the URL parser reads), `localhost`, `*.localhost`. A link the
 /// user pastes is their own act and is not checked here.
+/// The raw text goes on to the downloader, which may read an address
+/// differently from the `url` crate, so anything that makes the host ambiguous
+/// is refused first: a backslash or `%5c`, a space or control character, and
+/// userinfo (`@` in the authority), none of which a media link needs.
 /// ponytail: a public name that resolves to a private address is not caught
 /// (needs DNS, which the engine does not do).
 fn points_inside(target: &str) -> bool {
-    // Not parseable as http(s): the parser and the downloader could read the
-    // host differently, so it is refused. `ytsearch:` and the like have no host.
+    let web = ["https://", "http://"].iter().find(|p| target.get(..p.len()).is_some_and(|h| h.eq_ignore_ascii_case(p)));
+    let Some(web) = web else { return false }; // `ytsearch:` and the like have no host
+    let authority = target[web.len()..].split(['/', '?', '#']).next().unwrap_or("");
+    if target.bytes().any(|b| b <= b' ' || b == 0x7f || b == b'\\')
+        || target.to_ascii_lowercase().contains("%5c")
+        || authority.contains('@')
+    {
+        return true;
+    }
     let Ok(url) = Url::parse(target) else { return true };
     match url.host() {
         Some(Host::Domain(d)) => {
