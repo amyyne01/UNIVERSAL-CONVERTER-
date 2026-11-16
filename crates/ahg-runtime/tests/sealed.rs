@@ -87,6 +87,69 @@ fn damaged_input_gives_none() {
 }
 
 #[test]
+fn a_one_byte_tag_difference_at_each_position_gives_none() {
+    let (pad, masked) = fixture::pair();
+    for p in 128..136 {
+        let mut m = masked;
+        m[p] ^= 0x80;
+        assert!(reveal(&pad, &m).is_none(), "tag byte {p}");
+    }
+}
+
+#[test]
+fn a_thousand_random_pairs_never_panic() {
+    let mut seed = 0x9E37_79B9_7F4A_7C15u64;
+    let mut next = || {
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        seed as u8
+    };
+    for _ in 0..1000 {
+        let (mut a, mut b) = ([0u8; 136], [0u8; 136]);
+        for i in 0..136 {
+            a[i] = next();
+            b[i] = next();
+        }
+        assert!(reveal(&a, &b).is_none());
+    }
+}
+
+#[test]
+fn the_discord_id_is_a_plain_constant_in_the_fixture() {
+    assert_eq!(fixture::DISCORD_CLIENT_ID, "000000000000000000");
+}
+
+#[test]
+fn real_mode_reads_both_spellings_and_the_discord_id() {
+    if !node_available() {
+        eprintln!("SKIPPED: node not found");
+        return;
+    }
+    // An ignored output path inside the repo; removed afterwards.
+    let out = repo_root().join("crates/ahg-runtime/secrets.gen.rs");
+    let dir = temp_dir("spell");
+    let cases = [
+        ("a.env", "AHG_GITHUB_TOKEN=fake-tok\nAHG_LICENSE_GIST_ID=fake-gist\nAHG_DISCORD_CLIENT_ID=123456\n"),
+        ("b.json", r#"{"githubToken":"fake-tok","licenseGistId":"fake-gist","discordClientId":"123456"}"#),
+        ("c.json", r#"{"AHG_GITHUB_TOKEN":"fake-tok","AHG_LICENSE_GIST_ID":"fake-gist","AHG_DISCORD_CLIENT_ID":"123456"}"#),
+    ];
+    for (name, body) in cases {
+        let f = dir.join(name);
+        std::fs::write(&f, body).unwrap();
+        let o = seal(&["--env", f.to_str().unwrap(), "--out", out.to_str().unwrap()]);
+        let text = std::fs::read_to_string(&out);
+        let _ = std::fs::remove_file(&out);
+        assert!(o.status.success(), "{name}: {}", String::from_utf8_lossy(&o.stderr));
+        let t = text.unwrap();
+        let r = reveal(&parse_array(&t, "PAD"), &parse_array(&t, "MASKED")).expect("reveals");
+        assert_eq!((r.token.as_str(), r.registry.as_str()), ("fake-tok", "fake-gist"), "{name}");
+        assert!(t.contains("pub const DISCORD_CLIENT_ID: &str = \"123456\";"), "{name}");
+    }
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
 fn debug_prints_no_content() {
     let (pad, masked) = fixture::pair();
     let r = reveal(&pad, &masked).unwrap();
@@ -158,9 +221,9 @@ fn real_mode_refuses_a_path_that_is_not_git_ignored() {
     }
     let dir = temp_dir("real");
     let env = dir.join("fake.env");
-    std::fs::write(&env, "LICENSE_TOKEN=fake-token-for-test\nLICENSE_REGISTRY_ID=fake-id-for-test\n").unwrap();
+    std::fs::write(&env, "AHG_GITHUB_TOKEN=fake-token-for-test\nAHG_LICENSE_GIST_ID=fake-id-for-test\n").unwrap();
     let json = dir.join("fake.json");
-    std::fs::write(&json, r#"{"LICENSE_TOKEN":"fake-token-for-test","LICENSE_REGISTRY_ID":"fake-id-for-test"}"#).unwrap();
+    std::fs::write(&json, r#"{"githubToken":"fake-token-for-test","licenseGistId":"fake-id-for-test"}"#).unwrap();
     // Outside any repo (git exits 128), and inside this repo but tracked-style (exit 1).
     let inside = repo_root().join("crates/ahg-runtime/tests/fixtures/not-ignored.rs");
     for (e, out) in [(&env, dir.join("out.rs")), (&json, inside)] {

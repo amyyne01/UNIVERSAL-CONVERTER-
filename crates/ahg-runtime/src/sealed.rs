@@ -26,7 +26,10 @@ pub fn reveal(pad: &[u8; 136], masked: &[u8; 136]) -> Option<Revealed> {
         // SAFETY: `i` is in bounds of both arrays.
         buf[i] = unsafe { read_volatile(pad.as_ptr().add(i)) ^ read_volatile(masked.as_ptr().add(i)) };
     }
-    if Sha256::digest(&buf[..128])[..8] != buf[128..] || buf[0] != 1 {
+    let digest: Zeroizing<[u8; 32]> = Zeroizing::new(Sha256::digest(&buf[..128]).into());
+    // Constant-time tag check: fold the differences, no early exit.
+    let diff = digest.iter().zip(&buf[128..]).fold(0u8, |a, (x, y)| a | (x ^ y));
+    if diff != 0 || buf[0] != 1 {
         return None;
     }
     let (token, rest) = field(&buf[1..128])?;
