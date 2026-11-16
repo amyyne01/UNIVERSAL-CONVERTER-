@@ -9,20 +9,13 @@ use std::sync::{Arc, Mutex};
 
 use ahg_engine::updater::Event;
 use ahg_runtime::engine_update::EngineUpdater;
-use common::{Net, sha};
+use common::{Net, scratch, sha};
 use serde_json::json;
 
 const FEED: &str = "https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest";
 const ASSET: &str = "https://github.com/yt-dlp/yt-dlp/releases/download/2026.11.01/yt-dlp.exe";
 const SUMS: &str = "https://github.com/yt-dlp/yt-dlp/releases/download/2026.11.01/SHA2-256SUMS";
 const BINARY: &[u8] = b"MZ this stands in for the new yt-dlp.exe";
-
-fn scratch(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("ahg-engup-{}-{name}", std::process::id()));
-    let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(&dir).unwrap();
-    dir
-}
 
 fn feed(tag: &str, asset: &str, sums: &str) -> Vec<u8> {
     json!({ "tag_name": tag, "assets": [{ "name": "yt-dlp.exe", "browser_download_url": asset }, { "name": "SHA2-256SUMS", "browser_download_url": sums }] }).to_string().into_bytes()

@@ -1,5 +1,7 @@
 //! Finding the tools, reading metadata and search results, and the Spotify
 //! bridge, against the scripted stand-in for yt-dlp. Nothing touches the network.
+mod common;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -11,15 +13,11 @@ use ahg_engine::queue::{TaskInit, create_task};
 use ahg_engine::types::{SourcePlatform, Track};
 use ahg_runtime::download::{Downloader, Report};
 use ahg_runtime::ytdlp::{CANCELLED_MESSAGE, TIMEOUT_MESSAGE, Tools, YtDlp};
+use common::{runs, scratch, until_ended};
+#[cfg(windows)]
+use common::pid_is_running;
 
 const FAKE: &str = env!("CARGO_BIN_EXE_fake_ytdlp");
-
-fn scratch(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("ahg-yt-{}-{name}", std::process::id()));
-    let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(&dir).unwrap();
-    dir
-}
 
 /// A yt-dlp whose metadata calls play `json_script` and whose downloads play `script`.
 fn ytdlp(dir: &Path, json_script: &str, script: &str) -> YtDlp {
@@ -30,10 +28,6 @@ fn ytdlp(dir: &Path, json_script: &str, script: &str) -> YtDlp {
     y.env("FAKE_YTDLP_SCRIPT", dir.join("script.txt").to_str().unwrap());
     y.env("FAKE_YTDLP_ARGS", dir.join("args.txt").to_str().unwrap());
     y
-}
-
-fn runs(file: &Path) -> usize {
-    fs::read_to_string(file).map(|t| t.lines().count()).unwrap_or(0)
 }
 
 // ── Finding the tools ────────────────────────────────────────────────────────
@@ -202,15 +196,7 @@ fn run_bridge(y: YtDlp) -> Vec<Report> {
     let d = Downloader::with(Arc::new(y));
     let (tx, rx) = channel();
     d.start(spotify_task(), 3, tx);
-    let mut seen = Vec::new();
-    while let Ok(report) = rx.recv_timeout(Duration::from_secs(20)) {
-        let ended = matches!(report, Report::Done { .. } | Report::Error { .. });
-        seen.push(report);
-        if ended {
-            break;
-        }
-    }
-    seen
+    until_ended(&rx)
 }
 
 #[test]
@@ -319,14 +305,7 @@ fn run_song_bridge(y: YtDlp, search: Option<String>) -> (Vec<Report>, Vec<String
     }));
     let (tx, rx) = channel();
     d.start(spotify_task(), 3, tx);
-    let mut reports = Vec::new();
-    while let Ok(report) = rx.recv_timeout(Duration::from_secs(20)) {
-        let ended = matches!(report, Report::Done { .. } | Report::Error { .. });
-        reports.push(report);
-        if ended {
-            break;
-        }
-    }
+    let reports = until_ended(&rx);
     let asked = asked.lock().unwrap().clone();
     (reports, asked)
 }
@@ -400,15 +379,7 @@ fn run_explicit_bridge(dir: &Path, search: String) -> Vec<Report> {
     task.track.as_mut().unwrap().explicit = Some(true);
     let (tx, rx) = channel();
     d.start(task, 3, tx);
-    let mut reports = Vec::new();
-    while let Ok(report) = rx.recv_timeout(Duration::from_secs(20)) {
-        let ended = matches!(report, Report::Done { .. } | Report::Error { .. });
-        reports.push(report);
-        if ended {
-            break;
-        }
-    }
-    reports
+    until_ended(&rx)
 }
 
 #[test]
@@ -443,14 +414,7 @@ fn a_match_already_chosen_is_downloaded_without_searching_again() {
     task.match_confidence = Some(0.9);
     let (tx, rx) = channel();
     d.start(task, 3, tx);
-    let mut reports = Vec::new();
-    while let Ok(report) = rx.recv_timeout(Duration::from_secs(20)) {
-        let ended = matches!(report, Report::Done { .. } | Report::Error { .. });
-        reports.push(report);
-        if ended {
-            break;
-        }
-    }
+    let reports = until_ended(&rx);
     assert!(matches!(reports.last().unwrap(), Report::Done { .. }), "{reports:?}");
     assert_eq!(*asked.lock().unwrap(), 0, "the chosen match needs no search");
     assert!(!dir.join("args.txt.json").exists(), "and no yt-dlp search either");
@@ -472,14 +436,7 @@ fn run_held(dir: &Path, search: Option<String>, explicit: Option<bool>) -> (Vec<
     task.track.as_mut().unwrap().explicit = explicit;
     let (tx, rx) = channel();
     d.start(task, 3, tx);
-    let mut reports = Vec::new();
-    while let Ok(report) = rx.recv_timeout(Duration::from_secs(20)) {
-        let ended = matches!(report, Report::Done { .. } | Report::Error { .. });
-        reports.push(report);
-        if ended {
-            break;
-        }
-    }
+    let reports = until_ended(&rx);
     (reports, runs(&ran))
 }
 
@@ -580,15 +537,7 @@ fn run_with_file_length(dir: &Path, length: &str, extra_setup: impl FnOnce(&mut 
     extra_setup(&mut task);
     let (tx, rx) = channel();
     d.start(task, 3, tx);
-    let mut reports = Vec::new();
-    while let Ok(report) = rx.recv_timeout(Duration::from_secs(20)) {
-        let ended = matches!(report, Report::Done { .. } | Report::Error { .. });
-        reports.push(report);
-        if ended {
-            break;
-        }
-    }
-    reports
+    until_ended(&rx)
 }
 
 fn confidences(reports: &[Report]) -> Vec<f64> {
@@ -633,12 +582,6 @@ fn removing_sponsor_segments_shortens_the_file_so_its_length_is_not_judged() {
 }
 
 // ── Stopping a lookup ────────────────────────────────────────────────────────
-
-#[cfg(windows)]
-fn pid_is_running(pid: &str) -> bool {
-    let out = std::process::Command::new("tasklist").args(["/FI", &format!("PID eq {pid}"), "/NH"]).output().unwrap();
-    String::from_utf8_lossy(&out.stdout).contains(pid)
-}
 
 /// Ends the stand-in with this id when dropped, so a failed assert leaves nothing running.
 #[cfg(windows)]
@@ -717,10 +660,6 @@ fn a_track_with_no_artist_is_searched_under_the_first_of_its_artists() {
     }));
     let (tx, rx) = channel();
     d.start(task, 3, tx);
-    while let Ok(report) = rx.recv_timeout(Duration::from_secs(20)) {
-        if matches!(report, Report::Done { .. } | Report::Error { .. }) {
-            break;
-        }
-    }
+    until_ended(&rx);
     assert_eq!(asked.lock().unwrap().first().map(String::as_str), Some("First - The Song"));
 }

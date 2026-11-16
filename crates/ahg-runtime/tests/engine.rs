@@ -1,30 +1,19 @@
 //! The engine thread end to end: a task goes in, the scripted stand-in for
 //! yt-dlp runs, and the interface hears about it. Nothing touches the network.
+mod common;
+
 use std::fs;
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, channel};
 use std::time::{Duration, Instant};
 
 use ahg_engine::queue::{Event, TaskInit, create_task};
-use ahg_engine::types::{DownloadStatus, DownloadTask};
+use ahg_engine::types::DownloadStatus;
 use ahg_runtime::download::Downloader;
 use ahg_runtime::engine::{Engine, Notice};
+use common::{pid_is_running, scratch, task, wait_for};
 
 const FAKE: &str = env!("CARGO_BIN_EXE_fake_ytdlp");
-const WAIT: Duration = Duration::from_secs(20);
-
-fn scratch(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("ahg-eng-{}-{name}", std::process::id()));
-    let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(&dir).unwrap();
-    dir
-}
-
-fn task(id: &str) -> DownloadTask {
-    let init = TaskInit { url: Some("https://youtu.be/dQw4w9WgXcQ".into()), output_dir: Some("C:\\Music".into()), ..Default::default() };
-    create_task(&init, id.into(), 0)
-}
-
 fn engine(dir: &std::path::Path, script: &str, slots: f64) -> (Engine, Receiver<Notice>) {
     let file = dir.join("script.txt");
     fs::write(&file, script).unwrap();
@@ -34,20 +23,6 @@ fn engine(dir: &std::path::Path, script: &str, slots: f64) -> (Engine, Receiver<
     let engine = Engine::start(downloader, &dir.join("downloads-history.json"), tx);
     engine.set_max_slots(slots);
     (engine, rx)
-}
-
-/// Waits for a notice `want` accepts, returning everything seen up to it.
-fn wait_for(rx: &Receiver<Notice>, mut want: impl FnMut(&Notice) -> bool) -> Vec<Notice> {
-    let mut seen = Vec::new();
-    let deadline = Instant::now() + WAIT;
-    while let Ok(notice) = rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
-        let hit = want(&notice);
-        seen.push(notice);
-        if hit {
-            return seen;
-        }
-    }
-    panic!("never saw the expected notice; saw {} notices", seen.len());
 }
 
 fn is_done(n: &Notice, id: &str) -> bool {
@@ -127,8 +102,7 @@ fn shutting_down_stops_running_downloads_and_leaves_them_to_be_resumed() {
     let child_pid = fs::read_to_string(&pid_file).unwrap();
 
     engine.shutdown();
-    let out = std::process::Command::new("tasklist").args(["/FI", &format!("PID eq {child_pid}"), "/NH"]).output().unwrap();
-    assert!(!String::from_utf8_lossy(&out.stdout).contains(&child_pid), "no process may be left running after quit");
+    assert!(!pid_is_running(&child_pid), "no process may be left running after quit");
 
     // The next launch finds the task unfinished and parks it for the user to resume.
     let (tx, _rx) = channel();

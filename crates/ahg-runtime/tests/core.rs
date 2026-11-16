@@ -13,6 +13,7 @@ use ahg_engine::tier::Plan;
 use ahg_engine::types::{DownloadStatus, VideoQuality};
 use ahg_runtime::core::{CookiesImport, Core, CoreEvent, Outside, Paths, Shown, TrackMatch};
 use ahg_runtime::ytdlp::{CANCELLED_MESSAGE, YtDlp};
+use common::{pid_is_running, runs, wait_for};
 use serde_json::{Value, json};
 
 const FAKE: &str = env!("CARGO_BIN_EXE_fake_ytdlp");
@@ -34,19 +35,6 @@ fn start(dir: &Path, script: &str, plan: Plan) -> (Core, Receiver<CoreEvent>) {
     let (tx, rx) = channel();
     let paths = Paths { user_data: dir.join("userData"), downloads: dir.join("Downloads").to_string_lossy().into_owned() };
     (Core::start(paths, Arc::new(ytdlp), Box::new(move || plan), tx), rx)
-}
-
-fn wait_for(rx: &Receiver<CoreEvent>, mut want: impl FnMut(&CoreEvent) -> bool) -> Vec<CoreEvent> {
-    let mut seen = Vec::new();
-    let deadline = Instant::now() + WAIT;
-    while let Ok(event) = rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
-        let hit = want(&event);
-        seen.push(event);
-        if hit {
-            return seen;
-        }
-    }
-    panic!("never saw the expected event; saw {}", seen.len());
 }
 
 fn done(e: &CoreEvent) -> bool {
@@ -663,11 +651,6 @@ fn the_basic_plan_cannot_import_cookies() {
 
 // ── The queue's controls, through the core ──────────────────────────────────
 
-fn pid_is_running(pid: &str) -> bool {
-    let out = std::process::Command::new("tasklist").args(["/FI", &format!("PID eq {pid}"), "/NH"]).output().unwrap();
-    String::from_utf8_lossy(&out.stdout).contains(pid)
-}
-
 /// End a stand-in's leftover child, so a test leaves nothing running.
 fn kill_pid(pid: &str) {
     let _ = std::process::Command::new("taskkill").args(["/F", "/T", "/PID", pid]).output();
@@ -679,11 +662,6 @@ fn until(what: &str, mut cond: impl FnMut() -> bool) {
         assert!(Instant::now() < deadline, "never happened: {what}");
         std::thread::sleep(Duration::from_millis(20));
     }
-}
-
-/// How often the stand-in's script reached its `count` line.
-fn runs(file: &Path) -> usize {
-    fs::read_to_string(file).map_or(0, |text| text.lines().count())
 }
 
 fn status_of(core: &Core, id: &str) -> DownloadStatus {

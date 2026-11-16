@@ -1,32 +1,20 @@
 //! The process layer, run against a scripted stand-in for yt-dlp
 //! (src/bin/fake_ytdlp.rs). Nothing here touches the network.
+mod common;
+
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, channel};
 use std::time::{Duration, Instant};
 
-use ahg_engine::queue::{TaskInit, create_task};
-use ahg_engine::types::{DownloadStatus, DownloadTask};
+use ahg_engine::types::DownloadStatus;
 use ahg_runtime::download::{Downloader, Report};
 use ahg_runtime::ytdlp::{Tools, YtDlp};
+use common::{pid_is_running, scratch, task};
 
 const FAKE: &str = env!("CARGO_BIN_EXE_fake_ytdlp");
 const WAIT: Duration = Duration::from_secs(20);
-
-/// A folder for one test's script and output files.
-fn scratch(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("ahg-rt-{}-{name}", std::process::id()));
-    let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(&dir).unwrap();
-    dir
-}
-
-fn task(id: &str) -> DownloadTask {
-    let init = TaskInit { url: Some("https://youtu.be/dQw4w9WgXcQ".into()), output_dir: Some("C:\\Music".into()), ..Default::default() };
-    create_task(&init, id.into(), 0)
-}
 
 /// A downloader whose yt-dlp is the stand-in playing `script`.
 fn downloader(dir: &Path, script: &str) -> Downloader {
@@ -50,11 +38,6 @@ fn until_end(rx: &Receiver<Report>) -> Vec<Report> {
         }
     }
     panic!("the download never ended; saw {seen:?}");
-}
-
-fn pid_is_running(pid: &str) -> bool {
-    let out = Command::new("tasklist").args(["/FI", &format!("PID eq {pid}"), "/NH"]).output().unwrap();
-    String::from_utf8_lossy(&out.stdout).contains(pid)
 }
 
 #[test]

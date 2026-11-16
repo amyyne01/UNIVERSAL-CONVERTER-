@@ -1,16 +1,11 @@
 //! Unpacking the bundled tools into the app's data folder: once per bundle,
 //! never half-done, and never into the folder the yt-dlp self-updater owns.
+mod common;
+
 use std::fs;
-use std::path::PathBuf;
 
 use ahg_runtime::unpack::{tool_dirs, unpack_tools};
-
-fn scratch(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("ahg-unpack-{}-{name}", std::process::id()));
-    let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(&dir).unwrap();
-    dir
-}
+use common::scratch;
 
 const FILES: [(&str, &[u8]); 2] = [("yt-dlp.exe", b"yt-dlp bytes"), ("ffmpeg.exe", b"ffmpeg bytes, longer")];
 
