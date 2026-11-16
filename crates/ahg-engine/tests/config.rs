@@ -117,7 +117,10 @@ fn every_write_puts_the_same_bytes_on_disk_as_electron() {
     fs::create_dir_all(&dir).unwrap();
     let mut c = s.manager(&dir);
     let read = |name: &str| fs::read_to_string(dir.join(name)).ok().map(|t| s.tok_text(&t));
-    for (i, step) in golden()["write"].as_array().unwrap().iter().enumerate() {
+    let g = golden();
+    let steps = g["write"].as_array().unwrap();
+    assert!(!steps.is_empty(), "config.json has no write steps");
+    for (i, step) in steps.iter().enumerate() {
         c.update(s.real(&step["update"]).as_object().unwrap());
         c.save_now();
         let after = json!({
@@ -133,7 +136,10 @@ fn every_write_puts_the_same_bytes_on_disk_as_electron() {
 
 #[test]
 fn migrate_config_stamps_the_schema_version_as_electron_does() {
-    for case in golden()["migrate"].as_array().unwrap() {
+    let g = golden();
+    let cases = g["migrate"].as_array().unwrap();
+    assert!(!cases.is_empty(), "config.json has no migrate cases");
+    for case in cases {
         let out = migrate_config(case["obj"].as_object().unwrap().clone());
         assert_eq!(Value::Object(out), case["out"], "{case}");
     }

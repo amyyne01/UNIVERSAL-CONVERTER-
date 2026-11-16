@@ -101,7 +101,9 @@ fn logging_into_a_missing_folder_does_nothing_and_does_not_panic() {
 fn month_keys_and_the_file_name_match_electron() {
     let g: Value = serde_json::from_str(include_str!("golden/stats.json")).unwrap();
     assert_eq!(stats_file_path("x").file_name().unwrap().to_str().unwrap(), g["fileName"].as_str().unwrap());
-    for c in g["monthKey"].as_array().unwrap() {
+    let cases = g["monthKey"].as_array().unwrap();
+    assert!(!cases.is_empty(), "stats.json has no monthKey cases");
+    for c in cases {
         assert_eq!(json!(month_key(&local(&c["at"], 0))), c["key"], "{c}");
     }
 }

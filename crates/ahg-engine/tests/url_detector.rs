@@ -24,7 +24,9 @@ fn detect_url_matches_electron_for_every_golden_input() {
 
 #[test]
 fn parse_spotify_url_matches_electron_for_every_golden_input() {
-    for c in cases() {
+    let cases = cases();
+    assert!(!cases.is_empty(), "url_detector.json has no cases");
+    for c in cases {
         let input = c["input"].as_str().unwrap();
         let got = match parse_spotify_url(input) {
             Some((kind, id)) => json!({ "type": kind, "id": id }),
