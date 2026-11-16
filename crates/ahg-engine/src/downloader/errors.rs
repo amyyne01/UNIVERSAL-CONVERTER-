@@ -221,3 +221,24 @@ pub fn explain_error(text: &str) -> String {
         }
     }
 }
+
+/// The one-click way out of a failure that is not about the link itself (errors.ts FIX).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Fix {
+    Settings,
+    Engine,
+}
+
+/// Failures no retry can fix: rows and Retry-all must not offer one (errors.ts isPermanentError).
+pub fn is_permanent(code: ErrorCode) -> bool {
+    matches!(code, ErrorCode::Removed | ErrorCode::Unsupported | ErrorCode::Drm | ErrorCode::GeoBlocked)
+}
+
+/// errors.ts fixFor.
+pub fn fix_for(code: ErrorCode) -> Option<Fix> {
+    match code {
+        ErrorCode::Private | ErrorCode::AgeRestricted | ErrorCode::LoginRequired | ErrorCode::DiskFull => Some(Fix::Settings),
+        ErrorCode::Unknown => Some(Fix::Engine),
+        _ => None,
+    }
+}
