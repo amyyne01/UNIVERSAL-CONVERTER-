@@ -42,6 +42,10 @@ pub const REFLOW: SpringPair = t::pair::REFLOW;
 pub const MOMENT: Spring = t::REFLOW;
 /// Light, dark, palette (through `tx.color_motion`).
 pub const THEME: Spring = t::REFLOW;
+/// A handler that changes the preset, the palette or the theme recolours the window on `THEME`.
+pub fn recolour(tx: &mut rune::Tx) {
+    tx.color_motion(THEME);
+}
 /// Home / Downloads / Settings swapping: opacity only, 150 ms in, 110 ms out. Ctrl+1/2/3 uses the same.
 pub const PLACE: (Curve, Curve) = (t::CSS_ENTER, t::CSS_EXIT);
 pub const STAGGER: f32 = 0.03;
@@ -400,8 +404,8 @@ mod tests {
     /// (file under src/, forbidden substring, most lines that may hold it, why it exists today).
     /// Later steps move these into the vocabulary and shrink the rows; a row may only go down.
     const ALLOW: &[(&str, &str, usize, &str)] = &[
-        ("main.rs", ".transition(", 1, "the whole-window dissolve: blur_replace, becomes motion::DISSOLVE (M6)"),
-        ("main.rs", "Transition::", 1, "same line: Transition::blur_replace() (M6)"),
+        ("main.rs", ".transition(", 1, "the whole-window dissolve, built from DISSOLVE and DISSOLVE_SPRING (M6, step 47)"),
+        ("main.rs", "Transition::", 1, "same line: Transition::blur(DISSOLVE's blur).springs(DISSOLVE_SPRING)"),
         ("picker.rs", ".transition(", 1, "the picker's opacity swap; becomes PLACE (M6)"),
         ("picker.rs", "Transition::", 1, "same line: rune::Transition::opacity() (M6)"),
         (

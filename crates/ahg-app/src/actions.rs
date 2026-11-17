@@ -17,7 +17,7 @@ use crate::gate::{
     Act, Band, Card, Choice, Confirm, Filter, Found, Nav, Notice, Overlay, PRESETS, PaletteState, SCOPES, Screen, State, Tone, Wait,
     WaitKey,
 };
-use crate::motion::LOADING_DELAY;
+use crate::motion::{self, LOADING_DELAY};
 use crate::timeline::{self, Due};
 use crate::{format, live};
 use ahg_runtime::core::{CookiesImport, Core, Shown};
@@ -129,14 +129,37 @@ pub fn tick(s: &mut State, now: f64) -> bool {
     !due.is_empty()
 }
 
-/// Switches preset in the running app: no restart, the fonts follow.
+/// Switches preset in the running app: no restart, the fonts follow, the colours spring
+/// (`MOTION-SYSTEM.md` 4.3). Every element of the new preset is new, so its scroll is put back
+/// by intent (4.6): the anchor lands on the frame the new preset first draws, else its top.
+/// Focus on a picker tile stays by itself (the picker is outside the preset).
 pub fn set_preset(s: &mut State, index: usize, tx: &mut Tx) {
     let (_, direction, layout) = PRESETS[index % PRESETS.len()];
+    let same = (s.direction, s.layout) == (direction, layout);
     s.direction = direction;
     s.layout = layout;
+    // The fonts are set even for the preset already on (a launch on a saved preset).
     let (sans, mono) = direction.families();
     tx.set_font_families(sans, mono);
+    if !same {
+        // No sidebar pops open in the new preset.
+        s.nav_open = false;
+        motion::recolour(tx);
+        if let Some(anchor) = scroll_anchor(s) {
+            tx.scroll_key_to(anchor, 0.0);
+        }
+    }
     s.sync();
+}
+
+/// What a switch keeps in view: the Layout control in Settings; elsewhere the open sleeve,
+/// the staged task or the first selected row.
+fn scroll_anchor(s: &State) -> Option<String> {
+    if s.nav == Nav::Settings {
+        return Some(crate::keys::LAYOUT_CHOOSE.into());
+    }
+    let selected = || s.tasks.iter().map(|t| &t.task_id).find(|id| s.selected.contains(*id));
+    s.open_sleeve.as_ref().or(s.staged.as_ref()).or_else(selected).map(|id| crate::keys::row(id))
 }
 
 pub fn toggle_pin(s: &mut State) {
@@ -230,7 +253,7 @@ pub fn run(s: &mut State, tx: &mut Tx, c: Command) {
             tx.focus(crate::keys::FIELD, false);
         }
         Command::PasteAndDownload => tx.read_clipboard(|s: &mut State, content, _| paste_and_download(s, content.text())),
-        Command::ToggleTheme => set_theme(s, if theme(s) == "light" { "dark" } else { "light" }),
+        Command::ToggleTheme => set_theme(s, if theme(s) == "light" { "dark" } else { "light" }, tx),
         Command::CheckUpdates => check_update(s),
         Command::ClearCompleted => clear_completed(s),
         Command::PauseAll => set_all(s, St::Paused),
@@ -1053,15 +1076,17 @@ pub fn set_setting(s: &mut State, key: &str, value: Value) -> bool {
     ok
 }
 
-/// `light`, `dark` or `system`.
-pub fn set_theme(s: &mut State, theme: &str) {
+/// `light`, `dark` or `system`. Nothing is re-keyed: only the colours spring.
+pub fn set_theme(s: &mut State, theme: &str, tx: &mut Tx) {
+    motion::recolour(tx);
     set_setting(s, "theme", theme.into());
 }
 
 /// 0 is the look's own mood (Rust only); 1 to 7 are Electron's palettes,
 /// written to `palette`. Palette 0 leaves that key as it was, so Electron
-/// 1.x can still read it.
-pub fn set_palette(s: &mut State, i: usize) {
+/// 1.x can still read it. Nothing is re-keyed: only the colours spring.
+pub fn set_palette(s: &mut State, i: usize, tx: &mut Tx) {
+    motion::recolour(tx);
     s.palette = i.min(ahg_engine::config::PALETTE_IDS.len());
     if let Some(id) = s.palette.checked_sub(1).map(|at| ahg_engine::config::PALETTE_IDS[at]) {
         set_setting(s, "palette", id.into());
@@ -1418,7 +1443,7 @@ mod tests {
         assert_eq!(all[3], Command::Scope(SourcePlatform::Youtube));
         assert_eq!(all[7], Command::PasteAndDownload);
         assert_eq!(all[8].label(&s), copy::PALETTE_SWITCH_TO_LIGHT, "theme system");
-        set_theme(&mut s, "light");
+        set_theme(&mut s, "light", &mut Tx::default());
         assert_eq!(Command::ToggleTheme.label(&s), copy::PALETTE_SWITCH_TO_DARK);
         assert_eq!(all[0].label(&s), copy::palette_go_to(copy::NAV_HOME));
         assert_eq!(all[6].label(&s), copy::palette_go_to(copy::NAV_REELS));
@@ -2136,17 +2161,17 @@ mod tests {
     #[test]
     fn set_theme_writes_the_theme() {
         let mut s = state();
-        set_theme(&mut s, "dark");
+        set_theme(&mut s, "dark", &mut Tx::default());
         assert_eq!(s.settings["theme"], json!("dark"));
     }
 
     #[test]
     fn set_palette_writes_a_palette_electron_can_read() {
         let mut s = state();
-        set_palette(&mut s, 3);
+        set_palette(&mut s, 3, &mut Tx::default());
         assert_eq!((s.palette, s.own.own_palette), (3, false));
         assert_eq!(s.settings["palette"], json!(ahg_engine::config::PALETTE_IDS[2]));
-        set_palette(&mut s, 0);
+        set_palette(&mut s, 0, &mut Tx::default());
         assert_eq!((s.palette, s.own.own_palette), (0, true));
         assert_eq!(s.settings["palette"], json!(ahg_engine::config::PALETTE_IDS[2]), "palette 0 leaves Electron's key alone");
     }

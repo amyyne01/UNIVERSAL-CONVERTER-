@@ -50,17 +50,53 @@ use rune::{App, AppSpec, Cx, El, Titlebar, Transition, el};
 pub const TITLEBAR: f32 = 44.0;
 
 /// The preset on show, keyed by its place in the list so that a switch
-/// dissolves the old one into the new one instead of cutting.
+/// dissolves the old one into the new one instead of cutting
+/// (`docs/design-gate/MOTION-SYSTEM.md` 4.2): a fade with `motion::DISSOLVE`'s blur, no scale.
+/// Under reduced motion Rune makes it its plain short fade without the blur.
 fn view(s: &State, cx: &mut Cx<State>) -> El {
     const KEYS: [&str; 6] = ["preset-0", "preset-1", "preset-2", "preset-3", "preset-4", "preset-5"];
+    let blur = match motion::DISSOLVE {
+        motion::Dissolve::FadeBlur(blur) => blur,
+        motion::Dissolve::Fade => 0.0,
+    };
     let shown = el()
         .key(KEYS[gate::preset(s)])
         .pin(Some(0.0), Some(0.0), Some(0.0), Some(0.0))
-        .transition(Transition::blur_replace())
+        // Below the overlays even while leaving: Rune lists a leaving element after its
+        // siblings, which would paint the old preset over the picker the user just pressed.
+        .paint_order(-1)
+        .transition(Transition::blur(blur).springs(motion::DISSOLVE_SPRING))
         .child(preset_view(s, cx));
-    let window = el().w_full().h_full().child(shown);
+    // The window is filled with the shown preset's own ground, so the dissolve never shows
+    // Rune's black clear colour; it springs to the new ground with the switch.
+    let window = el().w_full().h_full().fill(backdrop(s, cx)).child(shown);
     // Empty when nothing is open over the preset.
     window.children(overlays::view(s, cx))
+}
+
+/// The fill of the shown preset's root, with the same palette and the same light or dark
+/// reading the preset makes.
+// ponytail: repeats each preset's choice of ground; a preset-side `ground(s, cx)` replaces this
+// when the presets are next touched.
+fn backdrop(s: &State, cx: &Cx<State>) -> rune::Color {
+    #[allow(unused_variables)]
+    let (system, chosen) = (cx.system_dark(), s.dark(cx));
+    match (s.layout, s.direction) {
+        #[cfg(feature = "bar")]
+        (Some(gate::Layout::Bar), _) => directions::signal::theme::pal(s.palette, chosen).bg,
+        #[cfg(feature = "collection")]
+        (Some(gate::Layout::Collection), _) => directions::shelf::theme::Pal::new(s.palette, system).bg,
+        #[cfg(feature = "stage")]
+        (Some(gate::Layout::Stage), _) => directions::orbit::look::Pal::new(s.palette, chosen).bg,
+        #[cfg(feature = "shelf")]
+        (None, Direction::Shelf) => directions::shelf::theme::Pal::new(s.palette, system).sunk,
+        #[cfg(feature = "signal")]
+        (None, Direction::Signal) => directions::signal::theme::pal(s.palette, system).bg,
+        #[cfg(feature = "orbit")]
+        (None, Direction::Orbit) => directions::orbit::look::Pal::new(s.palette, chosen).bg,
+        #[allow(unreachable_patterns)]
+        _ => rune::Color::BLACK,
+    }
 }
 
 fn preset_view(s: &State, cx: &mut Cx<State>) -> El {
