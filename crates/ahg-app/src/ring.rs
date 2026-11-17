@@ -238,6 +238,11 @@ impl Rings {
         self.rings.get(task_id)?.pass
     }
 
+    /// The overall ring's value: the mean of the unfinished tasks, 0 to 1; `None` while none is.
+    pub fn overall_value(&self) -> Option<f32> {
+        self.overall_on.then_some(self.overall[1])
+    }
+
     /// The finish chain's last step: `Done` becomes `Landed`.
     pub fn land(&mut self, task_id: &str) {
         if let Some(r) = self.rings.get_mut(task_id) {
@@ -282,7 +287,7 @@ pub fn waiting(key: &str, size: f32, mat: &Material, reduced: bool, _rank: usize
 
 /// The overall ring: nothing while no task is unfinished.
 pub fn overall(key: &str, size: f32, rings: &Rings, mat: &Material, reduced: bool) -> rune::El {
-    ring_el(key, size, rings.overall_on.then_some(Pass::Flying(rings.overall[1])), mat, reduced)
+    ring_el(key, size, rings.overall_value().map(Pass::Flying), mat, reduced)
 }
 
 /// Signal's ring is cut into this many meter segments (SIG-RNG-01).

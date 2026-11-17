@@ -46,6 +46,16 @@ pub const THEME: Spring = t::REFLOW;
 pub fn recolour(tx: &mut rune::Tx) {
     tx.color_motion(THEME);
 }
+/// A commit live mode's `poll` makes (data or a deadline): animated when the cause table says so,
+/// and one wake at the timeline's next deadline. Nothing else asks Rune for a wake.
+pub fn data_commit(tx: &mut rune::Tx, animated: bool, wake: Option<f64>) {
+    if animated {
+        tx.animated();
+    }
+    if let Some(at) = wake {
+        tx.wake_at(at);
+    }
+}
 /// Home / Downloads / Settings swapping: opacity only, 150 ms in, 110 ms out. Ctrl+1/2/3 uses the same.
 pub const PLACE: (Curve, Curve) = (t::CSS_ENTER, t::CSS_EXIT);
 pub const STAGGER: f32 = 0.03;

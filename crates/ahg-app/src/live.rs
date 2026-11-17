@@ -24,9 +24,10 @@ use ahg_runtime::ytdlp::{Tools, YtDlp};
 use rune::{Tx, Waker};
 use serde_json::{Value, json};
 
-use crate::actions;
 use crate::copy::{self, found as fc};
-use crate::gate::{Band, Card, Found, Loading, Matched, PRESETS, State, Tone};
+use crate::gate::{Band, Card, Found, Loading, Matched, Nav, PRESETS, State, Tone};
+use crate::timeline::{self, Due};
+use crate::{actions, motion};
 
 /// The names the Electron app's data folder has had under `%APPDATA%`. The
 /// Rust app shares that folder, so `--live` refuses all of them.
@@ -55,6 +56,8 @@ pub struct Handle {
     generation: u64,
     /// The preset and the pin as last saved; `None` until `settings-rust.json` was read.
     saved: Option<(usize, bool)>,
+    /// The causes the jobs named since the last poll, for the cause table.
+    causes: Vec<Change>,
 }
 
 impl Drop for Handle {
@@ -176,7 +179,17 @@ pub fn attach(s: &mut State, folder: &Path, wake: Waker, make: impl FnOnce(Paths
     s.settings = core.settings();
     s.engine = core.engine_status();
     s.update = core.update_status();
-    s.live = Some(Handle { core, inbox, outbox, wake, commands: Some(commands), stop: Some(stop), generation: 0, saved: None });
+    s.live = Some(Handle {
+        core,
+        inbox,
+        outbox,
+        wake,
+        commands: Some(commands),
+        stop: Some(stop),
+        generation: 0,
+        saved: None,
+        causes: Vec::new(),
+    });
     s.sync();
 }
 
@@ -245,9 +258,13 @@ fn fresh(core: &Core) -> Job {
     let stats = Some(core.stats()).filter(|st| st.current.files > 0.0 || st.previous.is_some());
     let (settings, engine, update) = (core.settings(), core.engine_status(), core.update_status());
     Box::new(move |s, _| {
+        let new_stats = put(&mut s.stats, stats);
+        if new_stats {
+            mark(s, Change::Stats);
+        }
         let changed = [
+            new_stats,
             put(&mut s.tasks, tasks),
-            put(&mut s.stats, stats),
             put(&mut s.settings, settings),
             put(&mut s.engine, engine),
             put(&mut s.update, update),
@@ -292,20 +309,96 @@ pub fn poll(s: &mut State, clock: f64, tx: &mut Tx) -> bool {
     drain(s, clock, tx).1
 }
 
-/// [`poll`], also counting the jobs applied.
-fn drain(s: &mut State, clock: f64, tx: &mut Tx) -> (usize, bool) {
-    let Some(live) = &s.live else { return (0, false) };
+/// [`poll`], also counting the jobs applied and saying whether the commit is animated. The
+/// one place live mode syncs the rings (MOTION-SYSTEM 5.2), and the one place it asks Rune
+/// for a wake: at the timeline's next deadline, nothing else.
+fn drain(s: &mut State, clock: f64, tx: &mut Tx) -> (usize, bool, bool) {
+    let Some(live) = &s.live else { return (0, false, false) };
     let jobs: Vec<Job> = live.inbox.try_iter().collect();
-    let mut changed = actions::tick(s, clock);
     let count = jobs.len();
+    let booting = s.loading == Loading::Booting;
+    let mut causes = actions::fire(s, clock);
+    // A stall falls due by the clock alone.
+    let mut changed = !causes.is_empty() | sync_rings(s, &mut causes);
     for job in jobs {
         changed |= job(s, tx);
+        // After each job: one that calls `State::sync` itself must not swallow the finish before it.
+        changed |= sync_rings(s, &mut causes);
     }
     if changed {
         s.sync();
     }
     save_own(s);
-    (count, changed)
+    if let Some(live) = s.live.as_mut() {
+        causes.append(&mut live.causes);
+    }
+    let home = s.nav == Nav::Home;
+    let animated = changed && causes.iter().any(|c| deserves_motion(*c, booting, home));
+    motion::data_commit(tx, animated, s.timeline.next_deadline());
+    (count, changed, animated)
+}
+
+/// Brings the rings to the tasks: the stall deadline moves to the new `next_stall` (5.3), and a
+/// finish or a fail starts its chain (5.6). True when a pass changed.
+fn sync_rings(s: &mut State, causes: &mut Vec<Change>) -> bool {
+    let synced = s.rings.sync(&s.tasks, s.now);
+    s.timeline.cancel(&Due::Stall);
+    if let Some(at) = synced.next_stall {
+        s.timeline.at(at, Due::Stall);
+    }
+    let (chained, lands) = timeline::chain(s.now, &synced.finished, &synced.failed);
+    for (at, due) in lands {
+        s.timeline.at(at, due);
+    }
+    if chained {
+        causes.push(Change::Chain);
+    } else if synced.pass_changed {
+        causes.push(Change::Pass);
+    }
+    synced.pass_changed
+}
+
+/// What a poll changed, as the cause table names it. A change not listed (a values-only report,
+/// the settings, the engine's status, the first read) has no row: it lands, as Rune lands every
+/// commit no input caused.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Change {
+    /// A ring is new or entered another kind of pass: a row arrives, the handoff, a stall (5.1).
+    Pass,
+    /// A task finished or failed: the finish or the fail chain's commit (5.6).
+    Chain,
+    /// A finished ring held `RING_HOLD` and landed; its row changes group (5.6).
+    Landed,
+    /// A look-up, a search band or a match answered (5.4).
+    Answer,
+    /// Bones held `LOADING_MIN` and give way to content (5.4).
+    Freed,
+    /// A wait reached `LOADING_DELAY`: bones go up.
+    Bones,
+    /// A slow wait's line changed its words (MOTION 2.4: a crossfade, never a cut).
+    WaitLine,
+    /// A notice entered.
+    Notice,
+    /// The month's statistics changed.
+    Stats,
+}
+
+/// The cause table: whether a change is committed with `tx.animated()`. Nothing animates while
+/// the first read boots; the statistics only while Home shows them.
+pub fn deserves_motion(change: Change, booting: bool, home: bool) -> bool {
+    !booting
+        && match change {
+            Change::Pass | Change::Chain | Change::Landed | Change::Answer | Change::Freed | Change::WaitLine | Change::Notice => true,
+            Change::Stats => home,
+            Change::Bones => false,
+        }
+}
+
+/// Names a cause for the next poll's commit, from a job.
+fn mark(s: &mut State, change: Change) {
+    if let Some(live) = s.live.as_mut() {
+        live.causes.push(change);
+    }
 }
 
 /// K52: the preset and the pin, written to `settings-rust.json` when they change.
@@ -347,6 +440,7 @@ pub fn spawn(s: &State, work: impl FnOnce(&Core) + Send + 'static) {
 fn notice(tone: Tone, text: String) -> Job {
     Box::new(move |s, _| {
         actions::notify(s, tone, text, None);
+        mark(s, Change::Notice);
         true
     })
 }
@@ -360,7 +454,13 @@ fn lookup(s: &State, work: impl FnOnce(&Core, &dyn Fn(Job)) + Send + 'static) {
     let (core, out, wake, generation) = (live.core.clone(), live.outbox.clone(), live.wake.clone(), live.generation);
     thread::spawn(move || {
         let answer = |job: Job| {
-            let current: Job = Box::new(move |s, tx| s.live.as_ref().is_some_and(|l| l.generation == generation) && job(s, tx));
+            let current: Job = Box::new(move |s, tx| {
+                let shown = s.live.as_ref().is_some_and(|l| l.generation == generation) && job(s, tx);
+                if shown {
+                    mark(s, Change::Answer);
+                }
+                shown
+            });
             send(&out, &wake, current);
         };
         work(&core, &answer);
@@ -579,6 +679,8 @@ mod tests {
     use rune::{App, Env, Runtime};
 
     use super::*;
+    use crate::motion::{RING_HOLD, STALL_AFTER};
+    use crate::ring::Pass;
 
     const LINK: &str = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
     const RECORD: &str = r#"{"id":"dQw4w9WgXcQ","title":"A Song","uploader":"Someone","duration":212,"webpage_url":"https://www.youtube.com/watch?v=dQw4w9WgXcQ"}"#;
@@ -663,7 +765,7 @@ mod tests {
         let deadline = Instant::now() + Duration::from_secs(10);
         let mut seen = 0;
         while seen == 0 && Instant::now() < deadline {
-            let (count, changed) = drain(&mut rt.state, 0.0, &mut tx);
+            let (count, changed, _) = drain(&mut rt.state, 0.0, &mut tx);
             assert!(!changed, "an unchanged read must not count as a change");
             seen += count;
         }
@@ -734,6 +836,221 @@ mod tests {
         until(&mut rt, "the pin written back", |_| read()["navPinned"] == json!(false));
         assert_eq!(read(), json!({ "preset": 4, "navPinned": false, "holdUnconfirmed": true }), "other keys are kept");
         rt.state.live = None;
+    }
+
+    // ── The ring, the chains and the wake, by stepped time. One clock per test: Rune's frames
+    // (`rt.frame(dt)`, so `poll` gets Rune's clock and its wake is really asked), or `poll`
+    // called by hand from the clock reached; never Rune's frames again after that.
+
+    /// A quarter and a half of the file, as yt-dlp's progress template reports them.
+    const P25: &str = "err [PROGRESS]1048576|4194304|NA|524288|6";
+    const P50: &str = "err [PROGRESS]2097152|4194304|NA|524288|4";
+
+    /// The pass's name, without its value.
+    fn kind(p: Option<Pass>) -> String {
+        p.map_or("None".into(), |p| format!("{p:?}").split('(').next().unwrap_or_default().to_owned())
+    }
+
+    fn ring_of(s: &State) -> Option<Pass> {
+        s.tasks.first().and_then(|t| s.rings.pass(&t.task_id))
+    }
+
+    /// The link looked up and its download asked for.
+    fn submit(rt: &mut Runtime<State>) {
+        rt.update(|s, tx| {
+            s.set_field(LINK);
+            actions::submit(s, tx);
+        });
+        until(rt, "the lookup's answer", |s| matches!(&s.found, Found::Media(m) if m.title == "A Song"));
+        rt.update(|s, _| actions::download_found(s));
+    }
+
+    /// Rune's frames of `dt` until `done`, with a real pause for the stand-in between them.
+    fn frames(rt: &mut Runtime<State>, what: &str, dt: f64, mut done: impl FnMut(&State) -> bool) {
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while Instant::now() < deadline {
+            rt.frame(dt);
+            if done(&rt.state) {
+                return;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        panic!("never saw {what}");
+    }
+
+    /// `poll` by hand, the clock stepped by `dt` from `c`, until `done` sees the drain's (changed, animated).
+    fn polls(s: &mut State, c: &mut f64, what: &str, dt: f64, mut done: impl FnMut(&State, bool, bool) -> bool) {
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while Instant::now() < deadline {
+            *c += dt;
+            let (_, changed, animated) = drain(s, *c, &mut Tx::default());
+            if done(s, changed, animated) {
+                return;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        panic!("never saw {what}");
+    }
+
+    #[test]
+    fn a_download_s_ring_runs_its_passes_in_order_lands_after_the_hold_and_the_app_idles() {
+        let dir = scratch("passes");
+        let media = dir.join("Downloads").join("a.mp3");
+        fs::write(&media, vec![0u8; 2048]).unwrap();
+        let script = format!("sleep 500\n{P25}\nsleep 500\n{P50}\nsleep 500\nout [FILEPATH]{}\nexit 0\n", media.display());
+        let mut rt = live(&dir, &format!("out {RECORD}\nexit 0\n"), &script);
+        submit(&mut rt);
+        let mut seen: Vec<String> = Vec::new();
+        frames(&mut rt, "the ring's Done", 0.02, |s| {
+            let k = kind(ring_of(s));
+            if seen.last() != Some(&k) {
+                seen.push(k);
+            }
+            ring_of(s) == Some(Pass::Done)
+        });
+        let (id, done_at) = (rt.state.tasks[0].task_id.clone(), rt.state.now);
+        // The chain's one deadline, and Rune asked to wake for it.
+        assert_eq!(rt.state.timeline.next_deadline(), Some(done_at + RING_HOLD));
+        assert!(rt.wake_deadline().is_some_and(|w| (w - (done_at + RING_HOLD)).abs() < 1e-6), "wake {:?}", rt.wake_deadline());
+        rt.frame(RING_HOLD - 0.05);
+        assert_eq!(rt.state.rings.pass(&id), Some(Pass::Done), "the ring holds");
+        rt.frame(0.05 + 1e-6);
+        assert_eq!(rt.state.rings.pass(&id), Some(Pass::Landed), "and lands at RING_HOLD");
+        seen.push(kind(rt.state.rings.pass(&id)));
+        // In order, each once: OnThePad or Planned first, Closing only if the stand-in converted.
+        let order = ["None", "Planned", "OnThePad", "Flying", "Closing", "Done", "Landed"];
+        let at: Vec<usize> = seen.iter().map(|k| order.iter().position(|o| o == k).unwrap_or_else(|| panic!("{k} in {seen:?}"))).collect();
+        assert!(at.windows(2).all(|w| w[0] < w[1]), "out of order: {seen:?}");
+        for must in ["Flying", "Done", "Landed"] {
+            assert!(seen.iter().any(|k| k == must), "{must} never seen: {seen:?}");
+        }
+        assert!(seen.iter().any(|k| k == "Planned" || k == "OnThePad"), "no pass before Flying: {seen:?}");
+        // The queue has ended: nothing is due, Rune is asked for nothing, and `poll` says no change.
+        // Rune's own short timers from the typed link (seen ending about 6 s after it) end by themselves.
+        for _ in 0..30 {
+            rt.frame(0.5);
+            assert_eq!(rt.state.timeline.next_deadline(), None);
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(rt.wake_deadline(), None, "an idle app asks for no wake");
+        let now = rt.state.now;
+        assert!(!poll(&mut rt.state, now + 0.02, &mut Tx::default()));
+        rt.state.live = None;
+    }
+
+    #[test]
+    fn a_failed_download_runs_the_fail_chain_with_no_hold() {
+        let dir = scratch("failed");
+        let mut rt =
+            live(&dir, &format!("out {RECORD}\nexit 0\n"), &format!("sleep 500\n{P25}\nsleep 500\nerr ERROR: Video unavailable\nexit 1\n"));
+        submit(&mut rt);
+        let mut flew = false;
+        frames(&mut rt, "the ring's Failed", 0.02, |s| {
+            flew |= matches!(ring_of(s), Some(Pass::Flying(_)));
+            matches!(ring_of(s), Some(Pass::Failed(_)))
+        });
+        assert!(flew, "the failure was seen arriving, not first seen");
+        assert_eq!(rt.state.tasks[0].progress.status, St::Failed);
+        assert_eq!(rt.state.timeline.next_deadline(), None, "no hold, no landing");
+        rt.frame(RING_HOLD + 0.1);
+        assert!(matches!(ring_of(&rt.state), Some(Pass::Failed(_))), "a failure stays");
+        rt.state.live = None;
+    }
+
+    #[test]
+    fn a_values_only_report_commits_instantly_and_quiet_polls_change_nothing() {
+        let dir = scratch("values");
+        let mut rt = live(&dir, &format!("out {RECORD}\nexit 0\n"), &format!("sleep 500\n{P25}\nsleep 1500\n{P50}\nsleep 30000\nexit 0\n"));
+        submit(&mut rt);
+        let mut c = rt.state.now;
+        polls(&mut rt.state, &mut c, "the first report", 0.02, |s, _, _| ring_of(s) == Some(Pass::Flying(0.25)));
+        assert_eq!(rt.state.rings.overall_value(), Some(0.25));
+        let mut quiet = 0;
+        let mut moved = None;
+        polls(&mut rt.state, &mut c, "the second report", 0.02, |s, changed, animated| {
+            if ring_of(s) == Some(Pass::Flying(0.5)) {
+                moved = Some((changed, animated));
+                return true;
+            }
+            // Between reports: no change, and the ring stays at the report.
+            if !changed {
+                quiet += 1;
+                assert_eq!(ring_of(s), Some(Pass::Flying(0.25)));
+                assert_eq!(s.rings.overall_value(), Some(s.tasks[0].progress.percent as f32 / 100.0));
+            }
+            false
+        });
+        assert!(quiet > 10, "only {quiet} quiet polls between the reports");
+        assert_eq!(moved, Some((true, false)), "the report is a change, committed instantly");
+        assert_eq!(rt.state.rings.overall_value(), Some(0.5), "the ring follows the report");
+        rt.state.live = None;
+    }
+
+    #[test]
+    fn a_silent_download_stalls_exactly_at_stall_after_by_its_deadline() {
+        let dir = scratch("stall");
+        let mut rt = live(&dir, &format!("out {RECORD}\nexit 0\n"), &format!("sleep 500\n{P25}\nsleep 30000\nexit 0\n"));
+        submit(&mut rt);
+        let mut c = rt.state.now;
+        polls(&mut rt.state, &mut c, "the report", 0.02, |s, _, _| matches!(ring_of(s), Some(Pass::Flying(_))));
+        let seen_at = rt.state.now;
+        assert_eq!(rt.state.timeline.next_deadline(), Some(seen_at + STALL_AFTER), "one Stall deadline, from the report");
+        assert!(!poll(&mut rt.state, seen_at + STALL_AFTER - 0.001, &mut Tx::default()));
+        assert!(matches!(ring_of(&rt.state), Some(Pass::Flying(_))));
+        assert!(poll(&mut rt.state, seen_at + STALL_AFTER, &mut Tx::default()), "the deadline's poll changes State");
+        assert_eq!(ring_of(&rt.state), Some(Pass::Stalled(0.25)));
+        assert_eq!(rt.state.timeline.next_deadline(), None, "stalled: no deadline left");
+        rt.state.live = None;
+    }
+
+    #[test]
+    fn the_cause_table_animates_its_rows_and_nothing_while_booting() {
+        use Change as C;
+        // (change, animated on Home, animated elsewhere). The match breaks the build on a new change.
+        let rows = [
+            (C::Pass, true, true),
+            (C::Chain, true, true),
+            (C::Landed, true, true),
+            (C::Answer, true, true),
+            (C::Freed, true, true),
+            (C::Bones, false, false),
+            (C::WaitLine, true, true),
+            (C::Notice, true, true),
+            (C::Stats, true, false),
+        ];
+        assert!(!rows.is_empty());
+        for (change, home, elsewhere) in rows {
+            match change {
+                C::Pass | C::Chain | C::Landed | C::Answer | C::Freed | C::Bones | C::WaitLine | C::Notice | C::Stats => {}
+            }
+            assert_eq!(deserves_motion(change, false, true), home, "{change:?} on Home");
+            assert_eq!(deserves_motion(change, false, false), elsewhere, "{change:?} elsewhere");
+            assert!(!deserves_motion(change, true, true) && !deserves_motion(change, true, false), "{change:?} while booting");
+        }
+    }
+
+    /// Rune's `--scene` applies the scene to the initial state and then runs `setup`: the rings
+    /// must be those of the scene's tasks, not of the samples it replaced.
+    #[test]
+    fn a_scene_that_replaces_the_tasks_draws_its_own_rings() {
+        use crate::gate::{Layout, SCENES};
+        let bar = PRESETS.iter().position(|p| p.2 == Some(Layout::Bar)).unwrap();
+        let cases = [("idle", false), ("home-first", false), ("first", false), ("finished", false), ("downloads-active", true)];
+        assert!(!cases.is_empty());
+        for (scene, unfinished) in cases {
+            let f = SCENES.iter().find(|s| s.0 == scene).unwrap_or_else(|| panic!("no scene {scene}")).1;
+            let rt = App::new(crate::spec())
+                .init(move || {
+                    let mut s = State::sample(bar);
+                    f(&mut s);
+                    s
+                })
+                .headless_runtime((1240.0, 820.0), Env { system_dark: true, scale: 1.0 });
+            assert_eq!(rt.state.rings.overall_value().is_some(), unfinished, "{scene}: the overall ring");
+            for t in &rt.state.tasks {
+                assert_eq!(rt.state.rings.pass(&t.task_id).is_none(), t.progress.status == St::Cancelled, "{scene}: {}", t.task_id);
+            }
+        }
     }
 
     // ── The refused folders. The real %APPDATA% names appear only as strings.

@@ -737,6 +737,8 @@ pub fn setup(s: &mut State, waker: Waker) {
         let _ = image.wait();
         s.covers.insert(task_id, image);
     }
+    // Rune applies a `--scene` after `init` and before this: bring the rings to the scene's tasks.
+    s.sync();
 }
 
 /// The states the comparison page shows, for `--scene`.

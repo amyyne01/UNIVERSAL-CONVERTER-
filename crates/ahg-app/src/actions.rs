@@ -17,7 +17,9 @@ use crate::gate::{
     Act, Band, Card, Choice, Confirm, Filter, Found, Nav, Notice, Overlay, PRESETS, PaletteState, SCOPES, Screen, State, Tone, Wait,
     WaitKey,
 };
+use crate::live::Change;
 use crate::motion::{self, LOADING_DELAY};
+use crate::ring::Pass;
 use crate::timeline::{self, Due};
 use crate::{format, live};
 use ahg_runtime::core::{CookiesImport, Core, Shown};
@@ -113,20 +115,39 @@ pub fn answer_wait(s: &mut State, key: WaitKey) {
 }
 
 /// The clock moved to `now`: fires what is due. Returns whether the picture may differ.
-// ponytail: only wait deadlines live on `State.timeline` so far; ring landings and stalls join it with their steps.
 pub fn tick(s: &mut State, now: f64) -> bool {
+    !fire(s, now).is_empty()
+}
+
+/// [`tick`], naming what each deadline that changed `State` changed, for the cause table.
+pub fn fire(s: &mut State, now: f64) -> Vec<Change> {
     s.now = now;
-    let due = s.timeline.advance(now);
-    for d in &due {
-        if *d == Due::LoadingShow {
-            for w in s.waits.values_mut().filter(|w| w.shown_at.is_none() && now >= w.started + LOADING_DELAY) {
-                if w.answered.is_none_or(|a| a > w.started + LOADING_DELAY) {
-                    w.shown_at = Some(now);
+    let mut out = Vec::new();
+    for due in s.timeline.advance(now) {
+        match due {
+            Due::LoadingShow => {
+                for w in s.waits.values_mut().filter(|w| w.shown_at.is_none() && now >= w.started + LOADING_DELAY) {
+                    if w.answered.is_none_or(|a| a > w.started + LOADING_DELAY) {
+                        w.shown_at = Some(now);
+                    }
+                }
+                out.push(Change::Bones);
+            }
+            Due::LoadingFree => out.push(Change::Freed),
+            Due::WaitLine(_) => out.push(Change::WaitLine),
+            // Nothing here: the drain's `Rings::sync` that follows finds the stall.
+            Due::Stall => {}
+            // The finish chain's last step (MOTION-SYSTEM 5.6).
+            Due::RingLanded(id) => {
+                let held = s.rings.pass(&id) == Some(Pass::Done);
+                s.rings.land(&id);
+                if held {
+                    out.push(Change::Landed);
                 }
             }
         }
     }
-    !due.is_empty()
+    out
 }
 
 /// Switches preset in the running app: no restart, the fonts follow, the colours spring

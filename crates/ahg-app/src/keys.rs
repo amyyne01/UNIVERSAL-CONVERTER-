@@ -113,6 +113,16 @@ pub fn row(task_id: &str) -> String {
     format!("row-{task_id}")
 }
 
+/// A download's ring.
+pub fn ring(task_id: &str) -> String {
+    format!("ring-{task_id}")
+}
+
+/// The ring of a wait that is not a task (a look-up, a search).
+pub const RING_WAITING: &str = "ring-waiting";
+/// The ring of every unfinished download together.
+pub const RING_OVERALL: &str = "ring-overall";
+
 /// A download's tick.
 pub fn row_select(task_id: &str) -> String {
     format!("row-select-{task_id}")
