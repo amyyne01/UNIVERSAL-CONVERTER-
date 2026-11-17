@@ -1,70 +1,16 @@
 //! The three drawings Orbit makes: the orbit ring (the progress mark, and nothing else),
 //! the planet (the product's own mark, flat), and the speed trace.
-use std::f32::consts::{FRAC_PI_2, TAU};
+use std::f32::consts::TAU;
 
 use rune::{Color, LineCap, Shape};
 
-/// `n` points on a circle from `from` radians, clockwise on screen, over `sweep` radians.
-fn arc(cx: f32, cy: f32, r: f32, from: f32, sweep: f32, n: usize) -> Vec<[f32; 2]> {
-    (0..=n).map(|i| from + sweep * i as f32 / n as f32).map(|a| [cx + r * a.cos(), cy + r * a.sin()]).collect()
-}
+pub use crate::ring::Pass;
+use crate::ring::{Material, arc, disc, shape};
 
-fn disc(cx: f32, cy: f32, r: f32) -> Vec<[f32; 2]> {
-    let mut d = arc(cx, cy, r, 0.0, TAU, 40);
-    d.pop();
-    d
-}
-
-/// How a download sits on its orbit.
-#[derive(Clone, Copy, PartialEq)]
-pub enum Pass {
-    /// Waiting: the orbit is only planned, a dotted circle.
-    Planned,
-    /// Moving at a known percent: the arc from twelve o'clock, the craft at its head.
-    Flying(f32),
-    /// Started, nothing measured yet: the craft waits at twelve o'clock.
-    OnThePad,
-    /// Downloaded and being finished (converting, tagging): the orbit closed, the craft home.
-    Closing,
-    /// Held at a percent (paused, retrying): the arc stops, the craft hollow.
-    Holding(f32),
-}
-
-/// The signature. A 1.5 pt track circling the cover, the travelled part in 2 pt from twelve
-/// o'clock clockwise, and the craft: a 3 pt disc with a gap cut round it in the row's colour.
-/// `size` is the square it is drawn in; `under` is the colour beneath (the row).
+/// The signature, in Orbit's dress: its track, its ink for arc and craft, the row beneath.
+/// The geometry is the shared ring's (`crate::ring::shape`).
 pub fn orbit(size: f32, pass: Pass, track: Color, ink: Color, under: Color) -> Shape {
-    let c = size / 2.0;
-    let r = c - 3.0;
-    let top = -FRAC_PI_2;
-    let mut s = Shape::new();
-    if pass == Pass::Planned {
-        // A dot every 3 pt or so, at most 32: a small ring stays dotted, not solid.
-        let n = ((TAU * r) / 3.0).clamp(8.0, 32.0) as usize;
-        for i in 0..n {
-            let a = top + TAU * i as f32 / n as f32;
-            s = s.fill(disc(c + r * a.cos(), c + r * a.sin(), 0.9), ink);
-        }
-        return s;
-    }
-    s = s.stroke_with(arc(c, c, r, 0.0, TAU, 64), true, 1.5, LineCap::Butt, track);
-    let (travelled, hollow) = match pass {
-        Pass::Flying(p) => (p, false),
-        Pass::Holding(p) => (p, true),
-        Pass::Closing => (1.0, false),
-        Pass::OnThePad | Pass::Planned => (0.0, false),
-    };
-    if travelled > 0.0 {
-        let n = ((64.0 * travelled).ceil() as usize).max(2);
-        s = s.stroke_with(arc(c, c, r, top, TAU * travelled.min(1.0), n), false, 2.0, LineCap::Round, ink);
-    }
-    let head = top + TAU * travelled.min(1.0);
-    let (hx, hy) = (c + r * head.cos(), c + r * head.sin());
-    s = s.fill(disc(hx, hy, 5.0), under).fill(disc(hx, hy, 3.0), ink);
-    if hollow {
-        s = s.fill(disc(hx, hy, 1.6), under);
-    }
-    s
+    shape(size, pass, &Material { track, under, stroke: ink, craft: ink, segments: None })
 }
 
 /// The planet, flat, as in the app's splash: a disc and a tilted ring passing behind it,
