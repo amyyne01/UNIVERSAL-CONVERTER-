@@ -1,3 +1,4 @@
+#![allow(dead_code)] // unused until cleanup (step 19)
 //! What the two screens read off the downloads: groups, counts, the reason a
 //! row failed, and the formats that are not wording (timecode, link label).
 //! Rules from `docs/design-gate/CONTENT.md` sections 3 and 4.

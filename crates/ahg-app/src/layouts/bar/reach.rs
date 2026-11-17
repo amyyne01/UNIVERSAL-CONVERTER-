@@ -6,13 +6,14 @@
 use ahg_engine::types::SourcePlatform;
 use rune::{Color, Cursor, El, Icon, ScrollSpec, col, el, icon, row, spacer};
 
-use super::{AUDIO_FORMAT, keycap};
+use super::keycap;
 use crate::copy;
 use crate::copy::settings as w;
-use crate::directions::signal::icons;
-use crate::directions::signal::parts::{label, mono, platform_icon, sans, stack};
+use crate::directions::signal::parts::{Spec, label, mono, platform_icon, sans, stack};
 use crate::directions::signal::theme::{Pal, source_color};
+use crate::format;
 use crate::gate::State;
+use crate::icons;
 
 const PANEL_H: f32 = 520.0;
 const LIST_W: f32 = 336.0;
@@ -30,7 +31,7 @@ const SECTIONS: [(&str, &Icon); 9] = [
     (w::SCHEDULE, &icons::CLOCK),
     (w::SOFTWARE, &icons::REFRESH),
     (w::ADVANCED, &icons::SETTINGS),
-    (w::PLAN, &icons::CHECK),
+    (w::PLAN, &icons::CHECK_SIGNAL),
     (w::HELP, &icons::ALERT),
 ];
 
@@ -63,7 +64,7 @@ pub fn panel(s: &State, p: &Pal) -> El {
         .clip_rounded(12.0)
         .role("dialog")
         .label(copy::PALETTE_ARIA)
-        .child(row().w_full().grow(1.0).min_h(0.0).child(list).child(schedule_sheet(p, true).px(24.0).py(20.0)))
+        .child(row().w_full().grow(1.0).min_h(0.0).child(list).child(schedule_sheet(&Spec::new(s), p, true).px(24.0).py(20.0)))
         .child(footer)
 }
 
@@ -74,12 +75,13 @@ fn hint(cap: &str, words: &str, p: &Pal) -> El {
 /// The Settings sections, each with its state, and This month.
 pub(crate) fn section_list(s: &State, p: &Pal) -> El {
     let month = s.stats.as_ref().map(|st| st.current.files as u64).unwrap_or(0);
+    let v = Spec::new(s);
     let status = |name: &str| -> String {
         match name {
-            w::SAVING_TO => "Music".into(),
-            w::DEFAULTS => format!("{} · 320 kbps", AUDIO_FORMAT.to_uppercase()),
-            w::SCHEDULE => "03:00".into(),
-            w::SOFTWARE => "2.0.0".into(),
+            w::SAVING_TO => format::file_name(&v.text("outputDir")).to_owned(),
+            w::DEFAULTS => format!("{} · {}", v.text("defaultFormat").to_uppercase(), v.pick("defaultQuality")),
+            w::SCHEDULE => v.text("scheduleTime"),
+            w::SOFTWARE => env!("CARGO_PKG_VERSION").into(),
             w::PLAN => w::PLAN_PREMIUM.0.into(),
             _ => String::new(),
         }
@@ -174,12 +176,13 @@ fn entry(i: Option<&'static Icon>, tint: Option<Color>, name: &str, status: &str
 
 /// The Scheduled downloads section, as the Electron Settings screen words it.
 /// `crumb`: show where it sits (in the bar's panel, which has no other title).
-pub(crate) fn schedule_sheet(p: &Pal, crumb: bool) -> El {
+pub(crate) fn schedule_sheet(v: &Spec, p: &Pal, crumb: bool) -> El {
+    let chosen = v.value("scheduleDays");
     let mut chips = row().gap(4.0);
     for (i, day) in w::DAYS.into_iter().enumerate() {
         // The chips are short; the day's full name is their label.
         let d = &day[..3];
-        let on = (1..=5).contains(&i);
+        let on = chosen.as_array().is_some_and(|d| d.iter().any(|x| x.as_u64() == Some(i as u64)));
         let chip = el().h(32.0).w(48.0).center().radius(6.0).hover(p.hover).cursor(Cursor::Pointer).role("checkbox").checked(on).label(day);
         chips = chips.child(if on {
             chip.fill(p.raised)
@@ -199,7 +202,7 @@ pub(crate) fn schedule_sheet(p: &Pal, crumb: bool) -> El {
         .fill(p.deep)
         .border(1.0, p.line_strong)
         .child(icon(&icons::CLOCK, 16.0).color(p.muted))
-        .child(label("03:00", mono(13.0, 500.0), p.text));
+        .child(label(v.text("scheduleTime"), mono(13.0, 500.0), p.text));
     let mut c = col().grow(1.0).h_full().min_w(0.0).gap(4.0);
     if crumb {
         c = c.child(
@@ -215,10 +218,10 @@ pub(crate) fn schedule_sheet(p: &Pal, crumb: bool) -> El {
     }
     c.child(label(PICKED, sans(16.0, 500.0), p.text))
         .child(label(w::SCHEDULE_HINT, sans(13.0, 400.0), p.text2).mb(16.0))
-        .child(setting((w::ENABLE_SCHEDULER, ""), toggle(true, p), p))
+        .child(setting((w::ENABLE_SCHEDULER, ""), toggle(v.on("scheduleEnabled"), p), p))
         .child(setting(w::START_TIME, time, p))
         .child(setting(w::ACTIVE_DAYS, chips, p))
-        .child(setting(w::SHUTDOWN, toggle(false, p), p))
+        .child(setting(w::SHUTDOWN, toggle(v.on("scheduleShutdown"), p), p))
 }
 
 /// A Settings row: (label, description) and its control.

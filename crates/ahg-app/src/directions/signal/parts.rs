@@ -3,9 +3,11 @@
 use ahg_engine::types::{DownloadTask, SourcePlatform};
 use rune::{Color, El, Icon, Span, SurfaceFit, TextStyle, col, el, icon, rich, row, text};
 
-use super::icons;
 use super::theme::{Pal, source_color};
 use crate::gate::State;
+use crate::icons;
+use crate::settings_spec::{self, Kind, Row};
+use serde_json::Value;
 
 /// Interface type (Geist).
 pub fn sans(size: f32, weight: f32) -> TextStyle {
@@ -178,4 +180,40 @@ pub fn dot(c: Color, size: f32) -> El {
 /// A labelled column: a wrapper for the common "title, then body" stack.
 pub fn stack(gap: f32) -> El {
     col().gap(gap).min_w(0.0)
+}
+
+/// A text setting from `State.settings`; empty when unset.
+pub fn config_text(s: &State, key: &str) -> String {
+    s.settings.get(key).and_then(|v| v.as_str()).unwrap_or("").to_owned()
+}
+
+/// The settings rows by config key: the values on show and the label of a chosen option.
+pub struct Spec(Vec<Row>);
+
+impl Spec {
+    pub fn new(s: &State) -> Spec {
+        Spec(settings_spec::sections(s).into_iter().flat_map(|section| section.rows).collect())
+    }
+    pub fn value(&self, key: &str) -> Value {
+        self.0.iter().find(|r| r.key == Some(key)).map_or(Value::Null, |r| r.value.clone())
+    }
+    pub fn on(&self, key: &str) -> bool {
+        self.value(key).as_bool().unwrap_or(false)
+    }
+    pub fn text(&self, key: &str) -> String {
+        match self.value(key) {
+            Value::String(t) => t,
+            Value::Null => String::new(),
+            other => other.to_string(),
+        }
+    }
+    /// The chosen option's label, or the raw value when it is not one of the options.
+    pub fn pick(&self, key: &str) -> String {
+        let value = self.text(key);
+        let label = self.0.iter().find(|r| r.key == Some(key)).and_then(|r| match &r.kind {
+            Kind::Select(options) => options.iter().find(|o| o.value == value).map(|o| o.label.clone()),
+            _ => None,
+        });
+        label.unwrap_or(value)
+    }
 }

@@ -4,19 +4,20 @@
 use ahg_engine::types::DownloadStatus as St;
 use rune::{Color, Cursor, El, ScrollSpec, col, el, icon, row};
 
-use super::{SECTIONS, reach, section_count, stream};
+use super::{SECTIONS, reach, stream};
 use crate::copy;
 use crate::copy::settings as w;
-use crate::directions::signal::icons;
-use crate::directions::signal::model;
-use crate::directions::signal::parts::{button, ghost, label, mono, sans};
+use crate::directions::signal::parts::{Spec, button, config_text, ghost, label, mono, sans};
 use crate::directions::signal::theme::Pal;
+use crate::format;
 use crate::gate::State;
+use crate::icons;
 
 const WIDE: f32 = 1120.0;
 
 pub fn downloads(s: &State, p: &Pal) -> El {
     let tasks = &s.tasks;
+    let counts = format::filter_counts(tasks);
     let mut filters =
         row().padding(4.0).gap(4.0).radius(8.0).fill(p.deep).border(1.0, p.line).role("radiogroup").label(copy::DL_FILTER_ARIA);
     for (i, name) in SECTIONS.into_iter().enumerate() {
@@ -31,7 +32,7 @@ pub fn downloads(s: &State, p: &Pal) -> El {
             .cursor(Cursor::Pointer)
             .role("radio")
             .child(label(name, sans(13.0, if on { 500.0 } else { 400.0 }), if on { p.text } else { p.text2 }))
-            .child(label(section_count(tasks, i).to_string(), mono(12.0, 400.0), p.muted));
+            .child(label(counts[i].to_string(), mono(12.0, 400.0), p.muted));
         f = if on {
             f.fill(p.raised).child(el().size(12.0, 2.0).radius(1.0).fill(p.accent).absolute(12.0, 24.0))
         } else {
@@ -55,13 +56,13 @@ pub fn downloads(s: &State, p: &Pal) -> El {
     let toolbar = row().w_full().gap(16.0).center_y().child(filters).child(search);
 
     let mut actions = row().gap(4.0).center_y();
-    if tasks.iter().any(|t| t.progress.status == St::Failed && !model::is_permanent(t.error_code)) {
+    if tasks.iter().any(|t| t.progress.status == St::Failed && !format::is_permanent(t.error_code)) {
         actions = actions.child(ghost(Some(&icons::RETRY), copy::DL_RETRY_ALL_FAILED, p.text2, p));
     }
     if tasks.iter().any(|t| t.progress.status == St::Done) {
         actions = actions.child(ghost(Some(&icons::REMOVE), copy::DL_CLEAR_COMPLETED, p.text2, p));
     }
-    let all_paused = model::all_paused(tasks);
+    let all_paused = format::all_paused(tasks);
     if tasks.iter().any(|t| matches!(t.progress.status, St::Queued | St::FetchingInfo | St::Downloading | St::Paused)) {
         actions = actions.child(if all_paused {
             button(Some(&icons::PLAY), copy::DL_RESUME_ALL, p.accent_ink, p)
@@ -69,13 +70,13 @@ pub fn downloads(s: &State, p: &Pal) -> El {
             button(Some(&icons::PAUSE), copy::DL_PAUSE_ALL, p.text, p)
         });
     }
-    let active = model::active_count(tasks);
+    let active = format::active_count(tasks);
     if active > 0 {
         actions = actions.child(ghost(Some(&icons::CANCEL), copy::DL_CANCEL_ALL, p.text2, p));
     }
     let summary =
         col().gap(4.0).min_w(0.0).child(label(copy::active_and_total(active, tasks.len(), all_paused), mono(12.0, 400.0), p.muted)).child(
-            label(copy::downloads_summary(tasks.len(), &model::summary_parts(tasks)), sans(13.0, 400.0), p.text2).single_line().truncate(),
+            label(copy::downloads_summary(tasks.len(), &format::summary_parts(tasks)), sans(13.0, 400.0), p.text2).single_line().truncate(),
         );
     let bulk = row().w_full().gap(16.0).center_y().child(summary.grow(1.0)).child(actions);
 
@@ -93,6 +94,7 @@ pub fn downloads(s: &State, p: &Pal) -> El {
 }
 
 pub fn settings(s: &State, p: &Pal) -> El {
+    let v = Spec::new(s);
     let left = col()
         .w(296.0)
         .h_full()
@@ -110,10 +112,10 @@ pub fn settings(s: &State, p: &Pal) -> El {
         .pt(32.0)
         .pb(32.0)
         .gap(48.0)
-        .child(destination(p))
+        .child(destination(s, p))
         .child(appearance(p))
-        .child(reach::schedule_sheet(p, false))
-        .child(software(p))
+        .child(reach::schedule_sheet(&v, p, false))
+        .child(software(s, &v, p))
         .child(plan(p));
     let right = col().grow(1.0).h_full().min_w(0.0).pl(40.0).scroll(ScrollSpec { stick_bottom: false }).child(sections);
     let column = row().w_full().max_w(WIDE).h_full().min_h(0.0).pt(32.0).pb(32.0).child(left).child(right);
@@ -121,14 +123,15 @@ pub fn settings(s: &State, p: &Pal) -> El {
 }
 
 /// Destination had no heading in the old app: one line, the folder and `Change`.
-fn destination(p: &Pal) -> El {
+fn destination(s: &State, p: &Pal) -> El {
+    let dir = config_text(s, "outputDir");
     row()
         .w_full()
         .gap(12.0)
         .center_y()
         .child(icon(&icons::FOLDER, 16.0).color(p.muted))
         .child(label(w::SAVING_TO, sans(13.0, 400.0), p.text2))
-        .child(label(super::OUTPUT_DIR, mono(13.0, 400.0), p.text).single_line().truncate().min_w(0.0).shrink())
+        .child(label(dir, mono(13.0, 400.0), p.text).single_line().truncate().min_w(0.0).shrink())
         .child(el().grow(1.0))
         .child(button(None, w::CHANGE, p.text, p))
 }
@@ -141,11 +144,16 @@ fn appearance(p: &Pal) -> El {
     ))
 }
 
-fn software(p: &Pal) -> El {
+fn software(s: &State, v: &Spec, p: &Pal) -> El {
     section(w::SOFTWARE, w::SOFTWARE_HINT, p)
-        .child(status_row(w::APP_NAME, "v2.0.0", button(Some(&icons::REFRESH), w::CHECK_FOR_UPDATES, p.text, p), p))
-        .child(status_row(w::ENGINE_NAME, "2026.11.01", ghost(None, w::ENGINE_CHECK, p.text2, p), p))
-        .child(reach::setting(w::AUTO_UPDATE_ENGINE, reach::toggle(true, p), p))
+        .child(status_row(
+            w::APP_NAME,
+            &format!("v{}", env!("CARGO_PKG_VERSION")),
+            button(Some(&icons::REFRESH), w::CHECK_FOR_UPDATES, p.text, p),
+            p,
+        ))
+        .child(status_row(w::ENGINE_NAME, &s.engine.current, ghost(None, w::ENGINE_CHECK, p.text2, p), p))
+        .child(reach::setting(w::AUTO_UPDATE_ENGINE, reach::toggle(v.on("autoUpdateEngine"), p), p))
 }
 
 fn plan(p: &Pal) -> El {

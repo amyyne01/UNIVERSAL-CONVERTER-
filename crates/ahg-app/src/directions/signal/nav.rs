@@ -4,18 +4,18 @@
 //! layout. The place you are in carries the one lit segment on the strip's edge.
 use rune::{Color, El, Icon, col, el, icon, row};
 
-use super::icons;
-use super::model;
 use super::parts::{label, mono, sans};
 use super::theme::Pal;
 use crate::copy;
+use crate::format;
 use crate::gate::{Nav, State};
+use crate::icons;
+use crate::keys;
 
 /// The collapsed strip.
 const STRIP: f32 = 56.0;
 /// The strip opened.
 const OPEN: f32 = 224.0;
-const PIN_LABEL: &str = "Keep open";
 
 pub fn view(s: &State, p: &Pal) -> El {
     let open = s.nav_open || s.nav_pinned;
@@ -27,7 +27,7 @@ pub fn view(s: &State, p: &Pal) -> El {
 }
 
 fn panel(s: &State, p: &Pal, open: bool) -> El {
-    let active = model::active_count(&s.tasks);
+    let active = format::active_count(&s.tasks);
     let mut c = col()
         .w(if open { OPEN } else { STRIP })
         .h_full()
@@ -67,7 +67,7 @@ fn item(s: &State, p: &Pal, nav: Nav, glyph: &'static Icon, name: &str, n: usize
         )));
     }
     let mut r = row()
-        .key(format!("nav-{n}"))
+        .key(keys::nav(nav))
         .w_full()
         .h(40.0)
         .center_y()
@@ -103,7 +103,7 @@ fn pin(s: &State, p: &Pal) -> El {
     let on = s.nav_pinned;
     let ink = if on { p.accent_ink } else { p.text2 };
     row()
-        .key("nav-pin")
+        .key(keys::NAV_PIN)
         .w_full()
         .h(40.0)
         .pr(12.0)
@@ -115,10 +115,10 @@ fn pin(s: &State, p: &Pal) -> El {
         .focusable(true)
         .role("switch")
         .checked(on)
-        .label(PIN_LABEL)
+        .label(copy::KEEP_OPEN)
         .on_press(|s: &mut State| s.nav_pinned = !s.nav_pinned)
         .child(el().size(40.0, 40.0).center().child(icon(&icons::PIN, 16.0).color(ink)))
-        .child(label(PIN_LABEL, sans(13.0, 400.0), if on { p.text } else { p.text2 }).ml(8.0))
+        .child(label(copy::KEEP_OPEN, sans(13.0, 400.0), if on { p.text } else { p.text2 }).ml(8.0))
         .child(el().grow(1.0))
         // A two-segment indicator: lit while pinned.
         .child(

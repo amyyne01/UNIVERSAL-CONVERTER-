@@ -1,3 +1,4 @@
+#![allow(dead_code)] // unused until cleanup (step 19)
 //! Icons: Phosphor (MIT), the family the Electron app uses, regular weight; the four
 //! platform marks in Phosphor's fill weight. Extracted from @phosphor-icons/react 2.1.10.
 use rune::Icon;

@@ -5,25 +5,32 @@
 //! source with its routing for a video), and an output strip with the one lit
 //! control, Download. A lookup reads as the instrument warming up: a sweep on
 //! the meter over the shape of what is coming. The presets only place it.
-use ahg_engine::tier::{BASIC_LIMITS, Plan, is_premium_format, is_premium_video_quality};
+use ahg_engine::tier::{self, BASIC_LIMITS, Plan, is_premium_format, is_premium_video_quality};
 use ahg_engine::types::{MediaMetadata, Playlist, SearchResult, SourcePlatform, VideoQuality};
 use rune::{Color, Cursor, El, Icon, ScrollSpec, col, el, icon, row, spacer};
 
-use super::icons;
-use super::model;
-use super::parts::{Line, button, ghost, icon_button, keycap, label, mono, sans};
+use super::parts::{Line, button, config_text, ghost, icon_button, keycap, label, mono, sans};
 use super::theme::{Pal, source_color};
 use crate::copy::{self, found as f};
 use crate::format;
 use crate::gate::{Band, Found, Matched, State};
+use crate::icons;
+use crate::keys;
 
-/// The folder the samples save to (the shared state carries no settings).
-const FOLDER: &str = model::OUTPUT_DIR;
-// The match states are new in the Rust app (D34); the old one showed no match.
-const MATCHING: &str = "Matching…";
-const CONFIRMED: &str = "Confirmed";
-const BEST_GUESS: &str = "Best guess";
-const NO_MATCH: &str = "No match found";
+const QUALITIES: [VideoQuality; 6] =
+    [VideoQuality::P360, VideoQuality::P480, VideoQuality::P720, VideoQuality::P1080, VideoQuality::P2160, VideoQuality::Best];
+
+/// What the choice chips show lit: the audio format, the audio quality and the video quality, as
+/// places in `f::AUDIO_FORMATS`, `f::AUDIO_QUALITIES` and `f::VIDEO_QUALITIES`. Basic shows what it
+/// will really make.
+fn lit(s: &State) -> (usize, usize, usize) {
+    let c = &s.choice;
+    let format = f::AUDIO_FORMATS.iter().position(|n| n.eq_ignore_ascii_case(&c.format)).unwrap_or(0);
+    let audio =
+        f::AUDIO_QUALITIES.iter().position(|n| n.split(' ').next().is_some_and(|w| w.eq_ignore_ascii_case(&c.audio_quality))).unwrap_or(3);
+    let video = QUALITIES.iter().position(|q| *q == tier::clamp_video_quality(c.video_quality, s.plan)).unwrap_or(5);
+    (format, audio, video)
+}
 
 /// The surface, or `None` when the field found nothing yet. It hugs its
 /// content and shrinks into the room it is given, scrolling inside.
@@ -43,7 +50,7 @@ pub fn view(s: &State, p: &Pal) -> Option<El> {
         Found::Search { query, bands } => (search_head(s, query, bands, p), search(bands, p), None),
     };
     let mut c = col()
-        .key("found")
+        .key(keys::FOUND)
         .w_full()
         .shrink()
         .min_h(0.0)
@@ -72,7 +79,7 @@ pub fn dismiss(s: &mut State) {
 
 /// "Available with Premium": a lock in ink, never the accent, which is Download's.
 fn lock(p: &Pal) -> El {
-    glyph(&icons::LOCK, p.text2)
+    glyph(&icons::LOCK_SIGNAL, p.text2)
 }
 
 /// An open door to Premium, never the accent.
@@ -301,11 +308,10 @@ fn choices(items: &[&str], on: usize, tag: impl Fn(&str) -> bool, locked: impl F
 
 fn media(s: &State, m: &MediaMetadata, p: &Pal) -> (El, El, Option<El>) {
     let source = source_of(m);
-    // Not in the shared state: the old defaults (Video, MP3, 320 kbps, best).
-    // Basic shows what it will really make: `best` is clamped to 1080p.
     let basic = s.plan == Plan::Basic;
-    let (video, format_on, audio_on, video_on) = (true, 0, 3, if basic { 3 } else { 5 });
-    let eyebrow = f::single_eyebrow_fallback(model::source_name(source), !video);
+    let video = s.choice.video;
+    let (format_on, audio_on, video_on) = lit(s);
+    let eyebrow = f::single_eyebrow_fallback(format::source_name(source), !video);
     let readout = if video {
         f::readout_video(f::VIDEO_QUALITIES[video_on])
     } else {
@@ -383,8 +389,6 @@ fn media(s: &State, m: &MediaMetadata, p: &Pal) -> (El, El, Option<El>) {
         if routed { r } else { r.opacity(0.4) }
     };
     let lossless = |n: &str| matches!(n, "FLAC" | "WAV" | "ALAC");
-    let qualities =
-        [VideoQuality::P360, VideoQuality::P480, VideoQuality::P720, VideoQuality::P1080, VideoQuality::P2160, VideoQuality::Best];
     let mut well = col()
         .w_full()
         .padding(16.0)
@@ -395,7 +399,7 @@ fn media(s: &State, m: &MediaMetadata, p: &Pal) -> (El, El, Option<El>) {
         .child(named("", capsule, true))
         .child(named(
             f::VIDEO_QUALITY_LABEL,
-            choices(&f::VIDEO_QUALITIES, video_on, |_| false, |i| basic && is_premium_video_quality(qualities[i]), p),
+            choices(&f::VIDEO_QUALITIES, video_on, |_| false, |i| basic && is_premium_video_quality(QUALITIES[i]), p),
             video,
         ))
         .child(named(
@@ -430,10 +434,12 @@ fn bars(lit: usize, c: Color, p: &Pal) -> El {
 
 fn match_cell(m: Matched, p: &Pal) -> El {
     let (lead, words, ink, extra) = match m {
-        Matched::Confirmed => (bars(4, p.text, p), CONFIRMED, p.text2, None),
-        Matched::BestGuess(c) => (bars(3, p.warning, p), BEST_GUESS, p.warning, Some(format!("{}%", format::round_half_up(c * 100.0)))),
-        Matched::Matching => (glyph(&icons::LOADING, p.muted), MATCHING, p.muted, None),
-        Matched::NoMatch => (glyph(&icons::ALERT, p.error), NO_MATCH, p.error, None),
+        Matched::Confirmed => (bars(4, p.text, p), copy::MATCH_CONFIRMED, p.text2, None),
+        Matched::BestGuess(c) => {
+            (bars(3, p.warning, p), copy::MATCH_BEST_GUESS, p.warning, Some(format!("{}%", format::round_half_up(c * 100.0))))
+        }
+        Matched::Matching => (glyph(&icons::LOADING, p.muted), copy::MATCH_MATCHING, p.muted, None),
+        Matched::NoMatch => (glyph(&icons::ALERT, p.error), copy::MATCH_NONE, p.error, None),
     };
     let mut r = row().w(176.0).gap(8.0).center_y().child(lead).child(label(words, sans(13.0, 400.0), ink));
     if let Some(x) = extra {
@@ -447,7 +453,7 @@ fn tick(on: bool, can: bool, p: &Pal) -> El {
     if !can {
         b.border(1.0, p.line_strong).border_dash(2.0, 2.0)
     } else if on {
-        b.fill(p.text).child(icon(&icons::CHECK, 16.0).color(p.surface))
+        b.fill(p.text).child(icon(&icons::CHECK_SIGNAL, 16.0).color(p.surface))
     } else {
         b.border(1.0, p.line_strong).hover(p.hover)
     }
@@ -456,7 +462,7 @@ fn tick(on: bool, can: bool, p: &Pal) -> El {
 /// A tick that Basic holds: on, in a quieter ink, with no hover.
 fn tick_fixed(on: bool, p: &Pal) -> El {
     let b = el().size(20.0, 20.0).radius(4.0).center().role("checkbox").checked(on).border(1.0, p.line_strong);
-    if on { b.fill(p.raised).child(icon(&icons::CHECK, 16.0).color(p.muted)) } else { b }
+    if on { b.fill(p.raised).child(icon(&icons::CHECK_SIGNAL, 16.0).color(p.muted)) } else { b }
 }
 
 fn album(s: &State, pl: &Playlist, matched: &[Matched], selected: &[bool], p: &Pal) -> (El, El, Option<El>) {
@@ -465,7 +471,7 @@ fn album(s: &State, pl: &Playlist, matched: &[Matched], selected: &[bool], p: &P
     let source = if spotify { SourcePlatform::Spotify } else { SourcePlatform::Youtube };
     let tint = source_color(p, source);
     let eyebrow = if !spotify {
-        model::source_name(source)
+        format::source_name(source)
     } else if pl.url.contains("/album/") {
         f::PLAYLIST_EYEBROW_ALBUM
     } else {
@@ -507,22 +513,21 @@ fn album(s: &State, pl: &Playlist, matched: &[Matched], selected: &[bool], p: &P
         counter = counter.child(label(f::BASIC_COLLECTION, sans(12.0, 400.0), p.muted));
     }
     let all = picked.len() == tracks.len();
-    let selectors = if fixed {
-        row()
-            .h(32.0)
-            .pl(12.0)
-            .gap(8.0)
-            .center_y()
-            .child(lock(p))
-            .child(label(f::LOCK_PICK_PLAYLIST, sans(13.0, 400.0), p.text2).single_line().truncate().min_w(0.0))
-    } else {
-        row().gap(4.0).child(ghost(Some(&icons::CHECK), f::PLAYLIST_SELECT_ALL, if all { p.muted } else { p.text }, p)).child(ghost(
-            None,
-            f::PLAYLIST_DESELECT_ALL,
-            if picked.is_empty() { p.muted } else { p.text2 },
-            p,
-        ))
-    };
+    let selectors =
+        if fixed {
+            row()
+                .h(32.0)
+                .pl(12.0)
+                .gap(8.0)
+                .center_y()
+                .child(lock(p))
+                .child(label(f::LOCK_PICK_PLAYLIST, sans(13.0, 400.0), p.text2).single_line().truncate().min_w(0.0))
+        } else {
+            row()
+                .gap(4.0)
+                .child(ghost(Some(&icons::CHECK_SIGNAL), f::PLAYLIST_SELECT_ALL, if all { p.muted } else { p.text }, p))
+                .child(ghost(None, f::PLAYLIST_DESELECT_ALL, if picked.is_empty() { p.muted } else { p.text2 }, p))
+        };
     let top = row()
         .w_full()
         .px(24.0)
@@ -646,16 +651,21 @@ fn album(s: &State, pl: &Playlist, matched: &[Matched], selected: &[bool], p: &P
                 .child(icon(&icons::CARET_DOWN, 16.0).color(p.muted)),
         )
     };
+    let (format_on, audio_on, _) = lit(s);
+    let folder = s.choice.folder.clone().unwrap_or_else(|| config_text(s, "outputDir"));
     let readout = if queued == 0 {
         f::PLAYLIST_NOTHING_SELECTED.to_string()
     } else {
-        f::playlist_readout(queued, f::AUDIO_FORMATS[0], f::AUDIO_QUALITIES[3], &picked_span)
+        f::playlist_readout(queued, f::AUDIO_FORMATS[format_on], f::AUDIO_QUALITIES[audio_on], &picked_span)
     };
     let left = row()
         .gap(12.0)
         .items_end()
-        .child(pick(f::PLAYLIST_FORMAT, label(f::AUDIO_FORMATS[0], mono(13.0, 400.0), p.text), 96.0).label(f::PLAYLIST_FORMAT_ARIA))
-        .child(pick(f::PLAYLIST_QUALITY, label(f::AUDIO_QUALITIES[3], mono(13.0, 400.0), p.text), 120.0).label(f::PLAYLIST_QUALITY_ARIA))
+        .child(pick(f::PLAYLIST_FORMAT, label(f::AUDIO_FORMATS[format_on], mono(13.0, 400.0), p.text), 96.0).label(f::PLAYLIST_FORMAT_ARIA))
+        .child(
+            pick(f::PLAYLIST_QUALITY, label(f::AUDIO_QUALITIES[audio_on], mono(13.0, 400.0), p.text), 120.0)
+                .label(f::PLAYLIST_QUALITY_ARIA),
+        )
         .child(
             pick(
                 f::PLAYLIST_FOLDER,
@@ -663,10 +673,10 @@ fn album(s: &State, pl: &Playlist, matched: &[Matched], selected: &[bool], p: &P
                     .gap(8.0)
                     .center_y()
                     .child(glyph(&icons::FOLDER, p.muted))
-                    .child(label(FOLDER, mono(13.0, 400.0), p.text).single_line().truncate().min_w(0.0)),
+                    .child(label(folder.clone(), mono(13.0, 400.0), p.text).single_line().truncate().min_w(0.0)),
                 208.0,
             )
-            .help(FOLDER),
+            .help(folder.clone()),
         )
         .child(label(readout, mono(12.0, 400.0), p.text2).single_line().truncate().min_w(0.0).shrink().pb(8.0));
     (h, body, Some(strip(left, primary(&f::playlist_download_label(matched_n, queued), p), p)))

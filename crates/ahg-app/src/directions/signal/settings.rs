@@ -3,24 +3,29 @@
 //! the left and its panel of rows on the right, so the eye runs down the
 //! names. Panels vary by what they hold: a field grid for the choices, rows
 //! for switches, status lines for the two updaters. Wording is
-//! `copy::settings`, word for word; values are stand-ins (the gate has no settings).
+//! `copy::settings`, word for word; values come from `State.settings` through `settings_spec`.
 use rune::{Color, El, ScrollSpec, col, el, icon, row};
 
-use super::icons;
-use super::model::{AUDIO_FORMAT, OUTPUT_DIR};
-use super::parts::{Line, button, dot, label, mono, sans};
+use super::parts::{Line, Spec, button, dot, label, mono, sans};
 use super::theme::{self, Pal};
-use crate::copy::settings as w;
-use crate::gate::{self, State};
+use crate::copy::{self, settings as w};
+use crate::gate::{self, Confirm, State};
+use crate::icons;
+use crate::keys;
+use crate::palette;
 
 /// The section names' column.
 const NAMES: f32 = 200.0;
 /// A select's or a field's width in a row.
 const CONTROL: f32 = 176.0;
+
 /// Palette names, `s.palette` order: Signal's own, then the app's seven.
-const PALETTES: [&str; 8] = ["Signal", "Aurora", "Slate", "Moss", "Ember", "Paper", "Lagoon", "Orchid"];
+fn palette_name(i: usize) -> &'static str {
+    if i == 0 { copy::PRESET_SIGNAL } else { palette::NAMES[i - 1] }
+}
 
 pub fn view(s: &State, p: &Pal) -> El {
+    let v = Spec::new(s);
     let head = row()
         .w_full()
         .items_end()
@@ -35,21 +40,22 @@ pub fn view(s: &State, p: &Pal) -> El {
         .pb(48.0)
         .gap(32.0)
         .child(head)
-        .child(destination(p))
-        .child(section(w::DEFAULTS, Some(w::DEFAULTS_HINT), defaults(p), p))
-        .child(section(w::MORE, Some(w::MORE_HINT), more(p), p))
-        .child(section(w::APPEARANCE, None, appearance(s, p), p))
-        .child(section(w::SCHEDULE, Some(w::SCHEDULE_HINT), schedule(p), p))
-        .child(section(w::SOFTWARE, Some(w::SOFTWARE_HINT), software(p), p))
-        .child(section(w::ADVANCED, Some(w::ADVANCED_HINT), advanced(p), p))
+        .child(destination(&v, p))
+        .child(section(w::DEFAULTS, Some(w::DEFAULTS_HINT), defaults(&v, p), p))
+        .child(section(w::MORE, Some(w::MORE_HINT), more(&v, p), p))
+        .child(section(w::APPEARANCE, None, appearance(s, &v, p), p))
+        .child(section(w::SCHEDULE, Some(w::SCHEDULE_HINT), schedule(&v, p), p))
+        .child(section(w::SOFTWARE, Some(w::SOFTWARE_HINT), software(s, &v, p), p))
+        .child(section(w::ADVANCED, Some(w::ADVANCED_HINT), advanced(&v, p), p))
         .child(section(w::PLAN, None, plan(p), p))
         .child(section(w::HELP, None, help(p), p));
     col().key("settings").w_full().h_full().min_h(0.0).scroll(ScrollSpec { stick_bottom: false }).items_center().child(page)
 }
 
 /// Destination has no heading: the folder, set like a tape label in the desk's well.
-fn destination(p: &Pal) -> El {
-    let (parent, leaf) = OUTPUT_DIR.rsplit_once('\\').map_or(("", OUTPUT_DIR), |(a, b)| (a, b));
+fn destination(v: &Spec, p: &Pal) -> El {
+    let dir = v.text("outputDir");
+    let (parent, leaf) = dir.rsplit_once('\\').map_or(("", dir.as_str()), |(a, b)| (a, b));
     row()
         .w_full()
         .h(72.0)
@@ -74,7 +80,7 @@ fn destination(p: &Pal) -> El {
                 .min_w(0.0)
                 .gap(4.0)
                 .child(label(w::SAVING_TO, sans(12.0, 400.0), p.text2))
-                .child(Line::new().fig(&format!("{parent}\\"), p.text2).fig(leaf, p.text).one(mono(16.0, 500.0)).help(OUTPUT_DIR)),
+                .child(Line::new().fig(&format!("{parent}\\"), p.text2).fig(leaf, p.text).one(mono(16.0, 500.0)).help(dir.clone())),
         )
         .child(button(Some(&icons::FOLDER), w::CHANGE, p.text, p))
 }
@@ -172,63 +178,67 @@ fn fields(items: Vec<(&str, El)>, p: &Pal) -> El {
     r
 }
 
-fn defaults(p: &Pal) -> El {
-    let format = AUDIO_FORMAT.to_uppercase();
+fn defaults(v: &Spec, p: &Pal) -> El {
     panel(
         vec![
             fields(
                 vec![
-                    (w::AUDIO_FORMAT, select(w::AUDIO_FORMAT, &format, None, p)),
-                    (w::AUDIO_QUALITY, select(w::AUDIO_QUALITY, "320 kbps", None, p)),
-                    (w::VIDEO_QUALITY, select(w::VIDEO_QUALITY, "1080p Full HD", None, p)),
+                    (w::AUDIO_FORMAT, select(w::AUDIO_FORMAT, &v.pick("defaultFormat"), None, p)),
+                    (w::AUDIO_QUALITY, select(w::AUDIO_QUALITY, &v.pick("defaultQuality"), None, p)),
+                    (w::VIDEO_QUALITY, select(w::VIDEO_QUALITY, &v.pick("defaultVideoQuality"), None, p)),
                 ],
                 p,
             ),
-            setting(w::SKIP_EXISTING, switch(w::SKIP_EXISTING.0, true, p), p),
-            setting(w::EMBED_THUMBNAIL, switch(w::EMBED_THUMBNAIL.0, true, p), p),
-            setting(w::EMBED_METADATA, switch(w::EMBED_METADATA.0, true, p), p),
-            setting(w::SIMULTANEOUS, select(w::SIMULTANEOUS.0, "2 at a time", Some(CONTROL), p), p),
+            setting(w::SKIP_EXISTING, switch(w::SKIP_EXISTING.0, v.on("skipExisting"), p), p),
+            setting(w::EMBED_THUMBNAIL, switch(w::EMBED_THUMBNAIL.0, v.on("embedThumbnail"), p), p),
+            setting(w::EMBED_METADATA, switch(w::EMBED_METADATA.0, v.on("embedMetadata"), p), p),
+            setting(w::SIMULTANEOUS, select(w::SIMULTANEOUS.0, &v.pick("maxConcurrentDownloads"), Some(CONTROL), p), p),
         ],
         p,
     )
 }
 
-fn more(p: &Pal) -> El {
-    // Subtitles are off, so the language and captions settings sit a step back, as in Electron.
+fn more(v: &Spec, p: &Pal) -> El {
+    // With subtitles off the language and captions settings sit a step back, as in Electron.
+    let subtitles_off = v.text("subtitleMode") == "off";
     panel(
         vec![
             fields(
                 vec![
-                    (w::SUBTITLES, select(w::SUBTITLES, "Off", None, p)),
-                    (w::SUBTITLE_LANGUAGES, input(w::SUBTITLE_LANGUAGES, "", w::SUBTITLE_LANGUAGES_PLACEHOLDER, None, p).opacity(0.6)),
-                    (w::SPONSOR_SEGMENTS, select(w::SPONSOR_SEGMENTS, "Off", None, p)),
+                    (w::SUBTITLES, select(w::SUBTITLES, &v.pick("subtitleMode"), None, p)),
+                    (
+                        w::SUBTITLE_LANGUAGES,
+                        input(w::SUBTITLE_LANGUAGES, &v.text("subtitleLangs"), w::SUBTITLE_LANGUAGES_PLACEHOLDER, None, p)
+                            .opacity(if subtitles_off { 0.6 } else { 1.0 }),
+                    ),
+                    (w::SPONSOR_SEGMENTS, select(w::SPONSOR_SEGMENTS, &v.pick("sponsorBlock"), None, p)),
                 ],
                 p,
             ),
             fields(
                 vec![
-                    (w::VIDEO_CONTAINER, select(w::VIDEO_CONTAINER, "MP4 (most compatible)", None, p)),
-                    (w::VIDEO_CODEC, select(w::VIDEO_CODEC, "Best available", None, p)),
-                    (w::SIGN_IN_WITH, select(w::SIGN_IN_WITH, "Chrome", None, p)),
+                    (w::VIDEO_CONTAINER, select(w::VIDEO_CONTAINER, &v.pick("videoContainer"), None, p)),
+                    (w::VIDEO_CODEC, select(w::VIDEO_CODEC, &v.pick("videoCodec"), None, p)),
+                    (w::SIGN_IN_WITH, select(w::SIGN_IN_WITH, &v.pick("cookieBrowser"), None, p)),
                 ],
                 p,
             ),
             setting(w::IMPORT_COOKIES, button(Some(&icons::FOLDER), w::CHOOSE_FILE, p.text, p), p),
-            setting_dim(w::AUTO_CAPTIONS, switch(w::AUTO_CAPTIONS.0, false, p), true, p),
-            setting(w::EMBED_CHAPTERS, switch(w::EMBED_CHAPTERS.0, true, p), p),
-            setting(w::SPLIT_BY_CHAPTER, switch(w::SPLIT_BY_CHAPTER.0, false, p), p),
-            setting(w::SAVE_COVER_ART, switch(w::SAVE_COVER_ART.0, false, p), p),
-            setting(w::FILE_NAMING, input(w::FILE_NAMING.0, "", w::FILE_NAMING_PLACEHOLDER, Some(CONTROL), p), p),
+            setting_dim(w::AUTO_CAPTIONS, switch(w::AUTO_CAPTIONS.0, v.on("subtitleAuto"), p), subtitles_off, p),
+            setting(w::EMBED_CHAPTERS, switch(w::EMBED_CHAPTERS.0, v.on("embedChapters"), p), p),
+            setting(w::SPLIT_BY_CHAPTER, switch(w::SPLIT_BY_CHAPTER.0, v.on("splitChapters"), p), p),
+            setting(w::SAVE_COVER_ART, switch(w::SAVE_COVER_ART.0, v.on("writeThumbnail"), p), p),
+            setting(w::FILE_NAMING, input(w::FILE_NAMING.0, &v.text("outputTemplate"), w::FILE_NAMING_PLACEHOLDER, Some(CONTROL), p), p),
         ],
         p,
     )
 }
 
-fn appearance(s: &State, p: &Pal) -> El {
-    // The theme follows the system in the gate (the picture's `--theme` stands for the OS).
+fn appearance(s: &State, v: &Spec, p: &Pal) -> El {
+    let theme_on = ["light", "dark", "system"].iter().position(|t| *t == v.text("theme")).unwrap_or(2);
     let mut theme = row().padding(4.0).gap(4.0).radius(8.0).fill(p.deep).border(1.0, p.line).role("radiogroup").label(w::THEME.0);
     for (i, name) in w::THEMES.into_iter().enumerate() {
-        let on = i == 2;
+        let on = i == theme_on;
         theme = theme.child(
             el().h(28.0)
                 .px(12.0)
@@ -243,7 +253,8 @@ fn appearance(s: &State, p: &Pal) -> El {
         );
     }
     let mut swatches = row().gap(8.0).flex_wrap().justify_end().role("radiogroup").label(w::PALETTE_ARIA);
-    for (i, name) in PALETTES.iter().enumerate() {
+    for i in 0..=palette::NAMES.len() {
+        let name = palette_name(i);
         let sw = theme::pal(i, p.dark);
         let on = s.palette == i;
         swatches = swatches.child(
@@ -254,8 +265,8 @@ fn appearance(s: &State, p: &Pal) -> El {
                 .border(if on { 2.0 } else { 1.0 }, if on { p.text } else { p.line_strong })
                 .cursor(rune::Cursor::Pointer)
                 .role("radio")
-                .label(*name)
-                .help(*name)
+                .label(name)
+                .help(name)
                 .checked(on)
                 .on_press(move |s: &mut State| s.palette = i)
                 // The palette's accent as one lit segment.
@@ -267,24 +278,25 @@ fn appearance(s: &State, p: &Pal) -> El {
         .gap(12.0)
         .center_y()
         .child(label(preset, mono(13.0, 400.0), p.text2))
-        .child(button(None, w::LAYOUT_CHOOSE, p.text, p).key("layout-choose").on_press(|s: &mut State| s.picker = true));
+        .child(button(None, w::LAYOUT_CHOOSE, p.text, p).key(keys::LAYOUT_CHOOSE).on_press(|s: &mut State| s.picker = true));
     panel(
         vec![
             setting(w::THEME, theme, p),
             setting(w::PALETTE, swatches.max_w(280.0), p),
             setting(w::LAYOUT, layout, p),
-            setting(w::CLIPBOARD_WATCHER, switch(w::CLIPBOARD_WATCHER.0, false, p), p),
-            setting(w::NOTIFICATIONS, switch(w::NOTIFICATIONS.0, true, p), p),
-            setting(w::DISCORD, switch(w::DISCORD.0, false, p), p),
+            setting(w::CLIPBOARD_WATCHER, switch(w::CLIPBOARD_WATCHER.0, v.on("clipboardWatch"), p), p),
+            setting(w::NOTIFICATIONS, switch(w::NOTIFICATIONS.0, v.on("showNotifications"), p), p),
+            setting(w::DISCORD, switch(w::DISCORD.0, v.on("discordRichPresence"), p), p),
         ],
         p,
     )
 }
 
-fn schedule(p: &Pal) -> El {
+fn schedule(v: &Spec, p: &Pal) -> El {
+    let chosen = v.value("scheduleDays");
     let mut days = row().gap(4.0).role("group").label(w::ACTIVE_DAYS.0);
     for (i, day) in w::DAYS.iter().enumerate() {
-        let on = (1..=5).contains(&i);
+        let on = chosen.as_array().is_some_and(|d| d.iter().any(|x| x.as_u64() == Some(i as u64)));
         days = days.child(
             el().size(32.0, 28.0)
                 .center()
@@ -296,15 +308,15 @@ fn schedule(p: &Pal) -> El {
                 .role("checkbox")
                 .label(*day)
                 .checked(on)
-                .child(label(&day[..2], mono(12.0, 500.0), if on { p.text } else { p.muted })),
+                .child(label(w::DAYS_SHORT[i], mono(12.0, 500.0), if on { p.text } else { p.muted })),
         );
     }
     panel(
         vec![
-            setting((w::ENABLE_SCHEDULER, ""), switch(w::ENABLE_SCHEDULER, true, p), p),
-            setting(w::START_TIME, input(w::START_TIME.0, "03:00", "", Some(80.0), p), p),
+            setting((w::ENABLE_SCHEDULER, ""), switch(w::ENABLE_SCHEDULER, v.on("scheduleEnabled"), p), p),
+            setting(w::START_TIME, input(w::START_TIME.0, &v.text("scheduleTime"), "", Some(80.0), p), p),
             setting(w::ACTIVE_DAYS, days, p),
-            setting(w::SHUTDOWN, switch(w::SHUTDOWN.0, false, p), p),
+            setting(w::SHUTDOWN, switch(w::SHUTDOWN.0, v.on("scheduleShutdown"), p), p),
         ],
         p,
     )
@@ -327,33 +339,41 @@ fn status(name: &str, version: &str, state: &str, tone: Color, action: El, p: &P
     row().w_full().min_h(64.0).px(16.0).py(12.0).gap(16.0).center_y().child(words).child(action)
 }
 
-/// Not in `copy::settings`: Electron's rest line for an engine that is up to date (SettingsTab.tsx L364).
-const ENGINE_UP_TO_DATE: &str = "yt-dlp is up to date";
-
-fn software(p: &Pal) -> El {
+fn software(s: &State, v: &Spec, p: &Pal) -> El {
     panel(
         vec![
-            status(w::APP_NAME, "v2.0.0", w::APP_REST, p.muted, button(Some(&icons::REFRESH), w::CHECK_FOR_UPDATES, p.text, p), p),
+            status(
+                w::APP_NAME,
+                &format!("v{}", env!("CARGO_PKG_VERSION")),
+                w::APP_REST,
+                p.muted,
+                button(Some(&icons::REFRESH), w::CHECK_FOR_UPDATES, p.text, p),
+                p,
+            ),
             status(
                 w::ENGINE_NAME,
-                "2026.11.01",
-                ENGINE_UP_TO_DATE,
+                &s.engine.current,
+                w::ENGINE_UP_TO_DATE,
                 p.success,
                 button(Some(&icons::REFRESH), w::ENGINE_CHECK, p.text, p),
                 p,
             ),
-            setting(w::AUTO_UPDATE_ENGINE, switch(w::AUTO_UPDATE_ENGINE.0, true, p), p),
+            setting(w::AUTO_UPDATE_ENGINE, switch(w::AUTO_UPDATE_ENGINE.0, v.on("autoUpdateEngine"), p), p),
         ],
         p,
     )
 }
 
-fn advanced(p: &Pal) -> El {
+fn advanced(v: &Spec, p: &Pal) -> El {
     panel(
         vec![
-            setting(w::RATE_LIMIT, input(w::RATE_LIMIT.0, "", w::RATE_LIMIT_PLACEHOLDER, Some(CONTROL), p), p),
-            setting(w::PROXY, input(w::PROXY.0, "", w::PROXY_PLACEHOLDER, Some(CONTROL), p), p),
-            setting(w::GLOBAL_HOTKEY, input(w::GLOBAL_HOTKEY.0, "Ctrl+Shift+D", w::GLOBAL_HOTKEY_PLACEHOLDER, Some(CONTROL), p), p),
+            setting(w::RATE_LIMIT, input(w::RATE_LIMIT.0, &v.text("rateLimit"), w::RATE_LIMIT_PLACEHOLDER, Some(CONTROL), p), p),
+            setting(w::PROXY, input(w::PROXY.0, &v.text("proxy"), w::PROXY_PLACEHOLDER, Some(CONTROL), p), p),
+            setting(
+                w::GLOBAL_HOTKEY,
+                input(w::GLOBAL_HOTKEY.0, &v.text("globalHotkey"), w::GLOBAL_HOTKEY_PLACEHOLDER, Some(CONTROL), p),
+                p,
+            ),
         ],
         p,
     )
@@ -400,7 +420,7 @@ fn plan(p: &Pal) -> El {
             p.text2,
         )))
         .child(lit);
-    panel(vec![yours, danger("plan-deactivate", w::DEACTIVATE), danger("plan-move", w::MOVE)], p)
+    panel(vec![yours, danger(keys::arm(Confirm::Deactivate), w::DEACTIVATE), danger(keys::arm(Confirm::Move), w::MOVE)], p)
 }
 
 fn help(p: &Pal) -> El {

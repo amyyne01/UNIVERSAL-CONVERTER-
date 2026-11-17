@@ -4,16 +4,15 @@ use ahg_engine::stats::{DownloadStats, MonthBucket};
 use ahg_engine::types::{DownloadStatus as St, DownloadTask, SourcePlatform};
 use rune::{Color, El, ScrollSpec, col, el, icon, row, spacer};
 
-use super::icons;
-use super::model;
-use super::parts::{Line, art, dot, keycap, label, meter, mono, platform_icon, sans, stack};
+use super::parts::{Line, art, config_text, dot, keycap, label, meter, mono, platform_icon, sans, stack};
 use super::theme::{Pal, source_color};
 use crate::copy;
+use crate::format::{self, Bucket};
 use crate::gate::{Found, Nav, State};
-use model::{AUDIO_FORMAT, OUTPUT_DIR};
+use crate::icons;
 
 pub fn view(s: &State, p: &Pal) -> El {
-    let active = model::active_count(&s.tasks);
+    let active = format::active_count(&s.tasks);
     let done: Vec<&DownloadTask> = s.tasks.iter().filter(|t| t.progress.status == St::Done).take(7).collect();
     let has_counts = s.stats.as_ref().is_some_and(|st| st.current.files > 0.0 || st.previous.as_ref().is_some_and(|m| m.files > 0.0));
     let quiet = !has_counts && done.is_empty() && active == 0;
@@ -25,7 +24,7 @@ pub fn view(s: &State, p: &Pal) -> El {
             .max_w(880.0)
             .gap(20.0)
             .child(label(copy::HOME_HEADLINE, sans(44.0, 500.0).tracking(-0.9), p.text))
-            .child(stack(12.0).child(field(s, p)).child(status(p)))
+            .child(stack(12.0).child(field(s, p)).child(status(s, p)))
             .child(works_with(p).mt(28.0));
         return col().w_full().h_full().px(40.0).pb(72.0).items_center().justify_center().child(hero);
     }
@@ -47,7 +46,7 @@ pub fn view(s: &State, p: &Pal) -> El {
             .pb(40.0)
             .gap(16.0)
             .child(headline)
-            .child(stack(12.0).mt(4.0).child(field(s, p)).child(status(p)))
+            .child(stack(12.0).mt(4.0).child(field(s, p)).child(status(s, p)))
             .child(found.mt(8.0));
         return col().w_full().h_full().min_h(0.0).items_center().child(page);
     }
@@ -59,7 +58,7 @@ pub fn view(s: &State, p: &Pal) -> El {
         .pb(40.0)
         .gap(16.0)
         .child(headline)
-        .child(stack(12.0).mt(4.0).child(field(s, p)).child(status(p)));
+        .child(stack(12.0).mt(4.0).child(field(s, p)).child(status(s, p)));
     let mut bento = col().w_full().gap(16.0).mt(16.0);
     if active > 0 {
         bento = bento.child(speed_cell(&s.tasks, p));
@@ -142,12 +141,13 @@ fn field(s: &State, p: &Pal) -> El {
 }
 
 /// The rest-state status line (reading 8).
-fn status(p: &Pal) -> El {
+fn status(s: &State, p: &Pal) -> El {
+    let (folder, audio) = (config_text(s, "outputDir"), config_text(s, "defaultFormat"));
     let left = row()
         .gap(8.0)
         .center_y()
         .min_w(0.0)
-        .child(Line::new().add(&copy::rest_saves_as(AUDIO_FORMAT), p.text2).add(OUTPUT_DIR, p.text).one(sans(13.0, 400.0)).help(OUTPUT_DIR))
+        .child(Line::new().add(&copy::rest_saves_as(&audio), p.text2).add(&folder, p.text).one(sans(13.0, 400.0)).help(folder.clone()))
         .child(
             label(copy::REST_CHANGE, sans(13.0, 500.0), p.accent_ink)
                 .cursor(rune::Cursor::Pointer)
@@ -202,27 +202,14 @@ fn cell(title: &str, aside: Option<El>, body: El, p: &Pal) -> El {
     col().radius(12.0).fill(p.surface).border(1.0, p.line).padding(20.0).gap(16.0).min_w(0.0).child(head).child(body)
 }
 
-/// The next of 1, 2, 5 times a power of ten at or above `v`.
-fn scale_for(v: f64) -> f64 {
-    let mut step = 1.0;
-    loop {
-        for k in [1.0, 2.0, 5.0] {
-            if k * step >= v {
-                return k * step;
-            }
-        }
-        step *= 10.0;
-    }
-}
-
 fn speed_cell(tasks: &[DownloadTask], p: &Pal) -> El {
-    let now = model::total_speed(tasks);
-    let ceil = scale_for(now.max(1.0));
+    let now = format::total_speed(tasks);
+    let ceil = format::axis_ceiling(now);
     let figure = stack(4.0)
         .w(160.0)
         .child(label(copy::CELL_SPEED, sans(16.0, 500.0), p.text).mb(8.0))
-        .child(label(copy::speed_now(&copy::format_bytes(now)), mono(22.0, 500.0), p.text))
-        .child(label(copy::speed_scale(&copy::format_bytes(ceil)), mono(11.0, 400.0), p.muted));
+        .child(label(copy::speed_now(&format::bytes(now)), mono(22.0, 500.0), p.text))
+        .child(label(copy::speed_scale(&format::bytes(ceil)), mono(11.0, 400.0), p.muted));
     let level = meter(now / ceil, 64, None, 16.0, 3.0, p.accent, p.unlit);
     row()
         .w_full()
@@ -232,7 +219,7 @@ fn speed_cell(tasks: &[DownloadTask], p: &Pal) -> El {
         .padding(20.0)
         .gap(24.0)
         .center_y()
-        .label(copy::speed_aria(&copy::format_bytes(now)))
+        .label(copy::speed_aria(&format::bytes(now)))
         .child(figure)
         .child(col().grow(1.0).min_w(0.0).child(level))
 }
@@ -243,23 +230,13 @@ fn month_cell(stats: Option<&DownloadStats>, p: &Pal) -> El {
     };
     let cur = &st.current;
     let prev = st.previous.as_ref().filter(|m| m.files > 0.0);
-    let aside = label(model::month_name(&cur.month), sans(13.0, 400.0), p.muted);
+    let aside = label(format::month_name(&cur.month), sans(13.0, 400.0), p.muted);
     let files = cur.files.max(0.0) as u64;
     let body = if files == 0 {
-        let second = match prev {
-            Some(m) => copy::month_last_month_kept(m.files as u64, &copy::format_bytes(m.bytes)),
-            None => copy::MONTH_NOTHING_YET_NO_PREV.to_string(),
-        };
+        let second = format::month_sentence(st);
         stack(8.0).child(label(copy::MONTH_NOTHING_YET, sans(16.0, 500.0), p.text)).child(label(second, sans(13.0, 400.0), p.text2))
     } else {
-        let ending = match prev {
-            Some(m) => {
-                let diff = files as i64 - m.files as i64;
-                let name = model::month_name(&m.month);
-                if diff == 0 { copy::month_same_count(&name) } else { copy::month_diff(diff, &name) }
-            }
-            None => copy::MONTH_FIRST_ON_RECORD.to_string(),
-        };
+        let ending = format::month_sentence(st);
         let counter = row()
             .gap(12.0)
             .items_end()
@@ -268,14 +245,14 @@ fn month_cell(stats: Option<&DownloadStats>, p: &Pal) -> El {
         let mut b = stack(16.0).child(
             stack(12.0)
                 .child(counter)
-                .child(Line::new().fig(&copy::format_bytes(cur.bytes), p.text).add(&ending, p.text2).wrap(sans(13.0, 400.0))),
+                .child(Line::new().fig(&format::bytes(cur.bytes), p.text).add(&ending, p.text2).wrap(sans(13.0, 400.0))),
         );
         if let Some(m) = prev {
             let top = cur.files.max(m.files);
             b = b.child(
                 stack(12.0)
                     .max_w(520.0)
-                    .label(copy::month_bars_aria(&model::month_name(&cur.month), files, &model::month_name(&m.month), m.files as u64))
+                    .label(copy::month_bars_aria(&format::month_name(&cur.month), files, &format::month_name(&m.month), m.files as u64))
                     .child(month_bar(cur, top, p.accent, p))
                     .child(month_bar(m, top, p.muted.alpha(0.7), p)),
             );
@@ -289,7 +266,7 @@ fn month_bar(m: &MonthBucket, top: f64, color: Color, p: &Pal) -> El {
     let frac = if top > 0.0 { (m.files / top).max(0.03) } else { 0.0 };
     stack(8.0)
         .w_full()
-        .child(row().w_full().child(label(model::month_name(&m.month), sans(12.0, 400.0), p.text2)).child(spacer()).child(label(
+        .child(row().w_full().child(label(format::month_name(&m.month), sans(12.0, 400.0), p.text2)).child(spacer()).child(label(
             (m.files as u64).to_string(),
             mono(12.0, 500.0),
             p.text,
@@ -297,42 +274,29 @@ fn month_bar(m: &MonthBucket, top: f64, color: Color, p: &Pal) -> El {
         .child(meter(frac, 48, None, 8.0, 2.0, color, p.unlit))
 }
 
-/// Source groups: the four rail tabs plus Other, biggest first.
-fn split(by: &serde_json::Map<String, serde_json::Value>) -> Vec<(Option<SourcePlatform>, &'static str, u64)> {
-    let mut groups: Vec<(Option<SourcePlatform>, &'static str, u64)> = vec![
-        (Some(SourcePlatform::Youtube), copy::SPLIT_YOUTUBE, 0),
-        (Some(SourcePlatform::Spotify), copy::SPLIT_SPOTIFY, 0),
-        (Some(SourcePlatform::Soundcloud), copy::SPLIT_SOUNDCLOUD, 0),
-        (Some(SourcePlatform::Instagram), copy::SPLIT_REELS, 0),
-        (None, copy::SPLIT_OTHER, 0),
-    ];
-    for (key, v) in by {
-        let n = v.as_f64().unwrap_or(0.0).max(0.0) as u64;
-        let at = match key.as_str() {
-            "youtube" => 0,
-            "spotify" => 1,
-            "soundcloud" => 2,
-            "instagram" | "tiktok" | "facebook" => 3,
-            _ => 4,
-        };
-        groups[at].2 += n;
+/// The platform whose mark and colour a source group takes.
+fn bucket_source(bucket: Bucket) -> Option<SourcePlatform> {
+    match bucket {
+        Bucket::Youtube => Some(SourcePlatform::Youtube),
+        Bucket::Spotify => Some(SourcePlatform::Spotify),
+        Bucket::Soundcloud => Some(SourcePlatform::Soundcloud),
+        Bucket::Reels => Some(SourcePlatform::Instagram),
+        Bucket::Other => None,
     }
-    groups.retain(|g| g.2 > 0);
-    groups.sort_by(|a, b| b.2.cmp(&a.2));
-    groups
 }
 
 fn split_cell(stats: Option<&DownloadStats>, p: &Pal) -> El {
     let Some(st) = stats else {
         return cell(copy::CELL_WHERE_FROM, None, label(copy::SPLIT_FAILED, sans(13.0, 400.0), p.text2), p);
     };
-    let groups = split(&st.current.by_platform);
-    let total: u64 = groups.iter().map(|g| g.2).sum();
+    let groups = format::source_split(st);
+    let total: u64 = groups.iter().map(|g| g.1).sum();
     if total == 0 {
         return cell(copy::CELL_WHERE_FROM, None, label(copy::SPLIT_EMPTY, sans(13.0, 400.0), p.text2).wrap(), p);
     }
     let mut rows = stack(16.0).max_w(560.0);
-    for (i, (source, name, n)) in groups.iter().enumerate() {
+    for (i, (bucket, n)) in groups.iter().enumerate() {
+        let (name, source) = (bucket.name(), bucket_source(*bucket));
         let c = source.map_or(p.muted, |s| source_color(p, s));
         let lead = i == 0;
         let pct = (*n as f64 / total as f64 * 100.0).round() as u64;
@@ -347,7 +311,7 @@ fn split_cell(stats: Option<&DownloadStats>, p: &Pal) -> El {
                         .gap(8.0)
                         .center_y()
                         .child(dot(c, 6.0))
-                        .child(label(*name, sans(13.0, if lead { 500.0 } else { 400.0 }), if lead { p.text } else { p.text2 }))
+                        .child(label(name, sans(13.0, if lead { 500.0 } else { 400.0 }), if lead { p.text } else { p.text2 }))
                         .child(spacer())
                         .child(
                             Line::new().fig(pct_part, if lead { p.text } else { p.text2 }).fig(count_part, p.muted).one(mono(12.0, 400.0)),
@@ -391,7 +355,7 @@ fn duration_chip(t: &DownloadTask, p: &Pal) -> Option<El> {
             .center()
             .radius(4.0)
             .fill(p.media_scrim)
-            .child(label(copy::format_duration(t.duration), mono(11.0, 500.0), p.on_media))
+            .child(label(format::duration(t.duration), mono(11.0, 500.0), p.on_media))
             .pin(None, Some(8.0), Some(8.0), None)
     })
 }
@@ -406,7 +370,7 @@ fn poster(s: &State, t: &DownloadTask, p: &Pal) -> El {
         .child(label(title_of(t), sans(14.0, 500.0), p.on_media).single_line().truncate())
         .child(
             label(
-                copy::recent_poster_meta(&t.format, &copy::format_bytes(t.progress.downloaded), &t.uploader),
+                copy::recent_poster_meta(&t.format, &format::bytes(t.progress.downloaded), &t.uploader),
                 mono(11.0, 400.0),
                 p.on_media.alpha(0.78),
             )
@@ -431,7 +395,7 @@ fn tile(s: &State, t: &DownloadTask, p: &Pal) -> El {
         .child(a)
         .child(label(title_of(t), sans(13.0, 500.0), p.text).single_line().truncate().min_w(0.0))
         .child(row().w_full().child(label(t.format.to_uppercase(), mono(11.0, 400.0), p.muted)).child(spacer()).child(label(
-            copy::format_bytes(t.progress.downloaded),
+            format::bytes(t.progress.downloaded),
             mono(11.0, 400.0),
             p.muted,
         )))

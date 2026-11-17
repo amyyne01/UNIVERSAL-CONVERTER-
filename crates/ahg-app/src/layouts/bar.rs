@@ -46,22 +46,20 @@ use rune::{Color, Cursor, Cx, El, SurfaceFit, col, el, icon, row, spacer};
 
 use crate::copy;
 use crate::directions::signal::found;
-use crate::directions::signal::icons;
 use crate::directions::signal::model;
-use crate::directions::signal::parts::{Line, label, meter, meter_held, mono, platform_icon, sans};
+use crate::directions::signal::parts::{Line, config_text, label, meter, meter_held, mono, platform_icon, sans};
 use crate::directions::signal::theme::{self, Pal, source_color};
+use crate::format;
 use crate::gate::{Nav, State};
+use crate::icons;
 
 /// The bar's measure, and the stream's.
 pub(crate) const MEASURE: f32 = 960.0;
 const INPUT_H: f32 = 64.0;
 const DECK_H: f32 = 56.0;
-/// The shared state carries no settings: the folder and format the samples use.
-pub(crate) const OUTPUT_DIR: &str = "C:\\Users\\Alex\\Music";
-pub(crate) const AUDIO_FORMAT: &str = "mp3";
 
 pub fn view(s: &State, cx: &mut Cx<State>) -> El {
-    let p = theme::pal(s.palette, cx.system_dark());
+    let p = theme::pal(s.palette, s.dark(cx));
     cx.caption_color(if p.dark { Color::WHITE } else { Color::BLACK });
     let trailing = cx.chrome_insets().trailing;
     let body = match s.nav {
@@ -87,7 +85,7 @@ fn titlebar(s: &State, p: &Pal, trailing: f32) -> El {
         .center_y()
         .child(logo)
         .child(Line::new().strong(copy::BRAND, p.text).add(copy::BRAND_REST, p.muted).one(mono(12.0, 400.0)));
-    let active = model::active_count(&s.tasks);
+    let active = format::active_count(&s.tasks);
     let mut tabs = row().h_full().gap(4.0).center_y().role("tablist").label(copy::RAIL_ARIA).no_window_drag();
     for (i, (place, name)) in
         [(Nav::Home, copy::NAV_HOME), (Nav::Downloads, copy::NAV_DOWNLOADS), (Nav::Settings, copy::NAV_SETTINGS)].into_iter().enumerate()
@@ -146,7 +144,7 @@ fn home(s: &State, p: &Pal) -> El {
     if command || found.is_some() {
         stream = stream.opacity(0.4);
     }
-    let mut column = col().w_full().max_w(MEASURE).h_full().min_h(0.0).pt(32.0).child(top).child(caption(p).mt(12.0)).child(stream);
+    let mut column = col().w_full().max_w(MEASURE).h_full().min_h(0.0).pt(32.0).child(top).child(caption(s, p).mt(12.0)).child(stream);
     if let Some(found) = found {
         // The drop runs to the window's foot; a press beside it puts it away.
         let drop = col()
@@ -208,7 +206,7 @@ fn first_launch(s: &State, p: &Pal) -> El {
         .min_h(0.0)
         .pt(32.0)
         .child(bar(p, &s.input, false, true, deck(s, p)))
-        .child(caption(p).mt(12.0))
+        .child(caption(s, p).mt(12.0))
         .child(well);
     col().w_full().grow(1.0).min_h(0.0).px(32.0).items_center().child(column)
 }
@@ -293,30 +291,18 @@ pub(crate) fn cover(s: &State, t: &DownloadTask, size: f32, p: &Pal) -> El {
 /// The four filters of the Downloads list.
 pub(crate) const SECTIONS: [&str; 4] = [copy::DL_FILTER_ALL, copy::DL_FILTER_ACTIVE, copy::DL_FILTER_DONE, copy::DL_FILTER_FAILED];
 
-pub(crate) fn section_count(tasks: &[DownloadTask], i: usize) -> usize {
-    tasks
-        .iter()
-        .filter(|t| match i {
-            0 => true,
-            1 => model::is_active(t),
-            2 => t.progress.status == St::Done,
-            _ => matches!(t.progress.status, St::Failed | St::Cancelled),
-        })
-        .count()
-}
-
 /// The readout deck: this month on the left, the master instrument on the right.
 fn deck(s: &State, p: &Pal) -> El {
     let month = match &s.stats {
         Some(st) if st.current.files > 0.0 => {
             let files = st.current.files as u64;
             Line::new()
-                .add(&model::month_name(&st.current.month), p.text2)
+                .add(&format::month_name(&st.current.month), p.text2)
                 .add("  ", p.muted)
                 .fig(&files.to_string(), p.text)
                 .add(&format!(" {}", copy::file_word(files)), p.text2)
                 .add(&copy::row_dot_part(""), p.muted)
-                .fig(&copy::format_bytes(st.current.bytes), p.text)
+                .fig(&format::bytes(st.current.bytes), p.text)
                 .one(sans(13.0, 400.0))
         }
         _ => label(copy::MONTH_NOTHING_YET, sans(13.0, 400.0), p.muted),
@@ -350,12 +336,12 @@ fn carried(tasks: &[DownloadTask]) -> f64 {
 /// in flight. At rest the meter is dark and the counter holds the day's total.
 fn instrument(s: &State, p: &Pal) -> El {
     let tasks = &s.tasks;
-    let flying: Vec<&DownloadTask> = tasks.iter().filter(|t| model::is_active(t) && t.progress.total > 0.0).collect();
+    let flying: Vec<&DownloadTask> = tasks.iter().filter(|t| format::is_active(t) && t.progress.total > 0.0).collect();
     let total: f64 = flying.iter().map(|t| t.progress.total).sum();
     let got: f64 = flying.iter().map(|t| t.progress.downloaded).sum();
-    let live = tasks.iter().filter(|t| model::is_live(t)).count();
+    let (live, flow) = format::in_flight(tasks);
     let frac = if total > 0.0 { got / total } else { 0.0 };
-    let speed = copy::format_speed(model::total_speed(tasks));
+    let speed = format::speed(flow);
     let figure = if live > 0 && !speed.is_empty() {
         format!("{live}{}", copy::row_dot_part(&speed))
     } else if live > 0 {
@@ -364,7 +350,7 @@ fn instrument(s: &State, p: &Pal) -> El {
         String::new()
     };
     let ink = if live > 0 { p.text } else { p.text2 };
-    let held = live == 0 && model::active_count(tasks) > 0;
+    let held = live == 0 && format::active_count(tasks) > 0;
     let lit = if held { p.muted } else { p.accent };
     col()
         .w(280.0)
@@ -387,12 +373,13 @@ fn instrument(s: &State, p: &Pal) -> El {
 }
 
 /// The rest-state caption under the bar.
-fn caption(p: &Pal) -> El {
+fn caption(s: &State, p: &Pal) -> El {
+    let (folder, audio) = (config_text(s, "outputDir"), config_text(s, "defaultFormat"));
     let left = row()
         .gap(8.0)
         .center_y()
         .min_w(0.0)
-        .child(Line::new().add(&copy::rest_saves_as(AUDIO_FORMAT), p.text2).add(OUTPUT_DIR, p.text).one(sans(13.0, 400.0)).help(OUTPUT_DIR))
+        .child(Line::new().add(&copy::rest_saves_as(&audio), p.text2).add(&folder, p.text).one(sans(13.0, 400.0)).help(folder.clone()))
         .child(
             label(copy::REST_CHANGE, sans(13.0, 500.0), p.accent_ink).cursor(Cursor::Pointer).role("link").label(copy::REST_CHANGE_ARIA),
         );
