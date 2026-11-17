@@ -59,7 +59,8 @@ fn view(s: &State, cx: &mut Cx<State>) -> El {
         .transition(Transition::blur_replace())
         .child(preset_view(s, cx));
     let window = el().w_full().h_full().child(shown);
-    if s.picker { window.child(picker::view(s, cx)) } else { window }
+    // Empty when nothing is open over the preset.
+    window.children(overlays::view(s, cx))
 }
 
 fn preset_view(s: &State, cx: &mut Cx<State>) -> El {
