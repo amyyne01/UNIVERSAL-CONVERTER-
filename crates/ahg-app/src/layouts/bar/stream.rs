@@ -8,7 +8,7 @@ use rune::{Align, Color, El, Icon, ScrollSpec, col, el, icon, row, spacer};
 use super::cover;
 use crate::copy;
 use crate::directions::signal::model;
-use crate::directions::signal::parts::{Line, ghost, icon_button, label, meter_held, mono, sans, stack};
+use crate::directions::signal::parts::{Line, ghost, icon_button, label, mono, sans, stack, task_ring};
 use crate::directions::signal::theme::{Pal, source_color};
 use crate::format::{self, Group};
 use crate::gate::{Nav, State};
@@ -16,7 +16,8 @@ use crate::icons;
 use crate::keys;
 
 const COUNTER: f32 = 72.0;
-const METER: f32 = 168.0;
+/// The ring's slot, as wide as the meter it replaced so the readings stay in line.
+const RING_SLOT: f32 = 168.0;
 const STATE: f32 = 112.0;
 const ACTIONS: f32 = 64.0;
 const OWNED: f32 = 272.0;
@@ -161,19 +162,18 @@ fn banner(n: usize, p: &Pal) -> El {
         .child(ghost(Some(&icons::REMOVE), copy::DL_INTERRUPTED_DISCARD, p.text2, p))
 }
 
-/// A channel: what it is, its tape counter, its meter, its reading.
+/// A channel: what it is, its tape counter, its ring, its reading.
 fn live_row(s: &State, t: &DownloadTask, p: &Pal) -> El {
     let pr = &t.progress;
     let st = pr.status;
     let pct = pr.percent.clamp(0.0, 100.0) / 100.0;
-    // (how far the meter is lit, its colour, the counter's ink)
-    let (frac, lit, ink) = match st {
-        St::Downloading => (pct, p.accent, p.text),
-        St::Converting | St::Embedding => (1.0, p.text2, p.text2),
-        St::Paused | St::Retrying => (pct, p.muted, p.text2),
-        _ => (0.0, p.muted, p.muted),
+    // (how far the counter has run, its ink)
+    let (frac, ink) = match st {
+        St::Downloading => (pct, p.text),
+        St::Converting | St::Embedding => (1.0, p.text2),
+        St::Paused | St::Retrying => (pct, p.text2),
+        _ => (0.0, p.muted),
     };
-    let held = matches!(st, St::Paused | St::Retrying);
     let counter =
         label(if t.duration > 0.0 { model::timecode(t.duration * frac) } else { String::new() }, mono(13.0, 500.0), ink).w(COUNTER);
     row()
@@ -187,7 +187,7 @@ fn live_row(s: &State, t: &DownloadTask, p: &Pal) -> El {
         .child(cover(s, t, 32.0, p))
         .child(title_block(t, true, p))
         .child(counter)
-        .child(el().w(METER).child(meter_held(frac, 28, None, 8.0, 2.0, lit, p.unlit, held)))
+        .child(el().w(RING_SLOT).center_y().child(task_ring(s, t, p)))
         .child(reading(t, p))
         .child(live_actions(t, p))
 }

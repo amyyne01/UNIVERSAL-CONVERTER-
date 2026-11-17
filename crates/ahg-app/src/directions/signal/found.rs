@@ -3,19 +3,20 @@
 //! module: a header strip that names what came in and how to put it away, a
 //! body (a channel list for an album, three source strips for a search, one
 //! source with its routing for a video), and an output strip with the one lit
-//! control, Download. A lookup reads as the instrument warming up: a sweep on
-//! the meter over the shape of what is coming. The presets only place it.
+//! control, Download. A lookup reads as the instrument warming up: the waiting
+//! ring over the shape of what is coming. The presets only place it.
 use ahg_engine::tier::{self, BASIC_LIMITS, Plan, is_premium_format, is_premium_video_quality};
 use ahg_engine::types::{MediaMetadata, Playlist, SearchResult, SourcePlatform, VideoQuality};
 use rune::{Color, Cursor, El, Icon, ScrollSpec, col, el, icon, row, spacer};
 
-use super::parts::{Line, button, config_text, ghost, icon_button, keycap, label, mono, sans};
+use super::parts::{Line, RING, button, config_text, ghost, icon_button, keycap, label, mono, ring_material, sans};
 use super::theme::{Pal, source_color};
 use crate::copy::{self, found as f};
 use crate::format;
 use crate::gate::{Band, Found, Matched, State};
 use crate::icons;
 use crate::keys;
+use crate::ring;
 
 const QUALITIES: [VideoQuality; 6] =
     [VideoQuality::P360, VideoQuality::P480, VideoQuality::P720, VideoQuality::P1080, VideoQuality::P2160, VideoQuality::Best];
@@ -37,9 +38,11 @@ fn lit(s: &State) -> (usize, usize, usize) {
 pub fn view(s: &State, p: &Pal) -> Option<El> {
     let (head, body, foot) = match &s.found {
         Found::Nothing => return None,
-        Found::LookingUp => {
-            (head(s, glyph(&icons::LINK, p.muted), label(format::link_label(&s.input), mono(12.0, 400.0), p.text2), p), looking_up(p), None)
-        }
+        Found::LookingUp => (
+            head(s, glyph(&icons::LINK, p.muted), label(format::link_label(&s.input), mono(12.0, 400.0), p.text2), p),
+            looking_up(s, p),
+            None,
+        ),
         Found::LookupFailed(why) => (
             head(s, glyph(&icons::ALERT, p.error), label(format::link_label(&s.input), mono(12.0, 400.0), p.text2), p),
             failed(why, &s.input, p),
@@ -147,6 +150,7 @@ fn bone(w: Option<f32>, h: f32, p: &Pal) -> El {
 
 /// The meter warming up: a run of lit segments, brightest at its head,
 /// mid-sweep. A still picture reads as scanning, not as progress.
+#[allow(dead_code)] // unused until cleanup (step 19)
 fn sweep(n: usize, from: usize, len: usize, p: &Pal) -> El {
     let mut m = row().w_full().h(8.0).gap(2.0);
     for i in 0..n {
@@ -198,13 +202,10 @@ fn strip(left: El, right: El, p: &Pal) -> El {
 
 // ── Looking up: the shape of a single video, still empty ───────────────────
 
-fn looking_up(p: &Pal) -> El {
-    let warming = row()
-        .w_full()
-        .gap(16.0)
-        .center_y()
-        .child(label(f::NOTE_READING, mono(12.0, 400.0), p.text2).w(160.0))
-        .child(el().grow(1.0).min_w(0.0).child(sweep(64, 18, 14, p)));
+fn looking_up(s: &State, p: &Pal) -> El {
+    // TODO(motion): the real reduced-motion flag (step 52).
+    let waiting = ring::waiting("ring-waiting", RING, &ring_material(s, p, p.accent), false, 0);
+    let warming = row().w_full().gap(16.0).center_y().child(label(f::NOTE_READING, mono(12.0, 400.0), p.text2).w(160.0)).child(waiting);
     let card = row().w_full().gap(24.0).child(bone(Some(192.0), 108.0, p)).child(
         col()
             .grow(1.0)
@@ -266,8 +267,8 @@ fn failed(why: &str, input: &str, p: &Pal) -> El {
                 .child(spacer())
                 .child(button(Some(&icons::RETRY), f::ERROR_TRY_AGAIN, p.text, p)),
         );
-    // The meter after a dead lookup: every segment dark.
-    col().w_full().padding(24.0).gap(20.0).child(sweep(64, 0, 0, p)).child(panel)
+    // No ring after a dead lookup: a dark one would read as still waiting.
+    col().w_full().padding(24.0).gap(20.0).child(panel)
 }
 
 // ── One video: the source, its routing, the output ──────────────────────────

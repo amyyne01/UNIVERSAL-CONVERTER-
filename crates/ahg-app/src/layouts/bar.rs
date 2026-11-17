@@ -2,7 +2,7 @@
 //! Settings) sit as tabs in the title bar, always visible; Ctrl+1/2/3 go to
 //! them. Home is the bar: a paste-and-command field over a readout deck
 //! (this month's count on the left; on the right the master instrument, a
-//! tape counter of the media carried across today over a level meter of
+//! tape counter of the media carried across today beside the overall ring of
 //! everything in flight), and under it what is in flight and what just
 //! landed. Downloads is the full history; Settings lists its sections on the
 //! left and shows the chosen one on the right. Ctrl+K still turns the bar
@@ -47,11 +47,12 @@ use rune::{Color, Cursor, Cx, El, SurfaceFit, col, el, icon, row, spacer};
 use crate::copy;
 use crate::directions::signal::found;
 use crate::directions::signal::model;
-use crate::directions::signal::parts::{Line, config_text, label, meter, meter_held, mono, platform_icon, sans};
+use crate::directions::signal::parts::{Line, RING, config_text, idle_ring, label, mono, platform_icon, ring_material, sans};
 use crate::directions::signal::theme::{self, Pal, source_color};
 use crate::format;
 use crate::gate::{Nav, State};
 use crate::icons;
+use crate::ring;
 
 /// The bar's measure, and the stream's.
 pub(crate) const MEASURE: f32 = 960.0;
@@ -174,7 +175,7 @@ fn first_launch(s: &State, p: &Pal) -> El {
             .child(label(format!("{:02}", i + 1), mono(12.0, 400.0), p.muted).w(20.0))
             .child(el().size(32.0, 32.0).radius(4.0).border(1.0, p.line))
             .child(label(model::timecode(0.0), mono(13.0, 500.0), p.muted).w(72.0))
-            .child(el().grow(1.0).child(meter(0.0, 64, None, 8.0, 2.0, p.accent, p.unlit)));
+            .child(idle_ring(s, p));
         channels = channels.child(ch);
     }
     let promise = col()
@@ -332,15 +333,11 @@ fn carried(tasks: &[DownloadTask]) -> f64 {
         .sum()
 }
 
-/// The master instrument: the tape counter over a level meter of every byte
-/// in flight. At rest the meter is dark and the counter holds the day's total.
+/// The master instrument: the overall ring beside the tape counter. At rest
+/// there is no ring and the counter holds the day's total.
 fn instrument(s: &State, p: &Pal) -> El {
     let tasks = &s.tasks;
-    let flying: Vec<&DownloadTask> = tasks.iter().filter(|t| format::is_active(t) && t.progress.total > 0.0).collect();
-    let total: f64 = flying.iter().map(|t| t.progress.total).sum();
-    let got: f64 = flying.iter().map(|t| t.progress.downloaded).sum();
     let (live, flow) = format::in_flight(tasks);
-    let frac = if total > 0.0 { got / total } else { 0.0 };
     let speed = format::speed(flow);
     let figure = if live > 0 && !speed.is_empty() {
         format!("{live}{}", copy::row_dot_part(&speed))
@@ -350,26 +347,23 @@ fn instrument(s: &State, p: &Pal) -> El {
         String::new()
     };
     let ink = if live > 0 { p.text } else { p.text2 };
-    let held = live == 0 && format::active_count(tasks) > 0;
-    let lit = if held { p.muted } else { p.accent };
-    col()
+    // TODO(motion): the real reduced-motion flag (step 52).
+    let overall = ring::overall("ring-overall", RING, &s.rings, &ring_material(s, p, p.accent), false);
+    row()
         .w(280.0)
         .h(40.0)
-        .px(12.0)
-        .gap(4.0)
-        .justify_center()
+        .pl(6.0)
+        .pr(12.0)
+        .gap(10.0)
+        .center_y()
         .radius(6.0)
         .fill(p.deep)
         .border(1.0, p.line)
         .label(copy::transferring_aria(live, &speed))
-        .child(
-            row().w_full().center_y().child(label(model::timecode(carried(tasks)), mono(13.0, 500.0), ink)).child(spacer()).child(label(
-                figure,
-                mono(12.0, 400.0),
-                p.muted,
-            )),
-        )
-        .child(meter_held(frac, 48, None, 6.0, 2.0, lit, p.unlit, held))
+        .child(overall)
+        .child(label(model::timecode(carried(tasks)), mono(13.0, 500.0), ink))
+        .child(spacer())
+        .child(label(figure, mono(12.0, 400.0), p.muted))
 }
 
 /// The rest-state caption under the bar.

@@ -1,11 +1,11 @@
 //! Downloads: the desk's channel list. Every row is 64 points in every state.
-//! An in-flight row carries the instrument (the tape counter over a segmented
-//! level meter); a finished row shows the file you now own in the same slot.
+//! An in-flight row carries the instrument (the segmented ring beside the tape
+//! counter); a finished row shows the file you now own in the same slot.
 use ahg_engine::types::{DownloadStatus as St, DownloadTask};
 use rune::{Align, Color, El, ScrollSpec, col, el, icon, row, spacer};
 
 use super::model;
-use super::parts::{Line, art, button, checkbox, ghost, icon_button, label, meter, meter_held, mono, sans, stack};
+use super::parts::{Line, art, button, checkbox, ghost, icon_button, idle_ring, label, mono, sans, stack, task_ring};
 use super::theme::{Pal, source_color};
 use crate::copy;
 use crate::format::{self, Group};
@@ -14,11 +14,10 @@ use crate::icons;
 use crate::keys;
 
 const INSTRUMENT: f32 = 220.0;
-/// A finished row's file takes more room than the meter: names are long.
+/// A finished row's file takes more room than the instrument: names are long.
 const OWNED: f32 = 300.0;
 const STATE_COL: f32 = 128.0;
 const ACTIONS: f32 = 124.0;
-const SEGMENTS: usize = 36;
 
 pub fn view(s: &State, p: &Pal) -> El {
     let tasks = &s.tasks;
@@ -138,7 +137,7 @@ fn list(s: &State, p: &Pal) -> El {
     let tasks = &s.tasks;
     let surface = col().w_full().radius(12.0).fill(p.surface).border(1.0, p.line).clip_rounded(12.0);
     if tasks.is_empty() {
-        return surface.child(empty_row(p));
+        return surface.child(empty_row(s, p));
     }
     let groups = [Group::InProgress, Group::Attention, Group::Completed];
     let present: Vec<Group> = groups.into_iter().filter(|g| tasks.iter().any(|t| format::group_of(t) == *g)).collect();
@@ -212,7 +211,7 @@ fn group_header(g: Group, rows: &[&DownloadTask], tasks: &[DownloadTask], p: &Pa
     band
 }
 
-fn empty_row(p: &Pal) -> El {
+fn empty_row(s: &State, p: &Pal) -> El {
     row()
         .w_full()
         .h(64.0)
@@ -226,18 +225,8 @@ fn empty_row(p: &Pal) -> El {
             sans(13.0, 400.0),
             p.text2,
         )))
-        // The idle channel: the meter's well, every segment dark until something comes in.
-        .child(
-            stack(0.0)
-                .w(INSTRUMENT)
-                .h(48.0)
-                .px(12.0)
-                .justify_center()
-                .radius(6.0)
-                .fill(p.deep)
-                .border(1.0, p.line)
-                .child(meter(0.0, SEGMENTS, None, 8.0, 2.0, p.accent, p.unlit)),
-        )
+        // The idle channel: the instrument's well, its ring dark until something comes in.
+        .child(well(p).child(idle_ring(s, p)))
         .child(
             row()
                 .w(STATE_COL + ACTIONS + 12.0)
@@ -268,7 +257,7 @@ fn task_row(s: &State, t: &DownloadTask, rule_above: bool, p: &Pal) -> El {
     if failed {
         r = r.fill(p.error_soft);
     }
-    if let Some(slot) = instrument(t, p) {
+    if let Some(slot) = instrument(s, t, p) {
         r = r.child(slot);
     }
     r.child(state_col(t, p)).child(actions(t, p))
@@ -310,9 +299,9 @@ fn title_block(t: &DownloadTask, p: &Pal) -> El {
     stack(4.0).grow(1.0).child(title).child(detail)
 }
 
-/// The instrument slot: the tape counter over the meter while in flight, the
+/// The instrument slot: the ring and the tape counter while in flight, the
 /// owned file once done, nothing for rows that need attention.
-fn instrument(t: &DownloadTask, p: &Pal) -> Option<El> {
+fn instrument(s: &State, t: &DownloadTask, p: &Pal) -> Option<El> {
     let pr = &t.progress;
     let st = pr.status;
     if st == St::Done {
@@ -341,28 +330,21 @@ fn instrument(t: &DownloadTask, p: &Pal) -> Option<El> {
         return None;
     }
     let pct = pr.percent.clamp(0.0, 100.0) / 100.0;
-    // (how far the meter is lit, its colour, the counter's ink)
-    let (frac, lit, ink) = match st {
-        St::Downloading => (pct, p.accent, p.text),
-        St::Converting | St::Embedding => (1.0, p.text2, p.text2),
-        St::Paused | St::Retrying => (pct, p.warning, p.text2),
-        _ => (0.0, p.muted, p.muted),
+    // (how far the counter has run, its ink)
+    let (frac, ink) = match st {
+        St::Downloading => (pct, p.text),
+        St::Converting | St::Embedding => (1.0, p.text2),
+        St::Paused | St::Retrying => (pct, p.text2),
+        _ => (0.0, p.muted),
     };
-    let held = matches!(st, St::Paused | St::Retrying);
     let counter = if t.duration > 0.0 { label(model::timecode(t.duration * frac), mono(13.0, 500.0), ink) } else { el().h(16.0) };
-    // The display window of the desk: a recessed well the counter and meter sit in.
-    Some(
-        stack(4.0)
-            .w(INSTRUMENT)
-            .h(48.0)
-            .px(12.0)
-            .justify_center()
-            .radius(6.0)
-            .fill(p.deep)
-            .border(1.0, p.line)
-            .child(counter)
-            .child(meter_held(frac, SEGMENTS, None, 8.0, 2.0, lit, p.unlit, held)),
-    )
+    // The display window of the desk: a recessed well the ring and the counter sit in.
+    Some(well(p).child(task_ring(s, t, p)).child(counter))
+}
+
+/// The instrument's well: recessed, the ring at its left.
+fn well(p: &Pal) -> El {
+    row().w(INSTRUMENT).h(48.0).px(10.0).gap(12.0).center_y().radius(6.0).fill(p.deep).border(1.0, p.line)
 }
 
 fn state_col(t: &DownloadTask, p: &Pal) -> El {

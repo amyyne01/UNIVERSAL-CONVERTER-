@@ -6,6 +6,7 @@ use rune::{Color, El, Icon, Span, SurfaceFit, TextStyle, col, el, icon, rich, ro
 use super::theme::{Pal, source_color};
 use crate::gate::State;
 use crate::icons;
+use crate::ring;
 use crate::settings_spec::{self, Kind, Row};
 use serde_json::Value;
 
@@ -95,6 +96,28 @@ pub fn meter_held(frac: f64, n: usize, seg: Option<f32>, h: f32, gap: f32, lit: 
         });
     }
     m
+}
+
+/// A ring's square in a row, a well or the deck.
+pub const RING: f32 = 28.0;
+
+/// Signal's ring material (`ring::signal`), its unlit segments in the look's own ink and a
+/// step stronger than the meter's, so a dark ring still reads at row size.
+pub fn ring_material(s: &State, p: &Pal, tint: Color) -> ring::Material {
+    ring::Material { track: p.text.alpha(if p.dark { 0.16 } else { 0.18 }), ..ring::signal(s.palette, p.dark, tint) }
+}
+
+/// A task's ring, tinted by its platform.
+pub fn task_ring(s: &State, t: &DownloadTask, p: &Pal) -> El {
+    let rank = s.tasks.iter().position(|x| x.task_id == t.task_id).unwrap_or(0);
+    let m = ring_material(s, p, ring::tint(t, p.dark));
+    // TODO(motion): the real reduced-motion flag (step 52).
+    ring::view(&format!("ring-{}", t.task_id), RING, &s.rings, &t.task_id, &m, false, rank)
+}
+
+/// The ring with nothing in it: every segment unlit, still.
+pub fn idle_ring(s: &State, p: &Pal) -> El {
+    el().size(RING, RING).shape(ring::shape(RING, ring::Pass::Flying(0.0), &ring_material(s, p, p.accent)))
 }
 
 /// A key as printed on the board.
