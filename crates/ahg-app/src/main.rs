@@ -13,11 +13,35 @@ mod copy;
 mod directions;
 // Shared by every preset; they move onto it as each is next touched.
 #[allow(dead_code)]
+mod actions;
+#[cfg(test)]
+mod behaviour_tests;
+#[allow(dead_code)]
 mod format;
 mod gate;
+#[allow(dead_code)]
+mod icons;
+#[allow(dead_code)]
+mod keys;
 mod layouts;
+#[allow(dead_code)]
+mod live;
+#[allow(dead_code)]
+mod motion;
+#[cfg(test)]
+mod motion_tests;
+#[allow(dead_code)]
+mod overlays;
+#[allow(dead_code)]
+mod palette;
 mod picker;
+#[allow(dead_code)]
+mod ring;
 mod sample;
+#[allow(dead_code)]
+mod settings_spec;
+#[allow(dead_code)]
+mod timeline;
 
 use gate::{Direction, State};
 use rune::{App, AppSpec, Cx, El, Titlebar, Transition, el};
@@ -78,8 +102,9 @@ const FONTS: &[&[u8]] = &[
     include_bytes!("../assets/fonts/SpaceMono-Regular.ttf"),
 ];
 
-fn main() {
-    let spec = AppSpec::<State> {
+/// The app's spec, shared by `main` and the scripted runtime in tests.
+pub(crate) fn spec() -> AppSpec<State> {
+    AppSpec::<State> {
         min_size: Some((960.0, 640.0)),
         scenes: gate::SCENES,
         fonts: FONTS,
@@ -88,6 +113,9 @@ fn main() {
         setup: Some(gate::setup),
         on_key: Some(gate::on_key),
         ..AppSpec::new("AHG Universal Converter", (1240.0, 820.0), gate::init, view)
-    };
-    App::new(spec).titlebar(Titlebar::new(TITLEBAR)).run();
+    }
+}
+
+fn main() {
+    App::new(spec()).titlebar(Titlebar::new(TITLEBAR)).run();
 }
