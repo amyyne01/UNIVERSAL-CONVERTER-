@@ -543,48 +543,27 @@ pub fn error_text(cause: &str, remedy: &str, is_video_source: bool) -> String {
     format!("{} {remedy}", cause.replace("{thing}", thing))
 }
 
-// Number formats (CONTENT.md section 4).
+// Number formats (CONTENT.md section 4): one copy, in `format.rs`.
 
-/// `formatBytes`: 1024-based, no decimals for bytes, one decimal above; `n <= 0` is `—`.
 pub fn format_bytes(n: f64) -> String {
-    if n <= 0.0 {
-        return "—".to_string();
-    }
-    const U: [&str; 6] = ["B", "KB", "MB", "GB", "TB", "PB"];
-    let mut v = n;
-    let mut i = 0;
-    while v >= 1024.0 && i < U.len() - 1 {
-        v /= 1024.0;
-        i += 1;
-    }
-    if i == 0 { format!("{v} {}", U[i]) } else { format!("{v:.1} {}", U[i]) }
+    crate::format::bytes(n)
 }
 
-/// `formatDuration`: `m:ss` under an hour, `h:mm:ss` from an hour, empty for zero.
 pub fn format_duration(secs: f64) -> String {
-    if secs == 0.0 || secs.is_nan() {
-        return String::new();
-    }
-    let h = (secs / 3600.0).floor() as i64;
-    let m = ((secs % 3600.0) / 60.0).floor() as i64;
-    let s = (secs % 60.0).floor() as i64;
-    if h > 0 { format!("{h}:{m:02}:{s:02}") } else { format!("{m}:{s:02}") }
+    crate::format::duration(secs)
 }
 
-/// `fmtSpeed`: `{bytes}/s`, empty when not above zero.
 pub fn format_speed(bps: f64) -> String {
-    if bps > 0.0 { format!("{}/s", format_bytes(bps)) } else { String::new() }
+    crate::format::speed(bps)
 }
 
-/// `fmtEta`: a duration when above zero and finite, else empty.
 pub fn format_eta(secs: f64) -> String {
-    if secs > 0.0 && secs.is_finite() { format_duration(secs) } else { String::new() }
+    crate::format::eta(secs)
 }
 
 /// Rate line under the percentage: speed and ETA joined with ` · `, `–` when neither.
 pub fn rate_line(bps: f64, eta_secs: f64) -> String {
-    let parts: Vec<String> = [format_speed(bps), format_eta(eta_secs)].into_iter().filter(|p| !p.is_empty()).collect();
-    if parts.is_empty() { RATE_UNKNOWN.to_string() } else { parts.join(" · ") }
+    crate::format::rate(bps, eta_secs)
 }
 
 // ── Settings: its own file, shared by all six presets.
