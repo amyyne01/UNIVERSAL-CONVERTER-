@@ -332,6 +332,8 @@ pub struct State {
     pub timeline: crate::timeline::Timeline,
     /// Every part that waits, by key. A part without an entry is drawn from `is_loading` alone.
     pub waits: HashMap<WaitKey, Wait>,
+    /// What each task's ring shows; brought to `tasks` by `sync` (the one writer, with live mode's drain).
+    pub rings: crate::ring::Rings,
     /// The running core; `None` in sample mode.
     pub live: Option<crate::live::Handle>,
     cache: Option<ImageCache>,
@@ -357,6 +359,7 @@ impl State {
     /// write (`nav_pinned`, `picker`, `notice`, `palette`). The old field
     /// wins. Idempotent; called at the end of `on_key` and of every action.
     pub fn sync(&mut self) {
+        let _ = self.rings.sync(&self.tasks, self.now);
         self.own.preset = preset(self);
         self.own.nav_pinned = self.nav_pinned;
         self.own.own_palette = self.palette == 0;
@@ -426,6 +429,7 @@ impl State {
             now: 0.0,
             timeline: crate::timeline::Timeline::default(),
             waits: HashMap::new(),
+            rings: crate::ring::Rings::default(),
             live: None,
             cache: None,
         };
