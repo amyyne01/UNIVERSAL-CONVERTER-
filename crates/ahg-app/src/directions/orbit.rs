@@ -9,11 +9,15 @@ mod downloads;
 pub(crate) mod draw;
 pub(crate) mod found;
 mod home;
+// The shared layer took over what these three hold; the old copies go in the cleanup.
+#[allow(dead_code)] // unused until cleanup (step 19)
 pub(crate) mod icons;
+#[allow(dead_code)] // unused until cleanup (step 19)
 pub(crate) mod look;
+#[allow(dead_code)] // unused until cleanup (step 19)
 pub(crate) mod model;
 mod nav;
-mod settings;
+pub(crate) mod settings;
 
 use rune::{ChromeInsets, Color, Cx, El, Icon, SurfaceFit, col, el, icon, row, spacer};
 
@@ -23,7 +27,7 @@ use ahg_engine::types::DownloadTask;
 use look::{FIG, Pal, SMALL, SMALL_M, mix, txt};
 
 pub fn view(s: &State, cx: &mut Cx<State>) -> El {
-    let p = Pal::new(s.palette, cx.system_dark());
+    let p = Pal::new(s.palette, s.dark(cx));
     cx.titlebar_height(crate::TITLEBAR);
     cx.caption_color(p.text2);
     let insets = cx.chrome_insets();
@@ -65,7 +69,7 @@ fn titlebar(s: &State, p: &Pal, insets: ChromeInsets) -> El {
         .cursor(rune::Cursor::Pointer)
         .no_window_drag()
         .label(copy::SEARCH_CAPSULE_ARIA)
-        .child(icon(&icons::SEARCH, 16.0).color(p.muted))
+        .child(icon(&crate::icons::SEARCH, 16.0).color(p.muted))
         .child(txt(copy::SEARCH_CAPSULE, SMALL, p.muted))
         .child(spacer())
         .child(keycap(p, copy::KEY_CTRL))
@@ -147,7 +151,7 @@ pub(super) fn cover(s: &State, p: &Pal, t: &DownloadTask, size: f32, round: bool
     match s.cover(&t.task_id) {
         Some(img) => el().size(size, size).radius(r).fill(p.raised).pixels_fit(img.pixels(), SurfaceFit::Fill),
         None => {
-            let glyph = if t.is_audio_only { &icons::MUSIC } else { &icons::VIDEO };
+            let glyph = if t.is_audio_only { &crate::icons::MUSIC } else { &crate::icons::VIDEO };
             el().size(size, size).radius(r).fill(p.raised).center().child(icon(glyph, (size * 0.45).round()).color(p.muted))
         }
     }

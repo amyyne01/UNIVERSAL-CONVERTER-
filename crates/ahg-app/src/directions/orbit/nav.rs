@@ -7,9 +7,12 @@ use rune::{El, Icon, col, el, icon, row, spacer};
 
 use super::draw::{Pass, orbit};
 use super::look::{BODY, BODY_M, FIG, Pal, SMALL, mix, txt};
-use super::{icons, model};
+use super::model;
 use crate::copy;
+use crate::format;
 use crate::gate::{Nav, State};
+use crate::icons;
+use crate::keys;
 
 /// The collapsed strip.
 const STRIP: f32 = 64.0;
@@ -36,7 +39,7 @@ pub fn view(s: &State, p: &Pal) -> El {
 }
 
 fn panel(s: &State, p: &Pal, open: bool) -> El {
-    let active: Vec<_> = s.tasks.iter().filter(|t| model::is_active(t)).collect();
+    let active: Vec<_> = s.tasks.iter().filter(|t| format::is_active(t)).collect();
     let flying = (!active.is_empty()).then(|| active.iter().map(|t| model::percent(t)).sum::<f32>() / active.len() as f32);
     // The orbit line: from the first body's centre to the last's, behind them.
     let foot = PAD + if open { 40.0 + PAD } else { 0.0 };
@@ -93,7 +96,7 @@ fn item(s: &State, p: &Pal, nav: Nav, glyph: &'static Icon, label: &str, n: usiz
         );
     }
     let mut r = row()
-        .key(format!("nav-{n}"))
+        .key(keys::nav(nav))
         .w_full()
         .h(SLOT)
         .gap(8.0)
@@ -128,7 +131,7 @@ fn pin(s: &State, p: &Pal) -> El {
     let on = s.nav_pinned;
     let ink = if on { p.text } else { p.text2 };
     row()
-        .key("nav-pin")
+        .key(keys::NAV_PIN)
         .w_full()
         .h(40.0)
         .gap(8.0)
@@ -138,9 +141,9 @@ fn pin(s: &State, p: &Pal) -> El {
         .focusable(true)
         .role("switch")
         .checked(on)
-        .label("Keep open")
+        .label(copy::KEEP_OPEN)
         .cursor(rune::Cursor::Pointer)
         .on_press(|s: &mut State| s.nav_pinned = !s.nav_pinned)
         .child(el().size(SLOT, 40.0).center().child(icon(&icons::PIN, 16.0).color(ink)))
-        .child(txt("Keep open", SMALL, ink))
+        .child(txt(copy::KEEP_OPEN, SMALL, ink))
 }

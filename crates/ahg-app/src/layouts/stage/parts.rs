@@ -5,10 +5,12 @@ use ahg_engine::types::{DownloadStatus as St, DownloadTask, ErrorCode};
 use rune::{Color, Cursor, El, Icon, SurfaceFit, TextStyle, el, icon, row};
 
 use crate::copy;
-use crate::directions::orbit::icons;
 use crate::directions::orbit::look::{Pal, mix, txt};
 use crate::directions::orbit::model;
+use crate::format;
 use crate::gate::State;
+use crate::icons;
+use crate::keys::RowAct;
 
 /// The one icon size.
 pub const ICON: f32 = 16.0;
@@ -126,7 +128,7 @@ pub fn actions(t: &DownloadTask) -> Vec<(&'static str, &'static Icon)> {
     if st == St::Paused {
         a.push((copy::ACT_RESUME, &icons::PLAY));
     }
-    if model::is_active(t) {
+    if format::is_active(t) {
         a.push((copy::ACT_CANCEL, &icons::CANCEL));
     }
     if st == St::Failed && !t.progress.error.is_empty() {
@@ -139,7 +141,7 @@ pub fn actions(t: &DownloadTask) -> Vec<(&'static str, &'static Icon)> {
         if t.error_code == Some(ErrorCode::Unknown) {
             a.push((copy::ACT_UPDATE_ENGINE, &icons::REFRESH));
         }
-        if !model::is_permanent(t.error_code) {
+        if !format::is_permanent(t.error_code) {
             a.push((copy::ACT_RETRY, &icons::RETRY));
         }
     }
@@ -164,7 +166,7 @@ pub fn state_word(p: &Pal, t: &DownloadTask) -> (&'static str, Color) {
         St::Retrying => (copy::STATE_RETRYING, p.warning),
         St::Done if t.progress.already_on_disk == Some(true) => (copy::STATE_SKIPPED, p.success),
         St::Done => (copy::STATE_DONE, p.success),
-        St::Failed if model::is_permanent(t.error_code) => (copy::STATE_CANT_DOWNLOAD, p.error),
+        St::Failed if format::is_permanent(t.error_code) => (copy::STATE_CANT_DOWNLOAD, p.error),
         St::Failed => (copy::STATE_FAILED, p.error),
         St::Cancelled => (copy::STATE_CANCELED, p.muted),
     }
@@ -173,5 +175,19 @@ pub fn state_word(p: &Pal, t: &DownloadTask) -> (&'static str, Color) {
 /// `Retrying in 5s (1 of 3)` without its leading dot.
 pub fn retry_line(t: &DownloadTask) -> String {
     let k = t.retry_count.unwrap_or(0.0) as usize;
-    copy::row_retrying([5u64, 15, 45][k.min(2)], k).trim_start_matches(" · ").to_string()
+    copy::row_retrying(format::retry_wait(t), k).trim_start_matches(" · ").to_string()
+}
+
+/// Which of a row's actions a button of `actions` is, for its shared key.
+pub fn act(label: &str) -> RowAct {
+    match label {
+        copy::ACT_PAUSE => RowAct::Pause,
+        copy::ACT_RESUME => RowAct::Resume,
+        copy::ACT_CANCEL => RowAct::Cancel,
+        copy::ACT_COPY_DETAILS => RowAct::CopyDetails,
+        copy::ACT_OPEN_SETTINGS | copy::ACT_UPDATE_ENGINE => RowAct::Fix,
+        copy::ACT_RETRY => RowAct::Retry,
+        copy::ACT_OPEN_FILE => RowAct::OpenFile,
+        _ => RowAct::ShowInFolder,
+    }
 }

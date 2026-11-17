@@ -6,10 +6,12 @@ use rune::{El, ScrollSpec, col, el, row, spacer};
 use super::parts::{BODY_M, FIG, SMALL, SMALL_M, button, glyph, icon_button, text_button};
 use super::{Fit, on_orbit};
 use crate::copy;
-use crate::directions::orbit::icons;
 use crate::directions::orbit::look::{Pal, mix, txt};
 use crate::directions::orbit::model;
+use crate::format;
 use crate::gate::State;
+use crate::icons;
+use crate::keys::{self, RowAct};
 
 pub fn view(s: &State, p: &Pal, fit: Fit) -> El {
     let queued: Vec<&DownloadTask> = s.tasks.iter().filter(|t| t.progress.status == St::Queued).collect();
@@ -60,8 +62,8 @@ fn interrupted_note(p: &Pal, n: usize) -> El {
             row()
                 .gap(8.0)
                 .pl(24.0)
-                .child(button(p, "resume-interrupted".into(), copy::DL_INTERRUPTED_RESUME, Some(&icons::PLAY), false))
-                .child(button(p, "discard-interrupted".into(), copy::DL_INTERRUPTED_DISCARD, None, false)),
+                .child(button(p, keys::RESUME_INTERRUPTED.into(), copy::DL_INTERRUPTED_RESUME, Some(&icons::PLAY), false))
+                .child(button(p, keys::DISCARD_INTERRUPTED.into(), copy::DL_INTERRUPTED_DISCARD, None, false)),
         )
 }
 
@@ -78,7 +80,7 @@ fn up_next(s: &State, p: &Pal, queued: &[&DownloadTask]) -> El {
             .gap(8.0)
             .min_w(0.0)
             .child(txt(copy::STATE_QUEUED, SMALL_M, p.muted))
-            .child(txt(model::specs(t), FIG, p.muted).truncate().shrink());
+            .child(txt(format::specs(t), FIG, p.muted).truncate().shrink());
         c = c.child(
             row()
                 .key(format!("next-{}", t.task_id))
@@ -88,13 +90,14 @@ fn up_next(s: &State, p: &Pal, queued: &[&DownloadTask]) -> El {
                 .center_y()
                 .hover_group()
                 .child(on_orbit(s, p, t, 48.0, 8.0))
-                .child(col().grow(1.0).min_w(0.0).gap(4.0).child(txt(model::label(t), BODY_M, p.text).truncate()).child(line))
+                .child(col().grow(1.0).min_w(0.0).gap(4.0).child(txt(format::label(t), BODY_M, p.text).truncate()).child(line))
                 .child(
-                    icon_button(p, format!("next-first-{}", t.task_id), copy::ACT_DO_THIS_NEXT, &icons::FORWARD, p.text2)
+                    icon_button(p, keys::row_action(RowAct::Promote, &t.task_id), copy::ACT_DO_THIS_NEXT, &icons::FORWARD, p.text2)
                         .group_opacity(0.0, 1.0),
                 )
                 .child(
-                    icon_button(p, format!("next-cancel-{}", t.task_id), copy::ACT_CANCEL, &icons::CANCEL, p.text2).group_opacity(0.0, 1.0),
+                    icon_button(p, keys::row_action(RowAct::Cancel, &t.task_id), copy::ACT_CANCEL, &icons::CANCEL, p.text2)
+                        .group_opacity(0.0, 1.0),
                 ),
         );
     }
@@ -102,8 +105,8 @@ fn up_next(s: &State, p: &Pal, queued: &[&DownloadTask]) -> El {
 }
 
 fn attention(p: &Pal, trouble: &[&DownloadTask]) -> El {
-    let retryable = trouble.iter().any(|t| t.progress.status == St::Failed && !model::is_permanent(t.error_code));
-    let aside = retryable.then(|| text_button(p, "retry-all".into(), copy::DL_RETRY_ALL_FAILED));
+    let retryable = trouble.iter().any(|t| t.progress.status == St::Failed && !format::is_permanent(t.error_code));
+    let aside = retryable.then(|| text_button(p, keys::RETRY_ALL_FAILED.into(), copy::DL_RETRY_ALL_FAILED));
     let mut c = col().w_full().gap(16.0).child(head(p, copy::GROUP_NEEDS_ATTENTION, trouble.len(), aside));
     for t in trouble {
         c = c.child(problem(p, t));
@@ -119,20 +122,20 @@ fn problem(p: &Pal, t: &DownloadTask) -> El {
     let mut buttons = row().gap(0.0);
     for (label, i) in super::parts::actions(t) {
         let ink = if label == copy::ACT_RETRY { p.text } else { p.text2 };
-        buttons = buttons.child(icon_button(p, format!("{label}-{}", t.task_id), label, i, ink));
+        buttons = buttons.child(icon_button(p, keys::row_action(super::parts::act(label), &t.task_id), label, i, ink));
     }
     let title = row()
         .w_full()
         .h(32.0)
         .gap(8.0)
         .center_y()
-        .child(txt(model::label(t), BODY_M, if canceled { p.text2 } else { p.text }).truncate().shrink().help(t.url.clone()))
+        .child(txt(format::label(t), BODY_M, if canceled { p.text2 } else { p.text }).truncate().shrink().help(t.url.clone()))
         .child(spacer())
         .child(buttons);
     let (src, src_color) = model::source(p, t.source);
     let mut words =
         col().grow(1.0).min_w(0.0).child(title).child(row().gap(8.0).child(txt(word, SMALL_M, tone)).child(txt(src, SMALL, src_color)));
-    if let Some(reason) = model::reason(t) {
+    if let Some(reason) = format::reason(t) {
         words = words.child(txt(reason, SMALL, p.text2).wrap().max_lines(3).mt(4.0).help(t.progress.error.clone()));
     }
     row().key(format!("problem-{}", t.task_id)).w_full().gap(12.0).items_start().child(mark).child(words)

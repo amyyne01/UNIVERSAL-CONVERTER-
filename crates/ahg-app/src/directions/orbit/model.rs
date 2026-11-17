@@ -20,26 +20,14 @@ pub fn is_finished(t: &DownloadTask) -> bool {
     matches!(t.progress.status, St::Done | St::Failed | St::Cancelled)
 }
 
+/// A source's name from the shared format and its platform colour from the shared palette;
+/// the sources without a colour of their own wear the palette's accent.
 pub fn source(p: &Pal, src: Src) -> (&'static str, Color) {
-    match src {
-        Src::Youtube => (copy::SOURCE_YOUTUBE, p.youtube),
-        Src::Spotify => (copy::SOURCE_SPOTIFY, p.spotify),
-        Src::Soundcloud => (copy::SOURCE_SOUNDCLOUD, p.soundcloud),
-        Src::Instagram => (copy::SOURCE_INSTAGRAM, p.reels),
-        Src::Tiktok => (copy::SOURCE_TIKTOK, p.reels),
-        Src::Facebook => (copy::SOURCE_FACEBOOK, p.reels),
-        Src::Twitter => (copy::SOURCE_TWITTER, p.more(240.0, 0.020)),
-        Src::Vimeo => (copy::SOURCE_VIMEO, p.more(if p.dark { 230.0 } else { 250.0 }, 0.130)),
-        Src::Twitch => (copy::SOURCE_TWITCH, p.more(275.0, 0.130)),
-        Src::Bandcamp => (copy::SOURCE_BANDCAMP, p.more(20.0, 0.130)),
-        Src::Reddit => (copy::SOURCE_REDDIT, p.more(115.0, 0.130)),
-        Src::Dailymotion => (copy::SOURCE_DAILYMOTION, p.more(330.0, 0.130)),
-        Src::Mixcloud => (copy::SOURCE_MIXCLOUD, p.more(70.0, 0.130)),
-        Src::Rumble => (copy::SOURCE_RUMBLE, p.more(170.0, 0.130)),
-        Src::Direct => (copy::SOURCE_DIRECT, p.accent),
-        Src::Generic => (copy::SOURCE_GENERIC, p.accent),
-        Src::Unknown => (copy::SOURCE_UNKNOWN, p.accent),
-    }
+    let color = match src {
+        Src::Direct | Src::Generic | Src::Unknown => p.accent,
+        _ => crate::palette::platform(src, p.dark),
+    };
+    (crate::format::source_name(src), color)
 }
 
 /// The part of a path after its last separator.

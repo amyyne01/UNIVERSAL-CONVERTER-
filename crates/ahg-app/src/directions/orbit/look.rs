@@ -1,6 +1,7 @@
 //! Orbit's colours and type. One neutral ramp per palette and theme, one accent, and the
 //! platform and status colours, which no palette overrides (Electron's `index.css` B2).
 
+use ahg_engine::types::SourcePlatform;
 use rune::{Color, El, TextStyle, oklch, text};
 
 /// Palette 0 is Orbit's own: deep ink by night, a chart on paper by day. 1 to 7 are the
@@ -256,31 +257,38 @@ pub struct Pal {
 
 impl Pal {
     pub fn new(palette: usize, dark: bool) -> Pal {
-        let r = &RAMPS[palette.min(7)][usize::from(!dark)];
-        let c = |i: usize| oklch(r[i][0], r[i][1], r[i][2]);
-        let (bg, text) = (c(1), c(5));
-        let pick = |d: [f32; 3], l: [f32; 3]| if dark { oklch(d[0], d[1], d[2]) } else { oklch(l[0], l[1], l[2]) };
+        // Palette 0 is Orbit's own table; 1 to 7 are the app's, from the one colour source.
+        let own = |i: usize| {
+            let r = &RAMPS[0][usize::from(!dark)];
+            oklch(r[i][0], r[i][1], r[i][2])
+        };
+        let shared = crate::palette::roles(palette.saturating_sub(1), dark);
+        let c = |i: usize, shared: Color| if palette == 0 { own(i) } else { shared };
+        let (bg, text) = (c(1, shared.bg_primary), c(5, shared.text_primary));
+        // The semantic colours are the same in every palette.
+        let tone = crate::palette::roles(0, dark);
+        let platform = |src| crate::palette::platform(src, dark);
         Pal {
             dark,
-            deep: c(0),
+            deep: c(0, shared.bg_secondary),
             bg,
-            raised: c(2),
-            hover: c(3),
-            card: c(4),
+            raised: c(2, shared.bg_tertiary),
+            hover: c(3, shared.bg_hover),
+            card: c(4, shared.bg_surface),
             text,
-            text2: c(6),
-            muted: c(7),
-            accent: c(8),
-            on_accent: c(9),
+            text2: c(6, shared.text_secondary),
+            muted: c(7, shared.text_muted),
+            accent: c(8, shared.accent),
+            on_accent: c(9, shared.on_accent),
             line: mix(bg, text, if dark { 0.15 } else { 0.12 }),
             track: mix(bg, text, if dark { 0.28 } else { 0.24 }),
-            success: pick([0.740, 0.160, 150.0], [0.480, 0.140, 150.0]),
-            warning: pick([0.830, 0.145, 85.0], [0.500, 0.125, 80.0]),
-            error: pick([0.680, 0.195, 24.0], [0.520, 0.190, 24.0]),
-            youtube: pick([0.690, 0.220, 27.0], [0.525, 0.210, 27.0]),
-            spotify: pick([0.730, 0.180, 150.0], [0.480, 0.150, 150.0]),
-            soundcloud: pick([0.725, 0.190, 55.0], [0.510, 0.140, 55.0]),
-            reels: pick([0.700, 0.235, 352.0], [0.525, 0.220, 352.0]),
+            success: tone.success,
+            warning: tone.warning,
+            error: tone.error,
+            youtube: platform(SourcePlatform::Youtube),
+            spotify: platform(SourcePlatform::Spotify),
+            soundcloud: platform(SourcePlatform::Soundcloud),
+            reels: platform(SourcePlatform::Instagram),
         }
     }
 

@@ -2,28 +2,70 @@
 //! reading in large figures; then each section is a band across the page, its name and
 //! purpose in a left margin, its settings as ruled lines on the right. No cards: the rules
 //! do the grouping, the margin makes it scannable. Every word comes from
-//! `copy::settings`; values (folder, versions, times) are stand-ins.
+//! `copy::settings`; the values come from the saved settings (`settings_spec`).
+use std::collections::HashMap;
+
 use rune::{Color, El, Icon, ScrollSpec, col, el, icon, row, spacer};
+use serde_json::Value;
 
 use super::look::{BODY, BODY_M, CELL_TITLE, FIG, FIG_L, PAGE_TITLE, Pal, SMALL, SMALL_M, mix, txt};
-use super::{Tone, button, icons, keycap};
-use crate::copy::settings as w;
+use super::{Tone, button, keycap};
+use crate::copy::{self, settings as w};
+use crate::format;
 use crate::gate::{self, State};
+use crate::icons;
+use crate::keys;
+use crate::settings_spec::{self, Kind, Row};
 
 /// The left margin that carries each section's name.
 const MARGIN: f32 = 216.0;
 
+/// The settings rows by config key, with their saved values and the labels of their choices.
+pub(crate) type Vals = HashMap<&'static str, Row>;
+
+pub(crate) fn vals(s: &State) -> Vals {
+    settings_spec::sections(s).into_iter().flat_map(|section| section.rows).filter_map(|r| r.key.map(|k| (k, r))).collect()
+}
+
+pub(crate) fn on(v: &Vals, key: &str) -> bool {
+    v[key].value.as_bool().unwrap_or(false)
+}
+
+/// A select's label for the saved value; a typed value as it is.
+pub(crate) fn shown(v: &Vals, key: &str) -> String {
+    let r = &v[key];
+    let saved = match &r.value {
+        Value::String(t) => t.clone(),
+        other => other.to_string(),
+    };
+    match &r.kind {
+        Kind::Select(options) => options.iter().find(|o| o.value == saved).map(|o| o.label.clone()).unwrap_or_default(),
+        _ => saved,
+    }
+}
+
+/// A typed setting: its value, or its placeholder (muted) while it is empty.
+fn typed(p: &Pal, v: &Vals, key: &str) -> El {
+    let value = shown(v, key);
+    let r = &v[key];
+    match r.placeholder {
+        Some(hint) if value.is_empty() => field(p, r.label, hint, false, true),
+        _ => field(p, r.label, &value, false, false),
+    }
+}
+
 pub fn view(s: &State, p: &Pal) -> El {
     let head = col().w_full().gap(4.0).child(txt(w::TITLE, PAGE_TITLE, p.text)).child(txt(w::SAVES, SMALL, p.text2));
-    let page = col().w_full().max_w(1120.0).px(40.0).pt(32.0).pb(48.0).gap(32.0).child(head).child(destination(p)).child(
+    let v = vals(s);
+    let page = col().w_full().max_w(1120.0).px(40.0).pt(32.0).pb(48.0).gap(32.0).child(head).child(destination(p, &v)).child(
         col()
             .w_full()
-            .child(defaults(p))
-            .child(more(p))
-            .child(appearance(s, p))
-            .child(schedule(p))
-            .child(software(p))
-            .child(advanced(p))
+            .child(defaults(p, &v))
+            .child(more(p, &v))
+            .child(appearance(s, p, &v))
+            .child(schedule(p, &v))
+            .child(software(s, p, &v))
+            .child(advanced(p, &v))
             .child(plan(p))
             .child(help(p)),
     );
@@ -100,8 +142,8 @@ fn select(p: &Pal, label: &str, value: &str) -> El {
     field(p, label, value, true, false)
 }
 
-fn ghost(p: &Pal, label: &str, glyph: Option<&'static Icon>) -> El {
-    button(p, &format!("set-{label}"), label, glyph, Tone::Ghost)
+fn ghost(p: &Pal, key: &str, label: &str, glyph: Option<&'static Icon>) -> El {
+    button(p, key, label, glyph, Tone::Ghost)
 }
 
 /// An updater or the plan: name, version in figures, and what it says, with a dot when it is good.
@@ -124,7 +166,9 @@ fn object(p: &Pal, name: &str, version: &str, say: &str, good: bool, control: El
 // ── Sections ────────────────────────────────────────────────────────────────
 
 /// The one large reading: where every file lands. The page's one bordered surface.
-fn destination(p: &Pal) -> El {
+fn destination(p: &Pal, v: &Vals) -> El {
+    let dir = shown(v, "outputDir");
+    let (folder, name) = dir.split_at(dir.len() - format::file_name(&dir).len());
     row()
         .w_full()
         .gap(24.0)
@@ -141,72 +185,73 @@ fn destination(p: &Pal) -> El {
                 .min_w(0.0)
                 .gap(4.0)
                 .child(txt(w::SAVING_TO, SMALL, p.text2))
-                .child(row().child(txt("C:\\Users\\Alex\\", FIG_L, p.text2)).child(txt("Music", FIG_L, p.text))),
+                .child(row().child(txt(folder.to_string(), FIG_L, p.text2)).child(txt(name.to_string(), FIG_L, p.text))),
         )
-        .child(ghost(p, w::CHANGE, Some(&icons::FOLDER)))
+        .child(ghost(p, keys::CHANGE_FOLDER, w::CHANGE, Some(&icons::FOLDER)))
 }
 
-fn defaults(p: &Pal) -> El {
-    let labelled = |label: &str, value: &str| {
-        col().grow(1.0).min_w(0.0).gap(8.0).child(txt(label.to_string(), SMALL, p.text2)).child(select(p, label, value).min_w(0.0))
+fn defaults(p: &Pal, v: &Vals) -> El {
+    let labelled = |label: &str, key: &str| {
+        col().grow(1.0).min_w(0.0).gap(8.0).child(txt(label.to_string(), SMALL, p.text2)).child(select(p, label, &shown(v, key)).min_w(0.0))
     };
     let three = row()
         .w_full()
         .gap(12.0)
         .pt(16.0)
         .pb(16.0)
-        .child(labelled(w::AUDIO_FORMAT, "MP3"))
-        .child(labelled(w::AUDIO_QUALITY, "320 kbps"))
-        .child(labelled(w::VIDEO_QUALITY, "1080p Full HD"));
+        .child(labelled(w::AUDIO_FORMAT, "defaultFormat"))
+        .child(labelled(w::AUDIO_QUALITY, "defaultQuality"))
+        .child(labelled(w::VIDEO_QUALITY, "defaultVideoQuality"));
     band(
         p,
         w::DEFAULTS,
         Some(w::DEFAULTS_HINT),
         vec![
             three,
-            switch(p, w::SKIP_EXISTING, true),
-            switch(p, w::EMBED_THUMBNAIL, true),
-            switch(p, w::EMBED_METADATA, true),
-            line(p, w::SIMULTANEOUS, select(p, w::SIMULTANEOUS.0, "3 at a time")),
+            switch(p, w::SKIP_EXISTING, on(v, "skipExisting")),
+            switch(p, w::EMBED_THUMBNAIL, on(v, "embedThumbnail")),
+            switch(p, w::EMBED_METADATA, on(v, "embedMetadata")),
+            line(p, w::SIMULTANEOUS, select(p, w::SIMULTANEOUS.0, &shown(v, "maxConcurrentDownloads"))),
         ],
     )
 }
 
-fn more(p: &Pal) -> El {
+fn more(p: &Pal, v: &Vals) -> El {
     band(
         p,
         w::MORE,
         Some(w::MORE_HINT),
         vec![
-            line(p, (w::SUBTITLES, ""), select(p, w::SUBTITLES, "Off")),
-            line(p, (w::SUBTITLE_LANGUAGES, ""), field(p, w::SUBTITLE_LANGUAGES, w::SUBTITLE_LANGUAGES_PLACEHOLDER, false, true)),
-            switch(p, w::AUTO_CAPTIONS, false),
-            line(p, (w::SPONSOR_SEGMENTS, ""), select(p, w::SPONSOR_SEGMENTS, "Off")),
-            line(p, (w::VIDEO_CONTAINER, ""), select(p, w::VIDEO_CONTAINER, "MP4 (most compatible)")),
-            line(p, (w::VIDEO_CODEC, ""), select(p, w::VIDEO_CODEC, "Best available")),
-            line(p, (w::SIGN_IN_WITH, ""), select(p, w::SIGN_IN_WITH, "Chrome")),
-            line(p, w::IMPORT_COOKIES, ghost(p, w::CHOOSE_FILE, Some(&icons::FOLDER))),
-            switch(p, w::EMBED_CHAPTERS, true),
-            switch(p, w::SPLIT_BY_CHAPTER, false),
-            switch(p, w::SAVE_COVER_ART, false),
-            line(p, w::FILE_NAMING, field(p, w::FILE_NAMING.0, w::FILE_NAMING_PLACEHOLDER, false, true)),
+            line(p, (w::SUBTITLES, ""), select(p, w::SUBTITLES, &shown(v, "subtitleMode"))),
+            line(p, (w::SUBTITLE_LANGUAGES, ""), typed(p, v, "subtitleLangs")),
+            switch(p, w::AUTO_CAPTIONS, on(v, "subtitleAuto")),
+            line(p, (w::SPONSOR_SEGMENTS, ""), select(p, w::SPONSOR_SEGMENTS, &shown(v, "sponsorBlock"))),
+            line(p, (w::VIDEO_CONTAINER, ""), select(p, w::VIDEO_CONTAINER, &shown(v, "videoContainer"))),
+            line(p, (w::VIDEO_CODEC, ""), select(p, w::VIDEO_CODEC, &shown(v, "videoCodec"))),
+            line(p, (w::SIGN_IN_WITH, ""), select(p, w::SIGN_IN_WITH, &shown(v, "cookieBrowser"))),
+            line(p, w::IMPORT_COOKIES, ghost(p, keys::IMPORT_COOKIES, w::CHOOSE_FILE, Some(&icons::FOLDER))),
+            switch(p, w::EMBED_CHAPTERS, on(v, "embedChapters")),
+            switch(p, w::SPLIT_BY_CHAPTER, on(v, "splitChapters")),
+            switch(p, w::SAVE_COVER_ART, on(v, "writeThumbnail")),
+            line(p, w::FILE_NAMING, typed(p, v, "outputTemplate")),
         ],
     )
 }
 
-fn appearance(s: &State, p: &Pal) -> El {
-    // System is the stand-in choice: it follows the window's own light or dark.
+fn appearance(s: &State, p: &Pal, v: &Vals) -> El {
+    // Light, Dark or System, as the saved theme says.
+    let theme_now = ["light", "dark", "system"].iter().position(|t| Some(*t) == v["theme"].value.as_str()).unwrap_or(2);
     let mut theme = row().gap(4.0).padding(4.0).radius(8.0).border(1.0, p.track).role("radiogroup").label(w::THEME.0);
     for (i, name) in w::THEMES.into_iter().enumerate() {
-        let on = i == 2;
+        let on = i == theme_now;
         let mut seg = el().h(24.0).px(12.0).center().radius(4.0).role("radio").checked(on).focusable(true).cursor(rune::Cursor::Pointer);
         seg = if on { seg.fill(p.raised) } else { seg.hover(p.hover) };
         theme = theme.child(seg.child(txt(name, if on { SMALL_M } else { SMALL }, if on { p.text } else { p.text2 })));
     }
     // Orbit's own colours first, then the app's seven palettes in Settings' order.
-    const NAMES: [&str; 8] = ["Orbit", "Aurora", "Slate", "Moss", "Ember", "Paper", "Lagoon", "Orchid"];
     let mut swatches = row().gap(4.0).role("radiogroup").label(w::PALETTE_ARIA);
-    for (i, name) in NAMES.iter().enumerate() {
+    for i in 0..=crate::palette::NAMES.len() {
+        let name = if i == 0 { copy::PRESET_ORBIT } else { crate::palette::NAMES[i - 1] };
         let sw = Pal::new(i, p.dark);
         let on = i == s.palette;
         swatches = swatches.child(
@@ -236,7 +281,7 @@ fn appearance(s: &State, p: &Pal) -> El {
         .center_y()
         .child(txt(gate::PRESETS[gate::preset(s)].0, SMALL_M, p.text))
         .child(row().center_y().gap(4.0).child(keycap(p, crate::copy::KEY_CTRL)).child(keycap(p, ".")))
-        .child(ghost(p, w::LAYOUT_CHOOSE, None).key("set-layout").on_press(|s: &mut State| s.picker = true));
+        .child(ghost(p, keys::LAYOUT_CHOOSE, w::LAYOUT_CHOOSE, None).on_press(|s: &mut State| s.picker = true));
     band(
         p,
         w::APPEARANCE,
@@ -245,18 +290,19 @@ fn appearance(s: &State, p: &Pal) -> El {
             line(p, w::THEME, theme),
             line(p, w::PALETTE, swatches),
             line(p, w::LAYOUT, layout),
-            switch(p, w::CLIPBOARD_WATCHER, true),
-            switch(p, w::NOTIFICATIONS, true),
-            switch(p, w::DISCORD, false),
+            switch(p, w::CLIPBOARD_WATCHER, on(v, "clipboardWatch")),
+            switch(p, w::NOTIFICATIONS, on(v, "showNotifications")),
+            switch(p, w::DISCORD, on(v, "discordRichPresence")),
         ],
     )
 }
 
-fn schedule(p: &Pal) -> El {
-    // Electron's order: Sunday first. The stand-in runs on weekdays.
+fn schedule(p: &Pal, v: &Vals) -> El {
+    // Electron's order: Sunday first. The days are the saved ones, 0 for Sunday.
+    let chosen: Vec<u64> = v["scheduleDays"].value.as_array().map(|a| a.iter().filter_map(Value::as_u64).collect()).unwrap_or_default();
     let mut days = row().gap(4.0).role("group").label(w::ACTIVE_DAYS.0);
     for (i, full) in w::DAYS.iter().enumerate() {
-        let on = (1..=5).contains(&i);
+        let on = chosen.contains(&(i as u64));
         days = days.child(
             el().size(28.0, 28.0)
                 .radius(14.0)
@@ -277,36 +323,43 @@ fn schedule(p: &Pal) -> El {
         w::SCHEDULE,
         Some(w::SCHEDULE_HINT),
         vec![
-            line(p, (w::ENABLE_SCHEDULER, ""), toggle(p, w::ENABLE_SCHEDULER, true)),
-            line(p, w::START_TIME, field(p, w::START_TIME.0, "03:00", false, false).min_w(96.0)),
+            line(p, (w::ENABLE_SCHEDULER, ""), toggle(p, w::ENABLE_SCHEDULER, on(v, "scheduleEnabled"))),
+            line(p, w::START_TIME, field(p, w::START_TIME.0, &shown(v, "scheduleTime"), false, false).min_w(96.0)),
             line(p, w::ACTIVE_DAYS, days),
-            switch(p, w::SHUTDOWN, false),
+            switch(p, w::SHUTDOWN, on(v, "scheduleShutdown")),
         ],
     )
 }
 
-fn software(p: &Pal) -> El {
+fn software(s: &State, p: &Pal, v: &Vals) -> El {
     band(
         p,
         w::SOFTWARE,
         Some(w::SOFTWARE_HINT),
         vec![
-            object(p, w::APP_NAME, "v2.0.0", w::APP_REST, false, ghost(p, w::CHECK_FOR_UPDATES, Some(&icons::REFRESH))),
-            object(p, w::ENGINE_NAME, "2026.11.01", "", false, ghost(p, w::ENGINE_CHECK, Some(&icons::REFRESH))),
-            switch(p, w::AUTO_UPDATE_ENGINE, true),
+            object(
+                p,
+                w::APP_NAME,
+                &format!("v{}", env!("CARGO_PKG_VERSION")),
+                w::APP_REST,
+                false,
+                ghost(p, keys::CHECK_UPDATE, w::CHECK_FOR_UPDATES, Some(&icons::REFRESH)),
+            ),
+            object(p, w::ENGINE_NAME, &s.engine.current, "", false, ghost(p, keys::CHECK_ENGINE, w::ENGINE_CHECK, Some(&icons::REFRESH))),
+            switch(p, w::AUTO_UPDATE_ENGINE, on(v, "autoUpdateEngine")),
         ],
     )
 }
 
-fn advanced(p: &Pal) -> El {
+fn advanced(p: &Pal, v: &Vals) -> El {
     band(
         p,
         w::ADVANCED,
         Some(w::ADVANCED_HINT),
         vec![
-            line(p, w::RATE_LIMIT, field(p, w::RATE_LIMIT.0, w::RATE_LIMIT_PLACEHOLDER, false, true)),
-            line(p, w::PROXY, field(p, w::PROXY.0, w::PROXY_PLACEHOLDER, false, true)),
-            line(p, w::GLOBAL_HOTKEY, field(p, w::GLOBAL_HOTKEY.0, "Ctrl+Shift+D", false, false)),
+            line(p, w::RATE_LIMIT, typed(p, v, "rateLimit")),
+            line(p, w::PROXY, typed(p, v, "proxy")),
+            line(p, w::GLOBAL_HOTKEY, typed(p, v, "globalHotkey")),
         ],
     )
 }
@@ -347,8 +400,8 @@ fn help(p: &Pal) -> El {
         w::HELP,
         None,
         vec![
-            line(p, w::SHORTCUTS, ghost(p, w::SHOW_SHORTCUTS, None)),
-            line(p, w::REPORT, ghost(p, w::GET_SUPPORT, Some(&icons::EXTERNAL))),
+            line(p, w::SHORTCUTS, ghost(p, keys::SHOW_SHORTCUTS, w::SHOW_SHORTCUTS, None)),
+            line(p, w::REPORT, ghost(p, keys::GET_SUPPORT, w::GET_SUPPORT, Some(&icons::EXTERNAL))),
         ],
     )
 }

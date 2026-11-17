@@ -4,13 +4,15 @@
 use ahg_engine::types::{DownloadStatus as St, DownloadTask};
 use rune::{Cursor, El, ScrollSpec, col, el, row, spacer};
 
-use super::parts::{BODY, BODY_M, FIG, HERO, SMALL, SMALL_M, actions, button, cover, glyph, icon_button, state_word};
+use super::parts::{BODY, BODY_M, FIG, HERO, SMALL, SMALL_M, act, actions, button, cover, glyph, icon_button, state_word};
 use super::{Fit, motion_line, on_orbit};
 use crate::copy;
-use crate::directions::orbit::icons;
 use crate::directions::orbit::look::{Pal, mix, txt};
-use crate::directions::orbit::model::{self, is_active, is_live};
-use crate::gate::State;
+use crate::directions::orbit::model;
+use crate::format::{self, is_active, is_live};
+use crate::gate::{Confirm, Filter, State};
+use crate::icons;
+use crate::keys::{self, RowAct};
 
 const ROW_H: f32 = 52.0;
 
@@ -41,6 +43,7 @@ pub fn view(s: &State, p: &Pal, fit: Fit) -> El {
 }
 
 /// `7 downloads: 1 downloading, 6 failed`, in the fixed order.
+#[allow(dead_code)] // unused until cleanup (step 19)
 fn summary(tasks: &[DownloadTask]) -> String {
     let mut n = [0usize; 7];
     for t in tasks {
@@ -59,18 +62,18 @@ fn summary(tasks: &[DownloadTask]) -> String {
 }
 
 fn header(tasks: &[DownloadTask], p: &Pal) -> El {
-    let active = tasks.iter().filter(|t| is_active(t)).count();
-    let all_paused = tasks.iter().any(|t| t.progress.status == St::Paused) && !tasks.iter().any(is_live);
+    let active = format::active_count(tasks);
+    let all_paused = format::all_paused(tasks);
     let mut left = col().gap(4.0).child(txt(copy::DL_TITLE, HERO, p.text)).child(txt(
         copy::active_and_total(active, tasks.len(), all_paused),
         FIG,
         p.muted,
     ));
     if tasks.len() >= 2 {
-        left = left.child(txt(summary(tasks), SMALL, p.text2));
+        left = left.child(txt(copy::downloads_summary(tasks.len(), &format::summary_parts(tasks)), SMALL, p.text2));
     }
     let search = row()
-        .key("dl-search")
+        .key(keys::DOWNLOADS_SEARCH)
         .w(280.0)
         .h(36.0)
         .px(12.0)
@@ -97,18 +100,18 @@ fn checkbox(p: &Pal, label: &'static str) -> El {
 }
 
 fn strip(tasks: &[DownloadTask], p: &Pal) -> El {
-    let count = |f: fn(&DownloadTask) -> bool| tasks.iter().filter(|t| f(t)).count();
+    let counts = format::filter_counts(tasks);
     let filters = [
-        (copy::DL_FILTER_ALL, tasks.len()),
-        (copy::DL_FILTER_ACTIVE, count(is_active)),
-        (copy::DL_FILTER_DONE, count(|t| t.progress.status == St::Done)),
-        (copy::DL_FILTER_FAILED, count(|t| matches!(t.progress.status, St::Failed | St::Cancelled))),
+        (copy::DL_FILTER_ALL, counts[0]),
+        (copy::DL_FILTER_ACTIVE, counts[1]),
+        (copy::DL_FILTER_DONE, counts[2]),
+        (copy::DL_FILTER_FAILED, counts[3]),
     ];
     let mut seg = row().h(32.0).padding(4.0).gap(4.0).radius(8.0).border(1.0, p.line).role("radiogroup").label(copy::DL_FILTER_ARIA);
     for (i, (label, n)) in filters.iter().enumerate() {
         let on = i == 0;
         let cell = row()
-            .key(format!("filter-{i}"))
+            .key(keys::filter(Filter::ALL[i]))
             .h_full()
             .px(8.0)
             .gap(8.0)
@@ -124,21 +127,21 @@ fn strip(tasks: &[DownloadTask], p: &Pal) -> El {
     }
 
     let paused = tasks.iter().any(|t| t.progress.status == St::Paused);
-    let all_paused = paused && !tasks.iter().any(is_live);
+    let all_paused = format::all_paused(tasks);
     let mut bulk = row().gap(8.0).center_y();
-    if tasks.iter().any(|t| t.progress.status == St::Failed && !model::is_permanent(t.error_code)) {
-        bulk = bulk.child(button(p, "dl-retry-all".into(), copy::DL_RETRY_ALL_FAILED, Some(&icons::RETRY), false));
+    if tasks.iter().any(|t| t.progress.status == St::Failed && !format::is_permanent(t.error_code)) {
+        bulk = bulk.child(button(p, keys::RETRY_ALL_FAILED.into(), copy::DL_RETRY_ALL_FAILED, Some(&icons::RETRY), false));
     }
     if tasks.iter().any(|t| t.progress.status == St::Done) {
-        bulk = bulk.child(button(p, "dl-clear".into(), copy::DL_CLEAR_COMPLETED, Some(&icons::REMOVE), false));
+        bulk = bulk.child(button(p, keys::arm(Confirm::Clear).into(), copy::DL_CLEAR_COMPLETED, Some(&icons::REMOVE), false));
     }
     if all_paused {
-        bulk = bulk.child(button(p, "dl-resume-all".into(), copy::DL_RESUME_ALL, Some(&icons::PLAY), false));
+        bulk = bulk.child(button(p, keys::PAUSE_ALL.into(), copy::DL_RESUME_ALL, Some(&icons::PLAY), false));
     } else if paused || tasks.iter().any(|t| matches!(t.progress.status, St::Queued | St::FetchingInfo | St::Downloading)) {
-        bulk = bulk.child(button(p, "dl-pause-all".into(), copy::DL_PAUSE_ALL, Some(&icons::PAUSE), false));
+        bulk = bulk.child(button(p, keys::PAUSE_ALL.into(), copy::DL_PAUSE_ALL, Some(&icons::PAUSE), false));
     }
     if tasks.iter().any(is_active) {
-        bulk = bulk.child(button(p, "dl-cancel-all".into(), copy::DL_CANCEL_ALL, Some(&icons::CANCEL), false));
+        bulk = bulk.child(button(p, keys::CANCEL_ALL.into(), copy::DL_CANCEL_ALL, Some(&icons::CANCEL), false));
     }
     row().w_full().gap(16.0).pl(16.0).center_y().child(checkbox(p, copy::DL_SELECT_ALL_ARIA)).child(seg).child(spacer()).child(bulk)
 }
@@ -157,8 +160,8 @@ fn banner(p: &Pal, n: usize) -> El {
         .child(glyph(&icons::PAUSE, p.warning))
         .child(row().center_y().child(txt(n.to_string(), FIG, p.text)).child(txt(copy::interrupted_sentence(n), BODY, p.text)))
         .child(spacer())
-        .child(button(p, "dl-resume-interrupted".into(), copy::DL_INTERRUPTED_RESUME, Some(&icons::PLAY), false))
-        .child(button(p, "dl-discard-interrupted".into(), copy::DL_INTERRUPTED_DISCARD, None, false))
+        .child(button(p, keys::RESUME_INTERRUPTED.into(), copy::DL_INTERRUPTED_RESUME, Some(&icons::PLAY), false))
+        .child(button(p, keys::DISCARD_INTERRUPTED.into(), copy::DL_INTERRUPTED_DISCARD, None, false))
 }
 
 fn list(s: &State, p: &Pal) -> El {
@@ -200,22 +203,22 @@ fn task_row(s: &State, p: &Pal, t: &DownloadTask) -> El {
     };
     let (src, color) = model::source(p, t.source);
     let mut line2 = row().w_full().min_w(0.0).gap(8.0).center_y().child(txt(src, SMALL_M, color));
-    if let Some(reason) = model::reason(t) {
+    if let Some(reason) = format::reason(t) {
         line2 = line2.child(txt(reason, SMALL, p.text2).truncate().shrink().help(t.progress.error.clone()));
     } else if st == St::Done {
         line2 = line2
             .child(
-                txt(model::file_name(&t.progress.filename).to_string(), SMALL, p.text2)
+                txt(format::file_name(&t.progress.filename).to_string(), SMALL, p.text2)
                     .truncate()
                     .shrink()
                     .help(t.progress.filename.clone()),
             )
-            .child(txt(model::specs(t), FIG, p.muted).single_line());
+            .child(txt(format::specs(t), FIG, p.muted).single_line());
     } else {
         if !t.uploader.is_empty() {
             line2 = line2.child(txt(t.uploader.clone(), SMALL, p.text2).truncate().shrink());
         }
-        line2 = line2.child(txt(model::specs(t), FIG, p.muted).single_line());
+        line2 = line2.child(txt(format::specs(t), FIG, p.muted).single_line());
     }
     let state = if landed {
         let (word, tone) = state_word(p, t);
@@ -227,18 +230,19 @@ fn task_row(s: &State, p: &Pal, t: &DownloadTask) -> El {
     for (label, i) in actions(t) {
         acts = acts.child(icon_button(
             p,
-            format!("dl-{label}-{}", t.task_id),
+            keys::row_action(act(label), &t.task_id),
             label,
             i,
             if label == copy::ACT_RETRY || label == copy::ACT_RESUME { p.text } else { p.text2 },
         ));
     }
     if model::is_finished(t) {
-        acts = acts
-            .child(icon_button(p, format!("dl-remove-{}", t.task_id), copy::ACT_REMOVE, &icons::REMOVE, p.muted).group_opacity(0.0, 1.0));
+        acts = acts.child(
+            icon_button(p, keys::row_action(RowAct::Remove, &t.task_id), copy::ACT_REMOVE, &icons::REMOVE, p.muted).group_opacity(0.0, 1.0),
+        );
     }
     row()
-        .key(format!("dl-row-{}", t.task_id))
+        .key(keys::row(&t.task_id))
         .w_full()
         .h(ROW_H)
         .pl(16.0)
@@ -254,7 +258,7 @@ fn task_row(s: &State, p: &Pal, t: &DownloadTask) -> El {
                 .min_w(0.0)
                 .gap(4.0)
                 .child(
-                    txt(model::label(t), if landed { BODY } else { BODY_M }, if st == St::Done || !landed { p.text } else { p.text2 })
+                    txt(format::label(t), if landed { BODY } else { BODY_M }, if st == St::Done || !landed { p.text } else { p.text2 })
                         .truncate(),
                 )
                 .child(line2),
