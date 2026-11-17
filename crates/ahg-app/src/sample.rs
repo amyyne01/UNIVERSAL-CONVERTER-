@@ -12,7 +12,33 @@ use serde_json::json;
 
 const MIB: f64 = 1024.0 * 1024.0;
 /// 15 November 2026, 14:00 UTC, in milliseconds.
-const NOW: f64 = 1_794_751_200_000.0;
+pub const NOW: f64 = 1_794_751_200_000.0;
+/// The samples' download folder: an invented user's.
+pub const OUTPUT_DIR: &str = "C:\\Users\\Alex\\Music";
+/// An invented machine fingerprint.
+pub const MACHINE_ID: &str = "0f3a9c2e71b4d856";
+
+/// The saved settings: Electron's defaults, saving into [`OUTPUT_DIR`].
+pub fn settings() -> serde_json::Map<String, serde_json::Value> {
+    let mut settings = ahg_engine::config::default_config();
+    settings.insert("outputDir".into(), OUTPUT_DIR.into());
+    settings
+}
+
+/// The download engine as Settings first shows it.
+pub fn engine() -> ahg_engine::ytdlp_updater::YtdlpStatus {
+    ahg_engine::ytdlp_updater::YtdlpStatus { current: "2026.10.22".into(), latest: String::new(), state: "idle", message: None }
+}
+
+/// The app updater before anything was checked.
+pub fn update() -> ahg_engine::updater::UpdateState {
+    ahg_engine::updater::UpdateState { phase: "idle", version: None, percent: None, message: None }
+}
+
+/// The last half minute of the speed trace, in bytes per second.
+pub fn speed() -> std::collections::VecDeque<f32> {
+    (0..30).map(|i| ((12.0 + 3.0 * (i as f64 * 0.7).sin()) * MIB) as f32).collect()
+}
 
 struct Sample {
     id: &'static str,
@@ -31,7 +57,7 @@ fn base(s: &Sample) -> DownloadTask {
     let init = TaskInit {
         url: Some(format!("https://example.invalid/{}", s.id)),
         source: Some(s.source),
-        output_dir: Some("C:\\Users\\Alex\\Music".into()),
+        output_dir: Some(OUTPUT_DIR.into()),
         format: Some(s.format.into()),
         quality: Some("320".into()),
         video_quality: Some(VideoQuality::P1080),
@@ -477,6 +503,29 @@ pub fn media() -> MediaMetadata {
         like_count: None,
         upload_date: Some("20240309".into()),
         extractor: Some("youtube".into()),
+    }
+}
+
+/// The Reels link of [`short`].
+pub const SHORT_URL: &str = "https://www.instagram.com/reel/C0ffee/";
+
+/// A Reels link looked up: the short-form poster.
+pub fn short() -> MediaMetadata {
+    MediaMetadata {
+        title: "Sourdough, day three".into(),
+        uploader: "breadbythebay".into(),
+        duration: 41.0,
+        thumbnail_url: String::new(),
+        url: SHORT_URL.into(),
+        is_collection: false,
+        entries: Vec::new(),
+        description: Some("Day three of the starter. It finally doubled overnight.".into()),
+        width: Some(1080.0),
+        height: Some(1920.0),
+        view_count: Some(48_210.0),
+        like_count: Some(3_904.0),
+        upload_date: Some("20261112".into()),
+        extractor: Some("Instagram".into()),
     }
 }
 
