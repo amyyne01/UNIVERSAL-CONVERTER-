@@ -116,9 +116,9 @@ fn button(k: &Skin, key: &'static str, label: &str, primary: bool) -> El {
     let b = el().key(key).h(32.0).px(14.0).center().radius(8.0).role("button").label(label).focusable(true).cursor(rune::Cursor::Pointer);
     let words = text(label).font(style(13.0, 500.0));
     if primary {
-        b.fill(k.accent).press_scale(0.98).child(words.color(k.on_accent))
+        b.fill(k.accent).press_scale(crate::motion::Press::Button.scale()).child(words.color(k.on_accent))
     } else {
-        b.border(1.0, k.line).hover(k.raised).press_scale(0.98).child(words.color(k.text))
+        b.border(1.0, k.line).hover(k.raised).press_scale(crate::motion::Press::Button.scale()).child(words.color(k.text))
     }
 }
 

@@ -404,6 +404,12 @@ mod tests {
         ("main.rs", "Transition::", 1, "same line: Transition::blur_replace() (M6)"),
         ("picker.rs", ".transition(", 1, "the picker's opacity swap; becomes PLACE (M6)"),
         ("picker.rs", "Transition::", 1, "same line: rune::Transition::opacity() (M6)"),
+        (
+            "overlays.rs",
+            "press_scale(",
+            2,
+            "a button press through Press::Button.scale(); the call itself stays until the Moves verbs exist",
+        ),
         ("picker.rs", "press_scale(", 1, "a tile press, 0.98 = Press::Tile (presets step)"),
         ("directions/orbit.rs", "press_scale(", 2, "button 0.97 and icon 0.94 = Press::Button / Press::Icon"),
         ("directions/orbit/home.rs", "press_scale(", 1, "button 0.97 = Press::Button"),
