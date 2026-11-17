@@ -443,8 +443,10 @@ mod tests {
             }
             let text = std::fs::read_to_string(f).expect("read source");
             // Everything from a file's test module on is test code; its clocks are not app timing.
-            let code = text.split("#[cfg(test)]").next().unwrap();
-            let code_lines: Vec<&str> = code.lines().filter(|l| !l.trim_start().starts_with("//")).collect();
+            // Only an inline `#[cfg(test)] mod x {` cuts: a `#[cfg(test)] mod x;` declaration (main.rs) does not.
+            let lines: Vec<&str> = text.lines().collect();
+            let cut = lines.windows(2).position(|w| w[0].trim() == "#[cfg(test)]" && w[1].trim_end().ends_with('{')).unwrap_or(lines.len());
+            let code_lines: Vec<&str> = lines[..cut].iter().copied().filter(|l| !l.trim_start().starts_with("//")).collect();
             scanned_lines += code_lines.len();
             for pat in FORBIDDEN {
                 let found = code_lines.iter().filter(|l| l.contains(pat)).count();
