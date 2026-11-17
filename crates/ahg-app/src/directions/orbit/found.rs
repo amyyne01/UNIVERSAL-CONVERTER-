@@ -10,7 +10,7 @@ use ahg_engine::tier::{self, BASIC_LIMITS, Plan};
 use ahg_engine::types::{MediaMetadata, Playlist, SearchResult, SourcePlatform as Src, VideoQuality};
 use rune::{El, Icon, ScrollSpec, TextStyle, col, el, icon, row, spacer};
 
-use super::draw::{Pass, orbit};
+use super::draw;
 use super::look::{BODY, BODY_M, FIG, FIG_L, Pal, SMALL, SMALL_M, mix, txt};
 use super::{Tone, button, icon_button, keycap, model};
 use crate::copy::{self, found as f};
@@ -97,9 +97,9 @@ fn bone(p: &Pal, w: f32, h: f32) -> El {
     el().w(w).h(h).radius(4.0).fill(mix(p.raised, p.text, 0.04))
 }
 
-/// The planned orbit at 16: something is being worked out.
+/// The ring at 16, waiting: something is being worked out.
 fn waiting(p: &Pal) -> El {
-    el().size(16.0, 16.0).shape(orbit(16.0, Pass::Planned, p.track, p.text2, p.card))
+    draw::waiting_ring(16.0, &draw::material(p, p.accent, p.card))
 }
 
 /// Artwork that has not arrived: a tile tinted by its source, its kind's glyph.

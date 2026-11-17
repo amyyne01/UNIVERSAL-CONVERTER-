@@ -5,9 +5,8 @@
 //! body is on its orbit: the ring, the one place the accent shows here.
 use rune::{El, Icon, col, el, icon, row, spacer};
 
-use super::draw::{Pass, orbit};
+use super::draw;
 use super::look::{BODY, BODY_M, FIG, Pal, SMALL, mix, txt};
-use super::model;
 use crate::copy;
 use crate::format;
 use crate::gate::{Nav, State};
@@ -40,7 +39,7 @@ pub fn view(s: &State, p: &Pal) -> El {
 
 fn panel(s: &State, p: &Pal, open: bool) -> El {
     let active: Vec<_> = s.tasks.iter().filter(|t| format::is_active(t)).collect();
-    let flying = (!active.is_empty()).then(|| active.iter().map(|t| model::percent(t)).sum::<f32>() / active.len() as f32);
+    let flying = !active.is_empty();
     // The orbit line: from the first body's centre to the last's, behind them.
     let foot = PAD + if open { 40.0 + PAD } else { 0.0 };
     let line = el().w(1.0).fill(p.track).pin(Some(PAD + SLOT / 2.0 - 0.5), Some(PAD + SLOT / 2.0), None, Some(foot + SLOT / 2.0));
@@ -54,10 +53,10 @@ fn panel(s: &State, p: &Pal, open: bool) -> El {
         .role("tablist")
         .label(copy::RAIL_ARIA)
         .child(line)
-        .child(item(s, p, Nav::Home, &icons::HOME, copy::NAV_HOME, 1, 0, None, open))
+        .child(item(s, p, Nav::Home, &icons::HOME, copy::NAV_HOME, 1, 0, false, open))
         .child(item(s, p, Nav::Downloads, &icons::DOWNLOAD, copy::NAV_DOWNLOADS, 2, active.len(), flying, open))
         .child(spacer())
-        .child(item(s, p, Nav::Settings, &icons::SETTINGS, copy::NAV_SETTINGS, 3, 0, None, open));
+        .child(item(s, p, Nav::Settings, &icons::SETTINGS, copy::NAV_SETTINGS, 3, 0, false, open));
     if open {
         c = c.child(pin(s, p));
         if !s.nav_pinned {
@@ -68,7 +67,7 @@ fn panel(s: &State, p: &Pal, open: bool) -> El {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn item(s: &State, p: &Pal, nav: Nav, glyph: &'static Icon, label: &str, n: usize, count: usize, flying: Option<f32>, open: bool) -> El {
+fn item(s: &State, p: &Pal, nav: Nav, glyph: &'static Icon, label: &str, n: usize, count: usize, flying: bool, open: bool) -> El {
     let on = s.nav == nav;
     let disc = el()
         .size(BODY_D, BODY_D)
@@ -78,8 +77,8 @@ fn item(s: &State, p: &Pal, nav: Nav, glyph: &'static Icon, label: &str, n: usiz
         .border(1.0, if on { p.text } else { p.track })
         .child(icon(glyph, 16.0).color(if on { p.deep } else { p.text2 }));
     let mut body = el().size(SLOT, SLOT).radius(SLOT / 2.0).center().fill(p.deep);
-    if let Some(pct) = flying {
-        body = body.shape(orbit(SLOT, Pass::Flying(pct.max(0.02)), p.track, p.accent, p.deep));
+    if flying {
+        body = body.child(draw::overall_ring(s, "nav-ring", SLOT, &draw::material(p, p.accent, p.deep)).absolute(0.0, 0.0));
     }
     body = body.child(disc);
     if count > 0 && !open {

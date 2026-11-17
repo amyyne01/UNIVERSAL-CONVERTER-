@@ -4,7 +4,7 @@
 use ahg_engine::types::{DownloadStatus as St, DownloadTask, ErrorCode};
 use rune::{Color, El, Icon, ScrollSpec, col, el, icon, row, spacer};
 
-use super::draw::{Pass, orbit};
+use super::draw::{self, Pass};
 use super::look::{BODY, BODY_M, FIG, FIG_M, FIG_S, PAGE_TITLE, Pal, SMALL, SMALL_M, mix, txt};
 use super::model;
 use super::{Tone, button, cover, icon_button};
@@ -13,6 +13,7 @@ use crate::format::{self, is_active, is_live};
 use crate::gate::{Confirm, Filter, Nav, State};
 use crate::icons;
 use crate::keys::{self, RowAct};
+use crate::ring;
 
 const ROW_H: f32 = 64.0;
 const RING: f32 = 52.0;
@@ -302,6 +303,7 @@ fn empty_row(p: &Pal) -> El {
 // ── A row ───────────────────────────────────────────────────────────────────
 
 /// The orbit a task is on, and the ink it is drawn in; `None` once it has landed or stopped.
+#[allow(dead_code)] // unused until cleanup (step 19)
 fn pass(p: &Pal, t: &DownloadTask) -> Option<(Pass, Color)> {
     let pct = model::percent(t);
     Some(match t.progress.status {
@@ -338,13 +340,13 @@ fn task_row(s: &State, p: &Pal, t: &DownloadTask, rule: bool, grip: bool) -> El 
     let id = &t.task_id;
 
     // Where it is: on its orbit, or landed.
-    let art = match pass(p, t) {
-        Some((pass, ink)) => el().size(RING, RING).center().shape(orbit(RING, pass, p.track, ink, under)).child(cover(s, p, t, 32.0, true)),
-        None => el().size(RING, RING).center().child(cover(s, p, t, 40.0, false).opacity(if failed || st == St::Cancelled {
-            0.55
-        } else {
-            1.0
-        })),
+    let art = if draw::has_ring(s, t) {
+        el().size(RING, RING)
+            .center()
+            .child(draw::task_ring(s, t, RING, &draw::material(p, ring::tint(t, p.dark), under)).absolute(0.0, 0.0))
+            .child(cover(s, p, t, 32.0, true))
+    } else {
+        el().size(RING, RING).center().child(cover(s, p, t, 40.0, false).opacity(if failed || st == St::Cancelled { 0.55 } else { 1.0 }))
     };
 
     // Line 1: the label, and the link on failed rows that have a title.

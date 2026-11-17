@@ -2,13 +2,90 @@
 //! the planet (the product's own mark, flat), and the speed trace.
 use std::f32::consts::TAU;
 
-use rune::{Color, LineCap, Shape};
+use ahg_engine::types::DownloadTask;
+use rune::{Color, El, LineCap, Shape, el};
 
+use super::look::Pal;
+use crate::gate::State;
 pub use crate::ring::Pass;
-use crate::ring::{Material, arc, disc, shape};
+use crate::ring::{self, Material, arc, disc, shape};
+
+/// Orbit's ring material (`ring::orbit`) in `tint`, on the look's own track, with the craft's
+/// gap cut in `under`, the surface the ring sits on. Both replace the shared roles' colours, so
+/// the palette index given to `ring::orbit` does not reach the result.
+pub fn material(p: &Pal, tint: Color, under: Color) -> Material {
+    Material { track: p.track, under, ..ring::orbit(0, p.dark, tint) }
+}
+
+/// Whether a task is drawn on its ring: not once it has landed, and not when it failed (its
+/// cover stands faded, as Shelf's record goes back to no ring).
+pub fn has_ring(s: &State, t: &DownloadTask) -> bool {
+    !matches!(s.rings.pass(&t.task_id), None | Some(Pass::Landed | Pass::Failed(_)))
+}
+
+/// A task's ring, `ring::view` in Orbit's material.
+pub fn task_ring(s: &State, t: &DownloadTask, size: f32, m: &Material) -> El {
+    let rank = s.tasks.iter().position(|x| x.task_id == t.task_id).unwrap_or(0);
+    // TODO(motion): `reduced` comes from the motion context at step 52.
+    let ring = ring::view(&format!("ring-{}", t.task_id), size, &s.rings, &t.task_id, &body(m), false, rank);
+    with_craft(ring, size, s.rings.pass(&t.task_id), m)
+}
+
+/// Something being worked out that is not a task: `ring::waiting`, the craft on the pad.
+pub fn waiting_ring(size: f32, m: &Material) -> El {
+    // TODO(motion): `reduced` comes from the motion context at step 52.
+    with_craft(ring::waiting("ring-waiting", size, &body(m), false, 0), size, Some(Pass::OnThePad), m)
+}
+
+/// The overall ring, `ring::overall`: nothing drawn while no task is unfinished.
+pub fn overall_ring(s: &State, key: &str, size: f32, m: &Material) -> El {
+    // ponytail: the craft's place repeats `Rings::sync`'s overall mean (the value is private to
+    // `ring.rs`); read it from `Rings` once an accessor exists.
+    let open: Vec<f32> = s
+        .tasks
+        .iter()
+        .filter(|t| !matches!(s.rings.pass(&t.task_id), None | Some(Pass::Done | Pass::Landed | Pass::Failed(_))))
+        .map(super::model::percent)
+        .collect();
+    let at = (!open.is_empty()).then(|| Pass::Flying(open.iter().sum::<f32>() / open.len() as f32));
+    // TODO(motion): `reduced` comes from the motion context at step 52.
+    with_craft(ring::overall(key, size, &s.rings, &body(m), false), size, at, m)
+}
+
+/// The track and the arc only: the craft is laid over them as strokes by [`with_craft`].
+fn body(m: &Material) -> Material {
+    Material { track: m.track, under: Color::TRANSPARENT, stroke: m.stroke, craft: Color::TRANSPARENT, segments: None }
+}
+
+/// The approved craft: a short rounded stroke at the pass's head with a gap cut round it in
+/// `under`, hollow while held (the drawing of `ring::gallery`). Thinner below 40 pt, where the
+/// gallery's 9 / 5 / 2 pt read chunky: in proportion to the size, down to [`CRAFT_MIN`].
+fn with_craft(ring: El, size: f32, pass: Option<Pass>, m: &Material) -> El {
+    // Mirrors the private `ring::travelled`: how far round the craft is, and whether it is held.
+    let (at, hollow) = match pass {
+        Some(Pass::Flying(v) | Pass::Stalled(v) | Pass::Failed(v)) => (v, false),
+        Some(Pass::Holding(v) | Pass::Countdown(v)) => (v, true),
+        Some(Pass::Closing | Pass::Done) => (1.0, false),
+        Some(Pass::OnThePad) => (0.0, false),
+        Some(Pass::Planned | Pass::Landed) | None => return ring,
+    };
+    let k = (size / 40.0).clamp(CRAFT_MIN, 1.0);
+    let [a, b] = ring::craft_span(size, at);
+    let mut layers = vec![(9.0 * k, m.under), (5.0 * k, m.craft)];
+    if hollow {
+        layers.push((2.0 * k, m.under));
+    }
+    ring.children(
+        layers.into_iter().map(|(w, ink)| el().size(size, size).absolute(0.0, 0.0).shape(ring::craft(size, w, ink).trimmed(a, b))),
+    )
+}
+
+/// The least share of the gallery's craft widths, reached at 18 pt (the found step's 16 pt ring).
+const CRAFT_MIN: f32 = 0.45;
 
 /// The signature, in Orbit's dress: its track, its ink for arc and craft, the row beneath.
 /// The geometry is the shared ring's (`crate::ring::shape`).
+#[allow(dead_code)] // unused until cleanup (step 19)
 pub fn orbit(size: f32, pass: Pass, track: Color, ink: Color, under: Color) -> Shape {
     shape(size, pass, &Material { track, under, stroke: ink, craft: ink, segments: None })
 }

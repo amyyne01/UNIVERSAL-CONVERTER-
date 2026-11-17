@@ -59,7 +59,7 @@ use ahg_engine::types::{DownloadStatus as St, DownloadTask};
 use rune::{Color, Cursor, Cx, El, Icon, canvas, col, el, row, spacer};
 
 use crate::copy;
-use crate::directions::orbit::draw::{Pass, orbit, planet};
+use crate::directions::orbit::draw::{self, Pass, planet};
 use crate::directions::orbit::found;
 use crate::directions::orbit::look::{Pal, mix, txt};
 use crate::directions::orbit::model;
@@ -236,6 +236,7 @@ fn player(s: &State, p: &Pal, fit: Fit) -> El {
 }
 
 /// The orbit a task is on and the ink it is drawn in; `None` once it stopped.
+#[allow(dead_code)] // unused until cleanup (step 19)
 pub(crate) fn pass(p: &Pal, t: &DownloadTask) -> Option<(Pass, Color)> {
     let pct = model::percent(t);
     Some(match t.progress.status {
@@ -250,11 +251,10 @@ pub(crate) fn pass(p: &Pal, t: &DownloadTask) -> Option<(Pass, Color)> {
 
 /// A cover on its orbit: `size` is the ring's square, the cover sits `inset` inside it.
 pub(crate) fn on_orbit(s: &State, p: &Pal, t: &DownloadTask, size: f32, inset: f32) -> El {
-    let ring = el().size(size, size).center();
-    let ring = match pass(p, t) {
-        Some((pass, ink)) => ring.shape(orbit(size, pass, p.track, ink, p.bg)),
-        None => ring,
-    };
+    let mut ring = el().size(size, size).center();
+    if draw::has_ring(s, t) {
+        ring = ring.child(draw::task_ring(s, t, size, &draw::material(p, crate::ring::tint(t, p.dark), p.bg)).absolute(0.0, 0.0));
+    }
     ring.child(cover(s, p, t, size - 2.0 * inset, true))
 }
 
@@ -715,7 +715,8 @@ fn transport(s: &State, p: &Pal, fit: Fit) -> El {
     } else {
         let frac = if total > 0.0 { (done / total) as f32 } else { 0.0 };
         let mut figures = row()
-            .w_full()
+            .grow(1.0)
+            .min_w(0.0)
             .gap(8.0)
             .child(txt(active.len().to_string(), FIG, p.text))
             .child(txt(copy::HOME_IN_FLIGHT_SUFFIX.trim_start(), SMALL, p.text2))
@@ -724,12 +725,13 @@ fn transport(s: &State, p: &Pal, fit: Fit) -> El {
             figures = figures.child(txt(format::speed(speed), FIG, p.text2));
         }
         figures = figures.child(txt(format!("{}%", (frac * 100.0).round()), FIG, p.muted));
-        col()
+        row()
             .w(if fit.tall { 240.0 } else { 160.0 })
-            .gap(8.0)
+            .gap(12.0)
+            .center_y()
             .label(copy::transferring_aria(flying, &format::speed(speed)))
+            .child(draw::overall_ring(s, "transport-ring", 28.0, &draw::material(p, p.accent, p.deep)))
             .child(figures)
-            .child(el().w_full().h(2.0).radius(1.0).fill(p.line).child(el().w_frac(frac.max(0.01)).h_full().radius(1.0).fill(p.text2)))
     };
 
     row()
