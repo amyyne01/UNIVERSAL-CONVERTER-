@@ -47,7 +47,7 @@ pub fn note_adding(count: usize) -> String {
 
 // ── 3. Look-up failures and empty answers (the red panel and the dashed panel)
 pub const ERROR_TRY_AGAIN: &str = "Try again";
-pub const ERROR_BATCH_NONE: &str = "No downloadable links found. Check what you pasted and try again.";
+pub const ERROR_BATCH_NONE: &str = super::ERR_NO_LINKS; // alias
 pub const ERROR_DROP_WRONG_TYPE: &str = "Drop a .txt or .csv file of links.";
 pub const ERROR_DROP_TOO_LARGE: &str = "That file is too large. Keep link lists under 2MB.";
 pub const ERROR_DROP_NO_LINKS: &str = "That file has no links. Check it and drop it again.";
@@ -97,28 +97,25 @@ pub fn engine_stopped(last_line: &str) -> String {
 // The twelve cause + remedy sentences (`describe_error`). `{thing}` in a cause
 // becomes `video` for YouTube, Vimeo, Dailymotion, Rumble and Twitch, else `link`.
 // The two are joined with one space.
-pub const ERROR_PRIVATE: (&str, &str) =
-    ("This {thing} is private.", "Ask the owner for access, or sign in with your browser in Settings, then retry.");
-pub const ERROR_REMOVED: (&str, &str) = ("We couldn’t find anything at this link.", "Check the link, or paste a different one.");
-pub const ERROR_AGE_RESTRICTED: (&str, &str) = ("This {thing} is age-restricted.", "Sign in with your browser in Settings, then retry.");
-pub const ERROR_LOGIN_REQUIRED: (&str, &str) =
-    ("This site wants you to sign in first.", "Sign in with your browser in Settings, then retry.");
-pub const ERROR_GEO_BLOCKED: (&str, &str) =
-    ("This {thing} isn’t available in your country.", "Paste a different link, or use a VPN you trust.");
-pub const ERROR_DRM: (&str, &str) = ("This {thing} is copy-protected.", "It can’t be downloaded. Paste a different link.");
-pub const ERROR_RATE_LIMITED: (&str, &str) = ("The site is asking us to slow down.", "Wait a few minutes, then retry.");
-pub const ERROR_NETWORK: (&str, &str) = ("The connection dropped.", "Check your internet, then retry.");
-pub const ERROR_UNSUPPORTED: (&str, &str) =
-    ("This link isn’t something we can download.", "Check the link, or paste one from YouTube, Spotify, SoundCloud, Vimeo and more.");
-pub const ERROR_FFMPEG_MISSING: (&str, &str) =
-    ("A part of the app needed for conversion is missing.", "Download the app again, or restore the files it came with.");
-pub const ERROR_DISK_FULL: (&str, &str) =
-    ("There is no space left on the drive.", "Free up some space or pick another folder in Settings, then retry.");
-pub const ERROR_UNKNOWN: (&str, &str) = ("Something went wrong.", "Try again in a moment.");
+// These are aliases of the `ERR_*` strings in `copy.rs`, where the words live once.
+use super as c;
+pub const ERROR_PRIVATE: (&str, &str) = (c::ERR_PRIVATE_CAUSE, c::ERR_PRIVATE_REMEDY);
+pub const ERROR_REMOVED: (&str, &str) = (c::ERR_REMOVED_CAUSE, c::ERR_REMOVED_REMEDY);
+pub const ERROR_AGE_RESTRICTED: (&str, &str) = (c::ERR_AGE_RESTRICTED_CAUSE, c::ERR_AGE_RESTRICTED_REMEDY);
+pub const ERROR_LOGIN_REQUIRED: (&str, &str) = (c::ERR_LOGIN_REQUIRED_CAUSE, c::ERR_LOGIN_REQUIRED_REMEDY);
+pub const ERROR_GEO_BLOCKED: (&str, &str) = (c::ERR_GEO_BLOCKED_CAUSE, c::ERR_GEO_BLOCKED_REMEDY);
+pub const ERROR_DRM: (&str, &str) = (c::ERR_DRM_CAUSE, c::ERR_DRM_REMEDY);
+pub const ERROR_RATE_LIMITED: (&str, &str) = (c::ERR_RATE_LIMITED_CAUSE, c::ERR_RATE_LIMITED_REMEDY);
+pub const ERROR_NETWORK: (&str, &str) = (c::ERR_NETWORK_CAUSE, c::ERR_NETWORK_REMEDY);
+pub const ERROR_UNSUPPORTED: (&str, &str) = (c::ERR_UNSUPPORTED_CAUSE, c::ERR_UNSUPPORTED_REMEDY);
+pub const ERROR_FFMPEG_MISSING: (&str, &str) = (c::ERR_FFMPEG_MISSING_CAUSE, c::ERR_FFMPEG_MISSING_REMEDY);
+pub const ERROR_DISK_FULL: (&str, &str) = (c::ERR_DISK_FULL_CAUSE, c::ERR_DISK_FULL_REMEDY);
+pub const ERROR_UNKNOWN: (&str, &str) = (c::ERR_UNKNOWN_CAUSE, c::ERR_UNKNOWN_REMEDY);
 /// Replaces the whole sentence for a `removed` failure on a site with no tab of its own.
-pub const ERROR_GENERIC_DEAD_END: &str = "We couldn’t find anything at this link. The site may not be supported, or the address is wrong. Supported sites include YouTube, Vimeo, X, TikTok, Twitch, SoundCloud, Bandcamp and Reddit.";
-/// Replaces the remedy for a Spotify failure of kind unknown, removed or unsupported. Names the Spotify tab.
-pub const ERROR_SPOTIFY_REMEDY: &str = "We find Spotify songs by name. Search for it in the Spotify tab, or paste a different link.";
+pub const ERROR_GENERIC_DEAD_END: &str = c::ERR_GENERIC_DEAD_END;
+/// Replaces the remedy for a Spotify failure of kind unknown, removed or unsupported.
+// OD-13: placeholder until the owner words it (the sentence named the Spotify tab; see `copy::ERR_SPOTIFY_REMEDY`)
+pub const ERROR_SPOTIFY_REMEDY: &str = c::ERR_SPOTIFY_REMEDY;
 
 /// Joins a cause (with `{thing}` filled in) and a remedy.
 pub fn error_sentence(pair: (&str, &str), thing: &str) -> String {
@@ -178,16 +175,18 @@ pub fn results_count(count: usize) -> String {
     format!("{count} result{}", if count == 1 { "" } else { "s" })
 }
 
+/// Alias of `copy::search_row_aria`.
 pub fn results_row_aria(title: &str, subtitle: &str) -> String {
-    if subtitle.is_empty() { format!("Download {title}") } else { format!("Download {title}, {subtitle}") }
+    super::search_row_aria(title, subtitle)
 }
 
 pub fn results_pick_aria(title: &str) -> String {
     format!("Select {title}")
 }
 
+/// Alias of `copy::selected_count`.
 pub fn results_selected(count: usize) -> String {
-    format!("{count} selected")
+    super::selected_count(count)
 }
 
 pub fn results_download_n(count: usize) -> String {
@@ -277,8 +276,8 @@ pub fn playlist_enqueue_error(failed: usize, total: usize) -> String {
 pub const BASIC_AUDIO: &str = "Basic: MP3, AAC, M4A, OGG and Opus, up to 320 kbps";
 pub const BASIC_VIDEO: &str = "Basic: video up to 1080p";
 pub const BASIC_COLLECTION: &str = "Basic: the first 20 tracks of any playlist";
-pub const LIMIT_COLLECTION: &str = "Basic limit reached: 20 tracks per playlist. Premium removes the limit.";
-pub const LIMIT_BATCH: &str = "Basic limit reached: 5 links at a time. Premium removes the limit.";
+pub const LIMIT_COLLECTION: &str = super::BASIC_LIMIT_COLLECTION; // alias
+pub const LIMIT_BATCH: &str = super::BASIC_LIMIT_BATCH; // alias
 pub const LIMIT_SKIPPED_LEAD: &str = "The last ";
 pub const LIMIT_SKIPPED_TRAIL: &str = " you picked won’t be downloaded.";
 pub const SEE_PLANS: &str = "See plans";
@@ -342,6 +341,5 @@ pub fn clipboard_title(label: &str) -> String {
     format!("{label} copied")
 }
 
-/// The Settings row that switches the offer on (also in `copy/settings.rs` if present there).
-pub const CLIPBOARD_SETTING: (&str, &str) =
-    ("Clipboard watcher", "Offer a one-click download whenever you copy a link, even outside the app");
+/// The Settings row that switches the offer on: an alias of `settings::CLIPBOARD_WATCHER`.
+pub const CLIPBOARD_SETTING: (&str, &str) = super::settings::CLIPBOARD_WATCHER;

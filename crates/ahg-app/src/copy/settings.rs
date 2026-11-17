@@ -14,8 +14,8 @@ pub const CHANGE: &str = "Change";
 
 // ── Download defaults
 pub const DEFAULTS: &str = "Download defaults";
-/// Names "platform tab", which the new navigation no longer has: the owner rewords it.
-pub const DEFAULTS_HINT: &str = "What a new download starts with. Each platform tab can still override them.";
+// OD-13: placeholder until the owner words it (Electron: SettingsTab.tsx:452 names the "platform tab", which the new navigation lacks)
+pub const DEFAULTS_HINT: &str = "Each download can still override them.";
 pub const AUDIO_FORMAT: &str = "Audio format";
 pub const AUDIO_QUALITY: &str = "Audio quality";
 pub const VIDEO_QUALITY: &str = "Video quality";
@@ -122,3 +122,140 @@ pub const REPORT: (&str, &str) = (
     "Say what you pasted and the message you saw. If asked, attach ahg.log, found in the app's folder under %APPDATA%.",
 );
 pub const GET_SUPPORT: &str = "Get support";
+
+// ── Needs review (the Core::set_hold_unconfirmed switch, under Download defaults)
+// OD-13: placeholder until the owner supplies the wording
+pub const NEEDS_REVIEW: (&str, &str) =
+    ("Needs review", "Hold a Spotify song until you confirm the audio match, if the app is only guessing.");
+
+// ── Option labels of every select in the Settings tab
+// Electron `src/constants.ts`: AUDIO_FORMATS 25-32, AUDIO_QUALITIES 45-51 and VIDEO_QUALITIES 55-63 are
+// `copy::found::{AUDIO_FORMATS, AUDIO_QUALITIES, VIDEO_QUALITIES}`; THEMES is above.
+/// constants.ts:68-73 (SUBTITLE_MODE_OPTIONS)
+pub const SUBTITLE_MODES: [&str; 4] = ["Off", "Embed in the file", "Separate .srt", "Both"];
+/// constants.ts:75-79 (SPONSORBLOCK_OPTIONS)
+pub const SPONSOR_MODES: [&str; 3] = ["Off", "Mark as chapters", "Cut them out"];
+/// constants.ts:81-85 (VIDEO_CONTAINER_OPTIONS)
+pub const CONTAINERS: [&str; 3] = ["MP4 (most compatible)", "MKV (keeps everything)", "WebM"];
+/// constants.ts:87-92 (VIDEO_CODEC_OPTIONS)
+pub const CODECS: [&str; 4] = ["Best available", "H.264 (plays anywhere)", "VP9 (smaller)", "AV1 (smallest)"];
+/// constants.ts:101-110 (COOKIE_BROWSER_OPTIONS), the first is the "no cookies" choice
+pub const COOKIE_BROWSERS: [&str; 8] = ["Don't use cookies", "Chrome", "Edge", "Firefox", "Brave", "Chromium", "Opera", "Vivaldi"];
+/// constants.ts:98 (CONCURRENCY_OPTIONS, `1 at a time`, `2 at a time` ...)
+pub fn concurrency_option(slots: usize) -> String {
+    format!("{slots} at a time")
+}
+/// SettingsTab.tsx:74 (DAYS, the day chips; the full names are `DAYS` above, SettingsTab.tsx:75-77)
+pub const DAYS_SHORT: [&str; 7] = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+
+// ── Settings: the rest of the screen's states
+/// SettingsTab.tsx:336-337, under `LOADING` when the file could not be read
+pub const LOADING_HINT: &str =
+    "If this doesn’t clear, your settings file couldn’t be read. Restart the app. Your downloads and license are unaffected.";
+/// SettingsTab.tsx:1029 (the title of the machine id line)
+pub const MACHINE_ID_TITLE: &str = "What a key binds to on this computer";
+/// SettingsTab.tsx:1030
+pub const MACHINE_ID: &str = "Machine ID";
+/// SettingsTab.tsx:1018-1019; `date` is the local date of the end of the cooldown
+pub fn cooldown_note(date: &str) -> String {
+    format!("Transfer unavailable until {date} — a license can be moved to another PC once every 7 days.")
+}
+
+// ── Software: status lines (SettingsTab.tsx:360-381)
+pub const ENGINE_IDLE: &str = "yt-dlp powers every download"; // :366
+pub const ENGINE_UP_TO_DATE: &str = "yt-dlp is up to date"; // :364
+pub const APP_UP_TO_DATE: &str = "You're on the latest version"; // :380
+/// :361
+pub fn engine_available(latest: &str) -> String {
+    format!("yt-dlp {latest} is available")
+}
+/// :363
+pub fn engine_updated(version: &str) -> String {
+    format!("Engine updated to {version}")
+}
+/// :377
+pub fn app_available(version: &str) -> String {
+    format!("v{version} is available")
+}
+/// :379
+pub fn app_ready(version: &str) -> String {
+    format!("v{version} ready, restart to install")
+}
+
+// ── Plan & license: Basic sentences and locks
+/// SettingsTab.tsx:531-533 (the Simultaneous downloads description on Basic; `lib/tier.ts:82`)
+pub const SIMULTANEOUS_BASIC: &str = "Basic: 2 downloads at once. The rest wait their turn.";
+/// SettingsTab.tsx:967 with `lib/tier.ts:85` (the plan card on Basic)
+pub const PLAN_BASIC_DESC: &str = "Included in Basic: 1080p video · 320 kbps audio · 5-link batches · 20 tracks per playlist. Premium lifts these limits with a one-time purchase.";
+/// `lib/tier.ts:52-58`: what a locked control says when it is tapped on Basic
+pub const LOCK_SCHEDULER: &str = "Scheduled downloads are a Premium feature.";
+pub const LOCK_SUBTITLE_LANGUAGES: &str = "Multiple subtitle languages are a Premium feature.";
+pub const LOCK_SUBTITLE_AUTO: &str = "Auto-generated captions are a Premium feature.";
+pub const LOCK_SPLIT_CHAPTERS: &str = "Splitting by chapter is a Premium feature.";
+pub const LOCK_CONCURRENCY: &str = "More than 2 downloads at once is a Premium feature.";
+pub const LOCK_COOKIES: &str = "Signing in with your browser is a Premium feature.";
+
+// ── The update prompt (`src/components/UpdateModal.tsx`)
+pub const UPDATE_TITLE_READY: &str = "Update ready to install"; // :157
+pub const UPDATE_TITLE_DOWNLOADING: &str = "Downloading the update…"; // :157
+pub const UPDATE_TITLE_AVAILABLE: &str = "A new version is available"; // :157
+pub const UPDATE_LATER: &str = "Not now"; // :190 (when the update is ready)
+pub const UPDATE_LATER_AVAILABLE: &str = "Later"; // :190
+/// :161; `version` is shown in the mono face
+pub const UPDATE_BODY_READY: (&str, &str) = ("Version ", " is downloaded. Restarting takes a few seconds and puts you on it.");
+/// :163
+pub const UPDATE_BODY_DOWNLOADING: (&str, &str) =
+    ("Version ", " is on its way. You can keep using the app — this finishes in the background.");
+/// :164
+pub const UPDATE_BODY_AVAILABLE: (&str, &str) = ("Version ", " is out. Downloading it now means the next launch is already up to date.");
+
+// ── The upgrade sheet and activation (`src/components/UpgradeSheet.tsx`, `src/constants.ts` PLAN_FEATURES)
+pub const UPGRADE_ARIA: &str = "Upgrade to Premium"; // :135
+pub const UPGRADE_TITLE_PREMIUM: &str = "You’re on Premium"; // :152
+pub const UPGRADE_TITLE_BASIC: &str = "One purchase removes every limit"; // :152
+pub const UPGRADE_LEAD_PREMIUM: &str = "Every feature below is included on this machine. Thank you for buying it."; // :156
+pub const UPGRADE_LEAD_BASIC: &str = "AHG Universal Converter is fully usable for free. Premium lifts the limits with a one-time purchase."; // :157
+pub const UPGRADE_PRICE: &str = "$3.99"; // :19
+pub const UPGRADE_BASIC_BLURB: &str = "What you have right now."; // :169
+pub const UPGRADE_BASIC_PRICE: &str = "Free"; // :170
+pub const UPGRADE_BASIC_PRICE_NOTE: &str = "no account, no key"; // :171
+pub const UPGRADE_PREMIUM_BLURB: &str = "Everything, on this machine, forever."; // :181
+pub const UPGRADE_PREMIUM_PRICE_NOTE: &str = "one-time purchase"; // :183
+pub const UPGRADE_RAIL_PREMIUM: &str = "Pay once"; // :391
+pub const UPGRADE_RAIL_BASIC: &str = "Free, no account"; // :391
+pub const UPGRADE_CURRENT: &str = "Current"; // :394
+pub const UPGRADE_CURRENT_PLAN: &str = "Your current plan"; // :441
+pub const UPGRADE_INCLUDED: &str = "Included in Premium"; // :441
+pub const UPGRADE_ACTIVE_HERE: &str = "Active on this machine"; // :199
+pub const UPGRADE_ACTIVE: &str = "Premium active"; // :214
+pub const UPGRADE_GET_KEY_LEAD: &str = "Get a key for "; // :223, followed by `UPGRADE_PRICE`
+pub const UPGRADE_HAVE_KEY: &str = "I already have a key"; // :232
+pub const UPGRADE_KEY_NOTE: &str =
+    "The key arrives by message after you buy. It is checked online once; after that it keeps working offline for up to 30 days."; // :250-251
+pub const UPGRADE_KEY_PLACEHOLDER: &str = "Paste your key…"; // :269
+pub const UPGRADE_KEY_ARIA: &str = "License key"; // :270
+pub const UPGRADE_CLIPBOARD_BLOCKED: &str = "Clipboard access blocked. Paste the key manually."; // :290
+pub const UPGRADE_VERIFYING: &str = "Verifying…"; // :318
+pub const UPGRADE_TRY_AGAIN: &str = "Try again"; // :318
+pub const UPGRADE_ACTIVATE: &str = "Activate Premium"; // :318
+pub const UPGRADE_KEY_REFUSED: &str = "That key was not accepted."; // :84, when the reply has no message
+pub const UPGRADE_KEY_REFUSED_TAIL: &str = " Check it for typos, then try again, or ask on Discord."; // :84, after the message
+pub const UPGRADE_NETWORK_ERROR: &str = "Network error. Check your connection and try again."; // :88
+pub const UPGRADE_ASK: &str = "Questions? Ask on Discord"; // :335
+pub const UPGRADE_FOOTER: &str = "One key, one machine. Move it to another PC from Settings."; // :338
+/// :217; `labels` are the lower-cased `UPGRADE_FEATURE_LABELS`
+pub fn upgrade_now_without_limits(labels: &str) -> String {
+    format!("Now without limits: {labels}.")
+}
+/// :365
+pub fn upgrade_plan_aria(title: &str) -> String {
+    format!("{title} plan")
+}
+/// constants.ts:37-73, PLAN_FEATURES (label, Basic value, Premium value)
+pub const UPGRADE_FEATURES: [(&str, &str, &str); 5] = [
+    ("Video quality", "Up to 1080p", "Up to 4K, or best available"),
+    ("Batch paste", "5 links at a time", "As many links as you paste"),
+    ("Playlists & albums", "First 20 tracks", "Every track"),
+    ("Lossless audio", "Lossy formats only", "FLAC, WAV and ALAC"),
+    ("Scheduled downloads", "Not included", "Run unattended, on your days"),
+];

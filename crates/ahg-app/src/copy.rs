@@ -57,7 +57,8 @@ pub const SOURCE_UNKNOWN: &str = "Unknown";
 pub const SHORTCUTS_ARIA: &str = "Keyboard shortcuts";
 pub const SHORTCUTS_TITLE: &str = "Keyboard shortcuts";
 pub const SHORTCUT_PALETTE: &str = "Open the command palette";
-pub const SHORTCUT_TABS: &str = "Switch tab (the order of the left rail)";
+// OD-13: placeholder until the owner words it (Electron ShortcutsSheet.tsx:11: "Switch tab (the order of the left rail)")
+pub const SHORTCUT_TABS: &str = "Go to Home, Downloads, Settings";
 pub const SHORTCUT_PASTE: &str = "Paste a link from Home and look it up";
 pub const SHORTCUT_ENTER: &str = "Look up the link or search in the field";
 pub const SHORTCUT_MOVE: &str = "Move between results";
@@ -514,7 +515,7 @@ pub const ERR_REMOVED_REMEDY: &str = "Check the link, or paste a different one."
 pub const ERR_AGE_RESTRICTED_CAUSE: &str = "This {thing} is age-restricted.";
 pub const ERR_AGE_RESTRICTED_REMEDY: &str = "Sign in with your browser in Settings, then retry.";
 pub const ERR_LOGIN_REQUIRED_CAUSE: &str = "This site wants you to sign in first.";
-pub const ERR_LOGIN_REQUIRED_REMEDY: &str = "Sign in with your browser in Settings, then retry.";
+pub const ERR_LOGIN_REQUIRED_REMEDY: &str = ERR_AGE_RESTRICTED_REMEDY; // alias: Electron words both the same
 pub const ERR_GEO_BLOCKED_CAUSE: &str = "This {thing} isn’t available in your country.";
 pub const ERR_GEO_BLOCKED_REMEDY: &str = "Paste a different link, or use a VPN you trust.";
 pub const ERR_DRM_CAUSE: &str = "This {thing} is copy-protected.";
@@ -535,7 +536,8 @@ pub const ERR_UNKNOWN_REMEDY: &str = "Try again in a moment.";
 /// Replaces the generic "removed" sentence when the source is a generic site.
 pub const ERR_GENERIC_DEAD_END: &str = "We couldn’t find anything at this link. The site may not be supported, or the address is wrong. Supported sites include YouTube, Vimeo, X, TikTok, Twitch, SoundCloud, Bandcamp and Reddit.";
 /// Replaces the remedy for a Spotify source whose kind is unknown, removed, unsupported or missing.
-pub const ERR_SPOTIFY_REMEDY: &str = "We find Spotify songs by name. Search for it in the Spotify tab, or paste a different link.";
+// OD-13: placeholder until the owner words it (Electron: "Search for it in the Spotify tab"; there is no Spotify tab now)
+pub const ERR_SPOTIFY_REMEDY: &str = "We find Spotify songs by name. Search for it on Home, or paste a different link.";
 
 /// One readable sentence pair: `{cause} {remedy}`, with `{thing}` set to `video` or `link`.
 pub fn error_text(cause: &str, remedy: &str, is_video_source: bool) -> String {
@@ -566,7 +568,133 @@ pub fn rate_line(bps: f64, eta_secs: f64) -> String {
     crate::format::rate(bps, eta_secs)
 }
 
+// ── Wording the Electron app does not have, typed by the presets until now.
+// invented (owner approved 2026-11-16, D43)
+pub const KEEP_OPEN: &str = "Keep open"; // invented (owner approved 2026-11-16, D43)
+pub const MATCH_MATCHING: &str = "Matching…"; // invented (owner approved 2026-11-16, D43)
+pub const MATCH_CONFIRMED: &str = "Confirmed"; // invented (owner approved 2026-11-16, D43)
+pub const MATCH_BEST_GUESS: &str = "Best guess"; // invented (owner approved 2026-11-16, D43)
+pub const MATCH_NONE: &str = "No match found"; // invented (owner approved 2026-11-16, D43)
+pub const COL_MATCH: &str = "Match"; // invented (owner approved 2026-11-16, D43)
+pub const LABEL_TIME_LEFT: &str = "Time left"; // invented (owner approved 2026-11-16, D43)
+pub const LABEL_SIZE: &str = "Size"; // invented (owner approved 2026-11-16, D43)
+pub const PICKER_TITLE: &str = "Choose a layout"; // invented (owner approved 2026-11-16, D43)
+pub const PICKER_ESC: &str = "Esc closes"; // invented (owner approved 2026-11-16, D43)
+pub const PICKER_NEW_LAYOUT: &str = "New layout"; // invented (owner approved 2026-11-16, D43)
+pub const PICKER_CLASSIC_LAYOUT: &str = "Classic layout"; // invented (owner approved 2026-11-16, D43)
+pub const PRESET_SIGNAL: &str = "Signal"; // invented (owner approved 2026-11-16, D43)
+pub const PRESET_SHELF: &str = "Shelf"; // invented (owner approved 2026-11-16, D43)
+pub const PRESET_ORBIT: &str = "Orbit"; // invented (owner approved 2026-11-16, D43)
+pub const NOT_IN_BUILD: &str = "This direction is not in this build"; // invented (owner approved 2026-11-16, D43)
+
 // ── Settings: its own file, shared by all six presets.
 pub mod settings;
 // ── The after-paste step (what the field found), shared by all six presets.
 pub mod found;
+
+/// Every `pub const` of the three copy files with the string literals it holds, read from
+/// the sources (so a new constant is checked without being listed). A name with several
+/// literals (a tuple, an array) appears once per literal.
+#[cfg(test)]
+mod tests {
+    const FILES: [(&str, &str); 3] =
+        [("copy", include_str!("copy.rs")), ("found", include_str!("copy/found.rs")), ("settings", include_str!("copy/settings.rs"))];
+
+    /// The same sentence under two names on purpose: (the alias, what it points at).
+    /// An alias holds no literal, so it can never be a second copy of the words.
+    fn aliases() -> Vec<(&'static str, &'static str)> {
+        use super::{found as f, settings as s};
+        vec![
+            (super::ERR_LOGIN_REQUIRED_REMEDY, super::ERR_AGE_RESTRICTED_REMEDY),
+            (super::ERR_NO_LINKS, f::ERROR_BATCH_NONE),
+            (super::BASIC_LIMIT_BATCH, f::LIMIT_BATCH),
+            (super::BASIC_LIMIT_COLLECTION, f::LIMIT_COLLECTION),
+            (super::ERR_PRIVATE_CAUSE, f::ERROR_PRIVATE.0),
+            (super::ERR_PRIVATE_REMEDY, f::ERROR_PRIVATE.1),
+            (super::ERR_REMOVED_CAUSE, f::ERROR_REMOVED.0),
+            (super::ERR_REMOVED_REMEDY, f::ERROR_REMOVED.1),
+            (super::ERR_AGE_RESTRICTED_CAUSE, f::ERROR_AGE_RESTRICTED.0),
+            (super::ERR_AGE_RESTRICTED_REMEDY, f::ERROR_AGE_RESTRICTED.1),
+            (super::ERR_LOGIN_REQUIRED_CAUSE, f::ERROR_LOGIN_REQUIRED.0),
+            (super::ERR_LOGIN_REQUIRED_REMEDY, f::ERROR_LOGIN_REQUIRED.1),
+            (super::ERR_GEO_BLOCKED_CAUSE, f::ERROR_GEO_BLOCKED.0),
+            (super::ERR_GEO_BLOCKED_REMEDY, f::ERROR_GEO_BLOCKED.1),
+            (super::ERR_DRM_CAUSE, f::ERROR_DRM.0),
+            (super::ERR_DRM_REMEDY, f::ERROR_DRM.1),
+            (super::ERR_RATE_LIMITED_CAUSE, f::ERROR_RATE_LIMITED.0),
+            (super::ERR_RATE_LIMITED_REMEDY, f::ERROR_RATE_LIMITED.1),
+            (super::ERR_NETWORK_CAUSE, f::ERROR_NETWORK.0),
+            (super::ERR_NETWORK_REMEDY, f::ERROR_NETWORK.1),
+            (super::ERR_UNSUPPORTED_CAUSE, f::ERROR_UNSUPPORTED.0),
+            (super::ERR_UNSUPPORTED_REMEDY, f::ERROR_UNSUPPORTED.1),
+            (super::ERR_FFMPEG_MISSING_CAUSE, f::ERROR_FFMPEG_MISSING.0),
+            (super::ERR_FFMPEG_MISSING_REMEDY, f::ERROR_FFMPEG_MISSING.1),
+            (super::ERR_DISK_FULL_CAUSE, f::ERROR_DISK_FULL.0),
+            (super::ERR_DISK_FULL_REMEDY, f::ERROR_DISK_FULL.1),
+            (super::ERR_UNKNOWN_CAUSE, f::ERROR_UNKNOWN.0),
+            (super::ERR_UNKNOWN_REMEDY, f::ERROR_UNKNOWN.1),
+            (super::ERR_GENERIC_DEAD_END, f::ERROR_GENERIC_DEAD_END),
+            (super::ERR_SPOTIFY_REMEDY, f::ERROR_SPOTIFY_REMEDY),
+            (s::CLIPBOARD_WATCHER.0, f::CLIPBOARD_SETTING.0),
+            (s::CLIPBOARD_WATCHER.1, f::CLIPBOARD_SETTING.1),
+        ]
+    }
+
+    /// (file, name, literal) for every `pub const` whose value is typed out.
+    fn all() -> Vec<(&'static str, String, String)> {
+        let mut out = Vec::new();
+        for (file, text) in FILES {
+            let mut name = String::new();
+            let mut open = false;
+            for line in text.lines() {
+                let t = line.trim_start();
+                if t.starts_with("pub const ") {
+                    name = t["pub const ".len()..].split(':').next().unwrap().to_string();
+                    open = true;
+                }
+                if open {
+                    // No literal holds an escaped quote; the statement ends at the first `;`
+                    // after the line's last literal.
+                    let mut rest = line;
+                    while let Some(a) = rest.find('"') {
+                        let Some(b) = rest[a + 1..].find('"') else { break };
+                        out.push((file, name.clone(), rest[a + 1..a + 1 + b].to_string()));
+                        rest = &rest[a + b + 2..];
+                    }
+                    if rest.contains(';') {
+                        open = false;
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn the_aliases_are_the_same_words() {
+        let list = aliases();
+        assert!(!list.is_empty());
+        for (alias, real) in list {
+            assert_eq!(alias, real);
+        }
+    }
+
+    #[test]
+    fn no_sentence_is_typed_twice() {
+        let all = all();
+        assert!(all.len() > 500, "the parser found only {} literals", all.len());
+        // A sentence is four words or more; a one-word label (`Download`, `Cancel`) is a slot of its
+        // own on each screen. Nothing is allowed twice: an intended copy is an alias, which holds no literal.
+        let mut seen: std::collections::HashMap<&str, (&str, &str)> = std::collections::HashMap::new();
+        let mut dupes = Vec::new();
+        for (file, name, lit) in &all {
+            if lit.split_whitespace().count() < 4 {
+                continue;
+            }
+            if let Some((f2, n2)) = seen.insert(lit, (file, name)) {
+                dupes.push(format!("{lit:?}: {f2}::{n2} and {file}::{name}"));
+            }
+        }
+        assert!(dupes.is_empty(), "typed twice:\n{}", dupes.join("\n"));
+    }
+}
