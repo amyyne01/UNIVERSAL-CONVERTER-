@@ -9,14 +9,19 @@ path = "src/main.rs"
 
 [dependencies]
 ahg-engine = { path = "../ahg-engine" }
+ahg-runtime = { path = "../ahg-runtime" }
 serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }
 # Rune is pre-release: one pinned commit, upgraded deliberately. The same rev
 # is repeated in the workspace's [patch.crates-io].
-rune = { git = "https://github.com/anomalyco/rune", rev = "feac7b155c5f5873ad611e8aa420ad217db5ef16" }
+rune = { git = "https://github.com/anomalyco/rune", rev = "feac7b155c5f5873ad611e8aa420ad217db5ef16", features = ["native-file-dialog"] }
 
 # The three directions of the design gate. Each can be built alone
 # (`--no-default-features --features shelf`), so one direction's unfinished
 # code never stops the other two from building.
+# The app's tests use the runtime's stand-ins for everything outside (K23).
+[dev-dependencies]
+ahg-runtime = { path = "../ahg-runtime", features = ["standin"] }
+
 [features]
 default = ["shelf", "signal", "orbit", "bar", "collection", "stage"]
 shelf = []

@@ -114,12 +114,31 @@ pub(crate) fn spec() -> AppSpec<State> {
         fonts: FONTS,
         // The interface family and the one for figures, per direction (owner, 2026-11-15).
         families: gate::direction_from_args().families(),
-        setup: Some(gate::setup),
+        setup: Some(setup),
+        poll: Some(live::poll),
         on_key: Some(gate::on_key),
         ..AppSpec::new("AHG Universal Converter", (1240.0, 820.0), gate::init, view)
     }
 }
 
+/// The sample covers, then live mode when `--live` named a folder.
+fn setup(s: &mut State, waker: rune::Waker) {
+    gate::setup(s, waker.clone());
+    if let Some(folder) = live::FOLDER.get() {
+        live::start(s, folder, waker);
+    }
+}
+
 fn main() {
-    App::new(spec()).titlebar(Titlebar::new(TITLEBAR)).run();
+    let args: Vec<String> = std::env::args().collect();
+    match live::folder_from(&args) {
+        Some(Ok(folder)) => drop(live::FOLDER.set(folder)),
+        Some(Err(why)) => {
+            eprintln!("--live refused: {why}");
+            std::process::exit(2);
+        }
+        None => {}
+    }
+    // Quitting stops the core: its lookups first, then the downloads, then the save.
+    App::new(spec()).titlebar(Titlebar::new(TITLEBAR)).on_quit(|s, _| s.live = None).run();
 }

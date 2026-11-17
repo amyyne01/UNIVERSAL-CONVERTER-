@@ -13,13 +13,14 @@ use rune::Tx;
 use serde_json::Value;
 
 use crate::copy::{self, found as fc};
-use crate::format;
 use crate::gate::{
     Act, Band, Card, Choice, Confirm, Filter, Found, Nav, Notice, Overlay, PRESETS, PaletteState, SCOPES, Screen, State, Tone, Wait,
     WaitKey,
 };
 use crate::motion::LOADING_DELAY;
 use crate::timeline::{self, Due};
+use crate::{format, live};
+use ahg_runtime::core::{CookiesImport, Core, Shown};
 
 /// `premiumCopy.cookies()`, which `copy` does not carry yet.
 // TODO(copy): move into copy/settings.rs.
@@ -241,6 +242,7 @@ pub fn run(s: &mut State, tx: &mut Tx, c: Command) {
             for t in s.tasks.iter_mut().filter(|t| format::is_active(t)) {
                 t.progress.status = St::Cancelled;
             }
+            live::tell(s, Core::cancel_all);
         }
     }
     s.sync();
@@ -290,8 +292,9 @@ pub fn submit(s: &mut State, _tx: &mut Tx) {
         reset_found(s);
         let scope = s.scope;
         let band = |i| if scope.is_none_or(|p| band_of(p) == i) { Band::Loading } else { Band::Empty };
-        s.found = Found::Search { query: input, bands: [band(0), band(1), band(2)] };
-        // live: start the searches of the bands asked.
+        let asked = [band(0), band(1), band(2)].map(|b| matches!(b, Band::Loading));
+        s.found = Found::Search { query: input.clone(), bands: [band(0), band(1), band(2)] };
+        live::search(s, &input, asked);
         return s.sync();
     }
     let det = detect_url(&input);
@@ -300,7 +303,7 @@ pub fn submit(s: &mut State, _tx: &mut Tx) {
         Youtube | Spotify | Soundcloud | Instagram | Tiktok | Facebook => {
             reset_found(s);
             s.found = Found::LookingUp;
-            // live: look the link up; the answer becomes Media, Short or Playlist.
+            live::look_up(s, det);
         }
         Unknown => s.found = Found::LookupFailed(copy::ERR_NOT_SUPPORTED.into()),
         _ => {
@@ -313,7 +316,7 @@ pub fn submit(s: &mut State, _tx: &mut Tx) {
 
 /// The search band a scope asks: YouTube (and Reels, which searched
 /// YouTube in Electron), SoundCloud, Spotify.
-fn band_of(scope: SourcePlatform) -> usize {
+pub(crate) fn band_of(scope: SourcePlatform) -> usize {
     match scope {
         SourcePlatform::Soundcloud => 1,
         SourcePlatform::Spotify => 2,
@@ -377,6 +380,7 @@ pub fn set_scope(s: &mut State, scope: Option<SourcePlatform>) {
 /// Closes what the field found, and empties the field and the notice.
 pub fn dismiss_found(s: &mut State) {
     s.found = Found::Nothing;
+    live::cancel_lookups(s);
     s.set_field("");
     s.notice = None;
     s.sync();
@@ -576,11 +580,12 @@ fn download(s: &mut State, found: &mut Found) {
 
 /// A band that could not be reached, asked again.
 pub fn retry_band(s: &mut State, i: usize) {
-    if let Found::Search { bands, .. } = &mut s.found
+    if let Found::Search { query, bands } = &mut s.found
         && let Some(band @ Band::Failed) = bands.get_mut(i)
     {
         *band = Band::Loading;
-        // live: search that source again.
+        let query = query.clone();
+        live::search_band(s, &query, i);
     }
     s.sync();
 }
@@ -602,7 +607,10 @@ fn task_mut<'a>(s: &'a mut State, id: &str) -> Option<&'a mut DownloadTask> {
 pub fn pause(s: &mut State, _tx: &mut Tx, id: &str) {
     if let Some(t) = task_mut(s, id).filter(|t| matches!(t.progress.status, St::Queued | St::FetchingInfo | St::Downloading)) {
         t.progress.status = St::Paused;
-        // live: Core::pause(id).
+        let id = id.to_owned();
+        live::tell(s, move |core| {
+            core.pause(&id);
+        });
     }
     s.sync();
 }
@@ -611,7 +619,10 @@ pub fn resume(s: &mut State, _tx: &mut Tx, id: &str) {
     if let Some(t) = task_mut(s, id).filter(|t| t.progress.status == St::Paused) {
         t.progress.status = St::Queued;
         t.interrupted = None;
-        // live: Core::resume(id).
+        let id = id.to_owned();
+        live::tell(s, move |core| {
+            core.resume(&id);
+        });
     }
     s.sync();
 }
@@ -627,9 +638,14 @@ fn cancel_with_undo(s: &mut State, ids: &[String]) {
         if let Some(t) = task_mut(s, id).filter(|t| format::is_active(t)) {
             t.progress.status = St::Cancelled;
             done.push(id.clone());
-            // live: Core::cancel(id).
         }
     }
+    let cancelled = done.clone();
+    live::tell(s, move |core| {
+        cancelled.iter().for_each(|id| {
+            core.cancel(id);
+        })
+    });
     if !done.is_empty() {
         notify(s, Tone::Info, copy::toast_canceled(done.len()), Some(Act::Undo(done)));
     }
@@ -639,7 +655,9 @@ fn cancel_with_undo(s: &mut State, ids: &[String]) {
 /// Queues a failed or canceled row again. In sample mode the row itself
 /// starts over; `skip_existing` false is "Download again".
 fn requeue(s: &mut State, id: &str, skip_existing: Option<bool>) {
-    // live: Core::retry(id) (it re-queues the stored request, never a rebuilt one; the old row goes).
+    // Live, the core re-queues the stored request as a new task and the old row goes.
+    let again = id.to_owned();
+    live::tell(s, move |core| drop(core.retry(&again, skip_existing)));
     if let Some(t) = task_mut(s, id) {
         t.progress = Default::default();
         t.error_code = None;
@@ -674,7 +692,11 @@ pub fn download_again(s: &mut State, _tx: &mut Tx, id: &str) {
 /// "Do this next": to the front of the queue.
 pub fn promote(s: &mut State, _tx: &mut Tx, id: &str) {
     move_queued(s, id, 0);
-    // live: Core::promote(id); the list snaps back if it refuses.
+    // The list snaps back to the core's if it refuses.
+    let id = id.to_owned();
+    live::tell(s, move |core| {
+        core.promote(&id);
+    });
 }
 
 /// Removes a finished, failed or canceled row from the list and the history.
@@ -682,8 +704,9 @@ pub fn remove(s: &mut State, _tx: &mut Tx, id: &str) {
     s.tasks.retain(|t| t.task_id != id || format::is_active(t));
     if !s.tasks.iter().any(|t| t.task_id == id) {
         s.selected.remove(id);
+        let id = id.to_owned();
+        live::tell(s, move |core| core.remove(vec![id]));
     }
-    // live: Core::remove(&[id]).
     s.sync();
 }
 
@@ -700,7 +723,7 @@ fn no_file(s: &mut State, id: &str) -> bool {
 
 pub fn open_file(s: &mut State, _tx: &mut Tx, id: &str) {
     if !no_file(s, id) {
-        // live: Core opens the file (desktop.rs) and its refusals become notices.
+        reveal(s, id, true);
     }
     s.sync();
 }
@@ -708,9 +731,27 @@ pub fn open_file(s: &mut State, _tx: &mut Tx, id: &str) {
 /// Shows the file in its folder; nothing at all when there is no file.
 pub fn show_in_folder(s: &mut State, _tx: &mut Tx, id: &str) {
     if s.tasks.iter().any(|t| t.task_id == id && !t.progress.filename.is_empty()) {
-        // live: Core reveals the file (desktop.rs).
+        reveal(s, id, false);
     }
     s.sync();
+}
+
+/// Live: the core shows or opens the file, and its answer becomes Electron's notice (`revealFile`).
+fn reveal(s: &State, id: &str, open: bool) {
+    let Some(t) = s.tasks.iter().find(|t| t.task_id == id) else { return };
+    let (path, subject) = (t.progress.filename.clone(), copy::file_name_subject(&t.title));
+    live::command(s, move |core| {
+        let text = match if open { core.open_file(&path) } else { core.show_in_folder(&path) } {
+            Ok(Shown::Ok) => return None,
+            Ok(Shown::NoPath) => copy::file_never_finished(&subject),
+            Ok(Shown::Missing) => copy::file_moved(&subject),
+            Err(_) => copy::file_cannot_open(&subject),
+        };
+        Some(Box::new(move |s: &mut State, _: &mut Tx| {
+            notify(s, Tone::Error, text, None);
+            true
+        }))
+    });
 }
 
 /// Copies a failed row's raw error.
@@ -759,7 +800,7 @@ pub fn dismiss_notice(s: &mut State) {
 }
 
 /// Shows one notice, the old `notice` field and the new list together.
-fn notify(s: &mut State, tone: Tone, text: String, action: Option<Act>) {
+pub(crate) fn notify(s: &mut State, tone: Tone, text: String, action: Option<Act>) {
     s.notice = Some(text.clone());
     s.notices = vec![Notice { tone, text, action, until: None }];
 }
@@ -801,7 +842,10 @@ fn chosen(s: &State, audio: bool) -> TaskInit {
 
 /// Adds a new download at the top of the list.
 fn queue(s: &mut State, mut init: TaskInit) {
-    // live: Core::start(request); the core sends the task back.
+    // Live, the core queues it and its row arrives with the core's own id: no stand-in row first.
+    if live::start_download(s, &init) {
+        return;
+    }
     let id = (0..).map(|n| format!("new-{n}")).find(|id| !s.tasks.iter().any(|t| &t.task_id == id)).unwrap_or_default();
     init.created_at = Some(crate::sample::NOW);
     s.tasks.insert(0, create_task(&init, id, crate::sample::NOW as u64));
@@ -818,7 +862,9 @@ pub fn pause_or_resume_all(s: &mut State) {
 
 /// `pauseAll` / `resumeAll`.
 fn set_all(s: &mut State, to: St) {
-    // live: Core::pause_all / resume_all; a refusal is TOAST_LIST_UNREACHABLE.
+    // ponytail: the core's pause_all / resume_all cannot refuse, so TOAST_LIST_UNREACHABLE has no live cause yet.
+    let pause = to == St::Paused;
+    live::tell(s, move |core| if pause { core.pause_all() } else { core.resume_all() });
     for t in &mut s.tasks {
         let from_ok = if to == St::Paused {
             matches!(t.progress.status, St::Queued | St::FetchingInfo | St::Downloading)
@@ -871,7 +917,9 @@ pub fn confirm(s: &mut State) {
 }
 
 fn clear_completed(s: &mut State) {
-    // live: Core::clear_completed.
+    // Core has no clear_completed: the finished rows are removed by id.
+    let done: Vec<String> = s.tasks.iter().filter(|t| t.progress.status == St::Done).map(|t| t.task_id.clone()).collect();
+    live::tell(s, move |core| core.remove(done));
     s.tasks.retain(|t| t.progress.status != St::Done);
     s.selected.retain(|id| s.tasks.iter().any(|t| &t.task_id == id));
 }
@@ -894,7 +942,8 @@ pub fn resume_interrupted(s: &mut State) {
 }
 
 pub fn discard_interrupted(s: &mut State) {
-    // live: Core::remove(ids).
+    let gone: Vec<String> = s.tasks.iter().filter(|t| interrupted(t)).map(|t| t.task_id.clone()).collect();
+    live::tell(s, move |core| core.remove(gone));
     s.tasks.retain(|t| !interrupted(t));
     s.selected.retain(|id| s.tasks.iter().any(|t| &t.task_id == id));
     s.sync();
@@ -938,24 +987,29 @@ pub fn cancel_selected(s: &mut State) {
     for id in ids {
         if let Some(t) = task_mut(s, &id) {
             t.progress.status = St::Cancelled;
-            // live: Core::cancel(id).
         }
         s.selected.remove(&id);
+        live::tell(s, move |core| {
+            core.cancel(&id);
+        });
     }
     s.sync();
 }
 
 /// Moves a queued row to place `to` of the queued block.
 pub fn move_queued(s: &mut State, id: &str, to: usize) {
-    // live: Core::reorder(ids); the list snaps back if it refuses.
+    // Live, the core is told the new order; the list snaps back if it refuses.
     let slots: Vec<usize> = s.tasks.iter().enumerate().filter(|(_, t)| t.progress.status == St::Queued).map(|(i, _)| i).collect();
     let mut order: Vec<DownloadTask> = slots.iter().map(|&i| s.tasks[i].clone()).collect();
     if let Some(from) = order.iter().position(|t| t.task_id == id) {
         let t = order.remove(from);
         order.insert(to.min(order.len()), t);
+        // The queued block's first row runs next (as `promote` reads it), as `Core::reorder` takes ids.
+        let ids: Vec<String> = order.iter().map(|t| t.task_id.clone()).collect();
         for (slot, t) in slots.into_iter().zip(order) {
             s.tasks[slot] = t;
         }
+        live::tell(s, move |core| core.reorder(ids));
     }
     s.sync();
 }
@@ -979,9 +1033,19 @@ pub fn set_setting(s: &mut State, key: &str, value: Value) -> bool {
         (Some(d), v) => same_type(d, v),
     };
     if ok {
-        s.settings.insert(key.into(), value);
+        s.settings.insert(key.into(), value.clone());
         s.invalid.remove(key);
-        // live: Core::set_setting(key, value).
+        // Live, the core checks in full; a refusal marks the row and puts the old value back.
+        let key = key.to_owned();
+        live::command(s, move |core| {
+            let refused = !core.update_settings(&serde_json::Map::from_iter([(key.clone(), value)])).is_empty();
+            refused.then(|| -> live::Job {
+                Box::new(move |s, _| {
+                    s.invalid.insert(key);
+                    true
+                })
+            })
+        });
     } else {
         s.invalid.insert(key.into());
     }
@@ -1016,29 +1080,54 @@ pub fn toggle_day(s: &mut State, i: u8) {
     set_setting(s, "scheduleDays", Value::Array(days));
 }
 
-pub fn choose_folder(s: &mut State, _tx: &mut Tx) {
-    // live: tx.open_folder, then set_setting("outputDir", the folder).
+/// Live: the folder dialog, then the folder as `outputDir`. Sample mode shows no dialog.
+pub fn choose_folder(s: &mut State, tx: &mut Tx) {
+    if s.live.is_some() {
+        tx.open_folder(rune::FileDialogOptions::default(), |s: &mut State, chosen, _| {
+            if let Ok(Some(folder)) = chosen {
+                set_setting(s, "outputDir", folder.to_string_lossy().into_owned().into());
+            }
+        });
+    }
     s.sync();
 }
 
-pub fn import_cookies(s: &mut State, _tx: &mut Tx) {
+pub fn import_cookies(s: &mut State, tx: &mut Tx) {
     if s.plan == Plan::Basic {
         return premium(s, LOCK_COOKIES);
     }
-    // live: the file chooser, then Core's import; its answer is copy::settings::COOKIES_IMPORTED or the refusal.
+    // Live: the file dialog, then the core's import (which checks the file in full).
+    if s.live.is_some() {
+        tx.open_file(rune::FileDialogOptions::default(), |s: &mut State, chosen, _| {
+            let Ok(Some(file)) = chosen else { return };
+            live::command(s, move |core| match core.import_cookies(Some(&file)) {
+                CookiesImport::Ok => Some(Box::new(|s, _| {
+                    notify(s, Tone::Info, copy::settings::COOKIES_IMPORTED.into(), None);
+                    true
+                })),
+                CookiesImport::Premium => Some(Box::new(|s, _| {
+                    premium(s, LOCK_COOKIES);
+                    true
+                })),
+                // ponytail: copy has no words for a refused cookies file yet, so nothing shows.
+                CookiesImport::Cancelled | CookiesImport::Invalid => None,
+            });
+        });
+    }
     s.sync();
 }
 
 pub fn check_update(s: &mut State) {
     s.update.phase = "checking";
-    // live: Core checks; its events set `update`.
+    // Live, the core's events set `update`.
+    live::spawn(s, |core| drop(core.check_update()));
     s.sync();
 }
 
 pub fn download_update(s: &mut State) {
     if s.update.phase == "available" {
         s.update.phase = "downloading";
-        // live: Core downloads it.
+        live::spawn(s, |core| drop(core.download_update()));
     }
     s.sync();
 }
@@ -1050,13 +1139,14 @@ pub fn install_update(s: &mut State, _tx: &mut Tx) {
 
 pub fn check_engine(s: &mut State) {
     s.engine.state = "checking";
-    // live: Core checks yt-dlp, ignoring the 24 h cache.
+    // Live, yt-dlp is checked ignoring the 24 h cache; its status sets `engine`.
+    live::spawn(s, |core| drop(core.check_engine(true)));
     s.sync();
 }
 
 pub fn update_engine(s: &mut State) {
     s.engine.state = "downloading";
-    // live: Core updates yt-dlp; its status sets `engine`.
+    live::spawn(s, |core| drop(core.update_engine()));
     s.sync();
 }
 
