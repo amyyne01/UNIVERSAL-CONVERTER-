@@ -324,6 +324,14 @@ pub struct State {
     pub loading: Loading,
     /// State arriving after launch: it lands without an entrance.
     pub arriving: bool,
+    /// The command palette's typed text and highlight (`palette` is the colour palette).
+    pub command: PaletteState,
+    /// The caller's clock, in seconds; 0 in the sample scenes.
+    pub now: f64,
+    /// Deadlines of the waits below.
+    pub timeline: crate::timeline::Timeline,
+    /// Every part that waits, by key. A part without an entry is drawn from `is_loading` alone.
+    pub waits: HashMap<WaitKey, Wait>,
     /// The running core; `None` in sample mode.
     pub live: Option<crate::live::Handle>,
     cache: Option<ImageCache>,
@@ -414,6 +422,10 @@ impl State {
             speed: sample::speed(),
             loading: Loading::Ready,
             arriving: false,
+            command: PaletteState::default(),
+            now: 0.0,
+            timeline: crate::timeline::Timeline::default(),
+            waits: HashMap::new(),
             live: None,
             cache: None,
         };
@@ -619,6 +631,46 @@ pub enum Part<'a> {
     Match(usize),
     /// A task's cover.
     Cover(&'a str),
+}
+
+impl Part<'_> {
+    pub fn key(self) -> WaitKey {
+        match self {
+            Part::History => WaitKey::History,
+            Part::Stats => WaitKey::Stats,
+            Part::Lookup => WaitKey::Lookup,
+            Part::Band(i) => WaitKey::Band(i),
+            Part::Match(i) => WaitKey::Match(i),
+            Part::Cover(id) => WaitKey::Cover(id.into()),
+        }
+    }
+}
+
+/// [`Part`] owned, to key the wait table.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum WaitKey {
+    History,
+    Stats,
+    Lookup,
+    Band(usize),
+    Match(usize),
+    Cover(String),
+}
+
+/// One wait's timestamps, in seconds on the caller's clock (`timeline::show` reads them).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Wait {
+    pub started: f64,
+    pub answered: Option<f64>,
+    /// The commit that put the bones up.
+    pub shown_at: Option<f64>,
+}
+
+/// The command palette's typed text and highlighted row.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct PaletteState {
+    pub text: String,
+    pub highlight: usize,
 }
 
 /// What is loading. When the preset may show it is `timeline::shows` (step 42).

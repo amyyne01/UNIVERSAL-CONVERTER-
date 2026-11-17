@@ -28,9 +28,16 @@ pub fn show(now: f64, started: f64, answered: Option<f64>, shown_at: Option<f64>
     }
 }
 
-/// What a preset asks. Today `State` has no wait timestamps, so a loading part is drawn as if
-/// its wait were already past `LOADING_DELAY` (the sample scenes); history and statistics never get bones.
+/// What a preset asks. A part with an entry in `s.waits` follows [`show`] (so bones outlive the
+/// answer by their minimum); without one a loading part is drawn as if its wait were already past
+/// `LOADING_DELAY` (the sample scenes). History and statistics never get bones.
 pub fn shows(s: &State, part: Part) -> Show {
+    if let Some(w) = s.waits.get(&part.key()) {
+        return match (show(s.now, w.started, w.answered, w.shown_at), part) {
+            (Show::Bones, Part::History | Part::Stats) => Show::Nothing,
+            (shown, _) => shown,
+        };
+    }
     match (is_loading(s, part), part) {
         (false, _) => Show::Content,
         (true, Part::History | Part::Stats) => Show::Nothing,

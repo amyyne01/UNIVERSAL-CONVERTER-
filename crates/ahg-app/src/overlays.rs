@@ -1,8 +1,6 @@
 //! The surfaces that sit over any preset, drawn once and coloured by a [`Skin`]: the command
 //! palette (Ctrl+K), the keyboard shortcuts sheet (Ctrl+/), the notice stack, the update
 //! prompt, and the preset picker (`picker.rs`). Behaviour is `actions`'; this file draws.
-use std::cell::RefCell;
-
 use rune::{Color, Cx, El, KeyEvent, ScrollSpec, Span, TextStyle, Tx, col, el, icon, rich, row, spacer, text};
 
 use crate::actions::{self, Command};
@@ -49,12 +47,9 @@ impl Skin {
 }
 
 /// Every overlay on show, in paint order: the open sheet, then the notices above it. Empty
-/// when nothing is open. Called on every view, so it also clears the palette's typing once closed.
+/// when nothing is open.
 pub fn view(s: &State, cx: &mut Cx<State>) -> Vec<El> {
     let k = Skin::shared(s, s.dark(cx));
-    if s.overlay != Overlay::Palette {
-        reset_palette();
-    }
     let mut out = Vec::new();
     if s.picker {
         out.push(picker::view(s, cx));
@@ -147,50 +142,24 @@ fn panel(k: &Skin, key: &'static str, aria: &'static str, w: f32) -> El {
 /// Fits the smallest window (640 pt) under the title bar; the list scrolls inside it.
 const PALETTE_MAX_H: f32 = 500.0;
 
-thread_local! {
-    /// What is typed into the palette and the highlighted row.
-    // TODO(gate): belongs in `State` (a `TextEdit` and an index, reset by `actions::open`/`close`);
-    // gate.rs was not this step's to change. Cleared whenever the palette is not open.
-    static TYPED: RefCell<(String, usize)> = const { RefCell::new((String::new(), 0)) };
-}
-
-fn reset_palette() {
-    TYPED.with_borrow_mut(|t| *t = (String::new(), 0));
-}
-
-/// The commands that match what is typed: the label or the group name, ignoring case.
-pub fn matching(s: &State, typed: &str) -> Vec<Command> {
-    let q = typed.trim().to_lowercase();
-    actions::commands(s)
-        .into_iter()
-        .filter(|c| q.is_empty() || c.label(s).to_lowercase().contains(&q) || c.group().to_lowercase().contains(&q))
-        .collect()
-}
-
-/// The search line's keys: typing filters, Up and Down move, Enter runs. Esc, Ctrl+K and
-/// Ctrl+V fall through to `gate::on_key`.
+/// The search line's keys: typing filters, Up and Down move, Enter runs (all `actions`').
+/// Esc, Ctrl+K and Ctrl+V fall through to `gate::on_key`.
 fn palette_key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
     use rune::Key;
-    let (typed, at) = TYPED.with_borrow(|t| t.clone());
-    let found = matching(s, &typed);
-    let last = found.len().saturating_sub(1);
-    let (typed, at) = match &ev.key {
-        Key::Text(t) if !ev.mods.cmd && !ev.mods.ctrl => (typed + t, 0),
-        Key::Backspace => (typed[..typed.char_indices().last().map_or(0, |(i, _)| i)].to_owned(), 0),
-        Key::Down => (typed, if at >= last { 0 } else { at + 1 }),
-        Key::Up => (typed, if at == 0 { last } else { at - 1 }),
+    match &ev.key {
+        Key::Text(t) if !ev.mods.cmd && !ev.mods.ctrl => actions::palette_type(s, t),
+        Key::Backspace => actions::palette_backspace(s),
+        Key::Down => actions::palette_move(s, 1),
+        Key::Up => actions::palette_move(s, -1),
         Key::Enter => {
-            if let Some(&c) = found.get(at) {
-                actions::run(s, tx, c);
-            }
+            actions::palette_run(s, tx);
             return true;
         }
         _ => return false,
-    };
-    if let Some(i) = matching(s, &typed).get(at).and_then(|c| index(s, *c)) {
+    }
+    if let Some(i) = actions::palette_filter(s).get(s.command.highlight).and_then(|c| index(s, *c)) {
         tx.scroll_into_view(keys::command(i));
     }
-    TYPED.with_borrow_mut(|t| *t = (typed, at));
     true
 }
 
@@ -200,8 +169,8 @@ fn index(s: &State, c: Command) -> Option<usize> {
 }
 
 fn palette(s: &State, k: &Skin) -> El {
-    let (typed, at) = TYPED.with_borrow(|t| t.clone());
-    let found = matching(s, &typed);
+    let (typed, at) = (&s.command.text, s.command.highlight);
+    let found = actions::palette_filter(s);
     let caret = el().size(1.5, 18.0).fill(k.accent);
     let words = if typed.is_empty() {
         row().center_y().child(caret).child(text(copy::PALETTE_PLACEHOLDER).font(style(14.0, 400.0).mono()).color(k.text2))

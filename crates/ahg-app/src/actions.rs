@@ -14,7 +14,12 @@ use serde_json::Value;
 
 use crate::copy::{self, found as fc};
 use crate::format;
-use crate::gate::{Act, Band, Card, Choice, Confirm, Filter, Found, Nav, Notice, Overlay, PRESETS, SCOPES, Screen, State, Tone};
+use crate::gate::{
+    Act, Band, Card, Choice, Confirm, Filter, Found, Nav, Notice, Overlay, PRESETS, PaletteState, SCOPES, Screen, State, Tone, Wait,
+    WaitKey,
+};
+use crate::motion::LOADING_DELAY;
+use crate::timeline::{self, Due};
 
 /// `premiumCopy.cookies()`, which `copy` does not carry yet.
 // TODO(copy): move into copy/settings.rs.
@@ -34,13 +39,93 @@ pub fn go(s: &mut State, nav: Nav) {
 pub fn open(s: &mut State, overlay: Overlay) {
     s.picker = overlay == Overlay::Picker;
     s.overlay = overlay;
+    s.command = PaletteState::default();
     s.sync();
 }
 
 pub fn close(s: &mut State) {
     s.picker = false;
     s.overlay = Overlay::None;
+    s.command = PaletteState::default();
     s.sync();
+}
+
+/// The commands that match what is typed: the label or the group name, ignoring case.
+pub fn palette_filter(s: &State) -> Vec<Command> {
+    let q = s.command.text.trim().to_lowercase();
+    commands(s)
+        .into_iter()
+        .filter(|c| q.is_empty() || c.label(s).to_lowercase().contains(&q) || c.group().to_lowercase().contains(&q))
+        .collect()
+}
+
+/// Typing in the search line; the highlight goes back to the first row.
+pub fn palette_type(s: &mut State, typed: &str) {
+    s.command.text.push_str(typed);
+    s.command.highlight = 0;
+}
+
+pub fn palette_backspace(s: &mut State) {
+    s.command.text.pop();
+    s.command.highlight = 0;
+}
+
+/// Up (-1) and Down (1) over the matching rows, wrapping.
+pub fn palette_move(s: &mut State, delta: isize) {
+    let n = palette_filter(s).len() as isize;
+    if n > 0 {
+        s.command.highlight = (s.command.highlight as isize + delta).rem_euclid(n) as usize;
+    }
+}
+
+/// Runs the highlighted row, if any.
+pub fn palette_run(s: &mut State, tx: &mut Tx) {
+    if let Some(&c) = palette_filter(s).get(s.command.highlight) {
+        run(s, tx, c);
+    }
+}
+
+/// A part starts waiting now. Its deadlines (bones, the two wait lines) go on the timeline.
+pub fn begin_wait(s: &mut State, key: WaitKey) {
+    s.waits.insert(key, Wait { started: s.now, answered: None, shown_at: None });
+    for (at, due) in timeline::waiting(s.now) {
+        s.timeline.at(at, due);
+    }
+}
+
+/// The part's answer came now. Once nothing else waits the wait deadlines go; bones that are up
+/// get their release at `shown_at + LOADING_MIN`.
+// ponytail: answered waits stay in the table (a few entries); prune when the live code owns the clock.
+pub fn answer_wait(s: &mut State, key: WaitKey) {
+    let now = s.now;
+    let Some(w) = s.waits.get_mut(&key).filter(|w| w.answered.is_none()) else { return };
+    w.answered = Some(now);
+    let shown_at = w.shown_at;
+    if s.waits.values().all(|w| w.answered.is_some()) {
+        for due in timeline::ANSWERED {
+            s.timeline.cancel(due);
+        }
+    }
+    for (at, due) in timeline::answered(now, shown_at) {
+        s.timeline.at(at, due);
+    }
+}
+
+/// The clock moved to `now`: fires what is due. Returns whether the picture may differ.
+// ponytail: only wait deadlines live on `State.timeline` so far; ring landings and stalls join it with their steps.
+pub fn tick(s: &mut State, now: f64) -> bool {
+    s.now = now;
+    let due = s.timeline.advance(now);
+    for d in &due {
+        if *d == Due::LoadingShow {
+            for w in s.waits.values_mut().filter(|w| w.shown_at.is_none() && now >= w.started + LOADING_DELAY) {
+                if w.answered.is_none_or(|a| a > w.started + LOADING_DELAY) {
+                    w.shown_at = Some(now);
+                }
+            }
+        }
+    }
+    !due.is_empty()
 }
 
 /// Switches preset in the running app: no restart, the fonts follow.
@@ -2075,5 +2160,178 @@ mod tests {
         assert_eq!(scene("shortcuts").overlay, Overlay::Shortcuts);
         assert_eq!(scene("notice").notices.len(), 1);
         assert_eq!(scene("picker").overlay, Overlay::Picker);
+    }
+
+    // ── The palette's typed text and highlight live in State
+
+    fn typed(s: &mut State, t: &str) {
+        for c in t.chars() {
+            palette_type(s, &c.to_string());
+        }
+    }
+    fn labels(s: &State) -> Vec<String> {
+        palette_filter(s).iter().map(|c| c.label(s)).collect()
+    }
+
+    #[test]
+    fn palette_filter_matches_label_or_group_ignoring_case() {
+        let all = commands(&state()).len();
+        // (typed, first label expected, count check, row)
+        let cases: &[(&str, Option<String>, fn(usize, usize) -> bool, &str)] = &[
+            ("", None, |n, all| n == all, "empty lists everything"),
+            ("  ", None, |n, all| n == all, "blanks list everything"),
+            ("downl", Some(copy::palette_go_to(copy::NAV_DOWNLOADS)), |n, all| n > 0 && n < all, "label"),
+            ("DOWNL", Some(copy::palette_go_to(copy::NAV_DOWNLOADS)), |n, all| n > 0 && n < all, "case"),
+            ("navigate", None, |n, all| n > 0 && n < all, "group name"),
+            ("zzzz", None, |n, _| n == 0, "nothing"),
+        ];
+        assert!(!cases.is_empty());
+        for (q, first, count, row) in cases {
+            let mut s = state();
+            typed(&mut s, q);
+            let got = labels(&s);
+            assert!(count(got.len(), all), "{row}: {got:?}");
+            if let Some(f) = first {
+                assert_eq!(&got[0], f, "{row}");
+            }
+        }
+    }
+
+    #[test]
+    fn palette_typing_resets_the_highlight_and_backspace_edits() {
+        let mut s = state();
+        palette_move(&mut s, 2);
+        assert_eq!(s.command.highlight, 2);
+        palette_type(&mut s, "d");
+        assert_eq!((s.command.text.as_str(), s.command.highlight), ("d", 0));
+        palette_move(&mut s, 1);
+        palette_backspace(&mut s);
+        assert_eq!((s.command.text.as_str(), s.command.highlight), ("", 0));
+        palette_backspace(&mut s); // nothing left: no panic
+        assert_eq!(s.command.text, "");
+    }
+
+    #[test]
+    fn palette_move_wraps_both_ways_and_ignores_an_empty_list() {
+        let mut s = state();
+        let last = commands(&s).len() - 1;
+        // (delta, expected highlight)
+        let cases: &[(isize, usize)] = &[(1, 1), (-1, 0), (-1, last), (1, 0)];
+        assert!(!cases.is_empty());
+        for &(delta, want) in cases {
+            palette_move(&mut s, delta);
+            assert_eq!(s.command.highlight, want, "delta {delta}");
+        }
+        typed(&mut s, "zzzz");
+        palette_move(&mut s, 1);
+        palette_move(&mut s, -1);
+        assert_eq!(s.command.highlight, 0, "no rows: stays put");
+    }
+
+    #[test]
+    fn palette_run_runs_the_highlighted_row_and_closes_empty() {
+        let mut s = state();
+        open(&mut s, Overlay::Palette);
+        typed(&mut s, "downl");
+        palette_run(&mut s, &mut Tx::default());
+        assert_eq!((s.overlay, s.nav), (Overlay::None, Nav::Downloads));
+        assert_eq!(s.command, PaletteState::default(), "closing cleared it");
+        open(&mut s, Overlay::Palette);
+        typed(&mut s, "zzzz");
+        palette_run(&mut s, &mut Tx::default());
+        assert_eq!(s.overlay, Overlay::Palette, "no row: nothing runs");
+    }
+
+    #[test]
+    fn open_and_close_reset_the_palette_input() {
+        for reset in [|s: &mut State| open(s, Overlay::Palette), close] {
+            let mut s = state();
+            s.command = PaletteState { text: "x".into(), highlight: 3 };
+            reset(&mut s);
+            assert_eq!(s.command, PaletteState::default());
+        }
+    }
+
+    // ── Wait timestamps and the timeline in State
+
+    use crate::gate::{PaletteState, Part, Wait, WaitKey};
+    use crate::motion::{LOADING_DELAY, LOADING_MIN};
+    use crate::timeline::Show;
+
+    fn waiting_lookup() -> State {
+        let mut s = state();
+        s.found = Found::LookingUp;
+        s
+    }
+
+    #[test]
+    fn begin_wait_records_the_start_and_schedules_the_bones() {
+        let mut s = waiting_lookup();
+        s.now = 10.0;
+        begin_wait(&mut s, WaitKey::Lookup);
+        assert_eq!(s.waits[&WaitKey::Lookup], Wait { started: 10.0, answered: None, shown_at: None });
+        assert_eq!(s.timeline.next_deadline(), Some(10.0 + LOADING_DELAY));
+        assert_eq!(crate::timeline::shows(&s, Part::Lookup), Show::Nothing);
+    }
+
+    #[test]
+    fn an_answer_before_the_delay_never_shows_bones() {
+        let mut s = waiting_lookup();
+        s.now = 10.0;
+        begin_wait(&mut s, WaitKey::Lookup);
+        assert!(!tick(&mut s, 10.0 + LOADING_DELAY / 2.0));
+        answer_wait(&mut s, WaitKey::Lookup);
+        s.found = Found::Nothing;
+        for dt in [LOADING_DELAY / 2.0, LOADING_DELAY, LOADING_DELAY + 1.0, 30.0] {
+            tick(&mut s, 10.0 + dt);
+            assert_eq!(crate::timeline::shows(&s, Part::Lookup), Show::Content, "dt {dt}");
+        }
+        assert_eq!(s.waits[&WaitKey::Lookup].shown_at, None);
+    }
+
+    #[test]
+    fn bones_stay_until_shown_at_plus_the_minimum() {
+        let mut s = waiting_lookup();
+        s.now = 10.0;
+        begin_wait(&mut s, WaitKey::Lookup);
+        assert!(tick(&mut s, 10.0 + LOADING_DELAY), "LoadingShow changes State");
+        assert_eq!(s.waits[&WaitKey::Lookup].shown_at, Some(10.0 + LOADING_DELAY));
+        assert_eq!(crate::timeline::shows(&s, Part::Lookup), Show::Bones);
+        s.now = 10.0 + LOADING_DELAY + 0.05;
+        answer_wait(&mut s, WaitKey::Lookup);
+        s.found = Found::Nothing; // the answer is in State, yet bones are held
+        let free = 10.0 + LOADING_DELAY + LOADING_MIN;
+        assert_eq!(s.timeline.next_deadline(), Some(free));
+        assert!(!tick(&mut s, free - 0.01));
+        assert_eq!(crate::timeline::shows(&s, Part::Lookup), Show::Bones);
+        assert!(tick(&mut s, free), "LoadingFree changes State");
+        assert_eq!(crate::timeline::shows(&s, Part::Lookup), Show::Content);
+    }
+
+    #[test]
+    fn history_and_statistics_waits_never_show_bones() {
+        for (key, part) in [(WaitKey::History, Part::History), (WaitKey::Stats, Part::Stats)] {
+            let mut s = state();
+            s.loading = crate::gate::Loading::Booting;
+            begin_wait(&mut s, key);
+            tick(&mut s, LOADING_DELAY + 1.0);
+            assert_eq!(crate::timeline::shows(&s, part), Show::Nothing, "{part:?}");
+        }
+    }
+
+    #[test]
+    fn each_part_keeps_its_own_wait() {
+        let mut s = state();
+        let keys = [WaitKey::Band(0), WaitKey::Band(1), WaitKey::Match(2), WaitKey::Cover("a".into())];
+        assert_eq!(Part::Cover("a").key(), keys[3]);
+        for k in &keys {
+            begin_wait(&mut s, k.clone());
+        }
+        answer_wait(&mut s, keys[1].clone());
+        assert_eq!(s.waits.len(), 4);
+        assert!(s.waits[&keys[1]].answered.is_some());
+        assert_eq!(keys.iter().filter(|k| s.waits[*k].answered.is_none()).count(), 3);
+        answer_wait(&mut s, WaitKey::Lookup); // no such wait: nothing happens
+        assert_eq!(s.waits.len(), 4);
     }
 }
