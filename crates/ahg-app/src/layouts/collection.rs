@@ -1,7 +1,6 @@
 //! Layout "The collection", wearing the Shelf look: Home is the wall of what
 //! you own. Every download is a sleeve on it; a new one joins the wall with
-//! its record beside it and the record slides into the sleeve as the file
-//! arrives. Three places (Home, Downloads, Settings) sit behind the shelf
+//! its record beside it, the record's rim filling as the file arrives. Three places (Home, Downloads, Settings) sit behind the shelf
 //! dividers: a slim strip on the left that opens on hover and can be pinned.
 //!
 //! Where the old app's screens and features live now:
@@ -40,6 +39,7 @@ use crate::directions::shelf::parts::{self, Disc, run, run_mono, runs};
 use crate::directions::shelf::theme::{self, Pal, mono, sans, serif};
 use crate::gate::{Confirm, Nav, State};
 use crate::keys::{self, RowAct};
+use crate::ring::Pass;
 use crate::{copy, format, icons};
 
 /// The wall's side margin.
@@ -431,15 +431,12 @@ fn completed(s: &State, p: &Pal, tasks: &[&DownloadTask], size: f32) -> El {
 
 // ── A sleeve on the wall ────────────────────────────────────────────────────
 
-/// Where the record is: beside the sleeve while it waits, sliding in as the
-/// file arrives, filed when done; failed and cancelled sleeves have none.
-fn disc(t: &DownloadTask) -> Disc {
-    let pct = (t.progress.percent / 100.0).clamp(0.0, 1.0) as f32;
-    match t.progress.status {
-        St::Queued | St::FetchingInfo => Disc::Out(1.0),
-        St::Downloading | St::Paused | St::Retrying => Disc::Out(1.0 - pct),
-        St::Converting | St::Embedding => Disc::Out(0.12),
-        St::Done | St::Failed | St::Cancelled => Disc::None,
+/// Where the record is: beside the sleeve while its rim is the ring (decision 9a);
+/// landed, failed and cancelled sleeves have none.
+fn disc(s: &State, t: &DownloadTask) -> Disc {
+    match (t.progress.status, s.rings.pass(&t.task_id)) {
+        (St::Failed | St::Cancelled, _) | (St::Done, Some(Pass::Landed) | None) => Disc::None,
+        _ => Disc::Out(1.0),
     }
 }
 
@@ -459,7 +456,7 @@ fn sticker(p: &Pal, t: &DownloadTask) -> Option<(&'static Icon, Color, Color)> {
 
 fn sleeve(s: &State, p: &Pal, t: &DownloadTask, size: f32) -> El {
     let faded = matches!(t.progress.status, St::Cancelled);
-    let mut e = el().child(parts::sleeve(s, p, t, size, disc(t), faded));
+    let mut e = el().child(parts::sleeve(s, p, t, size, disc(s, t), faded));
     if let Some((g, fill, ink)) = sticker(p, t) {
         e = e.child(
             el().size(28.0, 28.0)
@@ -477,7 +474,7 @@ fn sleeve(s: &State, p: &Pal, t: &DownloadTask, size: f32) -> El {
 /// One sleeve standing on its shelf, its caption under it.
 fn item(s: &State, p: &Pal, t: &DownloadTask, size: f32, stand: f32, width: f32) -> El {
     let label = format::label(t);
-    let travel = if disc(t) == Disc::None { 1.0 } else { 1.0 + parts::DISC_TRAVEL };
+    let travel = if disc(s, t) == Disc::None { 1.0 } else { 1.0 + parts::DISC_TRAVEL };
     let slot = (size * travel).round().max(width);
     col()
         .key(format!("sleeve-{}", t.task_id))

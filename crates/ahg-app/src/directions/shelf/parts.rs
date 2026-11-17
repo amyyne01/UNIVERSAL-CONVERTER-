@@ -9,6 +9,7 @@ use super::theme::{self, Pal, mono, sans};
 use crate::copy;
 use crate::format::Bucket;
 use crate::gate::State;
+use crate::ring;
 use crate::settings_spec::{self, Kind, Row};
 
 /// The colour of one group of "where it came from".
@@ -337,8 +338,15 @@ pub fn sleeve(s: &State, p: &Pal, t: &DownloadTask, size: f32, disc: Disc, faded
     let travel = (size * DISC_TRAVEL).round();
     let width = if disc == Disc::None { size } else { size + travel };
     let mut holder = el().size(width, size);
-    if let Disc::Out(out) = disc {
-        holder = holder.child(record(p, t.source, size * 0.94).absolute(size * 0.03 + travel * out.clamp(0.0, 1.0), size * 0.03));
+    match disc {
+        Disc::Out(out) if out > 0.0 => {
+            // Out, the record stands clear of the sleeve so its rim, the ring, shows whole.
+            let d = (travel - size * 0.04).round();
+            let (x, y) = (size + size * 0.02, ((size - d) / 2.0).round());
+            holder = holder.child(record(p, t.source, d).absolute(x, y)).child(rim_ring(s, p, t, d).absolute(x, y));
+        }
+        Disc::Out(_) => holder = holder.child(record(p, t.source, size * 0.94).absolute(size * 0.03, size * 0.03)),
+        Disc::None => {}
     }
     let r = (size * 0.06).round().max(3.0);
     let face = match s.cover(&t.task_id) {
@@ -380,6 +388,15 @@ fn blank_face(p: &Pal, source: SourcePlatform, size: f32) -> El {
             el().size(label, label).radius(label / 2.0).center().fill(hue).child(el().size(3.0, 3.0).radius(1.5).fill(theme::vinyl())),
         ),
     )
+}
+
+/// The progress ring on the record's rim (decision 9a): Shelf's material in the platform's tint.
+fn rim_ring(s: &State, p: &Pal, t: &DownloadTask, d: f32) -> El {
+    let m = ring::shelf(s.palette, p.dark, ring::tint(t, p.dark));
+    let rank = s.tasks.iter().position(|x| x.task_id == t.task_id).unwrap_or(0);
+    // TODO(motion): `reduced` comes from the motion context at step 52.
+    let e = ring::view(&format!("ring-{}", t.task_id), d, &s.rings, &t.task_id, &m, false, rank);
+    if matches!(s.rings.pass(&t.task_id), Some(ring::Pass::Landed) | None) { e } else { e.label(copy::row_progress_aria(&t.title)) }
 }
 
 /// The record: vinyl with a groove and a label in the source's colour.

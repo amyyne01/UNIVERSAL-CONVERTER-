@@ -1,5 +1,5 @@
 //! Downloads: every task as a sleeve on one surface. While a file comes in its
-//! record slides out of the sleeve; once it is done the record is back inside
+//! record stands beside the sleeve, its rim filling; once it is done the record is back inside
 //! and the row reads as a file you own: its name and where it is.
 use ahg_engine::types::{DownloadStatus as St, DownloadTask, ErrorCode};
 use rune::{Color, El, Icon, ScrollSpec, col, el, icon, row, text};
@@ -8,6 +8,7 @@ use super::parts::{self, Disc, ghost, icon_button, primary, run, run_mono, runs}
 use super::theme::{Pal, mono, sans, serif};
 use crate::gate::{Confirm, Filter, Nav, State};
 use crate::keys::{self, RowAct};
+use crate::ring::Pass;
 use crate::{copy, format, icons};
 
 const ROW_H: f32 = 60.0;
@@ -321,15 +322,12 @@ fn state_word(p: &Pal, t: &DownloadTask) -> (&'static Icon, &'static str, Color)
     }
 }
 
-fn disc(t: &DownloadTask) -> Disc {
-    let pct = (t.progress.percent / 100.0).clamp(0.0, 1.0) as f32;
-    match t.progress.status {
-        // The record waits beside its sleeve and slides in as the file arrives; done, it is filed.
-        St::Queued | St::FetchingInfo => Disc::Out(1.0),
-        St::Downloading | St::Paused | St::Retrying => Disc::Out(1.0 - pct),
-        St::Converting | St::Embedding => Disc::Out(0.12),
-        St::Done => Disc::Out(0.0),
-        St::Failed | St::Cancelled => Disc::None,
+/// The record stands beside its sleeve while its rim is the ring (decision 9a); landed, it is filed.
+fn disc(s: &State, t: &DownloadTask) -> Disc {
+    match (t.progress.status, s.rings.pass(&t.task_id)) {
+        (St::Failed | St::Cancelled, _) => Disc::None,
+        (St::Done, Some(Pass::Landed) | None) => Disc::Out(0.0),
+        _ => Disc::Out(1.0),
     }
 }
 
@@ -355,7 +353,7 @@ fn task_row(s: &State, p: &Pal, t: &DownloadTask, grip: bool, do_next: bool) -> 
         el().w(16.0)
     };
     // 3. The sleeve, in a fixed slot so the text column never moves.
-    let slot = el().w(84.0).h(SLEEVE).child(parts::sleeve(s, p, t, SLEEVE, disc(t), matches!(status, St::Failed | St::Cancelled)));
+    let slot = el().w(84.0).h(SLEEVE).child(parts::sleeve(s, p, t, SLEEVE, disc(s, t), matches!(status, St::Failed | St::Cancelled)));
 
     // 4. Title and detail.
     let show_link = failed;
@@ -498,18 +496,6 @@ fn task_row(s: &State, p: &Pal, t: &DownloadTask, grip: bool, do_next: bool) -> 
         .child(actions);
     if failed {
         r = r.fill(p.error.alpha(0.05)).hover(p.error.alpha(0.08));
-    }
-    // 7. The progress trace along the bottom edge, for rows in flight.
-    if matches!(status, St::FetchingInfo | St::Downloading | St::Converting | St::Embedding | St::Retrying | St::Paused) {
-        let pct = (t.progress.percent / 100.0).clamp(0.0, 1.0) as f32;
-        let track = el().h(2.0).pin(Some(0.0), None, Some(0.0), Some(0.0)).label(copy::row_progress_aria(&t.title));
-        let trace = match status {
-            St::Downloading => row().w_full().h_full().child(el().w_frac(pct).h_full().fill(p.accent)),
-            St::Paused => row().w_full().h_full().child(el().w_frac(pct).h_full().fill(p.warning.alpha(0.7))),
-            // No meaningful percentage: a short travelling segment, drawn still.
-            _ => row().w_full().h_full().child(el().w_frac(0.38)).child(el().w_frac(0.24).h_full().fill(p.accent.alpha(0.55))),
-        };
-        r = r.child(track.child(trace));
     }
     r
 }

@@ -208,7 +208,7 @@ fn task_row(s: &State, p: &Pal, t: &DownloadTask) -> El {
     let st = t.progress.status;
     let label = format::label(t);
     let troubled = matches!(st, St::Failed | St::Cancelled);
-    let thumb = el().w((THUMB * (1.0 + parts::DISC_TRAVEL)).round()).child(parts::sleeve(s, p, t, THUMB, disc(t), st == St::Cancelled));
+    let thumb = el().w((THUMB * (1.0 + parts::DISC_TRAVEL)).round()).child(parts::sleeve(s, p, t, THUMB, disc(s, t), st == St::Cancelled));
 
     let mut detail = vec![run(format::source_name(t.source), p.source(t.source))];
     let reason = format::reason(t);
