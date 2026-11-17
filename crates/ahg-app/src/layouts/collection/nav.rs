@@ -5,17 +5,16 @@
 //! sleeves' spine labels, printed in their ink.
 use rune::{El, Icon, col, el, icon, row, text};
 
-use crate::copy;
-use crate::directions::shelf::icons;
-use crate::directions::shelf::parts::is_active;
 use crate::directions::shelf::theme::{self, Pal, mono, sans};
 use crate::gate::{Nav, State};
+use crate::{copy, format, icons, keys};
 
 /// The collapsed strip.
 const STRIP: f32 = 56.0;
 /// The dividers opened.
 const OPEN: f32 = 224.0;
 
+#[allow(dead_code)] // unused until cleanup (step 19): `icons::PIN` replaces it
 static PIN: Icon = Icon {
     name: "collection-pin",
     view: 256.0,
@@ -23,7 +22,7 @@ static PIN: Icon = Icon {
 };
 
 pub fn view(s: &State, p: &Pal) -> El {
-    let active = s.tasks.iter().filter(|t| is_active(t.progress.status)).count();
+    let active = format::active_count(&s.tasks);
     let mut slot = el()
         .key("dividers")
         .w(STRIP)
@@ -53,7 +52,6 @@ fn panel(s: &State, p: &Pal, active: usize, open: bool) -> El {
         .child(item(s, p, Nav::Downloads, &icons::DOWNLOAD, copy::NAV_DOWNLOADS, 2, active, open))
         .child(el().grow(1.0))
         .child(item(s, p, Nav::Settings, &icons::SETTINGS, copy::NAV_SETTINGS, 3, 0, open));
-    // ponytail: the gate's State has no "pinned" flag, so the pin only draws; wiring it is one bool.
     c = c.child(if open {
         row()
             .w_full()
@@ -65,12 +63,13 @@ fn panel(s: &State, p: &Pal, active: usize, open: bool) -> El {
             .radius(8.0)
             .hover(p.raised)
             .focusable(true)
+            .key(keys::NAV_PIN)
             .role("switch")
-            .checked(false)
-            .label("Keep open")
+            .checked(s.nav_pinned)
+            .label(copy::KEEP_OPEN)
             .border_sides([1.0, 0.0, 0.0, 0.0], p.line_soft)
-            .child(icon(&PIN, 16.0).color(p.text2))
-            .child(text("Keep open").font(sans(13.0, 400.0)).color(p.text2))
+            .child(icon(&icons::PIN, 16.0).color(p.text2))
+            .child(text(copy::KEEP_OPEN).font(sans(13.0, 400.0)).color(p.text2))
     } else {
         el().h(32.0).mt(8.0)
     });
@@ -89,7 +88,7 @@ fn item(s: &State, p: &Pal, nav: Nav, glyph: &'static Icon, label: &str, n: usiz
         mark = mark.child(text(badge.to_string()).font(mono(12.0, 500.0)).color(if on { ink } else { p.accent }).absolute(26.0, 2.0));
     }
     let mut r = row()
-        .key(format!("nav-{n}"))
+        .key(keys::nav(nav))
         .w_full()
         .h(40.0)
         .center_y()

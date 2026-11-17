@@ -5,17 +5,14 @@
 //! spines, the row behind it raised.
 use rune::{El, Icon, col, el, icon, row, text};
 
-use super::icons;
 use super::theme::{self, Pal, mono, sans};
-use crate::copy;
 use crate::gate::{Nav, State};
+use crate::{copy, icons, keys};
 
 /// The collapsed strip.
 pub const STRIP: f32 = 64.0;
 /// The sidebar opened.
 const OPEN: f32 = 232.0;
-/// Invented: the old app had no pin. Collection's sidebar uses the same words.
-const KEEP_OPEN: &str = "Keep open";
 
 pub fn view(s: &State, p: &Pal, active: usize) -> El {
     let open = s.nav_open || s.nav_pinned;
@@ -54,7 +51,7 @@ fn pin(s: &State, p: &Pal, open: bool) -> El {
     let on = s.nav_pinned;
     let ink = if on { p.accent } else { p.text2 };
     row()
-        .key("nav-pin")
+        .key(keys::NAV_PIN)
         .w_full()
         .h(40.0)
         .mt(4.0)
@@ -65,13 +62,13 @@ fn pin(s: &State, p: &Pal, open: bool) -> El {
         .focusable(true)
         .role("switch")
         .checked(on)
-        .label(KEEP_OPEN)
+        .label(copy::KEEP_OPEN)
         .on_press(|s: &mut State| {
             s.nav_pinned = !s.nav_pinned;
             s.nav_open = false;
         })
         .child(el().size(48.0, 40.0).center().child(icon(&icons::PIN, 16.0).color(ink)))
-        .child(text(KEEP_OPEN).font(sans(13.0, 400.0)).color(ink).single_line())
+        .child(text(copy::KEEP_OPEN).font(sans(13.0, 400.0)).color(ink).single_line())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -103,7 +100,7 @@ fn item(s: &State, p: &Pal, nav: Nav, glyph: &'static Icon, label: &str, n: usiz
         );
     }
     let mut r = row()
-        .key(format!("nav-{n}"))
+        .key(keys::nav(nav))
         .w_full()
         .h(40.0)
         .center_y()

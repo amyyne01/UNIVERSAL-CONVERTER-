@@ -36,11 +36,11 @@ mod settings;
 use ahg_engine::types::{DownloadStatus as St, DownloadTask, ErrorCode, SourcePlatform};
 use rune::{Color, Cx, El, Icon, ScrollSpec, Span, col, el, icon, rich, row, text};
 
-use crate::copy;
-use crate::directions::shelf::icons;
-use crate::directions::shelf::parts::{self, Disc, is_active, is_live, run, run_mono, runs};
+use crate::directions::shelf::parts::{self, Disc, run, run_mono, runs};
 use crate::directions::shelf::theme::{self, Pal, mono, sans, serif};
-use crate::gate::{Nav, State};
+use crate::gate::{Confirm, Nav, State};
+use crate::keys::{self, RowAct};
+use crate::{copy, format, icons};
 
 /// The wall's side margin.
 const PAD: f32 = 32.0;
@@ -54,7 +54,7 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> El {
     let place = match s.nav {
         Nav::Home => wall(s, &p),
         Nav::Downloads => downloads::view(s, &p),
-        Nav::Settings => settings::view(&p),
+        Nav::Settings => settings::view(s, &p),
     };
     let body = row().grow(1.0).min_h(0.0).w_full().child(nav::view(s, &p)).child(place);
     col().w_full().h_full().fill(p.bg).child(titlebar(s, &p, insets.leading, insets.trailing)).child(body)
@@ -78,7 +78,7 @@ fn titlebar(s: &State, p: &Pal, leading: f32, trailing: f32) -> El {
     .font(sans(13.0, 400.0))
     .single_line();
     let add = row()
-        .key("add")
+        .key(keys::FIELD)
         .w(440.0)
         .h(32.0)
         .pl(12.0)
@@ -166,10 +166,10 @@ fn quiet(p: &Pal, key: &str, glyph: Option<&'static Icon>, label: &str, ink: Col
 fn wall(s: &State, p: &Pal) -> El {
     let mut page = col().w_full().px(PAD).pt(16.0).pb(48.0);
     if s.tasks.is_empty() && s.stats.is_none() {
-        page = page.child(first_run(p));
+        page = page.child(first_run(s, p));
     } else {
         page = page.child(masthead(s, p));
-        let active: Vec<&DownloadTask> = s.tasks.iter().filter(|t| is_active(t.progress.status)).collect();
+        let active: Vec<&DownloadTask> = s.tasks.iter().filter(|t| format::is_active(t)).collect();
         let attention: Vec<&DownloadTask> = s.tasks.iter().filter(|t| matches!(t.progress.status, St::Failed | St::Cancelled)).collect();
         let done: Vec<&DownloadTask> = s.tasks.iter().filter(|t| t.progress.status == St::Done).collect();
         if !active.is_empty() {
@@ -189,7 +189,9 @@ fn wall(s: &State, p: &Pal) -> El {
 
 // ── First launch: an empty wall that asks for the first link ───────────────
 
-fn first_run(p: &Pal) -> El {
+fn first_run(s: &State, p: &Pal) -> El {
+    let hotkey = s.settings.get("globalHotkey").and_then(|v| v.as_str()).unwrap_or_default();
+    let caps: Vec<&str> = hotkey.split('+').map(|k| if k == "CommandOrControl" { copy::KEY_CTRL } else { k }).collect();
     let paste = row()
         .gap(4.0)
         .center_y()
@@ -198,7 +200,7 @@ fn first_run(p: &Pal) -> El {
         .child(keys(p, &[copy::REST_KEY_V]))
         .child(text(format!("{}{}", copy::REST_PASTES_A_LINK, copy::REST_HOTKEY_LEAD.trim_end())).font(sans(13.0, 400.0)).color(p.text2))
         .child(el().w(4.0))
-        .child(keys(p, &[copy::KEY_CTRL, "Shift", "D"]))
+        .child(keys(p, &caps))
         .child(text(copy::REST_HOTKEY_TRAIL).font(sans(13.0, 400.0)).color(p.text2));
     let slots = [
         (copy::WORKS_WITH_YOUTUBE, p.youtube()),
@@ -244,24 +246,14 @@ fn masthead(s: &State, p: &Pal) -> El {
     };
     let cur = &stats.current;
     let files = cur.files as u64;
-    let month = runs(vec![run(copy::CELL_THIS_MONTH, p.text2), run_mono(" · ", p.muted), run(parts::month_name(&cur.month), p.text2)])
+    let month = runs(vec![run(copy::CELL_THIS_MONTH, p.text2), run_mono(" · ", p.muted), run(format::month_name(&cur.month), p.text2)])
         .font(sans(13.0, 400.0))
         .single_line();
-    let compare = match &stats.previous {
-        Some(prev) if files > 0 => {
-            let name = parts::month_name(&prev.month);
-            let diff = files as i64 - prev.files as i64;
-            if diff == 0 { copy::month_same_count(&name) } else { copy::month_diff(diff, &name) }
-        }
-        _ => copy::MONTH_FIRST_ON_RECORD.to_string(),
-    };
+    let compare = format::month_sentence(stats);
     let (headline, sentence) = if files == 0 {
         (text(copy::MONTH_NOTHING_YET), runs(vec![run(copy::MONTH_NOTHING_YET_NO_PREV, p.text2)]))
     } else {
-        (
-            text(format!("{files} {}", copy::file_word(files))),
-            runs(vec![run_mono(copy::format_bytes(cur.bytes), p.text), run(compare, p.text2)]),
-        )
+        (text(format!("{files} {}", copy::file_word(files))), runs(vec![run_mono(format::bytes(cur.bytes), p.text), run(compare, p.text2)]))
     };
     let left = col()
         .gap(4.0)
@@ -269,20 +261,9 @@ fn masthead(s: &State, p: &Pal) -> El {
         .child(sentence.font(sans(13.0, 400.0)).single_line());
 
     // Where it came from: the month's files by source, as one bar.
-    let count = |k: &str| cur.by_platform.get(k).and_then(|v| v.as_f64()).unwrap_or(0.0);
-    let total: f64 = cur.by_platform.values().filter_map(|v| v.as_f64()).sum();
-    let reels = count("instagram") + count("tiktok") + count("facebook");
-    let named = count("youtube") + count("spotify") + count("soundcloud") + reels;
-    let split: Vec<(&str, f64, Color)> = [
-        (copy::SPLIT_YOUTUBE, count("youtube"), p.youtube()),
-        (copy::SPLIT_SPOTIFY, count("spotify"), p.spotify()),
-        (copy::SPLIT_SOUNDCLOUD, count("soundcloud"), p.soundcloud()),
-        (copy::SPLIT_REELS, reels, p.reels()),
-        (copy::SPLIT_OTHER, total - named, p.muted),
-    ]
-    .into_iter()
-    .filter(|(_, n, _)| *n > 0.0)
-    .collect();
+    let split: Vec<(&str, f64, Color)> =
+        format::source_split(stats).into_iter().map(|(bucket, n)| (bucket.name(), n as f64, parts::bucket_hue(p, bucket))).collect();
+    let total: f64 = split.iter().map(|g| g.1).sum();
     let mut right = col().w(320.0).gap(12.0);
     if total > 0.0 {
         let mut bar = row().w_full().h(8.0).gap(2.0);
@@ -361,15 +342,14 @@ fn shelf_header(p: &Pal, title: &str, count: usize, aside: Option<El>, actions: 
 }
 
 fn in_progress(s: &State, p: &Pal, tasks: &[&DownloadTask], alone: bool) -> El {
-    let live = tasks.iter().filter(|t| is_live(t.progress.status)).count();
-    let speed: f64 = tasks.iter().filter(|t| t.progress.status == St::Downloading).map(|t| t.progress.speed).sum();
+    let (live, speed) = format::in_flight(&s.tasks);
     let aside = row()
         .gap(8.0)
         .center_y()
-        .label(copy::transferring_aria(live, &copy::format_speed(speed)))
+        .label(copy::transferring_aria(live, &format::speed(speed)))
         .child(icon(&icons::DOWNLOAD, 16.0).color(p.muted))
         .child(
-            text(if speed > 0.0 { format!("{live} · {}", copy::format_speed(speed)) } else { live.to_string() })
+            text(if speed > 0.0 { format!("{live} · {}", format::speed(speed)) } else { live.to_string() })
                 .font(mono(13.0, 400.0))
                 .color(p.text2),
         );
@@ -380,9 +360,9 @@ fn in_progress(s: &State, p: &Pal, tasks: &[&DownloadTask], alone: bool) -> El {
         actions = actions.child(interrupted_line(p, interrupted));
     }
     actions = actions.child(
-        row().gap(4.0).center_y().child(quiet(p, "pause-all", Some(&icons::PAUSE), copy::DL_PAUSE_ALL, p.text2)).child(quiet(
+        row().gap(4.0).center_y().child(quiet(p, keys::PAUSE_ALL, Some(&icons::PAUSE), copy::DL_PAUSE_ALL, p.text2)).child(quiet(
             p,
-            "cancel-all",
+            keys::CANCEL_ALL,
             Some(&icons::CANCEL),
             copy::DL_CANCEL_ALL,
             p.text2,
@@ -427,7 +407,7 @@ fn needs_attention(s: &State, p: &Pal, tasks: &[&DownloadTask]) -> El {
             copy::GROUP_NEEDS_ATTENTION,
             tasks.len(),
             None,
-            quiet(p, "retry-all", Some(&icons::RETRY), copy::DL_RETRY_ALL_FAILED, p.text2),
+            quiet(p, keys::RETRY_ALL_FAILED, Some(&icons::RETRY), copy::DL_RETRY_ALL_FAILED, p.text2),
         ))
         .child(wall)
 }
@@ -444,7 +424,7 @@ fn completed(s: &State, p: &Pal, tasks: &[&DownloadTask], size: f32) -> El {
             copy::GROUP_COMPLETED,
             tasks.len(),
             None,
-            quiet(p, "clear-completed", Some(&icons::REMOVE), copy::DL_CLEAR_COMPLETED, p.text2),
+            quiet(p, keys::arm(Confirm::Clear), Some(&icons::REMOVE), copy::DL_CLEAR_COMPLETED, p.text2),
         ))
         .child(wall)
 }
@@ -496,7 +476,7 @@ fn sleeve(s: &State, p: &Pal, t: &DownloadTask, size: f32) -> El {
 
 /// One sleeve standing on its shelf, its caption under it.
 fn item(s: &State, p: &Pal, t: &DownloadTask, size: f32, stand: f32, width: f32) -> El {
-    let label = parts::label(t);
+    let label = format::label(t);
     let travel = if disc(t) == Disc::None { 1.0 } else { 1.0 + parts::DISC_TRAVEL };
     let slot = (size * travel).round().max(width);
     col()
@@ -522,7 +502,7 @@ fn item(s: &State, p: &Pal, t: &DownloadTask, size: f32, stand: f32, width: f32)
 fn caption(p: &Pal, t: &DownloadTask) -> El {
     let pr = &t.progress;
     let small = |r: Vec<parts::Run>| runs(r).font(sans(12.0, 400.0)).single_line().truncate();
-    let pct = format!("{}%", pr.percent.round());
+    let pct = format!("{}%", format::percent(t));
     match pr.status {
         St::Downloading => small(vec![run_mono(pct, p.text), run_mono(copy::row_dot_part(&copy::rate_line(pr.speed, pr.eta)), p.muted)]),
         St::FetchingInfo => small(vec![run(copy::STATE_STARTING, p.text2)]),
@@ -532,11 +512,11 @@ fn caption(p: &Pal, t: &DownloadTask) -> El {
         St::Paused => small(vec![run(copy::STATE_PAUSED, p.warning), run_mono(copy::row_dot_part(&pct), p.muted)]),
         St::Retrying => {
             let k = t.retry_count.unwrap_or(0.0) as usize;
-            let line = copy::row_retrying([5, 15, 45][k.min(2)], k);
+            let line = copy::row_retrying(format::retry_wait(t), k);
             small(vec![run(line.trim_start_matches(" · ").to_string(), p.warning)])
         }
         St::Done => {
-            let meta = format!("{} · {}", t.format.to_uppercase(), copy::format_bytes(pr.total));
+            let meta = format!("{} · {}", t.format.to_uppercase(), format::bytes(pr.total));
             let mut r = Vec::new();
             if !t.uploader.is_empty() {
                 r.push(run(t.uploader.clone(), p.text2));
@@ -555,12 +535,12 @@ fn trouble(p: &Pal, t: &DownloadTask) -> El {
     let failed = t.progress.status == St::Failed;
     let word = if !failed {
         copy::STATE_CANCELED
-    } else if parts::is_permanent(t) {
+    } else if format::is_permanent(t.error_code) {
         copy::STATE_CANT_DOWNLOAD
     } else {
         copy::STATE_FAILED
     };
-    let (key, glyph, label) = way_out(t);
+    let (act, glyph, label) = way_out(t);
     let state = row()
         .w_full()
         .gap(8.0)
@@ -568,15 +548,15 @@ fn trouble(p: &Pal, t: &DownloadTask) -> El {
         .child(
             runs(vec![
                 run(word, if failed { p.error } else { p.muted }),
-                run(copy::row_dot_part(parts::source_name(t.source)), p.source(t.source)),
+                run(copy::row_dot_part(format::source_name(t.source)), p.source(t.source)),
             ])
             .font(sans(12.0, 500.0))
             .single_line()
             .grow(1.0),
         )
-        .child(icon_button(p, format!("{key}-{}", t.task_id), glyph, label, p.text2));
+        .child(icon_button(p, keys::row_action(act, &t.task_id), glyph, label, p.text2));
     let mut c = col().w_full().gap(4.0).mt(-4.0).child(state);
-    if let Some(r) = parts::reason(t) {
+    if let Some(r) = format::reason(t) {
         c = c.child(text(r).font(sans(12.0, 400.0)).color(p.text2).wrap().max_lines(3).help(t.progress.error.clone()));
     }
     c
@@ -606,21 +586,21 @@ fn interrupted_line(p: &Pal, n: usize) -> El {
         .child(
             runs(vec![run_mono(n.to_string(), p.text), run(copy::interrupted_sentence(n), p.text2)]).font(sans(13.0, 400.0)).single_line(),
         )
-        .child(quiet(p, "resume-interrupted", None, copy::DL_INTERRUPTED_RESUME, p.text).ml(8.0))
-        .child(quiet(p, "discard-interrupted", None, copy::DL_INTERRUPTED_DISCARD, p.text2))
+        .child(quiet(p, keys::RESUME_INTERRUPTED, None, copy::DL_INTERRUPTED_RESUME, p.text).ml(8.0))
+        .child(quiet(p, keys::DISCARD_INTERRUPTED, None, copy::DL_INTERRUPTED_DISCARD, p.text2))
 }
 
 /// The one action a troubled sleeve offers on the wall (the rest are in its notes).
-fn way_out(t: &DownloadTask) -> (&'static str, &'static Icon, &'static str) {
+fn way_out(t: &DownloadTask) -> (RowAct, &'static Icon, &'static str) {
     use ErrorCode::*;
     if t.progress.status == St::Cancelled {
-        return ("again", &icons::DOWNLOAD, copy::ACT_DOWNLOAD_AGAIN);
+        return (RowAct::DownloadAgain, &icons::DOWNLOAD, copy::ACT_DOWNLOAD_AGAIN);
     }
     match t.error_code {
-        Some(Private | AgeRestricted | LoginRequired | DiskFull) => ("settings", &icons::SETTINGS, copy::ACT_OPEN_SETTINGS),
-        Some(Unknown) => ("engine", &icons::REFRESH, copy::ACT_UPDATE_ENGINE),
-        _ if parts::is_permanent(t) => ("remove", &icons::REMOVE, copy::ACT_REMOVE),
-        _ => ("retry", &icons::RETRY, copy::ACT_RETRY),
+        Some(Private | AgeRestricted | LoginRequired | DiskFull) => (RowAct::Fix, &icons::SETTINGS, copy::ACT_OPEN_SETTINGS),
+        Some(Unknown) => (RowAct::Fix, &icons::REFRESH, copy::ACT_UPDATE_ENGINE),
+        _ if format::is_permanent(t.error_code) => (RowAct::Remove, &icons::REMOVE, copy::ACT_REMOVE),
+        _ => (RowAct::Retry, &icons::RETRY, copy::ACT_RETRY),
     }
 }
 
@@ -629,8 +609,8 @@ fn way_out(t: &DownloadTask) -> (&'static str, &'static Icon, &'static str) {
 fn notes(s: &State, p: &Pal, t: &DownloadTask) -> El {
     let size = 160.0;
     let pr = &t.progress;
-    let label = parts::label(t);
-    let mut source = vec![run(parts::source_name(t.source), p.source(t.source))];
+    let label = format::label(t);
+    let mut source = vec![run(format::source_name(t.source), p.source(t.source))];
     if let Some(c) = t.match_confidence.filter(|_| t.source == SourcePlatform::Spotify) {
         // ponytail: the old app has no wording for the confidence itself; the figure stands beside its note.
         source.push(run(copy::row_dot_part(copy::SEARCH_SPOTIFY_NOTE), p.text2));
@@ -645,7 +625,7 @@ fn notes(s: &State, p: &Pal, t: &DownloadTask) -> El {
     if pr.status == St::Downloading {
         text_col = text_col.child(
             runs(vec![
-                run_mono(format!("{}%", pr.percent.round()), p.text),
+                run_mono(format!("{}%", format::percent(t)), p.text),
                 run_mono(copy::row_dot_part(&copy::rate_line(pr.speed, pr.eta)), p.muted),
             ])
             .font(sans(13.0, 400.0))
@@ -653,7 +633,7 @@ fn notes(s: &State, p: &Pal, t: &DownloadTask) -> El {
         );
     }
     let folder = if pr.filename.is_empty() { t.output_dir.clone() } else { pr.filename.clone() };
-    text_col = text_col.child(text(parts::specs(t)).font(mono(12.0, 400.0)).color(p.muted).single_line().mt(8.0)).child(
+    text_col = text_col.child(text(format::specs(t)).font(mono(12.0, 400.0)).color(p.muted).single_line().mt(8.0)).child(
         row()
             .w_full()
             .gap(8.0)
@@ -662,28 +642,29 @@ fn notes(s: &State, p: &Pal, t: &DownloadTask) -> El {
             .child(icon(&icons::FOLDER, 16.0).color(p.muted))
             .child(text(folder).font(mono(12.0, 400.0)).color(p.text2).single_line().truncate_middle().shrink()),
     );
-    if let Some(r) = parts::reason(t) {
+    if let Some(r) = format::reason(t) {
         text_col = text_col.child(text(r).font(sans(13.0, 400.0)).color(p.error).wrap().mt(8.0));
     }
     let actions = if pr.status == St::Done {
-        row().child(quiet(p, "n-open", Some(&icons::EXTERNAL), copy::ACT_OPEN_FILE, p.text)).child(quiet(
-            p,
-            "n-folder",
-            Some(&icons::FOLDER),
-            copy::ACT_SHOW_IN_FOLDER,
-            p.text,
-        ))
+        row()
+            .child(quiet(p, &keys::row_action(RowAct::OpenFile, &t.task_id), Some(&icons::EXTERNAL), copy::ACT_OPEN_FILE, p.text))
+            .child(quiet(p, &keys::row_action(RowAct::ShowInFolder, &t.task_id), Some(&icons::FOLDER), copy::ACT_SHOW_IN_FOLDER, p.text))
     } else {
-        row().child(quiet(p, "n-pause", Some(&icons::PAUSE), copy::ACT_PAUSE, p.text)).child(quiet(
+        row().child(quiet(p, &keys::row_action(RowAct::Pause, &t.task_id), Some(&icons::PAUSE), copy::ACT_PAUSE, p.text)).child(quiet(
             p,
-            "n-cancel",
+            &keys::row_action(RowAct::Cancel, &t.task_id),
             Some(&icons::CANCEL),
             copy::ACT_CANCEL,
             p.text,
         ))
     };
-    text_col =
-        text_col.child(actions.gap(4.0).mt(12.0).ml(-8.0).child(quiet(p, "n-copy", Some(&icons::COPY), copy::ACT_COPY_DETAILS, p.text2)));
+    text_col = text_col.child(actions.gap(4.0).mt(12.0).ml(-8.0).child(quiet(
+        p,
+        &keys::row_action(RowAct::CopyDetails, &t.task_id),
+        Some(&icons::COPY),
+        copy::ACT_COPY_DETAILS,
+        p.text2,
+    )));
     row()
         .key(format!("notes-{}", t.task_id))
         .padding(16.0)

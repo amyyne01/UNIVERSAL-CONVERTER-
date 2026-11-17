@@ -1,15 +1,14 @@
 //! Home: the paste box, the month in figures, and the latest files as sleeves
 //! standing on a shelf.
-use ahg_engine::config::default_config;
 use ahg_engine::stats::DownloadStats;
 use ahg_engine::types::{DownloadStatus as St, DownloadTask};
 use rune::{Color, El, ScrollSpec, col, el, icon, row, text};
 
-use super::icons;
 use super::parts::{self, Disc, keycap, run, run_mono, runs};
 use super::theme::{Pal, label_paper, mono, sans, serif, vinyl};
-use crate::copy;
+use crate::format;
 use crate::gate::{Nav, State};
+use crate::{copy, icons, keys};
 
 pub fn view(s: &State, p: &Pal, active: usize) -> El {
     let finished: Vec<&DownloadTask> = s.tasks.iter().filter(|t| t.progress.status == St::Done).collect();
@@ -84,7 +83,7 @@ fn headline(p: &Pal, active: usize) -> El {
 fn field(p: &Pal, input: &str) -> El {
     let (shown, ink) = if input.is_empty() { (copy::FIELD_PLACEHOLDER, p.muted) } else { (input, p.text) };
     let button = row()
-        .key("look-up")
+        .key(keys::LOOK_UP)
         .h(48.0)
         .pl(20.0)
         .pr(16.0)
@@ -99,7 +98,7 @@ fn field(p: &Pal, input: &str) -> El {
         .child(text(copy::FIELD_BUTTON_LOOK_UP).font(sans(15.0, 500.0)).color(p.bg))
         .child(icon(&icons::FORWARD, 16.0).color(p.bg));
     row()
-        .key("paste")
+        .key(keys::FIELD)
         .w_full()
         .h(64.0)
         .pl(24.0)
@@ -118,12 +117,9 @@ fn field(p: &Pal, input: &str) -> El {
 
 /// The rest-state caption: where files go, and the two ways to paste.
 fn status_line(s: &State, p: &Pal) -> El {
-    let config = default_config();
-    let setting = |k: &str| config.get(k).and_then(|v| v.as_str()).unwrap_or_default().to_string();
-    // ponytail: the gate has no settings, so the folder is the one the sample downloads went to, else the
-    // engine's default (empty, so the folder part is left out); the format and hotkey are the engine's defaults.
-    let folder = s.tasks.first().map(|t| t.output_dir.clone()).unwrap_or_else(|| setting("outputDir"));
-    let format = setting("defaultFormat");
+    let setting = |k: &str| s.settings.get(k).and_then(|v| v.as_str()).unwrap_or_default().to_string();
+    let folder = setting("outputDir");
+    let default_format = setting("defaultFormat");
     let hotkey = setting("globalHotkey");
 
     let mut left = row().gap(0.0).center_y().flex_wrap();
@@ -132,14 +128,17 @@ fn status_line(s: &State, p: &Pal) -> El {
         let shown = folder.rsplit('/').next().unwrap_or(&folder).to_string();
         left = left
             .child(
-                runs(vec![run(copy::rest_saves_as(if format.is_empty() { "mp3" } else { &format }), p.text2), run(shown, p.text)])
-                    .font(sans(13.0, 400.0))
-                    .single_line()
-                    .help(folder.clone()),
+                runs(vec![
+                    run(copy::rest_saves_as(if default_format.is_empty() { "mp3" } else { &default_format }), p.text2),
+                    run(shown, p.text),
+                ])
+                .font(sans(13.0, 400.0))
+                .single_line()
+                .help(folder.clone()),
             )
             .child(
                 text(copy::REST_CHANGE)
-                    .key("change-folder")
+                    .key(keys::CHANGE_FOLDER)
                     .font(sans(13.0, 500.0))
                     .color(p.accent)
                     .ml(8.0)
@@ -228,31 +227,15 @@ fn heading(p: &Pal, title: &str, aside: Option<El>) -> El {
     r
 }
 
-/// The next of 1, 2, 5 times a power of ten at or above `v`.
-fn nice_ceiling(v: f64) -> f64 {
-    if v <= 1.0 {
-        return 1.0;
-    }
-    let mut step = 10f64.powi(v.log10().floor() as i32);
-    loop {
-        for m in [1.0, 2.0, 5.0] {
-            if m * step >= v {
-                return m * step;
-            }
-        }
-        step *= 10.0;
-    }
-}
-
 /// Speed: the summed rate now, against the chart's scale.
 fn speed(s: &State, p: &Pal) -> El {
-    let now: f64 = s.tasks.iter().filter(|t| t.progress.status == St::Downloading).map(|t| t.progress.speed).sum();
-    let ceil = nice_ceiling(now);
+    let now = format::total_speed(&s.tasks);
+    let ceil = format::axis_ceiling(now);
     let figure = col()
         .w(152.0)
         .gap(4.0)
-        .child(text(copy::speed_now(&copy::format_bytes(now))).font(mono(22.0, 500.0)).color(p.text).single_line())
-        .child(text(copy::speed_scale(&copy::format_bytes(ceil))).font(mono(12.0, 400.0)).color(p.muted).single_line());
+        .child(text(copy::speed_now(&format::bytes(now))).font(mono(22.0, 500.0)).color(p.text).single_line())
+        .child(text(copy::speed_scale(&format::bytes(ceil))).font(mono(12.0, 400.0)).color(p.muted).single_line());
     // The chart starts empty: one sample so far, at the right edge (the app gathers one a second).
     let level = (now / ceil).clamp(0.0, 1.0) as f32;
     let h = 40.0;
@@ -260,7 +243,7 @@ fn speed(s: &State, p: &Pal) -> El {
     let chart = el()
         .grow(1.0)
         .h(h)
-        .label(copy::speed_aria(&copy::format_bytes(now)))
+        .label(copy::speed_aria(&format::bytes(now)))
         .child(grid(0.0))
         .child(grid(h / 2.0))
         .child(grid(h - 1.0))
@@ -271,33 +254,23 @@ fn speed(s: &State, p: &Pal) -> El {
 
 fn this_month(p: &Pal, stats: &DownloadStats) -> El {
     let cur = &stats.current;
-    let name = parts::month_name(&cur.month);
+    let name = format::month_name(&cur.month);
     let prev = stats.previous.as_ref().filter(|b| b.files > 0.0);
     let files = cur.files as u64;
     let body = if files == 0 {
-        let second = match prev {
-            Some(b) => copy::month_last_month_kept(b.files as u64, &copy::format_bytes(b.bytes)),
-            None => copy::MONTH_NOTHING_YET_NO_PREV.to_string(),
-        };
+        let second = format::month_sentence(stats);
         col()
             .gap(8.0)
             .child(text(copy::MONTH_NOTHING_YET).font(sans(15.0, 400.0)).color(p.text))
             .child(text(second).font(sans(13.0, 400.0)).color(p.text2).wrap())
     } else {
-        let ending = match prev {
-            Some(b) => {
-                let prev_name = parts::month_name(&b.month);
-                let diff = files as i64 - b.files as i64;
-                if diff == 0 { copy::month_same_count(&prev_name) } else { copy::month_diff(diff, &prev_name) }
-            }
-            None => copy::MONTH_FIRST_ON_RECORD.to_string(),
-        };
+        let ending = format::month_sentence(stats);
         let figure = row()
             .gap(8.0)
             .items_end()
             .child(text(files.to_string()).font(mono(44.0, 400.0).lh(48.0)).color(p.text))
             .child(text(copy::file_word(files)).font(sans(15.0, 400.0)).color(p.text2).mb(4.0));
-        let line = runs(vec![run_mono(copy::format_bytes(cur.bytes), p.text), run(ending, p.text2)]).font(sans(13.0, 400.0));
+        let line = runs(vec![run_mono(format::bytes(cur.bytes), p.text), run(ending, p.text2)]).font(sans(13.0, 400.0));
         let mut c = col().gap(8.0).child(figure).child(line);
         if let Some(b) = prev {
             let top = cur.files.max(b.files).max(1.0);
@@ -322,9 +295,9 @@ fn this_month(p: &Pal, stats: &DownloadStats) -> El {
                     .max_w(520.0)
                     .mt(4.0)
                     .gap(8.0)
-                    .label(copy::month_bars_aria(&name, files, &parts::month_name(&b.month), b.files as u64))
+                    .label(copy::month_bars_aria(&name, files, &format::month_name(&b.month), b.files as u64))
                     .child(bar("bar-now", name.clone(), cur.files, p.accent))
-                    .child(bar("bar-prev", parts::month_name(&b.month), b.files, p.muted.alpha(0.55))),
+                    .child(bar("bar-prev", format::month_name(&b.month), b.files, p.muted.alpha(0.55))),
             );
         }
         c
@@ -340,25 +313,8 @@ fn this_month(p: &Pal, stats: &DownloadStats) -> El {
 fn where_from(p: &Pal, stats: &DownloadStats) -> El {
     let cur = &stats.current;
     let total = cur.files as u64;
-    let mut groups: Vec<(&'static str, u64, Color)> = vec![
-        (copy::SPLIT_YOUTUBE, 0, p.youtube()),
-        (copy::SPLIT_SPOTIFY, 0, p.spotify()),
-        (copy::SPLIT_SOUNDCLOUD, 0, p.soundcloud()),
-        (copy::SPLIT_REELS, 0, p.reels()),
-        (copy::SPLIT_OTHER, 0, p.muted),
-    ];
-    for (source, n) in &cur.by_platform {
-        let at = match source.as_str() {
-            "youtube" => 0,
-            "spotify" => 1,
-            "soundcloud" => 2,
-            "instagram" | "tiktok" | "facebook" => 3,
-            _ => 4,
-        };
-        groups[at].1 += n.as_u64().unwrap_or(0);
-    }
-    groups.retain(|g| g.1 > 0);
-    groups.sort_by(|a, b| b.1.cmp(&a.1));
+    let groups: Vec<(&'static str, u64, Color)> =
+        format::source_split(stats).into_iter().map(|(bucket, n)| (bucket.name(), n, parts::bucket_hue(p, bucket))).collect();
     let aside = (total > 0).then(|| {
         let words = copy::split_aside(total);
         let n = total.to_string();
@@ -422,7 +378,7 @@ fn shelf(s: &State, p: &Pal, finished: &[&DownloadTask]) -> El {
     for (i, t) in finished.iter().take(4).enumerate() {
         let size = if i == 0 { 136.0 } else { 104.0 };
         let mut art = el().size(size, size).child(parts::sleeve(s, p, t, size, Disc::None, false));
-        let duration = copy::format_duration(t.duration);
+        let duration = format::duration(t.duration);
         if !duration.is_empty() {
             art = art.child(
                 el().h(20.0)
@@ -435,7 +391,7 @@ fn shelf(s: &State, p: &Pal, finished: &[&DownloadTask]) -> El {
             );
         }
         let title = if t.title.is_empty() { copy::RECENT_UNTITLED.to_string() } else { t.title.clone() };
-        let size_text = copy::format_bytes(t.progress.downloaded);
+        let size_text = format::bytes(t.progress.downloaded);
         let caption =
             if i == 0 {
                 col().w(size).gap(4.0).child(text(title.clone()).font(sans(13.0, 500.0)).color(p.text).max_lines(2).wrap()).child(

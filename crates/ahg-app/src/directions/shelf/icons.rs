@@ -1,5 +1,7 @@
 //! Icons: Phosphor (MIT), the family the Electron app uses; regular weight for
 //! interface glyphs, fill for the platform marks. Generated from @phosphor-icons/react defs.
+// unused until cleanup (step 19): the shared `crate::icons` replaces this set (shelf.rs still draws SEARCH).
+#![allow(dead_code)]
 use rune::Icon;
 
 pub static HOME: Icon = Icon {

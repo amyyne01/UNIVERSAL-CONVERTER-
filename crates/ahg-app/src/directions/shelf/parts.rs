@@ -3,10 +3,24 @@
 //! label, keycaps, buttons and rich text runs.
 use ahg_engine::types::{DownloadStatus as St, DownloadTask, ErrorCode, SourcePlatform};
 use rune::{Color, El, Icon, Span, SurfaceFit, el, icon, rich, row, text};
+use serde_json::Value;
 
 use super::theme::{self, Pal, mono, sans};
 use crate::copy;
+use crate::format::Bucket;
 use crate::gate::State;
+use crate::settings_spec::{self, Kind, Row};
+
+/// The colour of one group of "where it came from".
+pub fn bucket_hue(p: &Pal, bucket: Bucket) -> Color {
+    match bucket {
+        Bucket::Youtube => p.youtube(),
+        Bucket::Spotify => p.spotify(),
+        Bucket::Soundcloud => p.soundcloud(),
+        Bucket::Reels => p.reels(),
+        Bucket::Other => p.muted,
+    }
+}
 
 // ── Task facts ──────────────────────────────────────────────────────────────
 
@@ -16,10 +30,12 @@ pub fn is_active(st: St) -> bool {
 }
 
 /// Transferring or about to: the rows that sweep.
+#[allow(dead_code)] // unused until cleanup (step 19)
 pub fn is_live(st: St) -> bool {
     matches!(st, St::FetchingInfo | St::Downloading | St::Converting | St::Embedding | St::Retrying)
 }
 
+#[allow(dead_code)] // unused until cleanup (step 19)
 pub fn source_name(p: SourcePlatform) -> &'static str {
     use SourcePlatform::*;
     match p {
@@ -44,11 +60,13 @@ pub fn source_name(p: SourcePlatform) -> &'static str {
 }
 
 /// The text after the last `\` or `/`.
+#[allow(dead_code)] // unused until cleanup (step 19)
 pub fn file_name(path: &str) -> &str {
     path.rsplit(['\\', '/']).next().unwrap_or(path)
 }
 
 /// `linkLabel(url)` (CONTENT.md 4.7): the stand-in title for a task with none.
+#[allow(dead_code)] // unused until cleanup (step 19)
 pub fn link_label(url: &str) -> String {
     let Some((_, rest)) = url.split_once("://") else {
         return url.to_string();
@@ -65,6 +83,7 @@ pub fn link_label(url: &str) -> String {
 }
 
 /// A row's label: the title, else the saved file's name, else the link.
+#[allow(dead_code)] // unused until cleanup (step 19)
 pub fn label(t: &DownloadTask) -> String {
     if !t.title.is_empty() {
         t.title.clone()
@@ -75,11 +94,13 @@ pub fn label(t: &DownloadTask) -> String {
     }
 }
 
+#[allow(dead_code)] // unused until cleanup (step 19)
 pub fn is_permanent(t: &DownloadTask) -> bool {
     matches!(t.error_code, Some(ErrorCode::Removed | ErrorCode::Unsupported | ErrorCode::Drm | ErrorCode::GeoBlocked))
 }
 
 /// The readable sentence on a failed or cancelled row (CONTENT.md 3.7), or the raw error.
+#[allow(dead_code)] // unused until cleanup (step 19)
 pub fn reason(t: &DownloadTask) -> Option<String> {
     use ErrorCode::*;
     if !matches!(t.progress.status, St::Failed | St::Cancelled) {
@@ -118,6 +139,7 @@ pub fn reason(t: &DownloadTask) -> Option<String> {
 }
 
 /// `[position] · [duration] · [size] · [format]`, empty parts left out.
+#[allow(dead_code)] // unused until cleanup (step 19)
 pub fn specs(t: &DownloadTask) -> String {
     let p = &t.progress;
     let size = if p.total > 0.0 { p.total } else { p.downloaded };
@@ -131,6 +153,7 @@ pub fn specs(t: &DownloadTask) -> String {
 }
 
 /// A full month name from `YYYY-MM` (CONTENT.md 4.6); anything else as is.
+#[allow(dead_code)] // unused until cleanup (step 19)
 pub fn month_name(ym: &str) -> String {
     const NAMES: [&str; 12] =
         ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -138,6 +161,46 @@ pub fn month_name(ym: &str) -> String {
         .and_then(|(_, m)| m.parse::<usize>().ok())
         .and_then(|m| NAMES.get(m.wrapping_sub(1)))
         .map_or_else(|| ym.to_string(), |n| n.to_string())
+}
+
+// ── Settings values ─────────────────────────────────────────────────────────
+
+/// Every settings row, flat: the one list the values below are read from.
+pub fn rows(s: &State) -> Vec<Row> {
+    settings_spec::sections(s).into_iter().flat_map(|section| section.rows).collect()
+}
+
+pub fn find<'a>(rows: &'a [Row], key: &str) -> Option<&'a Row> {
+    rows.iter().find(|r| r.key == Some(key))
+}
+
+fn as_text(v: &Value) -> String {
+    v.as_str().map_or_else(|| v.to_string(), str::to_owned)
+}
+
+/// A toggle's state.
+pub fn on(rows: &[Row], key: &str) -> bool {
+    find(rows, key).and_then(|r| r.value.as_bool()).unwrap_or(false)
+}
+
+/// What a text row holds.
+pub fn raw(rows: &[Row], key: &str) -> String {
+    find(rows, key).map(|r| as_text(&r.value)).unwrap_or_default()
+}
+
+/// What a row shows: a select's chosen label, else its text.
+pub fn shown(rows: &[Row], key: &str) -> String {
+    match find(rows, key) {
+        Some(Row { kind: Kind::Select(options), value, .. }) => {
+            options.iter().find(|o| o.value == as_text(value)).map(|o| o.label.clone()).unwrap_or_default()
+        }
+        _ => raw(rows, key),
+    }
+}
+
+/// The app's own version, as the Software line prints it.
+pub fn app_version() -> String {
+    format!("v{}", env!("CARGO_PKG_VERSION"))
 }
 
 // ── Text ────────────────────────────────────────────────────────────────────

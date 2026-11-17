@@ -3,21 +3,16 @@
 //! a left margin under a numbered spine label; its settings run beside them,
 //! one per line, the control at the right. Where files go leads, on its own.
 //! Both of the old app's disclosures are drawn open. Wording is
-//! `copy::settings`, word for word; values are stand-ins (the gate has no settings).
+//! `copy::settings`, word for word; values are read from `State.settings`.
 use rune::{Color, El, Icon, ScrollSpec, col, el, icon, row, text};
+use serde_json::Value;
 
-use super::icons;
-use super::parts::ghost;
+use super::parts::{app_version, find, ghost, on, raw, rows, shown};
 use super::theme::{self, Pal, mono, sans, serif};
 use crate::copy::settings as w;
-use crate::gate::{self, State};
-
-/// Stand-in values.
-const FOLDER: &str = "C:\\Users\\Alex\\Music";
-const VERSION: &str = "v2.0.0";
-const ENGINE_VERSION: &str = "2026.11.01";
-/// Palette names for the swatches' accessible names: Shelf's own, then the app's seven.
-const PALETTES: [&str; 8] = ["Shelf", "Aurora", "Slate", "Moss", "Ember", "Paper", "Lagoon", "Orchid"];
+use crate::gate::{self, Confirm, State};
+use crate::settings_spec::Row;
+use crate::{copy, icons, keys, palette};
 
 /// The margin that holds each section's name.
 const MARGIN: f32 = 248.0;
@@ -30,6 +25,8 @@ pub fn view(s: &State, p: &Pal) -> El {
         .child(text(w::TITLE).font(serif(44.0).lh(48.0)).color(p.text))
         .child(el().grow(1.0))
         .child(text(w::SAVES).font(sans(13.0, 400.0)).color(p.muted).mb(4.0));
+    let rows = rows(s);
+    let rows = rows.as_slice();
     let page = col()
         .w_full()
         .max_w(1040.0)
@@ -38,13 +35,13 @@ pub fn view(s: &State, p: &Pal) -> El {
         .pt(24.0)
         .pb(48.0)
         .child(head)
-        .child(destination(p).mt(24.0).mb(8.0))
-        .child(section(p, 1, w::DEFAULTS, Some(w::DEFAULTS_HINT), defaults(p)))
-        .child(section(p, 2, w::MORE, Some(w::MORE_HINT), more(p)))
-        .child(section(p, 3, w::APPEARANCE, None, appearance(s, p)))
-        .child(section(p, 4, w::SCHEDULE, Some(w::SCHEDULE_HINT), schedule(p)))
-        .child(section(p, 5, w::SOFTWARE, Some(w::SOFTWARE_HINT), software(p)))
-        .child(section(p, 6, w::ADVANCED, Some(w::ADVANCED_HINT), advanced(p)))
+        .child(destination(rows, p).mt(24.0).mb(8.0))
+        .child(section(p, 1, w::DEFAULTS, Some(w::DEFAULTS_HINT), defaults(rows, p)))
+        .child(section(p, 2, w::MORE, Some(w::MORE_HINT), more(rows, p)))
+        .child(section(p, 3, w::APPEARANCE, None, appearance(s, rows, p)))
+        .child(section(p, 4, w::SCHEDULE, Some(w::SCHEDULE_HINT), schedule(rows, p)))
+        .child(section(p, 5, w::SOFTWARE, Some(w::SOFTWARE_HINT), software(s, rows, p)))
+        .child(section(p, 6, w::ADVANCED, Some(w::ADVANCED_HINT), advanced(rows, p)))
         .child(section(p, 7, w::PLAN, None, plan(p)))
         .child(section(p, 8, w::HELP, None, help(p)));
     col().key("settings").w_full().grow(1.0).min_h(0.0).scroll(ScrollSpec { stick_bottom: false }).child(page)
@@ -148,8 +145,9 @@ fn button(p: &Pal, key: &str, glyph: Option<&'static Icon>, label: &str) -> El {
 // ── Sections ────────────────────────────────────────────────────────────────
 
 /// Where files go: no heading in the old app, so it leads the page on its own.
-fn destination(p: &Pal) -> El {
-    let (parent, leaf) = FOLDER.rsplit_once('\\').unwrap_or(("", FOLDER));
+fn destination(rows: &[Row], p: &Pal) -> El {
+    let folder = raw(rows, "outputDir");
+    let (parent, leaf) = folder.rsplit_once('\\').unwrap_or(("", folder.as_str()));
     row()
         .key("destination")
         .w_full()
@@ -170,10 +168,10 @@ fn destination(p: &Pal) -> El {
                 .child(text(format!("{parent}\\")).font(mono(13.0, 400.0)).color(p.muted).single_line())
                 .child(text(leaf.to_string()).font(mono(13.0, 500.0)).color(p.text).single_line()),
         )
-        .child(button(p, "change-folder", None, w::CHANGE))
+        .child(button(p, keys::CHANGE_FOLDER, None, w::CHANGE))
 }
 
-fn defaults(p: &Pal) -> El {
+fn defaults(rows: &[Row], p: &Pal) -> El {
     let labelled = |label: &str, value: &str| {
         col()
             .grow(1.0)
@@ -186,47 +184,55 @@ fn defaults(p: &Pal) -> El {
         .w_full()
         .gap(16.0)
         .pb(16.0)
-        .child(labelled(w::AUDIO_FORMAT, "MP3"))
-        .child(labelled(w::AUDIO_QUALITY, "320 kbps"))
-        .child(labelled(w::VIDEO_QUALITY, "1080p Full HD"));
+        .child(labelled(w::AUDIO_FORMAT, &shown(rows, "defaultFormat")))
+        .child(labelled(w::AUDIO_QUALITY, &shown(rows, "defaultQuality")))
+        .child(labelled(w::VIDEO_QUALITY, &shown(rows, "defaultVideoQuality")));
     lines(
         vec![
             trio,
-            setting(p, w::SKIP_EXISTING, toggle(p, w::SKIP_EXISTING.0, true)),
-            setting(p, w::EMBED_THUMBNAIL, toggle(p, w::EMBED_THUMBNAIL.0, true)),
-            setting(p, w::EMBED_METADATA, toggle(p, w::EMBED_METADATA.0, true)),
-            setting(p, w::SIMULTANEOUS, select(p, w::SIMULTANEOUS.0, "3 at a time", 160.0)),
+            setting(p, w::SKIP_EXISTING, toggle(p, w::SKIP_EXISTING.0, on(rows, "skipExisting"))),
+            setting(p, w::EMBED_THUMBNAIL, toggle(p, w::EMBED_THUMBNAIL.0, on(rows, "embedThumbnail"))),
+            setting(p, w::EMBED_METADATA, toggle(p, w::EMBED_METADATA.0, on(rows, "embedMetadata"))),
+            setting(p, w::SIMULTANEOUS, select(p, w::SIMULTANEOUS.0, &shown(rows, "maxConcurrentDownloads"), 160.0)),
         ],
         p,
     )
 }
 
-fn more(p: &Pal) -> El {
+fn more(rows: &[Row], p: &Pal) -> El {
     lines(
         vec![
-            setting(p, (w::SIGN_IN_WITH, ""), select(p, w::SIGN_IN_WITH, "Chrome", 200.0)),
-            setting(p, w::IMPORT_COOKIES, button(p, "import-cookies", Some(&icons::FOLDER), w::CHOOSE_FILE)),
-            setting(p, (w::SUBTITLES, ""), select(p, w::SUBTITLES, "Off", 200.0)),
-            setting(p, (w::SUBTITLE_LANGUAGES, ""), input(p, w::SUBTITLE_LANGUAGES, "", w::SUBTITLE_LANGUAGES_PLACEHOLDER)),
-            setting(p, w::AUTO_CAPTIONS, toggle(p, w::AUTO_CAPTIONS.0, false)),
-            setting(p, (w::SPONSOR_SEGMENTS, ""), select(p, w::SPONSOR_SEGMENTS, "Off", 200.0)),
-            setting(p, (w::VIDEO_CONTAINER, ""), select(p, w::VIDEO_CONTAINER, "MP4 (most compatible)", 200.0)),
-            setting(p, (w::VIDEO_CODEC, ""), select(p, w::VIDEO_CODEC, "Best available", 200.0)),
-            setting(p, w::EMBED_CHAPTERS, toggle(p, w::EMBED_CHAPTERS.0, true)),
-            setting(p, w::SPLIT_BY_CHAPTER, toggle(p, w::SPLIT_BY_CHAPTER.0, false)),
-            setting(p, w::SAVE_COVER_ART, toggle(p, w::SAVE_COVER_ART.0, false)),
-            setting(p, w::FILE_NAMING, input(p, w::FILE_NAMING.0, "", w::FILE_NAMING_PLACEHOLDER)),
+            setting(p, (w::SIGN_IN_WITH, ""), select(p, w::SIGN_IN_WITH, &shown(rows, "cookieBrowser"), 200.0)),
+            setting(p, w::IMPORT_COOKIES, button(p, keys::IMPORT_COOKIES, Some(&icons::FOLDER), w::CHOOSE_FILE)),
+            setting(p, (w::SUBTITLES, ""), select(p, w::SUBTITLES, &shown(rows, "subtitleMode"), 200.0)),
+            setting(
+                p,
+                (w::SUBTITLE_LANGUAGES, ""),
+                input(p, w::SUBTITLE_LANGUAGES, &raw(rows, "subtitleLangs"), w::SUBTITLE_LANGUAGES_PLACEHOLDER),
+            ),
+            setting(p, w::AUTO_CAPTIONS, toggle(p, w::AUTO_CAPTIONS.0, on(rows, "subtitleAuto"))),
+            setting(p, (w::SPONSOR_SEGMENTS, ""), select(p, w::SPONSOR_SEGMENTS, &shown(rows, "sponsorBlock"), 200.0)),
+            setting(p, (w::VIDEO_CONTAINER, ""), select(p, w::VIDEO_CONTAINER, &shown(rows, "videoContainer"), 200.0)),
+            setting(p, (w::VIDEO_CODEC, ""), select(p, w::VIDEO_CODEC, &shown(rows, "videoCodec"), 200.0)),
+            setting(p, w::EMBED_CHAPTERS, toggle(p, w::EMBED_CHAPTERS.0, on(rows, "embedChapters"))),
+            setting(p, w::SPLIT_BY_CHAPTER, toggle(p, w::SPLIT_BY_CHAPTER.0, on(rows, "splitChapters"))),
+            setting(p, w::SAVE_COVER_ART, toggle(p, w::SAVE_COVER_ART.0, on(rows, "writeThumbnail"))),
+            setting(p, w::FILE_NAMING, input(p, w::FILE_NAMING.0, &raw(rows, "outputTemplate"), w::FILE_NAMING_PLACEHOLDER)),
         ],
         p,
     )
 }
 
-fn appearance(s: &State, p: &Pal) -> El {
-    // The gate follows the system (Rune's --theme), so System is the one chosen.
+fn appearance(s: &State, rows: &[Row], p: &Pal) -> El {
+    let chosen = match raw(rows, "theme").as_str() {
+        "light" => 0,
+        "dark" => 1,
+        _ => 2,
+    };
     let mut theme =
         row().h(32.0).padding(4.0).gap(4.0).radius(8.0).fill(p.sunk).border(1.0, p.line_soft).role("radiogroup").label(w::THEME.0);
     for (i, name) in w::THEMES.into_iter().enumerate() {
-        let on = i == 2;
+        let on = i == chosen;
         theme = theme.child(
             el().h(24.0)
                 .px(12.0)
@@ -240,7 +246,8 @@ fn appearance(s: &State, p: &Pal) -> El {
         );
     }
     let mut swatches = row().gap(8.0).role("radiogroup").label(w::PALETTE_ARIA);
-    for (i, name) in PALETTES.into_iter().enumerate() {
+    for i in 0..=palette::NAMES.len() {
+        let name = if i == 0 { copy::PRESET_SHELF } else { palette::NAMES[i - 1] };
         let sw = Pal::new(i, p.dark);
         let on = i == s.palette;
         swatches = swatches.child(
@@ -263,25 +270,27 @@ fn appearance(s: &State, p: &Pal) -> El {
         .gap(12.0)
         .center_y()
         .child(text(preset).font(sans(13.0, 400.0)).color(p.text2))
-        .child(button(p, "layout-choose", None, w::LAYOUT_CHOOSE).on_press(|s: &mut State| s.picker = true));
+        .child(button(p, keys::LAYOUT_CHOOSE, None, w::LAYOUT_CHOOSE).on_press(|s: &mut State| s.picker = true));
     lines(
         vec![
             setting(p, w::THEME, theme),
             setting(p, w::PALETTE, swatches),
             setting(p, w::LAYOUT, layout),
-            setting(p, w::CLIPBOARD_WATCHER, toggle(p, w::CLIPBOARD_WATCHER.0, true)),
-            setting(p, w::NOTIFICATIONS, toggle(p, w::NOTIFICATIONS.0, true)),
-            setting(p, w::DISCORD, toggle(p, w::DISCORD.0, false)),
+            setting(p, w::CLIPBOARD_WATCHER, toggle(p, w::CLIPBOARD_WATCHER.0, on(rows, "clipboardWatch"))),
+            setting(p, w::NOTIFICATIONS, toggle(p, w::NOTIFICATIONS.0, on(rows, "showNotifications"))),
+            setting(p, w::DISCORD, toggle(p, w::DISCORD.0, on(rows, "discordRichPresence"))),
         ],
         p,
     )
 }
 
-fn schedule(p: &Pal) -> El {
+fn schedule(rows: &[Row], p: &Pal) -> El {
+    let chosen: Vec<u64> =
+        find(rows, "scheduleDays").and_then(|r| r.value.as_array()).map_or_else(Vec::new, |d| d.iter().filter_map(Value::as_u64).collect());
     let mut days = row().gap(4.0).role("group").label(w::ACTIVE_DAYS.0);
     for (i, day) in w::DAYS.iter().enumerate() {
-        // Weekdays on (Electron's order: Sunday first).
-        let on = (1..=5).contains(&i);
+        // Electron's order: Sunday first.
+        let on = chosen.contains(&(i as u64));
         days = days.child(
             el().size(32.0, 28.0)
                 .center()
@@ -297,10 +306,10 @@ fn schedule(p: &Pal) -> El {
     }
     lines(
         vec![
-            setting(p, (w::ENABLE_SCHEDULER, ""), toggle(p, w::ENABLE_SCHEDULER, true)),
-            setting(p, w::START_TIME, input(p, w::START_TIME.0, "03:00", "").w(96.0)),
+            setting(p, (w::ENABLE_SCHEDULER, ""), toggle(p, w::ENABLE_SCHEDULER, on(rows, "scheduleEnabled"))),
+            setting(p, w::START_TIME, input(p, w::START_TIME.0, &raw(rows, "scheduleTime"), "").w(96.0)),
             setting(p, w::ACTIVE_DAYS, days),
-            setting(p, w::SHUTDOWN, toggle(p, w::SHUTDOWN.0, false)),
+            setting(p, w::SHUTDOWN, toggle(p, w::SHUTDOWN.0, on(rows, "scheduleShutdown"))),
         ],
         p,
     )
@@ -321,23 +330,29 @@ fn updater(p: &Pal, name: &str, version: &str, desc: &str, action: El) -> El {
     row().w_full().min_h(56.0).py(12.0).gap(24.0).center_y().child(words).child(action)
 }
 
-fn software(p: &Pal) -> El {
+fn software(s: &State, rows: &[Row], p: &Pal) -> El {
     lines(
         vec![
-            updater(p, w::APP_NAME, VERSION, w::APP_REST, button(p, "check-updates", Some(&icons::REFRESH), w::CHECK_FOR_UPDATES)),
-            updater(p, w::ENGINE_NAME, ENGINE_VERSION, "", button(p, "check-engine", Some(&icons::REFRESH), w::ENGINE_CHECK)),
-            setting(p, w::AUTO_UPDATE_ENGINE, toggle(p, w::AUTO_UPDATE_ENGINE.0, true)),
+            updater(
+                p,
+                w::APP_NAME,
+                &app_version(),
+                w::APP_REST,
+                button(p, keys::CHECK_UPDATE, Some(&icons::REFRESH), w::CHECK_FOR_UPDATES),
+            ),
+            updater(p, w::ENGINE_NAME, &s.engine.current, "", button(p, keys::CHECK_ENGINE, Some(&icons::REFRESH), w::ENGINE_CHECK)),
+            setting(p, w::AUTO_UPDATE_ENGINE, toggle(p, w::AUTO_UPDATE_ENGINE.0, on(rows, "autoUpdateEngine"))),
         ],
         p,
     )
 }
 
-fn advanced(p: &Pal) -> El {
+fn advanced(rows: &[Row], p: &Pal) -> El {
     lines(
         vec![
-            setting(p, w::RATE_LIMIT, input(p, w::RATE_LIMIT.0, "", w::RATE_LIMIT_PLACEHOLDER)),
-            setting(p, w::PROXY, input(p, w::PROXY.0, "", w::PROXY_PLACEHOLDER)),
-            setting(p, w::GLOBAL_HOTKEY, input(p, w::GLOBAL_HOTKEY.0, "Ctrl+Shift+D", w::GLOBAL_HOTKEY_PLACEHOLDER)),
+            setting(p, w::RATE_LIMIT, input(p, w::RATE_LIMIT.0, &raw(rows, "rateLimit"), w::RATE_LIMIT_PLACEHOLDER)),
+            setting(p, w::PROXY, input(p, w::PROXY.0, &raw(rows, "proxy"), w::PROXY_PLACEHOLDER)),
+            setting(p, w::GLOBAL_HOTKEY, input(p, w::GLOBAL_HOTKEY.0, &raw(rows, "globalHotkey"), w::GLOBAL_HOTKEY_PLACEHOLDER)),
         ],
         p,
     )
@@ -375,14 +390,21 @@ fn plan(p: &Pal) -> El {
             )
             .child(icon(&icons::CARET_RIGHT, 16.0).color(p.muted))
     };
-    lines(vec![setting(p, (w::YOUR_PLAN, w::PLAN_PREMIUM.1), stamp), danger("deactivate", w::DEACTIVATE), danger("move-pc", w::MOVE)], p)
+    lines(
+        vec![
+            setting(p, (w::YOUR_PLAN, w::PLAN_PREMIUM.1), stamp),
+            danger(keys::arm(Confirm::Deactivate), w::DEACTIVATE),
+            danger(keys::arm(Confirm::Move), w::MOVE),
+        ],
+        p,
+    )
 }
 
 fn help(p: &Pal) -> El {
     lines(
         vec![
-            setting(p, w::SHORTCUTS, button(p, "show-shortcuts", None, w::SHOW_SHORTCUTS)),
-            setting(p, w::REPORT, button(p, "get-support", Some(&icons::EXTERNAL), w::GET_SUPPORT)),
+            setting(p, w::SHORTCUTS, button(p, keys::SHOW_SHORTCUTS, None, w::SHOW_SHORTCUTS)),
+            setting(p, w::REPORT, button(p, keys::GET_SUPPORT, Some(&icons::EXTERNAL), w::GET_SUPPORT)),
         ],
         p,
     )

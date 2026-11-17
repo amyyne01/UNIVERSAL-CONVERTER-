@@ -4,11 +4,11 @@
 use ahg_engine::types::{DownloadStatus as St, DownloadTask, ErrorCode};
 use rune::{Color, El, Icon, ScrollSpec, col, el, icon, row, text};
 
-use super::icons;
-use super::parts::{self, Disc, ghost, icon_button, is_active, is_live, primary, run, run_mono, runs};
+use super::parts::{self, Disc, ghost, icon_button, primary, run, run_mono, runs};
 use super::theme::{Pal, mono, sans, serif};
-use crate::copy;
-use crate::gate::{Nav, State};
+use crate::gate::{Confirm, Filter, Nav, State};
+use crate::keys::{self, RowAct};
+use crate::{copy, format, icons};
 
 const ROW_H: f32 = 60.0;
 const SLEEVE: f32 = 48.0;
@@ -33,9 +33,9 @@ pub fn view(s: &State, p: &Pal) -> El {
 
 fn header(p: &Pal, tasks: &[DownloadTask]) -> El {
     let st = |f: &dyn Fn(St) -> bool| tasks.iter().filter(|t| f(t.progress.status)).count();
-    let active = st(&is_active);
+    let active = format::active_count(tasks);
     let any_paused = st(&|s| s == St::Paused) > 0;
-    let all_paused = any_paused && st(&is_live) == 0;
+    let all_paused = format::all_paused(tasks);
 
     let line = copy::active_and_total(active, tasks.len(), all_paused);
     let mut counts = Vec::new();
@@ -62,35 +62,25 @@ fn header(p: &Pal, tasks: &[DownloadTask]) -> El {
         .child(text(copy::DL_TITLE).font(serif(44.0).lh(48.0)).color(p.text))
         .child(runs(counts).font(mono(12.0, 400.0)).single_line());
     if tasks.len() >= 2 {
-        let n = [
-            st(&|s| matches!(s, St::FetchingInfo | St::Downloading | St::Converting | St::Embedding)),
-            st(&|s| s == St::Retrying),
-            st(&|s| s == St::Queued),
-            st(&|s| s == St::Paused),
-            st(&|s| s == St::Done),
-            st(&|s| s == St::Failed),
-            st(&|s| s == St::Cancelled),
-        ];
-        let parts: Vec<String> = n.iter().zip(copy::SUMMARY_WORDS).filter(|(n, _)| **n > 0).map(|(n, w)| format!("{n} {w}")).collect();
-        left = left.child(text(copy::downloads_summary(tasks.len(), &parts)).font(sans(13.0, 400.0)).color(p.text2));
+        left = left.child(text(copy::downloads_summary(tasks.len(), &format::summary_parts(tasks))).font(sans(13.0, 400.0)).color(p.text2));
     }
 
     let mut right = row().grow(1.0).min_w(0.0).gap(8.0).center_y().justify_end().flex_wrap();
-    if tasks.iter().any(|t| t.progress.status == St::Failed && !parts::is_permanent(t)) {
-        right = right.child(ghost(p, "retry-all", Some(&icons::RETRY), copy::DL_RETRY_ALL_FAILED, p.text));
+    if tasks.iter().any(|t| t.progress.status == St::Failed && !format::is_permanent(t.error_code)) {
+        right = right.child(ghost(p, keys::RETRY_ALL_FAILED, Some(&icons::RETRY), copy::DL_RETRY_ALL_FAILED, p.text));
     }
     if tasks.iter().any(|t| t.progress.status == St::Done) {
-        right = right.child(ghost(p, "clear-completed", Some(&icons::REMOVE), copy::DL_CLEAR_COMPLETED, p.text));
+        right = right.child(ghost(p, keys::arm(Confirm::Clear), Some(&icons::REMOVE), copy::DL_CLEAR_COMPLETED, p.text));
     }
     if any_paused || st(&|s| matches!(s, St::Queued | St::FetchingInfo | St::Downloading)) > 0 {
         right = right.child(if all_paused {
-            ghost(p, "resume-all", Some(&icons::PLAY), copy::DL_RESUME_ALL, p.accent)
+            ghost(p, keys::PAUSE_ALL, Some(&icons::PLAY), copy::DL_RESUME_ALL, p.accent)
         } else {
-            ghost(p, "pause-all", Some(&icons::PAUSE), copy::DL_PAUSE_ALL, p.text)
+            ghost(p, keys::PAUSE_ALL, Some(&icons::PAUSE), copy::DL_PAUSE_ALL, p.text)
         });
     }
     if active > 0 {
-        right = right.child(ghost(p, "cancel-all", Some(&icons::CANCEL), copy::DL_CANCEL_ALL, p.text));
+        right = right.child(ghost(p, keys::CANCEL_ALL, Some(&icons::CANCEL), copy::DL_CANCEL_ALL, p.text));
     }
     row().w_full().gap(24.0).items_end().child(left).child(right)
 }
@@ -102,13 +92,9 @@ fn checkbox(p: &Pal, key: String, label: &str) -> El {
 }
 
 fn strip(p: &Pal, tasks: &[DownloadTask]) -> El {
-    let n = |f: &dyn Fn(St) -> bool| tasks.iter().filter(|t| f(t.progress.status)).count();
-    let segments = [
-        ("filter-all", copy::DL_FILTER_ALL, tasks.len()),
-        ("filter-active", copy::DL_FILTER_ACTIVE, n(&is_active)),
-        ("filter-done", copy::DL_FILTER_DONE, n(&|s| s == St::Done)),
-        ("filter-failed", copy::DL_FILTER_FAILED, n(&|s| matches!(s, St::Failed | St::Cancelled))),
-    ];
+    let counts = format::filter_counts(tasks);
+    let labels = [copy::DL_FILTER_ALL, copy::DL_FILTER_ACTIVE, copy::DL_FILTER_DONE, copy::DL_FILTER_FAILED];
+    let segments = Filter::ALL.into_iter().zip(labels).zip(counts).map(|((filter, label), count)| (keys::filter(filter), label, count));
     let mut group = row()
         .h(36.0)
         .padding(4.0)
@@ -136,7 +122,7 @@ fn strip(p: &Pal, tasks: &[DownloadTask]) -> El {
         group = group.child(seg);
     }
     let search = row()
-        .key("dl-search")
+        .key(keys::DOWNLOADS_SEARCH)
         .w(240.0)
         .h(32.0)
         .px(12.0)
@@ -155,7 +141,7 @@ fn strip(p: &Pal, tasks: &[DownloadTask]) -> El {
         .gap(16.0)
         .center_y()
         .pl(28.0)
-        .child(checkbox(p, "select-all".into(), copy::DL_SELECT_ALL_ARIA).ml(8.0))
+        .child(checkbox(p, keys::SELECT_ALL.into(), copy::DL_SELECT_ALL_ARIA).ml(8.0))
         .child(group)
         .child(el().grow(1.0))
         .child(search)
@@ -183,8 +169,8 @@ fn banner(p: &Pal, n: usize) -> El {
             .single_line(),
         )
         .child(el().grow(1.0))
-        .child(primary(p, "resume-interrupted", Some(&icons::PLAY), copy::DL_INTERRUPTED_RESUME))
-        .child(ghost(p, "discard-interrupted", Some(&icons::REMOVE), copy::DL_INTERRUPTED_DISCARD, p.text))
+        .child(primary(p, keys::RESUME_INTERRUPTED, Some(&icons::PLAY), copy::DL_INTERRUPTED_RESUME))
+        .child(ghost(p, keys::DISCARD_INTERRUPTED, Some(&icons::REMOVE), copy::DL_INTERRUPTED_DISCARD, p.text))
 }
 
 // ── The list ────────────────────────────────────────────────────────────────
@@ -194,14 +180,14 @@ fn list(s: &State, p: &Pal, tasks: &[DownloadTask]) -> El {
     if tasks.is_empty() {
         return surface.child(empty_row(p));
     }
-    let live: Vec<&DownloadTask> = tasks.iter().filter(|t| is_live(t.progress.status)).collect();
+    let live: Vec<&DownloadTask> = tasks.iter().filter(|t| format::is_live(t)).collect();
     let paused: Vec<&DownloadTask> = tasks.iter().filter(|t| t.progress.status == St::Paused).collect();
     let queued: Vec<&DownloadTask> = tasks.iter().filter(|t| t.progress.status == St::Queued).collect();
     let attention: Vec<&DownloadTask> = tasks.iter().filter(|t| matches!(t.progress.status, St::Failed | St::Cancelled)).collect();
     let done: Vec<&DownloadTask> = tasks.iter().filter(|t| t.progress.status == St::Done).collect();
     let in_progress = live.len() + paused.len() + queued.len();
     let groups = [in_progress, attention.len(), done.len()].iter().filter(|n| **n > 0).count();
-    let all_paused = !paused.is_empty() && live.is_empty();
+    let all_paused = format::all_paused(tasks);
 
     let mut out = surface;
     let mut first = true;
@@ -212,11 +198,10 @@ fn list(s: &State, p: &Pal, tasks: &[DownloadTask]) -> El {
     };
     if in_progress > 0 {
         if groups > 1 {
-            let speed: f64 = tasks.iter().map(|t| t.progress.speed).sum();
             let total = if live.is_empty() {
                 None
             } else {
-                let sp = copy::format_speed(speed);
+                let sp = format::speed(format::total_speed(tasks));
                 let line = if sp.is_empty() { live.len().to_string() } else { format!("{} · {sp}", live.len()) };
                 Some(
                     row()
@@ -327,9 +312,9 @@ fn state_word(p: &Pal, t: &DownloadTask) -> (&'static Icon, &'static str, Color)
         St::Embedding => (&icons::SPINNER, copy::STATE_TAGGING, p.warning),
         St::Paused => (&icons::PAUSE, copy::STATE_PAUSED, p.warning),
         St::Retrying => (&icons::RETRY, copy::STATE_RETRYING, p.warning),
-        St::Done if t.progress.already_on_disk == Some(true) => (&icons::CHECK, copy::STATE_SKIPPED, p.success),
-        St::Done => (&icons::CHECK, copy::STATE_DONE, p.success),
-        St::Failed if parts::is_permanent(t) => (&icons::ALERT, copy::STATE_CANT_DOWNLOAD, p.error),
+        St::Done if t.progress.already_on_disk == Some(true) => (&icons::CHECK_SHELF, copy::STATE_SKIPPED, p.success),
+        St::Done => (&icons::CHECK_SHELF, copy::STATE_DONE, p.success),
+        St::Failed if format::is_permanent(t.error_code) => (&icons::ALERT, copy::STATE_CANT_DOWNLOAD, p.error),
         St::Failed => (&icons::ALERT, copy::STATE_FAILED, p.error),
         St::Cancelled => (&icons::CANCEL, copy::STATE_CANCELED, p.muted),
         St::Downloading => (&icons::DOWNLOAD, "", p.text),
@@ -351,10 +336,10 @@ fn disc(t: &DownloadTask) -> Disc {
 fn task_row(s: &State, p: &Pal, t: &DownloadTask, grip: bool, do_next: bool) -> El {
     let status = t.progress.status;
     let id = &t.task_id;
-    let label = parts::label(t);
+    let label = format::label(t);
     let failed = status == St::Failed;
     let finished = matches!(status, St::Done | St::Cancelled);
-    let reason = parts::reason(t);
+    let reason = format::reason(t);
 
     // 1-2. Grip and checkbox.
     let grip_cell = if grip {
@@ -376,7 +361,7 @@ fn task_row(s: &State, p: &Pal, t: &DownloadTask, grip: bool, do_next: bool) -> 
     let show_link = failed;
     let mut title = vec![run(label.clone(), if finished { p.text2 } else { p.text })];
     if show_link && !t.title.is_empty() {
-        title.push(run(copy::row_dot_part(&parts::link_label(&t.url)), p.muted));
+        title.push(run(copy::row_dot_part(&format::link_label(&t.url)), p.muted));
     }
     let title_el = runs(title).font(sans(13.0, if finished { 400.0 } else { 500.0 })).single_line().truncate().help(if show_link {
         t.url.clone()
@@ -384,7 +369,7 @@ fn task_row(s: &State, p: &Pal, t: &DownloadTask, grip: bool, do_next: bool) -> 
         label.clone()
     });
 
-    let source = parts::source_name(t.source);
+    let source = format::source_name(t.source);
     let mut detail = vec![run(source, p.source(t.source))];
     let mut wraps = false;
     let done = status == St::Done;
@@ -395,13 +380,12 @@ fn task_row(s: &State, p: &Pal, t: &DownloadTask, grip: bool, do_next: bool) -> 
         detail.push(run(copy::ROW_ALREADY_DOWNLOADED, p.text2));
     } else if status == St::Retrying {
         let k = t.retry_count.unwrap_or(0.0) as usize;
-        let delay = [5, 15, 45][k.min(2)];
-        detail.push(run(copy::row_retrying(delay, k), p.warning));
+        detail.push(run(copy::row_retrying(format::retry_wait(t), k), p.warning));
     } else {
         if !t.uploader.is_empty() {
             detail.push(run(copy::row_dot_part(&t.uploader), p.text2));
         }
-        let specs = parts::specs(t);
+        let specs = format::specs(t);
         if !specs.is_empty() {
             detail.push(run_mono(copy::row_dot_part(&specs), p.muted));
         }
@@ -414,8 +398,8 @@ fn task_row(s: &State, p: &Pal, t: &DownloadTask, grip: bool, do_next: bool) -> 
     let mut block = col().grow(1.0).min_w(0.0).gap(4.0).child(title_el).child(detail_el);
     if done && !t.progress.filename.is_empty() {
         // The file you now own: its name, then the folder it sits in.
-        let file = parts::file_name(&t.progress.filename).to_string();
-        let folder = t.progress.filename.strip_suffix(&file).unwrap_or_default().trim_end_matches(['\\', '/']).to_string();
+        let file = format::file_name(&t.progress.filename).to_string();
+        let folder = format::folder(&t.progress.filename).to_string();
         block = block.child(
             row()
                 .w_full()
@@ -430,13 +414,13 @@ fn task_row(s: &State, p: &Pal, t: &DownloadTask, grip: bool, do_next: bool) -> 
 
     // 5. State column.
     let state = if status == St::Downloading {
-        let pct = (t.progress.percent.clamp(0.0, 100.0)).round() as u64;
+        let pct = format::percent(t);
         col()
             .w(128.0)
             .gap(0.0)
             .items_end()
             .child(text(format!("{pct}%")).font(mono(15.0, 500.0)).color(p.text))
-            .child(text(copy::rate_line(t.progress.speed, t.progress.eta)).font(mono(11.0, 400.0)).color(p.muted).single_line())
+            .child(text(format::rate(t.progress.speed, t.progress.eta)).font(mono(11.0, 400.0)).color(p.muted).single_line())
     } else {
         let (glyph, word, tone) = state_word(p, t);
         row()
@@ -452,49 +436,50 @@ fn task_row(s: &State, p: &Pal, t: &DownloadTask, grip: bool, do_next: bool) -> 
     let fixable = matches!(status, St::Failed | St::Cancelled);
     let kind = t.error_code.unwrap_or(ErrorCode::Unknown);
     let mut actions = row().min_w(100.0).gap(4.0).center_y().justify_end();
-    let mut act = |glyph: &'static Icon, name: &'static str, ink: Color| {
-        actions = std::mem::replace(&mut actions, row()).child(icon_button(p, format!("{id}-{name}"), glyph, name, ink));
+    let mut act = |which: RowAct, glyph: &'static Icon, name: &'static str, ink: Color| {
+        actions = std::mem::replace(&mut actions, row()).child(icon_button(p, keys::row_action(which, id), glyph, name, ink));
     };
     if do_next {
-        act(&icons::TO_FRONT, copy::ACT_DO_THIS_NEXT, p.text2);
+        act(RowAct::Promote, &icons::TO_FRONT, copy::ACT_DO_THIS_NEXT, p.text2);
     }
     if matches!(status, St::Queued | St::FetchingInfo | St::Downloading) {
-        act(&icons::PAUSE, copy::ACT_PAUSE, p.text2);
+        act(RowAct::Pause, &icons::PAUSE, copy::ACT_PAUSE, p.text2);
     }
     if status == St::Paused {
-        act(&icons::PLAY, copy::ACT_RESUME, p.accent);
+        act(RowAct::Resume, &icons::PLAY, copy::ACT_RESUME, p.accent);
     }
-    if is_active(status) {
-        act(&icons::CANCEL, copy::ACT_CANCEL, p.text2);
+    if format::is_active(t) {
+        act(RowAct::Cancel, &icons::CANCEL, copy::ACT_CANCEL, p.text2);
     }
     if failed && !t.progress.error.is_empty() {
-        act(&icons::COPY, copy::ACT_COPY_DETAILS, p.text2);
+        act(RowAct::CopyDetails, &icons::COPY, copy::ACT_COPY_DETAILS, p.text2);
     }
     if fixable
         && t.error_code.is_some()
         && matches!(kind, ErrorCode::Private | ErrorCode::AgeRestricted | ErrorCode::LoginRequired | ErrorCode::DiskFull)
     {
-        act(&icons::SETTINGS, copy::ACT_OPEN_SETTINGS, p.text2);
+        act(RowAct::Fix, &icons::SETTINGS, copy::ACT_OPEN_SETTINGS, p.text2);
     }
     if fixable && t.error_code == Some(ErrorCode::Unknown) {
-        act(&icons::REFRESH, copy::ACT_UPDATE_ENGINE, p.text2);
+        act(RowAct::Fix, &icons::REFRESH, copy::ACT_UPDATE_ENGINE, p.text2);
     }
     if done && t.progress.already_on_disk == Some(true) {
-        act(&icons::DOWNLOAD, copy::ACT_DOWNLOAD_AGAIN, p.text2);
+        act(RowAct::DownloadAgain, &icons::DOWNLOAD, copy::ACT_DOWNLOAD_AGAIN, p.text2);
     }
-    if fixable && !parts::is_permanent(t) {
-        act(&icons::RETRY, copy::ACT_RETRY, p.error);
+    if fixable && !format::is_permanent(t.error_code) {
+        act(RowAct::Retry, &icons::RETRY, copy::ACT_RETRY, p.error);
     }
     if done {
-        act(&icons::EXTERNAL, copy::ACT_OPEN_FILE, p.text2);
-        act(&icons::FOLDER, copy::ACT_SHOW_IN_FOLDER, p.text2);
+        act(RowAct::OpenFile, &icons::EXTERNAL, copy::ACT_OPEN_FILE, p.text2);
+        act(RowAct::ShowInFolder, &icons::FOLDER, copy::ACT_SHOW_IN_FOLDER, p.text2);
     }
     if matches!(status, St::Done | St::Failed | St::Cancelled) {
-        actions = actions.child(icon_button(p, format!("{id}-remove"), &icons::REMOVE, copy::ACT_REMOVE, p.muted).group_opacity(0.0, 1.0));
+        actions = actions
+            .child(icon_button(p, keys::row_action(RowAct::Remove, id), &icons::REMOVE, copy::ACT_REMOVE, p.muted).group_opacity(0.0, 1.0));
     }
 
     let mut r = row()
-        .key(format!("row-{id}"))
+        .key(keys::row(id))
         .w_full()
         .min_h(ROW_H)
         // A finished row carries a third line, the file: it gets room to breathe.
@@ -506,7 +491,7 @@ fn task_row(s: &State, p: &Pal, t: &DownloadTask, grip: bool, do_next: bool) -> 
         .hover_group()
         .hover(p.raised.alpha(0.35))
         .child(grip_cell)
-        .child(checkbox(p, format!("{id}-select"), copy::ROW_SELECT_ARIA))
+        .child(checkbox(p, keys::row_select(id), copy::ROW_SELECT_ARIA))
         .child(slot)
         .child(block)
         .child(state)

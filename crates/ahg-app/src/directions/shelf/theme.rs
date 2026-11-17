@@ -6,7 +6,7 @@
 use ahg_engine::types::SourcePlatform;
 use rune::{Color, TextStyle, oklch, oklcha, tok::Family};
 
-use crate::gate;
+use crate::{gate, palette};
 
 /// Every colour the direction draws with. Nothing in the views holds a literal.
 #[derive(Clone, Copy)]
@@ -157,38 +157,10 @@ fn own(dark: bool) -> Pal {
 
 /// Semantic and platform colours: Aurora's, which no palette overrides.
 fn shared(dark: bool) -> Pal {
+    use SourcePlatform::*;
     let z = Color::TRANSPARENT;
-    let (platforms, others, sem) = if dark {
-        (
-            [oklch(0.690, 0.220, 27.0), oklch(0.730, 0.180, 150.0), oklch(0.725, 0.190, 55.0), oklch(0.700, 0.235, 352.0)],
-            [
-                oklch(0.760, 0.020, 240.0),
-                oklch(0.760, 0.130, 230.0),
-                oklch(0.760, 0.130, 275.0),
-                oklch(0.760, 0.130, 20.0),
-                oklch(0.760, 0.130, 115.0),
-                oklch(0.760, 0.130, 330.0),
-                oklch(0.760, 0.130, 70.0),
-                oklch(0.760, 0.130, 170.0),
-            ],
-            [oklch(0.740, 0.160, 150.0), oklch(0.830, 0.145, 85.0), oklch(0.680, 0.195, 24.0)],
-        )
-    } else {
-        (
-            [oklch(0.525, 0.210, 27.0), oklch(0.480, 0.150, 150.0), oklch(0.510, 0.140, 55.0), oklch(0.525, 0.220, 352.0)],
-            [
-                oklch(0.470, 0.020, 240.0),
-                oklch(0.470, 0.140, 250.0),
-                oklch(0.470, 0.120, 275.0),
-                oklch(0.470, 0.120, 20.0),
-                oklch(0.470, 0.120, 115.0),
-                oklch(0.470, 0.120, 330.0),
-                oklch(0.400, 0.090, 70.0),
-                oklch(0.470, 0.120, 170.0),
-            ],
-            [oklch(0.480, 0.140, 150.0), oklch(0.500, 0.125, 80.0), oklch(0.520, 0.190, 24.0)],
-        )
-    };
+    let roles = palette::roles(0, dark);
+    let pf = |source| palette::platform(source, dark);
     Pal {
         dark,
         sunk: z,
@@ -202,22 +174,25 @@ fn shared(dark: bool) -> Pal {
         line: z,
         line_soft: z,
         control: z,
-        success: sem[0],
-        warning: sem[1],
-        error: sem[2],
-        platforms,
-        others,
+        success: roles.success,
+        warning: roles.warning,
+        error: roles.error,
+        platforms: [pf(Youtube), pf(Spotify), pf(Soundcloud), pf(Instagram)],
+        others: [pf(Twitter), pf(Vimeo), pf(Twitch), pf(Bandcamp), pf(Reddit), pf(Dailymotion), pf(Mixcloud), pf(Rumble)],
     }
 }
 
 // ── Palettes 1 to 7: the app's own ─────────────────────────────────────────
 
+// unused until cleanup (step 19): the Electron blocks now come from `palette::roles`.
+#[allow(dead_code)]
 type L = (f32, f32, f32);
 
 /// One block of the Electron palette file: bg-secondary, bg-primary,
 /// bg-tertiary, bg-hover, bg-surface; text primary, secondary, muted; accent,
 /// accent-hover, on-accent (kept for the full app); border (with its alpha), border-soft alpha,
 /// border-control.
+#[allow(dead_code)] // unused until cleanup (step 19)
 struct Block {
     bg: [L; 5],
     text: [L; 3],
@@ -226,11 +201,13 @@ struct Block {
     control: L,
 }
 
+#[allow(dead_code)] // unused until cleanup (step 19)
 const fn b(bg: [L; 5], text: [L; 3], accent: [L; 3], border: (L, f32, f32), control: L) -> Block {
     Block { bg, text, accent, border, control }
 }
 
 /// Dark and light, in Settings' order: Aurora, Slate, Moss, Ember, Paper, Lagoon, Orchid.
+#[allow(dead_code)] // unused until cleanup (step 19)
 const BLOCKS: [[Block; 2]; 7] = [
     [
         b(
@@ -346,27 +323,27 @@ const BLOCKS: [[Block; 2]; 7] = [
     ],
 ];
 
+#[allow(dead_code)] // unused until cleanup (step 19)
 fn c(l: L) -> Color {
     oklch(l.0, l.1, l.2)
 }
 
-fn existing(palette: usize, dark: bool) -> Pal {
-    let block = &BLOCKS[(palette - 1).min(6)][if dark { 0 } else { 1 }];
-    let (border, alpha, soft_alpha) = block.border;
+fn existing(index: usize, dark: bool) -> Pal {
+    let r = palette::roles(index - 1, dark);
     Pal {
         dark,
-        sunk: c(block.bg[0]),
-        bg: c(block.bg[1]),
+        sunk: r.bg_secondary,
+        bg: r.bg_primary,
         // Dark cards sit a step above the page (tertiary); light ones are the white surface.
-        card: c(if dark { block.bg[2] } else { block.bg[4] }),
-        raised: c(if dark { block.bg[3] } else { block.bg[2] }),
-        text: c(block.text[0]),
-        text2: c(block.text[1]),
-        muted: c(block.text[2]),
-        accent: c(block.accent[0]),
-        line: oklcha(border.0, border.1, border.2, alpha),
-        line_soft: oklcha(border.0, border.1, border.2, soft_alpha),
-        control: c(block.control),
+        card: if dark { r.bg_tertiary } else { r.bg_surface },
+        raised: if dark { r.bg_hover } else { r.bg_tertiary },
+        text: r.text_primary,
+        text2: r.text_secondary,
+        muted: r.text_muted,
+        accent: r.accent,
+        line: r.border,
+        line_soft: r.border_soft,
+        control: r.border_control,
         ..shared(dark)
     }
 }

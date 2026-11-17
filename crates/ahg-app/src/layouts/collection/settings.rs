@@ -1,34 +1,48 @@
 //! Settings, the third place: everything that is not a download, in two
 //! columns (left, what a download produces; right, the app, its engine and the
-//! licence), as Electron assigned them. Wording is the Electron Settings page's,
-//! word for word (`SettingsTab.tsx`); `copy.rs` does not hold it yet. Values
-//! are plausible stand-ins: the gate has no settings.
+//! licence), as Electron assigned them. Wording is `copy::settings`, word for
+//! word; values are read from `State.settings`.
 use rune::{Color, El, Icon, ScrollSpec, col, el, icon, row, text};
 
-use crate::directions::shelf::icons;
+use crate::copy::settings as w;
+use crate::directions::shelf::parts::{app_version, on, raw, rows, shown};
 use crate::directions::shelf::theme::{Pal, mono, sans, serif};
+use crate::gate::State;
+use crate::settings_spec::Row;
+use crate::{icons, palette};
 
+#[allow(dead_code)] // unused until cleanup (step 19): `icons::CARET_DOWN` replaces it
 static CARET_DOWN: Icon = Icon {
     name: "collection-caret-down",
     view: 256.0,
     body: r#"<path d="M213.66,101.66l-80,80a8,8,0,0,1-11.32,0l-80-80A8,8,0,0,1,53.66,90.34L128,164.69l74.34-74.35a8,8,0,0,1,11.32,11.32Z" fill="currentColor"/>"#,
 };
+#[allow(dead_code)] // unused until cleanup (step 19): `icons::CARET_RIGHT` replaces it
 pub(super) static CARET_RIGHT: Icon = Icon {
     name: "collection-caret-right",
     view: 256.0,
     body: r#"<path d="M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z" fill="currentColor"/>"#,
 };
 
-pub fn view(p: &Pal) -> El {
-    let left = col().grow(1.0).min_w(0.0).gap(16.0).child(destination(p)).child(defaults(p)).child(more(p)).child(appearance(p));
+pub fn view(s: &State, p: &Pal) -> El {
+    let rows = rows(s);
+    let rows = rows.as_slice();
+    let left = col()
+        .grow(1.0)
+        .min_w(0.0)
+        .gap(16.0)
+        .child(destination(rows, p))
+        .child(defaults(rows, p))
+        .child(more(rows, p))
+        .child(appearance(s, rows, p));
     let right = col()
         .grow(1.0)
         .min_w(0.0)
         .gap(16.0)
-        .child(schedule(p))
-        .child(software(p))
+        .child(schedule(rows, p))
+        .child(software(s, rows, p))
         .child(plan(p))
-        .child(card(p).child(folded(p, "Advanced", "Network and shortcut settings most people never touch", false)))
+        .child(card(p).child(folded(p, w::ADVANCED, w::ADVANCED_HINT, false)))
         .child(help(p));
     let page = col()
         .w_full()
@@ -41,17 +55,17 @@ pub fn view(p: &Pal) -> El {
                 .gap(16.0)
                 .items_end()
                 .mb(24.0)
-                .child(text("Settings").font(serif(44.0).lh(48.0)).color(p.text))
-                .child(text("Changes save automatically").font(sans(13.0, 400.0)).color(p.text2).mb(8.0)),
+                .child(text(w::TITLE).font(serif(44.0).lh(48.0)).color(p.text))
+                .child(text(w::SAVES).font(sans(13.0, 400.0)).color(p.text2).mb(8.0)),
         )
         .child(row().w_full().gap(16.0).items_start().child(left).child(right))
         .child(
             row()
                 .mt(24.0)
                 .gap(8.0)
-                .help("What a key binds to on this computer")
-                .child(text("Machine ID").font(sans(12.0, 400.0)).color(p.muted))
-                .child(text("7f3a-91c2-e0d4-58b6").font(mono(12.0, 400.0)).color(p.muted)),
+                .help(w::MACHINE_ID_TITLE)
+                .child(text(w::MACHINE_ID).font(sans(12.0, 400.0)).color(p.muted))
+                .child(text(s.machine_id.clone()).font(mono(12.0, 400.0)).color(p.muted)),
         );
     col().key("settings-place").grow(1.0).h_full().min_w(0.0).min_h(0.0).scroll(ScrollSpec { stick_bottom: false }).child(page)
 }
@@ -109,7 +123,7 @@ fn field(p: &Pal, label: &str, value: &str, select: bool, placeholder: bool) -> 
                 .single_line(),
         );
     if select {
-        f = f.child(el().grow(1.0)).child(icon(&CARET_DOWN, 16.0).color(p.muted));
+        f = f.child(el().grow(1.0)).child(icon(&icons::CARET_DOWN, 16.0).color(p.muted));
     }
     f
 }
@@ -130,24 +144,26 @@ fn bordered(p: &Pal, glyph: &'static Icon, label: &str) -> El {
         .child(text(label.to_string()).font(sans(13.0, 500.0)).color(p.text).single_line())
 }
 
-fn destination(p: &Pal) -> El {
+fn destination(rows: &[Row], p: &Pal) -> El {
+    let folder = raw(rows, "outputDir");
+    let (parent, leaf) = folder.rsplit_once('\\').unwrap_or(("", folder.as_str()));
     card(p).child(
         row()
             .w_full()
             .gap(16.0)
             .center_y()
             .child(
-                col().grow(1.0).gap(4.0).child(text("Saving to").font(sans(12.0, 500.0)).color(p.text2)).child(
+                col().grow(1.0).gap(4.0).child(text(w::SAVING_TO).font(sans(12.0, 500.0)).color(p.text2)).child(
                     row()
-                        .child(text("C:\\Users\\Alex\\").font(mono(13.0, 400.0)).color(p.text2))
-                        .child(text("Music").font(mono(13.0, 500.0)).color(p.text)),
+                        .child(text(format!("{parent}\\")).font(mono(13.0, 400.0)).color(p.text2))
+                        .child(text(leaf.to_string()).font(mono(13.0, 500.0)).color(p.text)),
                 ),
             )
-            .child(bordered(p, &icons::FOLDER, "Change")),
+            .child(bordered(p, &icons::FOLDER, w::CHANGE)),
     )
 }
 
-fn defaults(p: &Pal) -> El {
+fn defaults(rows: &[Row], p: &Pal) -> El {
     let labelled = |label: &str, value: &str| {
         col()
             .grow(1.0)
@@ -156,47 +172,46 @@ fn defaults(p: &Pal) -> El {
             .child(text(label.to_string()).font(sans(12.0, 500.0)).color(p.text2))
             .child(field(p, label, value, true, false))
     };
-    section(p, "Download defaults", Some("What a new download starts with. Each platform tab can still override them."))
+    let toggled = |(label, desc): (&str, &str), key: &str| setting(p, label, desc, toggle(p, label, on(rows, key)));
+    section(p, w::DEFAULTS, Some(w::DEFAULTS_HINT))
         .child(
             row()
                 .w_full()
                 .gap(12.0)
                 .mb(8.0)
-                .child(labelled("Audio format", "MP3"))
-                .child(labelled("Audio quality", "320 kbps"))
-                .child(labelled("Video quality", "1080p Full HD")),
+                .child(labelled(w::AUDIO_FORMAT, &shown(rows, "defaultFormat")))
+                .child(labelled(w::AUDIO_QUALITY, &shown(rows, "defaultQuality")))
+                .child(labelled(w::VIDEO_QUALITY, &shown(rows, "defaultVideoQuality"))),
         )
-        .child(setting(p, "Skip existing", "Don't re-download files already present on disk", toggle(p, "Skip existing", true)))
-        .child(setting(p, "Embed thumbnail", "Write cover art into the audio file", toggle(p, "Embed thumbnail", true)))
-        .child(setting(p, "Embed metadata", "Write title, artist, and album tags", toggle(p, "Embed metadata", true)))
-        .child(setting(p, "Simultaneous downloads", "", field(p, "Simultaneous downloads", "3", true, false)))
+        .child(toggled(w::SKIP_EXISTING, "skipExisting"))
+        .child(toggled(w::EMBED_THUMBNAIL, "embedThumbnail"))
+        .child(toggled(w::EMBED_METADATA, "embedMetadata"))
+        .child(setting(p, w::SIMULTANEOUS.0, "", field(p, w::SIMULTANEOUS.0, &shown(rows, "maxConcurrentDownloads"), true, false)))
 }
 
 /// "More download options", open at the cookies: where a failed sleeve's "Open settings" lands.
-fn more(p: &Pal) -> El {
-    section(p, "More download options", Some("Subtitles, chapters, sponsor segments, container and file naming"))
-        .child(setting(p, "Sign in with", "", field(p, "Sign in with", "Chrome", true, false)))
-        .child(setting(
-            p,
-            "Import cookies.txt",
-            "For sites your browser is signed in to but cannot be read directly",
-            bordered(p, &icons::FOLDER, "Choose file"),
-        ))
-        .child(setting(p, "Subtitles", "", field(p, "Subtitles", "Off", true, false)))
-        .child(setting(p, "Sponsor segments", "", field(p, "Sponsor segments", "Off", true, false)))
-        .child(setting(p, "Video container", "", field(p, "Video container", "MP4 (most compatible)", true, false)))
-        .child(setting(
-            p,
-            "File naming",
-            "yt-dlp template, e.g. %(uploader)s/%(title)s. Leave empty for the title.",
-            field(p, "File naming", "%(title)s", false, true),
-        ))
+fn more(rows: &[Row], p: &Pal) -> El {
+    let picked = |label: &str, key: &str| setting(p, label, "", field(p, label, &shown(rows, key), true, false));
+    let template = raw(rows, "outputTemplate");
+    let (naming, empty) = if template.is_empty() { (w::FILE_NAMING_PLACEHOLDER.to_string(), true) } else { (template, false) };
+    section(p, w::MORE, Some(w::MORE_HINT))
+        .child(picked(w::SIGN_IN_WITH, "cookieBrowser"))
+        .child(setting(p, w::IMPORT_COOKIES.0, w::IMPORT_COOKIES.1, bordered(p, &icons::FOLDER, w::CHOOSE_FILE)))
+        .child(picked(w::SUBTITLES, "subtitleMode"))
+        .child(picked(w::SPONSOR_SEGMENTS, "sponsorBlock"))
+        .child(picked(w::VIDEO_CONTAINER, "videoContainer"))
+        .child(setting(p, w::FILE_NAMING.0, w::FILE_NAMING.1, field(p, w::FILE_NAMING.0, &naming, false, empty)))
 }
 
-fn appearance(p: &Pal) -> El {
-    let mut theme = row().h(32.0).padding(2.0).gap(2.0).radius(8.0).border(1.0, p.line).role("radiogroup").label("Theme");
-    for (i, name) in ["Light", "Dark", "System"].into_iter().enumerate() {
-        let on = i == 2;
+fn appearance(s: &State, rows: &[Row], p: &Pal) -> El {
+    let chosen = match raw(rows, "theme").as_str() {
+        "light" => 0,
+        "dark" => 1,
+        _ => 2,
+    };
+    let mut theme = row().h(32.0).padding(2.0).gap(2.0).radius(8.0).border(1.0, p.line).role("radiogroup").label(w::THEME.0);
+    for (i, name) in w::THEMES.into_iter().enumerate() {
+        let on = i == chosen;
         theme = theme.child(
             el().h(26.0)
                 .px(12.0)
@@ -208,44 +223,39 @@ fn appearance(p: &Pal) -> El {
                 .child(text(name).font(sans(13.0, if on { 500.0 } else { 400.0 })).color(if on { p.text } else { p.text2 })),
         );
     }
-    let mut swatches = row().gap(8.0).role("radiogroup").label("Color palette");
-    for i in 0..8 {
+    let mut swatches = row().gap(8.0).role("radiogroup").label(w::PALETTE_ARIA);
+    for i in 0..=palette::NAMES.len() {
         let sw = Pal::new(i, p.dark);
         swatches = swatches.child(
             el().size(24.0, 24.0)
                 .radius(12.0)
                 .center()
                 .fill(sw.bg)
-                .border(2.0, if i == 0 { p.text } else { sw.accent })
+                .border(2.0, if i == s.palette { p.text } else { sw.accent })
                 .role("radio")
-                .checked(i == 0)
+                .checked(i == s.palette)
                 .child(el().size(8.0, 8.0).radius(4.0).fill(sw.accent)),
         );
     }
-    section(p, "Appearance & behavior", None)
-        .child(setting(p, "Theme", "Light, dark, or follow the system preference", theme))
-        .child(setting(p, "Palette", "Accent and surface colors", swatches))
-        .child(setting(
-            p,
-            "Clipboard watcher",
-            "Offer a one-click download whenever you copy a link, even outside the app",
-            toggle(p, "Clipboard watcher", true),
-        ))
-        .child(setting(p, "Desktop notifications", "Notify when a download completes or fails", toggle(p, "Desktop notifications", true)))
-        .child(setting(
-            p,
-            "Discord Rich Presence",
-            "Show what you're downloading in your Discord status",
-            toggle(p, "Discord Rich Presence", false),
-        ))
+    let toggled = |(label, desc): (&str, &str), key: &str| setting(p, label, desc, toggle(p, label, on(rows, key)));
+    section(p, w::APPEARANCE, None)
+        .child(setting(p, w::THEME.0, w::THEME.1, theme))
+        .child(setting(p, w::PALETTE.0, w::PALETTE.1, swatches))
+        .child(toggled(w::CLIPBOARD_WATCHER, "clipboardWatch"))
+        .child(toggled(w::NOTIFICATIONS, "showNotifications"))
+        .child(toggled(w::DISCORD, "discordRichPresence"))
 }
 
-fn schedule(p: &Pal) -> El {
+fn schedule(rows: &[Row], p: &Pal) -> El {
+    let chosen: Vec<u64> = rows
+        .iter()
+        .find(|r| r.key == Some("scheduleDays"))
+        .and_then(|r| r.value.as_array())
+        .map_or_else(Vec::new, |days| days.iter().filter_map(|d| d.as_u64()).collect());
     // Electron's order: Sunday first.
-    const DAYS: [&str; 7] = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
-    let mut days = row().gap(4.0).role("group").label("Active days");
-    for (i, d) in DAYS.iter().enumerate() {
-        let on = (1..=5).contains(&i);
+    let mut days = row().gap(4.0).role("group").label(w::ACTIVE_DAYS.0);
+    for (i, d) in w::DAYS_SHORT.iter().enumerate() {
+        let on = chosen.contains(&(i as u64));
         days = days.child(
             el().size(32.0, 28.0)
                 .center()
@@ -268,20 +278,15 @@ fn schedule(p: &Pal) -> El {
             col()
                 .grow(1.0)
                 .gap(4.0)
-                .child(text("Scheduled downloads").font(sans(16.0, 500.0)).color(p.text))
-                .child(text("Start downloads automatically at a set time").font(sans(12.0, 400.0)).color(p.text2)),
+                .child(text(w::SCHEDULE).font(sans(16.0, 500.0)).color(p.text))
+                .child(text(w::SCHEDULE_HINT).font(sans(12.0, 400.0)).color(p.text2)),
         )
-        .child(toggle(p, "Enable scheduler", true));
+        .child(toggle(p, w::ENABLE_SCHEDULER, on(rows, "scheduleEnabled")));
     card(p)
         .child(head)
-        .child(setting(p, "Start time", "Local time the schedule starts", field(p, "Start time", "02:00", false, false)))
-        .child(setting(p, "Active days", "Days of the week the schedule is active", days))
-        .child(setting(
-            p,
-            "Shutdown after queue",
-            "Power off the PC when scheduled downloads finish",
-            toggle(p, "Shutdown after queue", false),
-        ))
+        .child(setting(p, w::START_TIME.0, w::START_TIME.1, field(p, w::START_TIME.0, &raw(rows, "scheduleTime"), false, false)))
+        .child(setting(p, w::ACTIVE_DAYS.0, w::ACTIVE_DAYS.1, days))
+        .child(setting(p, w::SHUTDOWN.0, w::SHUTDOWN.1, toggle(p, w::SHUTDOWN.0, on(rows, "scheduleShutdown"))))
 }
 
 /// An updater: name and version, its state in a sentence, its one button.
@@ -314,32 +319,20 @@ fn status_object(p: &Pal, name: &str, version: &str, desc: &str, button: El) -> 
         .child(button)
 }
 
-fn software(p: &Pal) -> El {
-    section(p, "Software", Some("Two moving parts: the app itself, and the yt-dlp engine that does the downloading."))
-        .child(status_object(
-            p,
-            "AHG Universal Converter",
-            "v2.0.0",
-            "You're on the latest version",
-            bordered(p, &icons::REFRESH, "Check for updates"),
-        ))
-        .child(status_object(
-            p,
-            "Download engine",
-            "2026.11.01",
-            "yt-dlp is up to date",
-            bordered(p, &icons::REFRESH, "Check for engine update"),
-        ))
+fn software(s: &State, rows: &[Row], p: &Pal) -> El {
+    section(p, w::SOFTWARE, Some(w::SOFTWARE_HINT))
+        .child(status_object(p, w::APP_NAME, &app_version(), w::APP_UP_TO_DATE, bordered(p, &icons::REFRESH, w::CHECK_FOR_UPDATES)))
+        .child(status_object(p, w::ENGINE_NAME, &s.engine.current, w::ENGINE_UP_TO_DATE, bordered(p, &icons::REFRESH, w::ENGINE_CHECK)))
         .child(setting(
             p,
-            "Auto-update engine",
-            "Keep yt-dlp current, and repair it when a site change breaks downloads",
-            toggle(p, "Auto-update engine", true),
+            w::AUTO_UPDATE_ENGINE.0,
+            w::AUTO_UPDATE_ENGINE.1,
+            toggle(p, w::AUTO_UPDATE_ENGINE.0, on(rows, "autoUpdateEngine")),
         ))
 }
 
 fn plan(p: &Pal) -> El {
-    let danger = |label: &str, desc: &str| {
+    let danger = |(label, desc): (&str, &str)| {
         row()
             .w_full()
             .py(8.0)
@@ -356,28 +349,18 @@ fn plan(p: &Pal) -> El {
                     .child(text(label.to_string()).font(sans(13.0, 500.0)).color(p.error))
                     .child(text(desc.to_string()).font(sans(12.0, 400.0)).color(p.text2).wrap()),
             )
-            .child(icon(&CARET_RIGHT, 16.0).color(p.muted))
+            .child(icon(&icons::CARET_RIGHT, 16.0).color(p.muted))
     };
-    section(p, "Plan & license", None)
-        .child(status_object(p, "Your plan", "Premium", "Every feature is included on this machine", el()))
-        .child(danger("Deactivate license", "Release this machine so you can activate on another device"))
-        .child(danger("Move to another PC", "Deactivate here and release the key so it can be activated on a different computer"))
+    section(p, w::PLAN, None)
+        .child(status_object(p, w::YOUR_PLAN, w::PLAN_PREMIUM.0, w::PLAN_PREMIUM.1, el()))
+        .child(danger(w::DEACTIVATE))
+        .child(danger(w::MOVE))
 }
 
 fn help(p: &Pal) -> El {
-    section(p, "Help", None)
-        .child(setting(
-            p,
-            "Keyboard shortcuts",
-            "Ctrl+K opens the command palette; the full list is one click away",
-            bordered(p, &icons::EXTERNAL, "Show shortcuts"),
-        ))
-        .child(setting(
-            p,
-            "Report a problem",
-            "Say what you pasted and the message you saw. If asked, attach ahg.log, found in the app's folder under %APPDATA%.",
-            bordered(p, &icons::EXTERNAL, "Get support"),
-        ))
+    section(p, w::HELP, None)
+        .child(setting(p, w::SHORTCUTS.0, w::SHORTCUTS.1, bordered(p, &icons::EXTERNAL, w::SHOW_SHORTCUTS)))
+        .child(setting(p, w::REPORT.0, w::REPORT.1, bordered(p, &icons::EXTERNAL, w::GET_SUPPORT)))
 }
 
 /// A section kept closed: its title and Electron's hint, one press to open.
@@ -398,5 +381,5 @@ fn folded(p: &Pal, title: &str, hint: &str, rule: bool) -> El {
                 .child(text(title.to_string()).font(sans(16.0, 500.0)).color(p.text))
                 .child(text(hint.to_string()).font(sans(12.0, 400.0)).color(p.text2).wrap()),
         )
-        .child(icon(&CARET_RIGHT, 16.0).color(p.muted))
+        .child(icon(&icons::CARET_RIGHT, 16.0).color(p.muted))
 }
