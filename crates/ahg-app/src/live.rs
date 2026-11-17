@@ -901,8 +901,14 @@ mod tests {
         let mut rt = live(&dir, &format!("out {RECORD}\nexit 0\n"), &script);
         submit(&mut rt);
         let mut seen: Vec<String> = Vec::new();
+        let mut reports: Vec<f64> = Vec::new();
+        let mut last = None;
         frames(&mut rt, "the ring's Done", 0.02, |s| {
             let k = kind(ring_of(s));
+            if matches!(ring_of(s), Some(Pass::Flying(_))) && ring_of(s) != last {
+                reports.push(s.now);
+            }
+            last = ring_of(s);
             if seen.last() != Some(&k) {
                 seen.push(k);
             }
@@ -926,8 +932,12 @@ mod tests {
         }
         assert!(seen.iter().any(|k| k == "Planned" || k == "OnThePad"), "no pass before Flying: {seen:?}");
         // The queue has ended: nothing is due, Rune is asked for nothing, and `poll` says no change.
-        // Rune's own short timers from the typed link (seen ending about 6 s after it) end by themselves.
+        // Each report moved the Stall deadline and asked Rune for the new one; Rune cannot take a
+        // wake back, so those wakes still come, each a no-op poll, until STALL_AFTER after the last report.
         for _ in 0..30 {
+            if let Some(w) = rt.wake_deadline() {
+                assert!(reports.iter().any(|r| (w - (r + STALL_AFTER)).abs() < 1e-6), "wake {w} is no report's stall ({reports:?})");
+            }
             rt.frame(0.5);
             assert_eq!(rt.state.timeline.next_deadline(), None);
             thread::sleep(Duration::from_millis(10));
@@ -935,6 +945,40 @@ mod tests {
         assert_eq!(rt.wake_deadline(), None, "an idle app asks for no wake");
         let now = rt.state.now;
         assert!(!poll(&mut rt.state, now + 0.02, &mut Tx::default()));
+        rt.state.live = None;
+    }
+
+    #[test]
+    fn the_chains_commits_are_animated() {
+        let dir = scratch("chains");
+        let media = dir.join("Downloads").join("a.mp3");
+        fs::write(&media, vec![0u8; 2048]).unwrap();
+        let script = format!("sleep 500\n{P25}\nsleep 500\nout [FILEPATH]{}\nexit 0\n", media.display());
+        let mut rt = live(&dir, &format!("out {RECORD}\nexit 0\n"), &script);
+        submit(&mut rt);
+        let mut c = rt.state.now;
+        let mut finish = None;
+        polls(&mut rt.state, &mut c, "the ring's Done", 0.02, |s, changed, animated| {
+            finish = Some((changed, animated));
+            ring_of(s) == Some(Pass::Done)
+        });
+        assert_eq!(finish, Some((true, true)), "the commit that puts up Done");
+        let done_at = rt.state.now;
+        let (_, changed, animated) = drain(&mut rt.state, done_at + RING_HOLD, &mut Tx::default());
+        assert_eq!((changed, animated, ring_of(&rt.state)), (true, true, Some(Pass::Landed)), "the landing");
+        rt.state.live = None;
+
+        let dir = scratch("chains-fail");
+        let mut rt =
+            live(&dir, &format!("out {RECORD}\nexit 0\n"), &format!("sleep 500\n{P25}\nsleep 500\nerr ERROR: Video unavailable\nexit 1\n"));
+        submit(&mut rt);
+        let mut c = rt.state.now;
+        let mut fail = None;
+        polls(&mut rt.state, &mut c, "the ring's Failed", 0.02, |s, changed, animated| {
+            fail = Some((changed, animated));
+            matches!(ring_of(s), Some(Pass::Failed(_)))
+        });
+        assert_eq!(fail, Some((true, true)), "the commit that puts up Failed");
         rt.state.live = None;
     }
 
@@ -992,7 +1036,7 @@ mod tests {
         let mut rt = live(&dir, &format!("out {RECORD}\nexit 0\n"), &format!("sleep 500\n{P25}\nsleep 30000\nexit 0\n"));
         submit(&mut rt);
         let mut c = rt.state.now;
-        polls(&mut rt.state, &mut c, "the report", 0.02, |s, _, _| matches!(ring_of(s), Some(Pass::Flying(_))));
+        polls(&mut rt.state, &mut c, "the report", 0.02, |s, _, _| ring_of(s) == Some(Pass::Flying(0.25)));
         let seen_at = rt.state.now;
         assert_eq!(rt.state.timeline.next_deadline(), Some(seen_at + STALL_AFTER), "one Stall deadline, from the report");
         assert!(!poll(&mut rt.state, seen_at + STALL_AFTER - 0.001, &mut Tx::default()));
