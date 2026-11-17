@@ -245,6 +245,8 @@ pub struct State {
     /// True in the `nav` scene: the layout's navigation in its opened state
     /// (a sidebar expanded as on hover, say), for the picture.
     pub nav_open: bool,
+    /// True in the `ring` scene: the ring gallery instead of the preset (throwaway, removed at step 80 (K54)).
+    pub ring: bool,
     /// Basic or Premium. Premium unless `--plan basic` is given: on Basic the
     /// presets draw the locks, limits and upgrade prompts (`ahg_engine::tier`).
     pub plan: Plan,
@@ -373,6 +375,7 @@ impl State {
             reach: false,
             nav: Nav::Home,
             nav_open: false,
+            ring: false,
             plan: Plan::Premium,
             notice: None,
             found: Found::Nothing,
@@ -816,4 +819,6 @@ pub const SCENES: &[(&str, fn(&mut State))] = &[
     ("palette", |s| actions::open(s, Overlay::Palette)),
     ("shortcuts", |s| actions::show_shortcuts(s)),
     ("notice", |s| actions::cancel(s, &mut Tx::default(), "big-buck-bunny")),
+    // throwaway, removed at step 80 (K54): the ring in three materials (`ring::gallery`).
+    ("ring", |s| s.ring = true),
 ];

@@ -64,6 +64,9 @@ fn view(s: &State, cx: &mut Cx<State>) -> El {
 }
 
 fn preset_view(s: &State, cx: &mut Cx<State>) -> El {
+    if s.ring {
+        return ring::gallery(s, cx); // throwaway, removed at step 80 (K54)
+    }
     match s.layout {
         #[cfg(feature = "bar")]
         Some(gate::Layout::Bar) => return layouts::bar::view(s, cx),
