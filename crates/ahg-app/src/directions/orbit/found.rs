@@ -7,7 +7,7 @@
 //! is, and it marks a lookup in progress and a track still matching. Skeleton shapes are
 //! `bone`s, flat blocks in the raised colour that can shimmer later.
 use ahg_engine::tier::{self, BASIC_LIMITS, Plan};
-use ahg_engine::types::{MediaMetadata, Playlist, SearchResult, SourcePlatform as Src, VideoQuality};
+use ahg_engine::types::{AUDIO_ONLY_SOURCES, MediaMetadata, Playlist, SearchResult, SourcePlatform as Src, VideoQuality};
 use rune::{El, Icon, ScrollSpec, TextStyle, col, el, icon, row, spacer};
 
 use super::draw;
@@ -15,7 +15,7 @@ use super::look::{BODY, BODY_M, FIG, FIG_L, Pal, SMALL, SMALL_M, mix, txt};
 use super::{Tone, button, icon_button, keycap, model};
 use crate::copy::{self, found as f};
 use crate::format;
-use crate::gate::{Band, Choice, Found, Matched, State};
+use crate::gate::{Band, Card, Choice, Found, Matched, State};
 use crate::icons;
 use crate::keys;
 
@@ -40,14 +40,24 @@ const AUDIO_QUALITY_VALUES: [&str; 5] = ["128", "192", "256", "320", "lossless"]
 /// The labels run in the order of the engine's qualities and formats.
 const QUALITIES: [VideoQuality; 6] =
     [VideoQuality::P360, VideoQuality::P480, VideoQuality::P720, VideoQuality::P1080, VideoQuality::P2160, VideoQuality::Best];
+// TODO(shared): keys::RESULTS_CLEAR, the results bar's Clear.
+const RESULTS_CLEAR_KEY: &str = "results-clear";
 
-/// Where the pick sits in the label lists: audio format, audio quality, video quality.
-fn picks(c: &Choice) -> (usize, usize, usize) {
+/// A view or like count as printed. TODO(shared): format::count_short (`1.2K`, `4.8M`,
+/// a trailing `.0` dropped); the whole number stands in until it exists.
+fn count(n: f64) -> String {
+    format!("{}", n.round())
+}
+
+/// Where the pick sits in the label lists: audio format, audio quality, video quality. What
+/// the plan would really run: on Basic a saved FLAC shows MP3, Lossless 320 and 4K 1080p.
+fn picks(c: &Choice, plan: Plan) -> (usize, usize, usize) {
     let at = |list: &[&str], v: &str| list.iter().position(|x| *x == v).unwrap_or(0);
+    let video = tier::clamp_video_quality(c.video_quality, plan);
     (
-        at(&AUDIO_FORMAT_VALUES, &c.format.to_lowercase()),
-        at(&AUDIO_QUALITY_VALUES, &c.audio_quality),
-        QUALITIES.iter().position(|q| *q == c.video_quality).unwrap_or(5),
+        at(&AUDIO_FORMAT_VALUES, tier::clamp_format(&c.format.to_lowercase(), plan)),
+        at(&AUDIO_QUALITY_VALUES, tier::clamp_audio_quality(&c.audio_quality, plan)),
+        QUALITIES.iter().position(|q| *q == video).unwrap_or(5),
     )
 }
 
@@ -82,11 +92,11 @@ pub(crate) fn body(s: &State, p: &Pal) -> Option<El> {
         Found::Nothing => return None,
         Found::LookingUp => looking_up(p, &s.input),
         Found::LookupFailed(why) => failed(p, &s.input, why),
-        Found::Media(m) => media(p, m, &s.choice, s.plan == Plan::Basic),
+        Found::Media(m) => media(p, m, s),
         Found::Playlist { playlist, matched, selected } => {
             tracks(p, playlist, matched, selected, &s.choice, &folder(s), s.plan == Plan::Basic)
         }
-        Found::Search { bands, .. } => search(p, bands),
+        Found::Search { bands, .. } => search(s, p, bands),
     })
 }
 
@@ -272,13 +282,30 @@ fn failed(p: &Pal, input: &str, why: &str) -> El {
 
 // ── One video or track ──────────────────────────────────────────────────────
 
-fn media(p: &Pal, m: &MediaMetadata, choice: &Choice, basic: bool) -> El {
-    let (af, aq, vq) = picks(choice);
-    let video = choice.video;
-    let src = if m.extractor.as_deref().is_some_and(|e| e.starts_with("youtube")) { Src::Youtube } else { Src::Generic };
+/// One item: the single card, or the short-form poster (`State.card`).
+fn media(p: &Pal, m: &MediaMetadata, s: &State) -> El {
+    let (choice, basic) = (&s.choice, s.plan == Plan::Basic);
+    let (af, aq, vq) = picks(choice, s.plan);
+    // The extractor names YouTube even for a link the detector cannot read; else the link's own source.
+    let src = if m.extractor.as_deref().is_some_and(|e| e.starts_with("youtube")) {
+        Src::Youtube
+    } else {
+        ahg_engine::url_detector::detect_url(&m.url).platform
+    };
+    // Spotify and SoundCloud are audio only: no Video or Audio to choose.
+    let audio_only = AUDIO_ONLY_SOURCES.contains(&src);
+    let video = choice.video && !audio_only;
     let (name, color) = model::source(p, src);
     let duration = format::duration(m.duration);
-    let mut cover = art(p, src, 320.0, 180.0, &icons::VIDEO);
+    // A short-form post keeps its own shape: a 9:16 poster, its detector label for an eyebrow.
+    let short = match &s.card {
+        Card::Short { label } => Some(label.as_str()),
+        Card::Single { .. } => None,
+    };
+    let mut cover = match short {
+        Some(_) => art(p, src, 152.0, 272.0, &icons::REELS),
+        None => art(p, src, 320.0, 180.0, &icons::VIDEO),
+    };
     if !duration.is_empty() {
         cover = cover.child(row().h(20.0).px(4.0).center().radius(4.0).fill(p.deep).child(txt(duration.clone(), FIG, p.text)).pin(
             None,
@@ -291,19 +318,56 @@ fn media(p: &Pal, m: &MediaMetadata, choice: &Choice, basic: bool) -> El {
         if video { f::readout_video(f::VIDEO_QUALITIES[vq]) } else { f::readout_audio(f::AUDIO_FORMATS[af], f::AUDIO_QUALITIES[aq]) };
     let mut meta = row().gap(8.0).center_y();
     if !duration.is_empty() {
-        meta = meta.child(icon(&icons::CLOCK, 16.0).color(p.muted)).child(txt(duration, FIG, p.text2)).child(txt("·", FIG, p.muted));
+        meta =
+            meta.child(icon(&icons::CLOCK, 16.0).color(p.muted)).child(txt(duration.clone(), FIG, p.text2)).child(txt("·", FIG, p.muted));
     }
     meta = meta.child(txt(outcome.clone(), FIG, p.text2));
-    let mut words = col()
-        .grow(1.0)
-        .min_w(0.0)
-        .gap(4.0)
-        .child(txt(f::single_eyebrow_fallback(name, !video), SMALL_M, color))
-        .child(txt(m.title.clone(), TITLE, p.text).wrap().max_lines(2));
+    let eyebrow = match short {
+        Some(label) => txt(label.to_string(), SMALL_M, p.reels),
+        None => txt(f::single_eyebrow_fallback(name, !video), SMALL_M, color),
+    };
+    let mut words = col().grow(1.0).min_w(0.0).gap(4.0).child(eyebrow).child(txt(m.title.clone(), TITLE, p.text).wrap().max_lines(2));
     if !m.uploader.is_empty() {
         words = words.child(txt(m.uploader.clone(), BODY, p.text2).truncate());
     }
-    words = words.child(meta.mt(8.0));
+    if short.is_some() {
+        // The caption only when it says more than the title; then the facts, each dropped
+        // when unknown. TODO(shared): the upload date, short (`Mar 9, 2024`), needs a formatter.
+        if let Some(caption) = m.description.as_ref().filter(|d| !d.is_empty() && **d != m.title) {
+            words = words.child(txt(caption.clone(), SMALL, p.text2).wrap().max_lines(3).mt(4.0));
+        }
+        let mut facts: Vec<String> = Vec::new();
+        if !duration.is_empty() {
+            facts.push(duration.clone());
+        }
+        if let (Some(w), Some(h)) = (m.width, m.height) {
+            facts.push(f::short_size(w as u32, h as u32));
+        }
+        facts.extend(m.view_count.map(|n| f::short_views(&count(n))));
+        facts.extend(m.like_count.map(|n| f::short_likes(&count(n))));
+        let mut line = row().gap(8.0).center_y().flex_wrap();
+        for (i, fact) in facts.into_iter().enumerate() {
+            if i > 0 {
+                line = line.child(txt("·", FIG, p.muted));
+            }
+            line = line.child(txt(fact, FIG, p.text2));
+        }
+        words = words.child(line.mt(8.0));
+    } else {
+        words = words.child(meta.mt(8.0));
+    }
+    // A Spotify track: what the audio was matched to, with the advice to check the name.
+    if let Card::Single { matched: Some(found) } = &s.card {
+        words = words.child(
+            row()
+                .flex_wrap()
+                .center_y()
+                .mt(4.0)
+                .child(txt(f::MATCHED_LEAD, SMALL, p.text2))
+                .child(txt(found.clone(), FIG, p.text))
+                .child(txt(f::MATCHED_TRAIL, SMALL, p.text2)),
+        );
+    }
 
     // Video or audio, then that kind's own choices.
     let mut kind = row().self_start().gap(4.0).padding(4.0).radius(8.0).border(1.0, p.track).role("radiogroup");
@@ -326,7 +390,10 @@ fn media(p: &Pal, m: &MediaMetadata, choice: &Choice, basic: bool) -> El {
             if on { p.text } else { p.text2 },
         )));
     }
-    let mut options = col().w_full().gap(16.0).child(kind);
+    let mut options = col().w_full().gap(16.0);
+    if !audio_only {
+        options = options.child(kind);
+    }
     if video {
         options = options.child(choices(p, f::VIDEO_QUALITY_LABEL, &f::VIDEO_QUALITIES, vq, None, &|i| {
             basic && tier::is_premium_video_quality(QUALITIES[i])
@@ -392,7 +459,7 @@ fn match_cell(p: &Pal, m: Matched) -> El {
 }
 
 fn tracks(p: &Pal, pl: &Playlist, matched: &[Matched], selected: &[bool], choice: &Choice, folder: &str, basic: bool) -> El {
-    let (af, aq, _) = picks(choice);
+    let (af, aq, _) = picks(choice, if basic { Plan::Basic } else { Plan::Premium });
     let n = pl.tracks.len();
     let spotify = pl.url.contains("spotify");
     // A YouTube playlist on Basic: its videos cannot be picked, it downloads from the top.
@@ -589,7 +656,7 @@ fn tracks(p: &Pal, pl: &Playlist, matched: &[Matched], selected: &[bool], choice
 
 // ── A search: one band per source ───────────────────────────────────────────
 
-fn search(p: &Pal, bands: &[Band; 3]) -> El {
+fn search(s: &State, p: &Pal, bands: &[Band; 3]) -> El {
     let sources: [(&str, &'static Icon, rune::Color); 3] = [
         (copy::SEARCH_BAND_YOUTUBE, &icons::YOUTUBE, p.youtube),
         (copy::SEARCH_BAND_SOUNDCLOUD, &icons::SOUNDCLOUD, p.soundcloud),
@@ -597,12 +664,27 @@ fn search(p: &Pal, bands: &[Band; 3]) -> El {
     ];
     let mut cols = row().w_full().gap(24.0).items_start();
     for (i, band) in bands.iter().enumerate() {
-        cols = cols.child(band_view(p, i, sources[i], band));
+        cols = cols.child(band_view(s, p, i, sources[i], band));
     }
-    cols
+    if s.picked.is_empty() {
+        return cols;
+    }
+    // Anything ticked: the bar that sends it, under the bands.
+    let n = s.picked.len();
+    let bar = row()
+        .w_full()
+        .gap(16.0)
+        .center_y()
+        .pt(16.0)
+        .border_sides([1.0, 0.0, 0.0, 0.0], p.line)
+        .child(txt(f::results_selected(n), FIG, p.text2))
+        .child(button(p, RESULTS_CLEAR_KEY, f::RESULTS_CLEAR, None, Tone::Ghost))
+        .child(spacer())
+        .child(button(p, keys::FOUND_DOWNLOAD, &f::results_download_n(n), Some(&icons::DOWNLOAD), Tone::Primary));
+    col().w_full().gap(16.0).child(cols).child(bar)
 }
 
-fn band_view(p: &Pal, i: usize, (name, glyph, color): (&str, &'static Icon, rune::Color), band: &Band) -> El {
+fn band_view(s: &State, p: &Pal, i: usize, (name, glyph, color): (&str, &'static Icon, rune::Color), band: &Band) -> El {
     let mut head =
         row().w_full().h(28.0).gap(8.0).center_y().child(icon(glyph, 16.0).color(color)).child(txt(name.to_string(), BODY_M, p.text));
     match band {
@@ -622,7 +704,7 @@ fn band_view(p: &Pal, i: usize, (name, glyph, color): (&str, &'static Icon, rune
                 ))
             }),
             Band::Results(r) => {
-                let mut c = r.iter().take(BAND_ROWS).fold(col().w_full(), |c, r| c.child(result_row(p, r)));
+                let mut c = r.iter().take(BAND_ROWS).fold(col().w_full(), |c, r| c.child(result_row(p, r, s.picked.contains(&r.id))));
                 if r.len() > BAND_ROWS {
                     c = c.child(
                         row()
@@ -657,7 +739,8 @@ fn band_view(p: &Pal, i: usize, (name, glyph, color): (&str, &'static Icon, rune
     col().grow(1.0).min_w(0.0).gap(8.0).child(head.pb(8.0).border_sides([0.0, 0.0, 1.0, 0.0], p.line)).child(body)
 }
 
-fn result_row(p: &Pal, r: &SearchResult) -> El {
+/// A result: its tick, its art and words, and the download mark. A ticked row is tinted in ink.
+fn result_row(p: &Pal, r: &SearchResult, on: bool) -> El {
     let (w, glyph) = if r.source == Src::Youtube { (64.0, &icons::VIDEO) } else { (36.0, &icons::MUSIC) };
     let duration = format::duration(r.duration);
     let subtitle = [r.uploader.as_str(), duration.as_str()].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" · ");
@@ -668,7 +751,7 @@ fn result_row(p: &Pal, r: &SearchResult) -> El {
     if !duration.is_empty() {
         second = second.child(txt(duration, FIG, p.muted));
     }
-    row()
+    let row_el = row()
         .key(keys::result(&r.id))
         .w_full()
         .h(56.0)
@@ -676,11 +759,13 @@ fn result_row(p: &Pal, r: &SearchResult) -> El {
         .gap(12.0)
         .center_y()
         .radius(8.0)
-        .hover(p.hover)
         .role("button")
         .focusable(true)
         .cursor(rune::Cursor::Pointer)
-        .label(copy::search_row_aria(&r.title, &subtitle))
+        .label(copy::search_row_aria(&r.title, &subtitle));
+    let row_el = if on { row_el.fill(mix(p.card, p.text, 0.06)) } else { row_el.hover(p.hover) };
+    row_el
+        .child(tick(p, on, true).label(f::results_pick_aria(&r.title)))
         .child(art(p, r.source, w, 36.0, glyph))
         .child(col().grow(1.0).min_w(0.0).gap(4.0).child(txt(r.title.clone(), SMALL_M, p.text).truncate()).child(second))
         .child(icon(&icons::DOWNLOAD, 16.0).color(p.text2).help(copy::SEARCH_ROW_DOWNLOAD))

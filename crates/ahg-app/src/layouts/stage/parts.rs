@@ -43,7 +43,17 @@ pub fn keys(p: &Pal, caps: &[&str]) -> El {
 
 /// A hairline-outlined button with a word; `lit` gives it the accent (one per window).
 pub fn button(p: &Pal, key: String, label: &str, i: Option<&'static Icon>, lit: bool) -> El {
-    let (fill, ink, edge) = if lit { (p.accent, p.on_accent, p.accent) } else { (Color::TRANSPARENT, p.text, p.track) };
+    tinted(p, key, label, i, lit.then_some((p.accent, p.on_accent)))
+}
+
+/// A button filled with `(fill, ink)`, or hairline-outlined with `None`; the red confirm of
+/// an armed action is `(p.error, p.bg)`.
+pub fn tinted(p: &Pal, key: String, label: &str, i: Option<&'static Icon>, tint: Option<(Color, Color)>) -> El {
+    let lit = tint.is_some();
+    let (fill, ink, edge) = match tint {
+        Some((fill, ink)) => (fill, ink, fill),
+        None => (Color::TRANSPARENT, p.text, p.track),
+    };
     let mut b = row()
         .key(key)
         .h(32.0)
@@ -58,7 +68,7 @@ pub fn button(p: &Pal, key: String, label: &str, i: Option<&'static Icon>, lit: 
         .focusable(true)
         .cursor(Cursor::Pointer)
         .press_scale(0.97)
-        .hover(if lit { mix(p.accent, p.text, 0.15) } else { p.raised });
+        .hover(if lit { mix(fill, p.text, 0.15) } else { p.raised });
     if let Some(i) = i {
         b = b.child(glyph(i, if lit { ink } else { p.text2 }));
     }

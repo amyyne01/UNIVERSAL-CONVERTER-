@@ -38,10 +38,11 @@
 //! | Downloads: Pause all / Resume all, Cancel all   | Also the transport's two round controls, on every place                  |
 //! | YouTube / Spotify / SoundCloud / Reels tabs     | Scopes of the transport field (search bands per source); the palette has |
 //! |                                                 |   Go to each; per-source format overrides sit in Download defaults       |
-//! | Settings: every section, Machine ID             | Settings place: three columns, all open except Advanced (a disclosure,   |
-//! |                                                 |   as before)                                                             |
-//! | Settings: Scheduled downloads, Software (app and| Settings place, middle column; Plan & license and Help on the right;     |
-//! |   engine updates), Plan & license, cookies      |   cookies under More download options; Check for updates also in palette |
+//! | Settings: every section, Machine ID             | Settings place: three columns, every section open; Machine ID in its     |
+//! |                                                 |   header                                                                 |
+//! | Settings: Scheduled downloads, Software (app and| Settings place, middle column; Software, Plan & license and Help on the  |
+//! |   engine updates), Plan & license, cookies      |   right; cookies under More download options; Check for updates also in  |
+//! |                                                 |   the palette                                                            |
 //! | Command palette (Ctrl+K)                        | Over any place; the title band's Search control opens it                 |
 //! | Keyboard shortcuts sheet (Ctrl+/)               | Over any place, from the palette or Settings' Help                       |
 //! | Notices and toasts                              | A line that rises above the transport's right end                        |
@@ -425,24 +426,9 @@ fn sources(p: &Pal, st: &DownloadStats) -> El {
         .child(legend)
 }
 
-/// The summed speed of the running downloads over the last two minutes, rebuilt from when
-/// each sample started (the gate has no live samples), as Orbit's Home drew it.
+/// The summed speed of the running downloads, the last samples (`State.speed`).
 fn speed(s: &State, p: &Pal) -> El {
-    let running: Vec<&DownloadTask> = s.tasks.iter().filter(|t| t.progress.status == St::Downloading).collect();
-    let now_ms = s.tasks.iter().filter_map(|t| t.created_at).fold(0.0, f64::max) + 12_000.0;
-    let samples: Vec<f32> = (0..120)
-        .map(|i| {
-            let ago = (119 - i) as f64;
-            running
-                .iter()
-                .map(|t| {
-                    let age = (now_ms - t.created_at.unwrap_or(now_ms)) / 1000.0;
-                    let wobble = 1.0 + 0.06 * ((i as f64) * 0.7 + age).sin() + 0.03 * ((i as f64) * 2.3).cos();
-                    t.progress.speed * ((age - ago) / 4.0).clamp(0.0, 1.0) * wobble
-                })
-                .sum::<f64>() as f32
-        })
-        .collect();
+    let samples: Vec<f32> = s.speed.iter().copied().collect();
     let now = format::total_speed(&s.tasks);
     let peak = samples.iter().copied().fold(0.0f32, f32::max).max(1.0) as f64;
     let scale = format::axis_ceiling(peak);

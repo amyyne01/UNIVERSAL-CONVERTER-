@@ -5,7 +5,7 @@
 //! The signature is the orbit ring (`draw::orbit`): it marks a download's progress and
 //! appears nowhere else. A download in flight is round, on its orbit; once it lands it is a
 //! square tile, a file you own.
-mod downloads;
+pub(crate) mod downloads;
 pub(crate) mod draw;
 pub(crate) mod found;
 mod home;
@@ -97,17 +97,20 @@ pub(super) fn keycap(p: &Pal, label: &str) -> El {
 }
 
 #[derive(Clone, Copy, PartialEq)]
-pub(super) enum Tone {
+pub(crate) enum Tone {
     /// The one solid button on a screen.
     Primary,
     /// A hairline outline.
     Ghost,
+    /// The red confirm of an armed two-step action.
+    Danger,
 }
 
-pub(super) fn button(p: &Pal, key: &str, label: &str, glyph: Option<&'static Icon>, tone: Tone) -> El {
+pub(crate) fn button(p: &Pal, key: &str, label: &str, glyph: Option<&'static Icon>, tone: Tone) -> El {
     let (fill, ink, edge) = match tone {
         Tone::Primary => (p.accent, p.on_accent, p.accent),
         Tone::Ghost => (Color::TRANSPARENT, p.text, p.track),
+        Tone::Danger => (p.error, p.bg, p.error),
     };
     let mut b = row()
         .key(key.to_string())
@@ -123,9 +126,13 @@ pub(super) fn button(p: &Pal, key: &str, label: &str, glyph: Option<&'static Ico
         .focusable(true)
         .cursor(rune::Cursor::Pointer)
         .press_scale(0.97)
-        .hover(if tone == Tone::Primary { mix(p.accent, p.text, 0.15) } else { p.raised });
+        .hover(match tone {
+            Tone::Primary => mix(p.accent, p.text, 0.15),
+            Tone::Ghost => p.raised,
+            Tone::Danger => mix(p.error, p.text, 0.15),
+        });
     if let Some(g) = glyph {
-        b = b.child(icon(g, 16.0).color(if tone == Tone::Primary { ink } else { p.text2 }));
+        b = b.child(icon(g, 16.0).color(if tone == Tone::Ghost { p.text2 } else { ink }));
     }
     b.child(txt(label.to_string(), SMALL_M, ink))
 }

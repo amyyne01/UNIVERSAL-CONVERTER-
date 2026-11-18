@@ -136,7 +136,11 @@ pub fn trace(samples: &[f32], scale: f32, w: f32, h: f32, rule: Color, ink: Colo
     for y in [0.5, h / 2.0, h - 0.5] {
         s = s.line([0.0, y], [w, y], 1.0, LineCap::Butt, rule);
     }
-    let n = samples.len().max(2) - 1;
+    // Fewer than two samples make no line: the rules alone.
+    if samples.len() < 2 {
+        return s;
+    }
+    let n = samples.len() - 1;
     let pts: Vec<[f32; 2]> =
         samples.iter().enumerate().map(|(i, v)| [w * i as f32 / n as f32, h - 1.0 - (v / scale).clamp(0.0, 1.0) * (h - 2.0)]).collect();
     s.stroke(pts, 1.5, ink)

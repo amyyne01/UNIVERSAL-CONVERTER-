@@ -232,25 +232,9 @@ fn cell(p: &Pal, title: &'static str, aside: Option<El>, body: El) -> El {
     col().w_full().pt(16.0).gap(16.0).border_sides([1.0, 0.0, 0.0, 0.0], p.line).child(head).child(body)
 }
 
-/// The summed speed of every running download over the last two minutes, rebuilt from when
-/// each sample download started (the gate has no live samples).
+/// The summed speed of every running download, the last samples (`State.speed`).
 fn speed(s: &State, p: &Pal) -> El {
-    let running: Vec<&DownloadTask> = s.tasks.iter().filter(|t| t.progress.status == St::Downloading).collect();
-    let now_ms = s.tasks.iter().filter_map(|t| t.created_at).fold(0.0, f64::max) + 12_000.0;
-    let samples: Vec<f32> = (0..120)
-        .map(|i| {
-            let ago = (119 - i) as f64;
-            running
-                .iter()
-                .map(|t| {
-                    let age = (now_ms - t.created_at.unwrap_or(now_ms)) / 1000.0;
-                    let ramp = ((age - ago) / 4.0).clamp(0.0, 1.0);
-                    let wobble = 1.0 + 0.06 * ((i as f64) * 0.7 + age).sin() + 0.03 * ((i as f64) * 2.3).cos();
-                    t.progress.speed * ramp * wobble
-                })
-                .sum::<f64>() as f32
-        })
-        .collect();
+    let samples: Vec<f32> = s.speed.iter().copied().collect();
     let now = format::total_speed(&s.tasks);
     let peak = samples.iter().copied().fold(0.0f32, f32::max).max(1.0) as f64;
     let scale = format::axis_ceiling(peak);
