@@ -11,9 +11,10 @@ use rune::{Color, Cursor, El, Icon, ScrollSpec, col, el, icon, row, spacer};
 
 use super::parts::{Line, RING, button, config_text, ghost, icon_button, keycap, label, mono, ring_material, sans};
 use super::theme::{Pal, source_color};
+use crate::actions;
 use crate::copy::{self, found as f};
 use crate::format;
-use crate::gate::{Band, Card, Found, Matched, State};
+use crate::gate::{Band, Card, Choice, Found, Matched, State};
 use crate::icons;
 use crate::keys;
 use crate::ring;
@@ -70,19 +71,13 @@ pub fn view(s: &State, p: &Pal) -> Option<El> {
     Some(c)
 }
 
-/// Puts the surface away: the field empties and Home is back.
-pub fn dismiss(s: &mut State) {
-    s.found = Found::Nothing;
-    s.input.clear();
-    s.notice = None;
-}
-
 /// "Available with Premium": a lock in ink, never the accent, which is Download's.
 fn lock(p: &Pal) -> El {
     glyph(&icons::LOCK_SIGNAL, p.text2)
 }
 
 /// An open door to Premium, never the accent.
+// TODO(shared): `actions::see_plans(s)`; the plans sheet has no action yet, so the button waits.
 fn see_plans(p: &Pal) -> El {
     button(None, f::SEE_PLANS, p.text, p).key(keys::FOUND_SEE_PLANS)
 }
@@ -114,7 +109,7 @@ fn head_with(_s: &State, lead: El, words: El, aside: Option<El>, p: &Pal) -> El 
         r = r.child(aside).child(el().w(1.0).h(20.0).fill(p.line).mx(4.0));
     }
     r.child(keycap(copy::KEYCAP_ESC, p))
-        .child(icon_button(&icons::CLOSE, copy::NOTICE_DISMISS, p.text2, p).key(keys::FOUND_CLOSE).on_press(dismiss))
+        .child(icon_button(&icons::CLOSE, copy::NOTICE_DISMISS, p.text2, p).key(keys::FOUND_CLOSE).on_press(actions::dismiss_found))
 }
 
 /// A skeleton bone: the shape of something still coming.
@@ -162,6 +157,7 @@ fn primary(words: &str, p: &Pal) -> El {
         .child(icon(&icons::DOWNLOAD, 16.0).color(p.deep))
         .child(label(words, sans(14.0, 500.0), p.deep))
         .key(keys::FOUND_DOWNLOAD)
+        .on_press(actions::download_found)
 }
 
 /// The output strip under the body.
@@ -244,7 +240,7 @@ fn failed(why: &str, input: &str, p: &Pal) -> El {
                 .center_y()
                 .child(label(input, mono(12.0, 400.0), p.muted).single_line().truncate().min_w(0.0).shrink())
                 .child(spacer())
-                .child(button(Some(&icons::RETRY), f::ERROR_TRY_AGAIN, p.text, p)),
+                .child(button(Some(&icons::RETRY), f::ERROR_TRY_AGAIN, p.text, p).key(keys::FOUND_RETRY).on_press_tx(actions::submit)),
         );
     // No ring after a dead lookup: a dark one would read as still waiting.
     col().w_full().padding(24.0).gap(20.0).child(panel)
@@ -269,19 +265,30 @@ fn source_of(m: &MediaMetadata) -> SourcePlatform {
 /// `locked(i)`: the choice needs Premium. It stays pressable, so choosing it
 /// can say what the plan adds; it carries a lock before its name.
 /// `key(i)`: a choice's own key (the format chips); `None` keys the group instead.
+/// `pick`: what choosing the i-th changes in the choice, which `actions::set_choice` then takes.
 fn choices(
     items: &[&str],
     on: usize,
     tag: impl Fn(&str) -> bool,
     locked: impl Fn(usize) -> bool,
     key: impl Fn(usize) -> Option<String>,
+    pick: fn(&mut Choice, usize),
     p: &Pal,
 ) -> El {
     let mut g = row().padding(4.0).gap(4.0).radius(8.0).fill(p.deep).border(1.0, p.line).role("radiogroup");
     for (i, name) in items.iter().enumerate() {
         let lit = i == on;
-        let mut c =
-            row().h(28.0).px(12.0).gap(8.0).center_y().radius(6.0).hover(p.hover).cursor(Cursor::Pointer).role("radio").checked(lit);
+        let mut c = row()
+            .h(28.0)
+            .px(12.0)
+            .gap(8.0)
+            .center_y()
+            .radius(6.0)
+            .hover(p.hover)
+            .cursor(Cursor::Pointer)
+            .role("radio")
+            .checked(lit)
+            .on_press(move |s: &mut State| choose(s, |c| pick(c, i)));
         if let Some(k) = key(i) {
             c = c.key(k);
         }
@@ -298,6 +305,14 @@ fn choices(
         g = g.child(c);
     }
     g
+}
+
+/// The found step's choice with one change, through the action that saves and checks it.
+// TODO(shared): `actions::set_choice_with(s, |c| ..)`, or one action per chip (format, quality, video or audio).
+fn choose(s: &mut State, change: impl FnOnce(&mut Choice)) {
+    let mut c = s.choice.clone();
+    change(&mut c);
+    actions::set_choice(s, c);
 }
 
 fn media(s: &State, m: &MediaMetadata, p: &Pal) -> (El, El, Option<El>) {
@@ -368,7 +383,7 @@ fn media(s: &State, m: &MediaMetadata, p: &Pal) -> (El, El, Option<El>) {
     // The routing: Video or Audio, then the channels each one uses. The ones
     // the current choice does not use sit dark, one press away.
     let capsule = {
-        let side = |i: &'static Icon, words: &str, on: bool| {
+        let side = |i: &'static Icon, words: &str, on: bool, video: bool| {
             let mut c = row()
                 .h(28.0)
                 .px(12.0)
@@ -379,6 +394,7 @@ fn media(s: &State, m: &MediaMetadata, p: &Pal) -> (El, El, Option<El>) {
                 .cursor(Cursor::Pointer)
                 .role("radio")
                 .checked(on)
+                .on_press(move |s: &mut State| choose(s, |c| c.video = video))
                 .child(icon(i, 16.0).color(if on { p.text } else { p.muted }))
                 .child(label(words, sans(13.0, if on { 500.0 } else { 400.0 }), if on { p.text } else { p.text2 }));
             if on {
@@ -393,8 +409,8 @@ fn media(s: &State, m: &MediaMetadata, p: &Pal) -> (El, El, Option<El>) {
             .fill(p.deep)
             .border(1.0, p.line)
             .role("radiogroup")
-            .child(side(&icons::VIDEO, f::MEDIA_VIDEO, video).key(keys::CHOICE_VIDEO))
-            .child(side(&icons::TRACK, f::MEDIA_AUDIO, !video).key(keys::CHOICE_AUDIO))
+            .child(side(&icons::VIDEO, f::MEDIA_VIDEO, video, true).key(keys::CHOICE_VIDEO))
+            .child(side(&icons::TRACK, f::MEDIA_AUDIO, !video, false).key(keys::CHOICE_AUDIO))
     };
     let named = |name: &str, control: El, routed: bool| {
         let r = row().w_full().gap(16.0).center_y().child(label(name, sans(13.0, 400.0), p.text2).w(112.0)).child(control);
@@ -411,8 +427,16 @@ fn media(s: &State, m: &MediaMetadata, p: &Pal) -> (El, El, Option<El>) {
         .child(named("", capsule, true))
         .child(named(
             f::VIDEO_QUALITY_LABEL,
-            choices(&f::VIDEO_QUALITIES, video_on, |_| false, |i| basic && is_premium_video_quality(QUALITIES[i]), |_| None, p)
-                .key(keys::CHOICE_VIDEO_QUALITY),
+            choices(
+                &f::VIDEO_QUALITIES,
+                video_on,
+                |_| false,
+                |i| basic && is_premium_video_quality(QUALITIES[i]),
+                |_| None,
+                |c, i| c.video_quality = QUALITIES[i],
+                p,
+            )
+            .key(keys::CHOICE_VIDEO_QUALITY),
             video,
         ))
         .child(named(
@@ -423,14 +447,23 @@ fn media(s: &State, m: &MediaMetadata, p: &Pal) -> (El, El, Option<El>) {
                 lossless,
                 |i| basic && is_premium_format(&f::AUDIO_FORMATS[i].to_lowercase()),
                 |i| Some(keys::choice_format(&f::AUDIO_FORMATS[i].to_lowercase())),
+                |c, i| c.format = f::AUDIO_FORMATS[i].to_lowercase(),
                 p,
             ),
             !video,
         ))
         .child(named(
             f::AUDIO_QUALITY_LABEL,
-            choices(&f::AUDIO_QUALITIES, audio_on, |_| false, |i| basic && i == f::AUDIO_QUALITIES.len() - 1, |_| None, p)
-                .key(keys::CHOICE_AUDIO_QUALITY),
+            choices(
+                &f::AUDIO_QUALITIES,
+                audio_on,
+                |_| false,
+                |i| basic && i == f::AUDIO_QUALITIES.len() - 1,
+                |_| None,
+                |c, i| c.audio_quality = f::AUDIO_QUALITIES[i].split(' ').next().unwrap_or_default().to_lowercase(),
+                p,
+            )
+            .key(keys::CHOICE_AUDIO_QUALITY),
             !video,
         ));
     if basic {
@@ -592,8 +625,10 @@ fn album(s: &State, pl: &Playlist, matched: &[Matched], selected: &[bool], p: &P
             .gap(4.0)
             .child(
                 ghost(Some(&icons::CHECK_SIGNAL), f::PLAYLIST_SELECT_ALL, if all { p.muted } else { p.text }, p)
-                    .key(keys::FOUND_SELECT_ALL),
+                    .key(keys::FOUND_SELECT_ALL)
+                    .on_press(actions::toggle_all_tracks),
             )
+            // TODO(shared): `actions::deselect_all_tracks(s)`; `toggle_all_tracks` would select all when only some are ticked.
             .child(ghost(None, f::PLAYLIST_DESELECT_ALL, if picked.is_empty() { p.muted } else { p.text2 }, p))
     };
     let top = row()
@@ -668,6 +703,7 @@ fn album(s: &State, pl: &Playlist, matched: &[Matched], selected: &[bool], p: &P
         .role("checkbox")
         .checked(on)
         .label(f::playlist_row_aria(&t.name, &t.artist, &format::duration(t.duration_ms / 1000.0), false));
+        r = r.on_press(move |s: &mut State| actions::toggle_track(s, i));
         if can && !fixed {
             r = r.cursor(Cursor::Pointer).hover(p.hover);
         }
@@ -831,7 +867,13 @@ fn band_body(s: &State, at: usize, source: SourcePlatform, name: &str, band: &Ba
                 sans(13.0, 400.0),
                 p.text,
             )))
-            .child(row().ml(-12.0).child(ghost(Some(&icons::RETRY), copy::SEARCH_RETRY, p.text, p).key(keys::band_retry(at)))),
+            .child(
+                row().ml(-12.0).child(
+                    ghost(Some(&icons::RETRY), copy::SEARCH_RETRY, p.text, p)
+                        .key(keys::band_retry(at))
+                        .on_press(move |s: &mut State| actions::retry_band(s, at)),
+                ),
+            ),
         Band::Results(rs) => {
             let mut c = c;
             let open = s.expanded.get(at).copied().unwrap_or(false);
@@ -839,9 +881,13 @@ fn band_body(s: &State, at: usize, source: SourcePlatform, name: &str, band: &Ba
                 c = c.child(result_row(r, s.picked.contains(&r.id), p));
             }
             if rs.len() > SHOWN && !open {
-                c = c.child(row().px(4.0).child(
-                    ghost(Some(&icons::CARET_DOWN), &copy::search_show_more(rs.len() - SHOWN), p.text2, p).key(keys::band_more(at)),
-                ));
+                c = c.child(
+                    row().px(4.0).child(
+                        ghost(Some(&icons::CARET_DOWN), &copy::search_show_more(rs.len() - SHOWN), p.text2, p)
+                            .key(keys::band_more(at))
+                            .on_press(move |s: &mut State| actions::show_more(s, at)),
+                    ),
+                );
             }
             if source == SourcePlatform::Spotify {
                 c = c.child(label(copy::SEARCH_SPOTIFY_NOTE, mono(12.0, 400.0), p.muted).px(16.0).pt(8.0));
@@ -857,13 +903,12 @@ fn picked_bar(s: &State, p: &Pal) -> Option<El> {
     if n == 0 {
         return None;
     }
-    // TODO(shared): a key for the results' Clear (`keys::RESULTS_CLEAR`).
-    let left = row().gap(12.0).center_y().child(label(f::results_selected(n), mono(13.0, 500.0), p.text)).child(ghost(
-        None,
-        f::RESULTS_CLEAR,
-        p.text2,
-        p,
-    ));
+    // TODO(shared): `actions::clear_results(s)`; the ticks are let go here.
+    let left = row()
+        .gap(12.0)
+        .center_y()
+        .child(label(f::results_selected(n), mono(13.0, 500.0), p.text))
+        .child(ghost(None, f::RESULTS_CLEAR, p.text2, p).key(keys::RESULTS_CLEAR).on_press(|s: &mut State| s.picked.clear()));
     Some(strip(left, primary(&f::results_download_n(n), p), p))
 }
 
@@ -879,8 +924,15 @@ fn result_row(r: &SearchResult, on: bool, p: &Pal) -> El {
     if !length.is_empty() {
         sub = sub.add(" · ", p.muted).fig(&length, p.muted);
     }
-    // TODO(shared): a key of the result's tick (`keys::result_pick(id)`); the row's key stands for both.
-    let tick = el().size(16.0, 16.0).radius(4.0).center().role("checkbox").checked(on).label(f::results_pick_aria(&r.title));
+    let id = r.id.clone();
+    let tick = el()
+        .key(keys::result_tick(&r.id))
+        .size(16.0, 16.0)
+        .radius(4.0)
+        .center()
+        .role("checkbox")
+        .checked(on)
+        .label(f::results_pick_aria(&r.title));
     let tick =
         if on { tick.fill(p.text).child(icon(&icons::CHECK_SIGNAL, 12.0).color(p.surface)) } else { tick.border(1.0, p.line_strong) };
     row()
@@ -897,6 +949,7 @@ fn result_row(r: &SearchResult, on: bool, p: &Pal) -> El {
         .focusable(true)
         .role("button")
         .label(copy::search_row_aria(&r.title, &r.uploader))
+        .on_press(move |s: &mut State| actions::toggle_result(s, &id))
         .pl(12.0)
         .child(tick)
         .child(cover(r.source, art_w(r.source), 36.0, p))

@@ -2,10 +2,12 @@
 //! An in-flight row carries the instrument (the segmented ring beside the tape
 //! counter); a finished row shows the file you now own in the same slot.
 use ahg_engine::types::{DownloadStatus as St, DownloadTask};
-use rune::{Align, Color, El, ScrollSpec, col, el, icon, row, spacer};
+use rune::{Align, Color, El, ScrollSpec, col, el, icon, row, spacer, text_input};
 
 use super::model;
-use super::parts::{self, Line, art, button, checkbox, confirm, ghost, icon_button, idle_ring, label, mono, sans, stack, task_ring};
+use super::parts::{
+    self, Line, art, button, checkbox, confirm, ghost, icon_button, idle_ring, label, mono, row_act, sans, stack, task_ring,
+};
 use super::theme::{Pal, source_color};
 use crate::actions;
 use crate::copy;
@@ -48,10 +50,8 @@ fn header(s: &State, p: &Pal) -> El {
     }
     let mut right = row().gap(4.0).center_y();
     if !tasks.is_empty() {
-        let typed = s.query.text.as_str();
         right = right.child(
             row()
-                .key(keys::DOWNLOADS_SEARCH)
                 .w(240.0)
                 .h(32.0)
                 .px(12.0)
@@ -61,35 +61,52 @@ fn header(s: &State, p: &Pal) -> El {
                 .fill(p.surface)
                 .border(1.0, p.line_strong)
                 .mr(8.0)
-                .role("searchbox")
-                .label(copy::DL_SEARCH_ARIA)
                 .child(icon(&icons::SEARCH, 16.0).color(p.muted))
-                .child(if typed.is_empty() {
-                    label(copy::DL_SEARCH_PLACEHOLDER, sans(13.0, 400.0), p.muted)
-                } else {
-                    label(typed, sans(13.0, 400.0), p.text).single_line().truncate().min_w(0.0)
-                }),
+                .child(
+                    text_input(&s.query, sans(13.0, 400.0))
+                        .key(keys::DOWNLOADS_SEARCH)
+                        .single_line()
+                        .color(p.text)
+                        .placeholder(copy::DL_SEARCH_PLACEHOLDER, p.muted)
+                        .label(copy::DL_SEARCH_ARIA)
+                        .on_edit(|s: &mut State| &mut s.query)
+                        .grow(1.0)
+                        .min_w(0.0),
+                ),
         );
     }
     if tasks.iter().any(|t| t.progress.status == St::Failed && !format::is_permanent(t.error_code)) {
-        right = right.child(ghost(Some(&icons::RETRY), copy::DL_RETRY_ALL_FAILED, p.text2, p).key(keys::RETRY_ALL_FAILED));
+        right = right.child(
+            ghost(Some(&icons::RETRY), copy::DL_RETRY_ALL_FAILED, p.text2, p)
+                .key(keys::RETRY_ALL_FAILED)
+                .on_press(actions::retry_all_failed),
+        );
     }
     let done = tasks.iter().filter(|t| t.progress.status == St::Done).count();
     if s.confirm == Some(Confirm::Clear) && done > 0 {
         right = right.child(confirm(&copy::clear_confirm(done), copy::DL_CLEAR_CONFIRM_ARIA, p));
     } else if done > 0 {
-        right = right.child(ghost(Some(&icons::REMOVE), copy::DL_CLEAR_COMPLETED, p.text2, p).key(keys::arm(Confirm::Clear)));
+        right = right.child(
+            ghost(Some(&icons::REMOVE), copy::DL_CLEAR_COMPLETED, p.text2, p)
+                .key(keys::arm(Confirm::Clear))
+                .on_press(|s: &mut State| actions::arm(s, Confirm::Clear)),
+        );
     }
     let pausable = tasks.iter().any(|t| matches!(t.progress.status, St::Queued | St::FetchingInfo | St::Downloading));
     if pausable || tasks.iter().any(|t| t.progress.status == St::Paused) {
-        right = right.child(if all_paused {
-            button(Some(&icons::PLAY), copy::DL_RESUME_ALL, p.accent_ink, p).key(keys::PAUSE_ALL)
-        } else {
-            button(Some(&icons::PAUSE), copy::DL_PAUSE_ALL, p.text, p).key(keys::PAUSE_ALL)
-        });
+        right = right.child(
+            if all_paused {
+                button(Some(&icons::PLAY), copy::DL_RESUME_ALL, p.accent_ink, p)
+            } else {
+                button(Some(&icons::PAUSE), copy::DL_PAUSE_ALL, p.text, p)
+            }
+            .key(keys::PAUSE_ALL)
+            .on_press(actions::pause_or_resume_all),
+        );
     }
     if active > 0 {
-        right = right.child(ghost(Some(&icons::CANCEL), copy::DL_CANCEL_ALL, p.text2, p).key(keys::CANCEL_ALL));
+        right =
+            right.child(ghost(Some(&icons::CANCEL), copy::DL_CANCEL_ALL, p.text2, p).key(keys::CANCEL_ALL).on_press(actions::cancel_all));
     }
     row().w_full().items_end().justify_between().gap(16.0).flex_wrap().child(left).child(right)
 }
@@ -107,8 +124,14 @@ fn banner(n: usize, p: &Pal) -> El {
         .border(1.0, p.warning.alpha(0.22))
         .child(icon(&icons::PAUSE, 16.0).color(p.warning))
         .child(Line::new().fig(&n.to_string(), p.text).add(&copy::interrupted_sentence(n), p.text).one(sans(13.0, 400.0)).grow(1.0))
-        .child(primary(Some(&icons::PLAY), copy::DL_INTERRUPTED_RESUME, p).key(keys::RESUME_INTERRUPTED))
-        .child(ghost(Some(&icons::REMOVE), copy::DL_INTERRUPTED_DISCARD, p.text2, p).key(keys::DISCARD_INTERRUPTED))
+        .child(
+            primary(Some(&icons::PLAY), copy::DL_INTERRUPTED_RESUME, p).key(keys::RESUME_INTERRUPTED).on_press(actions::resume_interrupted),
+        )
+        .child(
+            ghost(Some(&icons::REMOVE), copy::DL_INTERRUPTED_DISCARD, p.text2, p)
+                .key(keys::DISCARD_INTERRUPTED)
+                .on_press(actions::discard_interrupted),
+        )
 }
 
 /// The one filled button: off-white ink on dark, ink on light.
@@ -144,6 +167,7 @@ fn strip(s: &State, p: &Pal) -> El {
         seg = seg.child(
             row()
                 .key(keys::filter(Filter::ALL[i]))
+                .on_press(move |s: &mut State| actions::set_filter(s, Filter::ALL[i]))
                 .role("radio")
                 .checked(on)
                 .h(28.0)
@@ -167,7 +191,7 @@ fn strip(s: &State, p: &Pal) -> El {
         .pl(16.0)
         .gap(16.0)
         .center_y()
-        .child(tick(all, ticked > 0 && !all, p).key(keys::SELECT_ALL).label(copy::DL_SELECT_ALL_ARIA))
+        .child(tick(all, ticked > 0 && !all, p).key(keys::SELECT_ALL).label(copy::DL_SELECT_ALL_ARIA).on_press(actions::toggle_select_all))
         .child(seg);
     if !s.selected.is_empty() {
         r = r.child(spacer()).child(selection(s, p));
@@ -179,7 +203,8 @@ fn strip(s: &State, p: &Pal) -> El {
 fn selection(s: &State, p: &Pal) -> El {
     let (active, finished) = parts::selection(s);
     let mut r = row().gap(4.0).center_y().child(label(copy::selected_count(s.selected.len()), mono(12.0, 500.0), p.text).mr(8.0));
-    let cancel = ghost(Some(&icons::CANCEL), copy::DL_SELECTION_CANCEL, p.text2, p).key(keys::CANCEL_SELECTED);
+    let cancel =
+        ghost(Some(&icons::CANCEL), copy::DL_SELECTION_CANCEL, p.text2, p).key(keys::CANCEL_SELECTED).on_press(actions::cancel_selected);
     let armed = s.confirm == Some(Confirm::Remove) && finished > 0;
     if !armed {
         r = r.child(if active > 0 { cancel } else { cancel.opacity(0.4) });
@@ -187,10 +212,13 @@ fn selection(s: &State, p: &Pal) -> El {
     if s.confirm == Some(Confirm::Remove) && finished > 0 {
         r = r.child(confirm(&copy::remove_confirm(finished), copy::DL_REMOVE_CONFIRM_ARIA, p));
     } else {
-        let remove = ghost(Some(&icons::REMOVE), copy::DL_SELECTION_REMOVE, p.text2, p).key(keys::arm(Confirm::Remove));
+        let remove = ghost(Some(&icons::REMOVE), copy::DL_SELECTION_REMOVE, p.text2, p)
+            .key(keys::arm(Confirm::Remove))
+            .on_press(|s: &mut State| actions::arm(s, Confirm::Remove));
         r = r.child(if finished > 0 { remove } else { remove.opacity(0.4) });
     }
-    r.child(ghost(None, copy::DL_SELECTION_CLEAR, p.text2, p).key(keys::CLEAR_SELECTION))
+    // TODO(shared): `actions::clear_selection(s)`; the selection is let go here with the field itself.
+    r.child(ghost(None, copy::DL_SELECTION_CLEAR, p.text2, p).key(keys::CLEAR_SELECTION).on_press(|s: &mut State| s.selected.clear()))
 }
 
 fn list(s: &State, p: &Pal) -> El {
@@ -296,7 +324,7 @@ fn empty_row(s: &State, p: &Pal) -> El {
             row()
                 .w(STATE_COL + ACTIONS + 12.0)
                 .justify_end()
-                .child(button(None, copy::EMPTY_NONE_ACTION, p.text, p).on_press(|s: &mut State| s.nav = Nav::Home)),
+                .child(button(None, copy::EMPTY_NONE_ACTION, p.text, p).on_press(|s: &mut State| actions::go(s, Nav::Home))),
         )
 }
 
@@ -317,7 +345,12 @@ fn filtered_row(s: &State, p: &Pal) -> El {
             sans(13.0, 400.0),
             p.text2,
         )))
-        .child(ghost(None, &copy::show_all(total), p.text2, p).key(keys::filter(Filter::All)))
+        // TODO(shared): `actions::show_all(s)`: the filter to All and the search emptied; Filter::All alone leaves a typed search on.
+        .child(
+            ghost(None, &copy::show_all(total), p.text2, p)
+                .key(keys::SHOW_ALL)
+                .on_press(|s: &mut State| actions::set_filter(s, Filter::All)),
+        )
 }
 
 fn task_row(s: &State, t: &DownloadTask, rule_above: bool, p: &Pal) -> El {
@@ -334,7 +367,10 @@ fn task_row(s: &State, t: &DownloadTask, rule_above: bool, p: &Pal) -> El {
         .hover_group()
         .hover(p.hover)
         .child(el().w(16.0))
-        .child(tick(on, false, p).key(keys::row_select(&t.task_id)).label(copy::ROW_SELECT_ARIA))
+        .child(tick(on, false, p).key(keys::row_select(&t.task_id)).label(copy::ROW_SELECT_ARIA).on_press({
+            let id = t.task_id.clone();
+            move |s: &mut State| actions::toggle_select(s, &id)
+        }))
         .child(art(s, t, Some(40.0), 40.0, 6.0, p))
         .child(title_block(t, p));
     if rule_above {
@@ -464,8 +500,7 @@ fn actions(t: &DownloadTask, p: &Pal) -> El {
     use ahg_engine::types::ErrorCode as E;
     let st = t.progress.status;
     let id = &t.task_id;
-    let act =
-        |i: &'static rune::Icon, words: &str, ink: Color, which: RowAct| icon_button(i, words, ink, p).key(keys::row_action(which, id));
+    let act = |i: &'static rune::Icon, words: &str, ink: Color, which: RowAct| row_act(icon_button(i, words, ink, p), which, id);
     let mut a = row().w(ACTIONS).gap(4.0).justify_end().center_y();
     if matches!(st, St::Queued | St::FetchingInfo | St::Downloading) {
         a = a.child(act(&icons::PAUSE, copy::ACT_PAUSE, p.text2, RowAct::Pause));

@@ -1,13 +1,14 @@
 //! The small parts every Signal screen is built from: type, the segmented
 //! meter, keycaps, buttons, artwork.
 use ahg_engine::types::{DownloadTask, SourcePlatform};
-use rune::{Color, El, Icon, Span, SurfaceFit, TextStyle, col, el, icon, rich, row, text};
+use rune::{Color, El, Icon, PopupMenu, Span, SurfaceFit, TextStyle, Tx, col, el, icon, rich, row, text};
 
 use super::theme::{Pal, source_color};
+use crate::actions;
 use crate::copy;
 use crate::gate::{Filter, State};
 use crate::icons;
-use crate::keys;
+use crate::keys::{self, RowAct};
 use crate::ring;
 use crate::settings_spec::{self, Kind, Row};
 use serde_json::Value;
@@ -252,8 +253,47 @@ pub fn confirm(question: &str, aria: &str, p: &Pal) -> El {
         .role("group")
         .label(aria)
         .child(label(question, sans(13.0, 500.0), p.text2).mr(4.0))
-        .child(ghost(None, copy::DL_CONFIRM_CANCEL, p.text2, p).key(keys::CONFIRM_NO))
-        .child(ghost(None, copy::DL_CONFIRM_YES, p.deep, p).fill(p.error).hover(p.deep.alpha(0.12)).key(keys::CONFIRM_YES))
+        .child(ghost(None, copy::DL_CONFIRM_CANCEL, p.text2, p).key(keys::CONFIRM_NO).on_press(actions::disarm))
+        .child(
+            ghost(None, copy::DL_CONFIRM_YES, p.deep, p)
+                .fill(p.error)
+                .hover(p.deep.alpha(0.12))
+                .key(keys::CONFIRM_YES)
+                .on_press(actions::confirm),
+        )
+}
+
+/// A row's button: its key, and the action it answers to with the row's task.
+pub fn row_act(b: El, which: RowAct, id: &str) -> El {
+    let key = keys::row_action(which, id);
+    let id = id.to_owned();
+    b.key(key).on_press_tx(move |s: &mut State, tx: &mut Tx| match which {
+        RowAct::Promote => actions::promote(s, tx, &id),
+        RowAct::Pause => actions::pause(s, tx, &id),
+        RowAct::Resume => actions::resume(s, tx, &id),
+        RowAct::Cancel => actions::cancel(s, tx, &id),
+        RowAct::CopyDetails => actions::copy_details(s, tx, &id),
+        RowAct::Fix => actions::fix(s, tx, &id),
+        RowAct::DownloadAgain => actions::download_again(s, tx, &id),
+        RowAct::Retry => actions::retry(s, tx, &id),
+        RowAct::OpenFile => actions::open_file(s, tx, &id),
+        RowAct::ShowInFolder => actions::show_in_folder(s, tx, &id),
+        RowAct::Remove => actions::remove(s, tx, &id),
+    })
+}
+
+/// A control that opens a native menu of choices under it; `pick` gets the chosen id.
+// TODO(shared): `actions::pick_setting(s, tx, key, options)`; the menu is opened here.
+pub fn popup(b: El, key: &str, menu: PopupMenu, pick: impl Fn(&mut State, &str) + Clone + 'static) -> El {
+    let anchor = key.to_owned();
+    b.key(key).on_press_tx(move |_: &mut State, tx: &mut Tx| {
+        let pick = pick.clone();
+        tx.popup_menu(menu.clone(), anchor.clone(), move |s: &mut State, id: Option<&str>, _: &mut Tx| {
+            if let Some(id) = id {
+                pick(s, id);
+            }
+        });
+    })
 }
 
 // TODO(shared): `format::selection(tasks, selected) -> (active, finished)`; Signal and One bar use this copy.

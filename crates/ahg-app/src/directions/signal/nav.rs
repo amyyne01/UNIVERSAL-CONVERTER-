@@ -6,6 +6,7 @@ use rune::{Color, El, Icon, col, el, icon, row};
 
 use super::parts::{label, mono, sans};
 use super::theme::Pal;
+use crate::actions;
 use crate::copy;
 use crate::format;
 use crate::gate::{Nav, State};
@@ -78,7 +79,7 @@ fn item(s: &State, p: &Pal, nav: Nav, glyph: &'static Icon, name: &str, n: usize
         .checked(on)
         .label(name.to_string())
         .help(copy::nav_tooltip(name, n))
-        .on_press(move |s: &mut State| s.nav = nav)
+        .on_press(move |s: &mut State| actions::go(s, nav))
         .child(mark);
     r = if on { r.fill(p.raised) } else { r.hover(p.hover).press(p.press) };
     if on {
@@ -116,7 +117,7 @@ fn pin(s: &State, p: &Pal) -> El {
         .role("switch")
         .checked(on)
         .label(copy::KEEP_OPEN)
-        .on_press(|s: &mut State| s.nav_pinned = !s.nav_pinned)
+        .on_press(actions::toggle_pin)
         .child(el().size(40.0, 40.0).center().child(icon(&icons::PIN, 16.0).color(ink)))
         .child(label(copy::KEEP_OPEN, sans(13.0, 400.0), if on { p.text } else { p.text2 }).ml(8.0))
         .child(el().grow(1.0))

@@ -15,10 +15,13 @@ pub(crate) mod parts;
 pub(crate) mod settings;
 pub(crate) mod theme;
 
+#[cfg(test)]
+mod handlers_tests;
+
 use rune::{Color, Cx, El, col, el, icon, row, spacer};
 
-use crate::copy;
-use crate::gate::{Nav, State};
+use crate::gate::{Nav, Overlay, State};
+use crate::{actions, copy, keys};
 use parts::{keycap, label, mono, sans};
 use theme::Pal;
 
@@ -62,6 +65,8 @@ fn titlebar(s: &State, p: &Pal, trailing: f32) -> El {
         .no_window_drag()
         .cursor(rune::Cursor::Pointer)
         .role("button")
+        .key(keys::PALETTE)
+        .on_press(|s: &mut State| actions::open(s, Overlay::Palette))
         .label(copy::SEARCH_CAPSULE_ARIA)
         .child(icon(&icons::SEARCH, 16.0).color(p.muted))
         .child(label(copy::SEARCH_CAPSULE, sans(13.0, 400.0), p.muted))

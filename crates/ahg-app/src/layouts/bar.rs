@@ -42,8 +42,9 @@ mod reach;
 mod stream;
 
 use ahg_engine::types::{DownloadStatus as St, DownloadTask, SourcePlatform};
-use rune::{Color, Cursor, Cx, El, SurfaceFit, col, el, icon, row, spacer};
+use rune::{Color, Cursor, Cx, El, SurfaceFit, col, el, icon, row, spacer, text_input};
 
+use crate::actions;
 use crate::copy;
 use crate::directions::signal::found;
 use crate::directions::signal::model;
@@ -107,7 +108,7 @@ fn titlebar(s: &State, p: &Pal, trailing: f32) -> El {
             .focusable(true)
             .role("tab")
             .help(copy::nav_tooltip(name, i + 1))
-            .on_press(move |s: &mut State| s.nav = place)
+            .on_press(move |s: &mut State| actions::go(s, place))
             .child(label(name, sans(13.0, 500.0), if on { p.text } else { p.muted }));
         if place == Nav::Downloads && active > 0 {
             tab = tab.child(label(active.to_string(), mono(12.0, 400.0), p.accent_ink));
@@ -145,8 +146,7 @@ fn home(s: &State, p: &Pal) -> El {
     let command = commanding(s);
     // What the field found drops from the bar like the command panel, over the stream.
     let found = if command { None } else { found::view(s, p) };
-    let typed = if command { s.command.text.as_str() } else { s.input.as_str() };
-    let mut top = col().w_full().child(bar(p, typed, command, command || found.is_some(), deck(s, p)));
+    let mut top = col().w_full().child(bar(s, p, command, command || found.is_some(), deck(s, p)));
     if command {
         top = top.child(reach::panel(s, p).pin(Some(0.0), Some(INPUT_H + DECK_H + 8.0), Some(0.0), None).raise());
     }
@@ -159,7 +159,7 @@ fn home(s: &State, p: &Pal) -> El {
         // The drop runs to the window's foot; a press beside it puts it away.
         let drop = col()
             .pin(Some(0.0), Some(32.0 + INPUT_H + DECK_H + 8.0), Some(0.0), Some(24.0))
-            .on_press(found::dismiss)
+            .on_press(actions::dismiss_found)
             .child(found.on_press(|_: &mut State| {}));
         column = column.child(drop.raise());
     }
@@ -215,7 +215,7 @@ fn first_launch(s: &State, p: &Pal) -> El {
         .h_full()
         .min_h(0.0)
         .pt(32.0)
-        .child(bar(p, &s.input, false, true, deck(s, p)))
+        .child(bar(s, p, false, true, deck(s, p)))
         .child(caption(s, p).mt(12.0))
         .child(well);
     col().w_full().grow(1.0).min_h(0.0).px(32.0).items_center().child(column)
@@ -223,7 +223,8 @@ fn first_launch(s: &State, p: &Pal) -> El {
 
 /// The bar: the input deck over the readout deck, one surface.
 /// `command`: Ctrl+K was pressed. `listening`: the bar has the caret.
-fn bar(p: &Pal, input: &str, command: bool, listening: bool, lower: El) -> El {
+fn bar(s: &State, p: &Pal, command: bool, listening: bool, lower: El) -> El {
+    let input = if command { s.command.text.as_str() } else { s.input.as_str() };
     let jack = el()
         .size(40.0, 40.0)
         .radius(8.0)
@@ -232,17 +233,32 @@ fn bar(p: &Pal, input: &str, command: bool, listening: bool, lower: El) -> El {
         .center()
         .child(icon(if command { &icons::SEARCH } else { &icons::LINK }, 16.0).color(if listening { p.accent_ink } else { p.muted }));
     let words = if command { copy::PALETTE_PLACEHOLDER } else { copy::FIELD_PLACEHOLDER };
-    let mut typed = row().grow(1.0).min_w(0.0).gap(4.0).center_y();
-    if listening {
-        // The caret is the only lit thing on the line: the bar is listening.
-        typed = typed.child(el().size(2.0, 20.0).radius(1.0).fill(p.accent));
-    }
-    let typed = if input.is_empty() {
-        typed.child(label(words, sans(16.0, 400.0), p.muted))
+    let typed = if command {
+        // The command line is typed through the palette's keys: its caret is drawn.
+        let mut typed = row().grow(1.0).min_w(0.0).gap(4.0).center_y();
+        if listening {
+            // The caret is the only lit thing on the line: the bar is listening.
+            typed = typed.child(el().size(2.0, 20.0).radius(1.0).fill(p.accent));
+        }
+        let typed = if input.is_empty() {
+            typed.child(label(words, sans(16.0, 400.0), p.muted))
+        } else {
+            typed.child(label(input, sans(16.0, 400.0), p.text))
+        };
+        typed.single_line().truncate().min_w(0.0)
     } else {
-        typed.child(label(input, sans(16.0, 400.0), p.text))
+        text_input(&s.field, sans(16.0, 400.0))
+            .key(keys::FIELD)
+            .single_line()
+            .color(p.text)
+            .placeholder(words, p.muted)
+            .label(copy::FIELD_ARIA)
+            .on_edit(|s: &mut State| &mut s.field)
+            .on_input_change(|s: &mut State, _| s.input = s.field.text.clone())
+            .on_submit(actions::submit)
+            .grow(1.0)
+            .min_w(0.0)
     };
-    let typed = typed.single_line().truncate().min_w(0.0);
     let go = if !input.is_empty() && !input.contains("://") { copy::FIELD_BUTTON_SEARCH } else { copy::FIELD_BUTTON_LOOK_UP };
     let end = if command {
         keycap(copy::PALETTE_ESC_CAP, p)
@@ -262,13 +278,13 @@ fn bar(p: &Pal, input: &str, command: bool, listening: bool, lower: El) -> El {
                 .focusable(true)
                 .role("button")
                 .key(keys::LOOK_UP)
+                .on_press_tx(actions::submit)
                 .child(label(go, sans(14.0, 500.0), p.bg))
                 .child(icon(&icons::FORWARD, 16.0).color(p.bg)),
         )
     };
-    let input =
-        row().w_full().h(INPUT_H).px(12.0).gap(12.0).center_y().role("textbox").label(copy::FIELD_ARIA).child(jack).child(typed).child(end);
-    let input = if command { input.key(keys::PALETTE_SEARCH) } else { input.key(keys::FIELD) };
+    let input = row().w_full().h(INPUT_H).px(12.0).gap(12.0).center_y().child(jack).child(typed).child(end);
+    let input = if command { input.role("textbox").label(copy::FIELD_ARIA).key(keys::PALETTE_SEARCH) } else { input };
     col()
         .w_full()
         .radius(12.0)
@@ -386,7 +402,11 @@ fn caption(s: &State, p: &Pal) -> El {
         .min_w(0.0)
         .child(Line::new().add(&copy::rest_saves_as(&audio), p.text2).add(&folder, p.text).one(sans(13.0, 400.0)).help(folder.clone()))
         .child(
-            label(copy::REST_CHANGE, sans(13.0, 500.0), p.accent_ink).cursor(Cursor::Pointer).role("link").label(copy::REST_CHANGE_ARIA),
+            label(copy::REST_CHANGE, sans(13.0, 500.0), p.accent_ink)
+                .cursor(Cursor::Pointer)
+                .role("link")
+                .label(copy::REST_CHANGE_ARIA)
+                .on_press(|s: &mut State| actions::go(s, Nav::Settings)),
         );
     let right = row()
         .gap(4.0)

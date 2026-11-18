@@ -2,10 +2,11 @@
 //! the month's numbers are set like a counter, and every share is a meter.
 use ahg_engine::stats::{DownloadStats, MonthBucket};
 use ahg_engine::types::{DownloadStatus as St, DownloadTask, SourcePlatform};
-use rune::{Color, El, ScrollSpec, col, el, icon, row, spacer};
+use rune::{Color, El, ScrollSpec, col, el, icon, row, spacer, text_input};
 
 use super::parts::{Line, art, config_text, dot, keycap, label, meter, mono, platform_icon, sans, stack};
 use super::theme::{Pal, source_color};
+use crate::actions;
 use crate::copy;
 use crate::format::{self, Bucket};
 use crate::gate::{Found, Nav, State};
@@ -91,7 +92,7 @@ fn in_flight(n: usize, p: &Pal) -> El {
         .child(dot(p.accent, 8.0))
         .child(Line::new().fig(&n.to_string(), p.text).add(copy::HOME_IN_FLIGHT_SUFFIX, p.text2).one(sans(13.0, 500.0)))
         .child(icon(&icons::FORWARD, 16.0).color(p.muted))
-        .on_press(|s: &mut State| s.nav = Nav::Downloads)
+        .on_press(|s: &mut State| actions::go(s, Nav::Downloads))
 }
 
 /// The input of the desk: a jack, the line, the one filled button, and under
@@ -122,34 +123,21 @@ fn field(s: &State, p: &Pal) -> El {
         .focusable(true)
         .role("button")
         .key(keys::LOOK_UP)
+        .on_press_tx(actions::submit)
         .child(label(words, sans(14.0, 500.0), p.bg))
         .child(icon(&icons::FORWARD, 16.0).color(p.bg));
-    let typed = if input.is_empty() {
-        label(copy::FIELD_PLACEHOLDER, sans(16.0, 400.0), p.muted)
-    } else {
-        label(input.to_string(), sans(16.0, 400.0), p.text)
-    };
-    let line = row()
-        .w_full()
-        .h(64.0)
-        .pl(12.0)
-        .pr(12.0)
-        .gap(12.0)
-        .center_y()
-        .child(jack)
-        .child(typed.grow(1.0).single_line().truncate().min_w(0.0))
-        .child(go);
-    let level = el().w_full().h(16.0).px(12.0).pb(8.0).child(meter(lit, 120, None, 8.0, 2.0, level_color, p.unlit));
-    col()
+    let typed = text_input(&s.field, sans(16.0, 400.0))
         .key(keys::FIELD)
-        .w_full()
-        .radius(12.0)
-        .fill(p.surface)
-        .border(1.0, p.line_strong)
-        .role("textbox")
+        .single_line()
+        .color(p.text)
+        .placeholder(copy::FIELD_PLACEHOLDER, p.muted)
         .label(copy::FIELD_ARIA)
-        .child(line)
-        .child(level)
+        .on_edit(|s: &mut State| &mut s.field)
+        .on_input_change(|s: &mut State, _| s.input = s.field.text.clone())
+        .on_submit(actions::submit);
+    let line = row().w_full().h(64.0).pl(12.0).pr(12.0).gap(12.0).center_y().child(jack).child(typed.grow(1.0).min_w(0.0)).child(go);
+    let level = el().w_full().h(16.0).px(12.0).pb(8.0).child(meter(lit, 120, None, 8.0, 2.0, level_color, p.unlit));
+    col().w_full().radius(12.0).fill(p.surface).border(1.0, p.line_strong).child(line).child(level)
 }
 
 /// The rest-state status line (reading 8).
@@ -164,7 +152,8 @@ fn status(s: &State, p: &Pal) -> El {
             label(copy::REST_CHANGE, sans(13.0, 500.0), p.accent_ink)
                 .cursor(rune::Cursor::Pointer)
                 .role("link")
-                .label(copy::REST_CHANGE_ARIA),
+                .label(copy::REST_CHANGE_ARIA)
+                .on_press(|s: &mut State| actions::go(s, Nav::Settings)),
         );
     let right = row()
         .gap(0.0)
@@ -343,7 +332,7 @@ fn recent_cell(s: &State, done: &[&DownloadTask], p: &Pal) -> El {
         .role("button")
         .child(label(copy::CELL_RECENT_VIEW_ALL, sans(13.0, 500.0), p.text2))
         .child(icon(&icons::FORWARD, 16.0).color(p.text2))
-        .on_press(|s: &mut State| s.nav = Nav::Downloads);
+        .on_press(|s: &mut State| actions::go(s, Nav::Downloads));
     // Under 1500 points of content: five columns, the poster takes two, four tiles at most.
     let mut grid = row().w_full().gap(12.0).items_start();
     let shown = done.len().min(4);

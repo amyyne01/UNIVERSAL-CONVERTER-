@@ -3,7 +3,7 @@
 //! list doubles as a status board. In command mode it drops out of the bar
 //! with the places, the search scopes and the actions under it, and the
 //! highlighted entry's sheet is shown beside it before Enter is pressed.
-use rune::{Color, Cursor, El, Icon, ScrollSpec, col, el, icon, row, spacer};
+use rune::{Color, Cursor, El, Icon, ScrollSpec, Tx, col, el, icon, row, spacer};
 
 use super::keycap;
 use crate::actions::{self, Command};
@@ -13,7 +13,7 @@ use crate::directions::signal::parts::{Spec, label, mono, platform_icon, sans};
 use crate::directions::signal::settings::panel_of;
 use crate::directions::signal::theme::{Pal, source_color};
 use crate::format;
-use crate::gate::State;
+use crate::gate::{Overlay, State};
 use crate::icons;
 use crate::keys;
 use crate::settings_spec::{self, Section};
@@ -117,7 +117,14 @@ fn command_list(s: &State, p: &Pal) -> El {
         let hint = c.hint().unwrap_or_default();
         let caps: Vec<&str> = hint.split('+').filter(|k| !k.is_empty()).collect();
         let index = all.iter().position(|x| x == c).unwrap_or(0);
-        l = l.child(entry(glyph, tint, &c.label(s), "", &caps, at == s.command.highlight, p).key(keys::command(index)));
+        let c = *c;
+        let row = entry(glyph, tint, &c.label(s), "", &caps, at == s.command.highlight, p).key(keys::command(index));
+        // Pressable in a real palette session only: the `nav` scene draws the same list at rest.
+        l = l.child(if s.overlay == Overlay::Palette {
+            row.on_press_tx(move |s: &mut State, tx: &mut Tx| actions::run(s, tx, c))
+        } else {
+            row
+        });
     }
     l.child(group(copy::NAV_SETTINGS, p)).child(section_list(s, false, p))
 }

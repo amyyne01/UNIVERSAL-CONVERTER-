@@ -5,13 +5,14 @@
 //! rows for switches, status lines for the two updaters. Every section, row,
 //! word and value comes from `settings_spec::sections`; this file only draws.
 //! One bar places the same panels (`panel_of`) beside its section list.
-use rune::{Color, El, Icon, ScrollSpec, col, el, icon, row};
+use rune::{Color, El, Icon, PopupItem, PopupMenu, ScrollSpec, Tx, col, el, icon, row};
 use serde_json::Value;
 
-use super::parts::{Line, button, dot, ghost, label, mono, sans};
+use super::parts::{Line, button, dot, ghost, label, mono, popup, sans};
 use super::theme::{self, Pal};
+use crate::actions;
 use crate::copy::{self, found as f, settings as w};
-use crate::gate::{Confirm, State};
+use crate::gate::{Confirm, Overlay, State};
 use crate::icons;
 use crate::keys;
 use crate::palette;
@@ -76,7 +77,7 @@ fn destination(r: &Row, p: &Pal) -> El {
                 .child(label(r.label, sans(12.0, 400.0), p.text2))
                 .child(Line::new().fig(&format!("{parent}\\"), p.text2).fig(leaf, p.text).one(mono(16.0, 500.0)).help(dir.clone())),
         )
-        .child(button(Some(&icons::FOLDER), r.button.unwrap_or(w::CHANGE), p.text, p).key(keys::CHANGE_FOLDER))
+        .child(row_button(r.button.unwrap_or(w::CHANGE), p))
 }
 
 /// A section: its name and hint in the left column, its panel beside them.
@@ -153,26 +154,33 @@ fn chosen(r: &Row) -> String {
     }
 }
 
-/// The key and icon of a row's one button, by its wording.
-fn button_of(words: &str) -> (Option<&'static str>, Option<&'static Icon>) {
+/// What a row's button does.
+type Press = fn(&mut State, &mut Tx);
+
+/// The key, icon and action of a row's one button, by its wording.
+fn button_of(words: &str) -> (Option<&'static str>, Option<&'static Icon>, Option<Press>) {
     match words {
-        w::CHANGE => (Some(keys::CHANGE_FOLDER), Some(&icons::FOLDER)),
-        w::CHOOSE_FILE => (Some(keys::IMPORT_COOKIES), Some(&icons::FOLDER)),
-        w::CHECK_FOR_UPDATES => (Some(keys::CHECK_UPDATE), Some(&icons::REFRESH)),
-        w::ENGINE_CHECK => (Some(keys::CHECK_ENGINE), Some(&icons::REFRESH)),
-        w::SHOW_SHORTCUTS => (Some(keys::SHOW_SHORTCUTS), None),
-        w::GET_SUPPORT => (Some(keys::GET_SUPPORT), Some(&icons::EXTERNAL)),
-        w::LAYOUT_CHOOSE => (Some(keys::LAYOUT_CHOOSE), None),
-        // TODO(shared): keys::SEE_PLANS (Settings' plan row).
-        _ => (None, None),
+        w::CHANGE => (Some(keys::CHANGE_FOLDER), Some(&icons::FOLDER), Some(actions::choose_folder)),
+        w::CHOOSE_FILE => (Some(keys::IMPORT_COOKIES), Some(&icons::FOLDER), Some(actions::import_cookies)),
+        w::CHECK_FOR_UPDATES => (Some(keys::CHECK_UPDATE), Some(&icons::REFRESH), Some(|s, _| actions::check_update(s))),
+        w::ENGINE_CHECK => (Some(keys::CHECK_ENGINE), Some(&icons::REFRESH), Some(|s, _| actions::check_engine(s))),
+        w::SHOW_SHORTCUTS => (Some(keys::SHOW_SHORTCUTS), None, Some(|s, _| actions::show_shortcuts(s))),
+        w::GET_SUPPORT => (Some(keys::GET_SUPPORT), Some(&icons::EXTERNAL), Some(actions::get_support)),
+        w::LAYOUT_CHOOSE => (Some(keys::LAYOUT_CHOOSE), None, Some(|s, _| actions::open(s, Overlay::Picker))),
+        // TODO(shared): `actions::see_plans(s)`; the plans sheet has no action yet.
+        w::SEE_PLANS => (Some(keys::SEE_PLANS), None, None),
+        _ => (None, None, None),
     }
 }
 
 fn row_button(words: &str, p: &Pal) -> El {
-    let (key, glyph) = button_of(words);
-    let b = button(glyph, words, p.text, p);
-    match key {
-        Some(k) => b.key(k),
+    let (key, glyph, press) = button_of(words);
+    let mut b = button(glyph, words, p.text, p);
+    if let Some(k) = key {
+        b = b.key(k);
+    }
+    match press {
+        Some(f) => b.on_press_tx(f),
         None => b,
     }
 }
@@ -235,7 +243,12 @@ fn fields(cells: &[&Row], p: &Pal) -> El {
 fn control(s: &State, r: &Row, w_: Option<f32>, p: &Pal) -> El {
     let key = r.key.unwrap_or_default();
     match &r.kind {
-        Kind::Toggle => switch(r.label, r.value.as_bool().unwrap_or(false), p).key(keys::setting(key)),
+        Kind::Toggle => {
+            let on = r.value.as_bool().unwrap_or(false);
+            switch(r.label, on, p).key(keys::setting(key)).on_press(move |s: &mut State| {
+                actions::set_setting(s, key, Value::Bool(!on));
+            })
+        }
         Kind::Days => days(r, p),
         Kind::Theme => theme_control(r, p),
         Kind::Palette => swatches(s, p),
@@ -243,7 +256,7 @@ fn control(s: &State, r: &Row, w_: Option<f32>, p: &Pal) -> El {
             .gap(12.0)
             .center_y()
             .child(label(text_of(&r.value), mono(13.0, 400.0), p.text2))
-            .child(row_button(r.button.unwrap_or(w::LAYOUT_CHOOSE), p).on_press(|s: &mut State| s.picker = true)),
+            .child(row_button(r.button.unwrap_or(w::LAYOUT_CHOOSE), p)),
         Kind::Folder => row()
             .gap(12.0)
             .center_y()
@@ -265,9 +278,21 @@ fn control_plain(r: &Row, w_: Option<f32>, p: &Pal) -> El {
     let key = keys::setting(r.key.unwrap_or_default());
     match &r.kind {
         Kind::Select(options) => {
-            let s = select(r.label, &chosen(r), w_, options.iter().any(|o| o.lock.is_some()), p).key(key);
+            let (setting, now) = (r.key.unwrap_or_default(), text_of(&r.value));
+            // A choice that needs Premium is listed but not pressable.
+            let menu = PopupMenu::new()
+                .items(
+                    options
+                        .iter()
+                        .map(|o| PopupItem::new(o.value.clone(), o.label.clone()).checked(o.value == now).enabled(o.lock.is_none())),
+                )
+                .selected(now.clone());
+            let s = popup(select(r.label, &chosen(r), w_, options.iter().any(|o| o.lock.is_some()), p), &key, menu, move |s, id| {
+                actions::set_setting(s, setting, id.into());
+            });
             if r.gated() { s.help(f::LOCK_SELECT_TITLE) } else { s }
         }
+        // TODO(shared): a typed setting needs a `TextEdit` per key in `State` and an `actions::commit_text(s, key)`.
         _ => input(r.label, &text_of(&r.value), r.placeholder.unwrap_or_default(), w_, p).key(key),
     }
 }
@@ -340,13 +365,15 @@ fn theme_control(r: &Row, p: &Pal) -> El {
     for (i, name) in w::THEMES.into_iter().enumerate() {
         let on = i == on_at;
         g = g.child(
-            el().h(28.0)
+            el().key(keys::theme(i))
+                .h(28.0)
                 .px(12.0)
                 .center()
                 .radius(6.0)
                 .fill(if on { p.raised } else { Color::TRANSPARENT })
                 .hover(p.hover)
                 .cursor(rune::Cursor::Pointer)
+                .on_press_tx(move |s: &mut State, tx: &mut Tx| actions::set_theme(s, ["light", "dark", "system"][i], tx))
                 .role("radio")
                 .checked(on)
                 .child(label(name, sans(13.0, if on { 500.0 } else { 400.0 }), if on { p.text } else { p.text2 })),
@@ -373,7 +400,7 @@ fn swatches(s: &State, p: &Pal) -> El {
                 .label(name)
                 .help(name)
                 .checked(on)
-                .on_press(move |s: &mut State| s.palette = i)
+                .on_press_tx(move |s: &mut State, tx: &mut Tx| actions::set_palette(s, i, tx))
                 // The palette's accent as one lit segment.
                 .child(el().size(12.0, 4.0).radius(1.0).fill(sw.accent)),
         );
@@ -394,6 +421,7 @@ fn days(r: &Row, p: &Pal) -> El {
                 .border(1.0, if on { p.line_strong } else { p.line })
                 .cursor(rune::Cursor::Pointer)
                 .focusable(true)
+                .on_press(move |s: &mut State| actions::toggle_day(s, i as u8))
                 .role("checkbox")
                 .label(*day)
                 .checked(on)
@@ -476,10 +504,11 @@ fn danger(s: &State, r: &Row, p: &Pal) -> El {
                     .child(label(r.label, sans(14.0, 500.0), p.error))
                     .child(label(sentence, sans(12.0, 400.0).lh(16.0), p.text).wrap()),
             )
-            .child(ghost(None, w::CANCEL, p.text2, p).key(keys::CONFIRM_NO))
-            .child(ghost(None, yes, p.deep, p).fill(p.error).key(keys::CONFIRM_YES));
+            .child(ghost(None, w::CANCEL, p.text2, p).key(keys::CONFIRM_NO).on_press(actions::disarm))
+            .child(ghost(None, yes, p.deep, p).fill(p.error).key(keys::CONFIRM_YES).on_press(actions::confirm));
     }
-    base.hover(p.hover)
+    base.on_press(move |s: &mut State| actions::arm(s, which))
+        .hover(p.hover)
         .cursor(rune::Cursor::Pointer)
         .focusable(true)
         .role("button")
