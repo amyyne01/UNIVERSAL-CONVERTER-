@@ -7,7 +7,7 @@ use rune::{El, Icon, col, el, icon, row, text};
 
 use crate::directions::shelf::theme::{self, Pal, mono, sans};
 use crate::gate::{Nav, State};
-use crate::{copy, format, icons, keys};
+use crate::{actions, copy, format, icons, keys};
 
 /// The collapsed strip.
 const STRIP: f32 = 56.0;
@@ -70,6 +70,7 @@ fn panel(s: &State, p: &Pal, active: usize, open: bool, floating: bool) -> El {
             .role("switch")
             .checked(s.own.nav_pinned)
             .label(copy::KEEP_OPEN)
+            .on_press(actions::toggle_pin)
             .border_sides([1.0, 0.0, 0.0, 0.0], p.line_soft)
             .child(icon(&icons::PIN, 16.0).color(p.text2))
             .child(text(copy::KEEP_OPEN).font(sans(13.0, 400.0)).color(p.text2))
@@ -101,7 +102,7 @@ fn item(s: &State, p: &Pal, nav: Nav, glyph: &'static Icon, label: &str, n: usiz
         .checked(on)
         .label(label.to_string())
         .help(copy::nav_tooltip(label, n))
-        .on_press(move |s: &mut State| s.nav = nav)
+        .on_press(move |s: &mut State| actions::go(s, nav))
         .child(mark);
     r = if on { r.fill(theme::label_paper()).border(1.0, theme::label_ink().alpha(0.18)) } else { r.hover(p.raised) };
     if open {

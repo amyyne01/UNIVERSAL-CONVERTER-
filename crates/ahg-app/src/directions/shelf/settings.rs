@@ -6,22 +6,22 @@
 //! `settings_spec::sections`, so the wording is `copy::settings` word for word
 //! and the values, locks and dimming are the spec's. The controls below are
 //! shared with The collection, which wears this look.
-use rune::{Color, El, Icon, ScrollSpec, col, el, icon, row, text};
+use rune::{Color, El, Icon, ScrollSpec, Tx, col, el, icon, row, text};
 use serde_json::Value;
 
 use super::parts::{app_version, danger_button, ghost, text_of};
 use super::theme::{self, Pal, mono, sans, serif};
 use crate::copy::{found, settings as w};
-use crate::gate::{self, Confirm, State};
+use crate::gate::{self, Confirm, Overlay, State};
 use crate::settings_spec::{self, Kind, Opt, Row, Section};
-use crate::{copy, icons, keys, palette};
+use crate::{actions, copy, icons, keys, palette};
 
 /// The margin that holds each section's name.
 const MARGIN: f32 = 248.0;
 /// A select's or a field's width in a row.
 const CONTROL: f32 = 200.0;
-// TODO(shared): keys::SEE_PLANS, the Plan row's "See plans" on Basic.
-const SEE_PLANS: &str = "see-plans";
+/// The values of `theme`, in the order of `w::THEMES`.
+const THEME_IDS: [&str; 3] = ["light", "dark", "system"];
 
 pub fn view(s: &State, p: &Pal) -> El {
     let head = row()
@@ -149,18 +149,29 @@ fn lock(ink: Color) -> El {
 fn control(s: &State, p: &Pal, r: &Row) -> El {
     let invalid = r.key.is_some_and(|k| s.invalid.contains(k));
     let c = match &r.kind {
-        Kind::Toggle => toggle(p, r.label, r.value.as_bool().unwrap_or(false)),
+        Kind::Toggle => {
+            let on = r.value.as_bool().unwrap_or(false);
+            let switch = toggle(p, r.label, on);
+            // TODO(shared): a locked row's tap should say what Premium adds, and `holdUnconfirmed` is not a config key
+            // (`Core::set_hold_unconfirmed`); no action takes either, so those two rows stay unwired.
+            match r.key {
+                Some(key) if r.lock.is_none() && key != "holdUnconfirmed" => {
+                    switch.on_press(move |s: &mut State| _ = actions::set_setting(s, key, Value::Bool(!on)))
+                }
+                _ => switch,
+            }
+        }
         Kind::Select(options) => select(p, r.label, &chosen(options, &r.value)).w(CONTROL),
         Kind::Text => input(p, r.label, &text_of(&r.value), r.placeholder.unwrap_or_default(), invalid).w(CONTROL),
         Kind::Time => input(p, r.label, &text_of(&r.value), "", invalid).w(96.0),
         Kind::Days => days(p, &r.value),
         Kind::Theme => theme_switch(p, &r.value),
         Kind::Palette => swatches(s, p),
-        Kind::Layout => row()
-            .gap(12.0)
-            .center_y()
-            .child(text(gate::PRESETS[gate::preset(s)].0).font(sans(13.0, 400.0)).color(p.text2))
-            .child(ghost(p, keys::LAYOUT_CHOOSE, None, w::LAYOUT_CHOOSE, p.text).on_press(|s: &mut State| s.picker = true)),
+        Kind::Layout => {
+            row().gap(12.0).center_y().child(text(gate::PRESETS[gate::preset(s)].0).font(sans(13.0, 400.0)).color(p.text2)).child(
+                ghost(p, keys::LAYOUT_CHOOSE, None, w::LAYOUT_CHOOSE, p.text).on_press(|s: &mut State| actions::open(s, Overlay::Picker)),
+            )
+        }
         Kind::Status => status(p, r),
         Kind::Folder | Kind::Danger => el(),
     };
@@ -190,6 +201,7 @@ fn chosen(options: &[Opt], value: &Value) -> String {
 }
 
 /// A select showing its value, with a caret.
+// TODO(shared): choosing an option needs the open select in `State` and an action that writes the option (`set_setting`).
 fn select(p: &Pal, label: &str, value: &str) -> El {
     row()
         .h(32.0)
@@ -208,6 +220,7 @@ fn select(p: &Pal, label: &str, value: &str) -> El {
 }
 
 /// A typed value in the figures face, or its placeholder, muted; a refused one edged in red.
+// TODO(shared): a `TextEdit` per setting key in `State`, committed through `set_setting`; none exists yet.
 fn input(p: &Pal, label: &str, value: &str, placeholder: &str, invalid: bool) -> El {
     let (shown, ink) = if value.is_empty() { (placeholder, p.muted) } else { (value, p.text) };
     row()
@@ -232,6 +245,7 @@ fn days(p: &Pal, value: &Value) -> El {
         let on = chosen.contains(&(i as u64));
         days = days.child(
             el().key(keys::day(i))
+                .on_press(move |s: &mut State| actions::toggle_day(s, i as u8))
                 .size(32.0, 28.0)
                 .center()
                 .radius(8.0)
@@ -248,13 +262,15 @@ fn days(p: &Pal, value: &Value) -> El {
 }
 
 fn theme_switch(p: &Pal, value: &Value) -> El {
-    let chosen = ["light", "dark", "system"].iter().position(|t| *t == text_of(value)).unwrap_or(2);
+    let chosen = THEME_IDS.iter().position(|t| *t == text_of(value)).unwrap_or(2);
     let mut theme =
         row().h(32.0).padding(4.0).gap(4.0).radius(8.0).fill(p.sunk).border(1.0, p.line_soft).role("radiogroup").label(w::THEME.0);
     for (i, name) in w::THEMES.into_iter().enumerate() {
         let on = i == chosen;
         theme = theme.child(
-            el().h(24.0)
+            el().key(keys::theme(i))
+                .on_press_tx(move |s: &mut State, tx: &mut Tx| actions::set_theme(s, THEME_IDS[i], tx))
+                .h(24.0)
                 .px(12.0)
                 .center()
                 .radius(4.0)
@@ -277,6 +293,7 @@ fn swatches(s: &State, p: &Pal) -> El {
         let on = i == s.palette;
         swatches = swatches.child(
             el().key(keys::palette(i))
+                .on_press_tx(move |s: &mut State, tx: &mut Tx| actions::set_palette(s, i, tx))
                 .size(24.0, 24.0)
                 .radius(12.0)
                 .center()
@@ -316,9 +333,18 @@ fn status(p: &Pal, r: &Row) -> El {
             w::ENGINE_CHECK => (keys::CHECK_ENGINE, Some(&icons::REFRESH)),
             w::SHOW_SHORTCUTS => (keys::SHOW_SHORTCUTS, None),
             w::GET_SUPPORT => (keys::GET_SUPPORT, Some(&icons::EXTERNAL)),
-            _ => (SEE_PLANS, None),
+            _ => (keys::SEE_PLANS, None),
         };
-        c = c.child(ghost(p, key, glyph, b, p.text));
+        let button = ghost(p, key, glyph, b, p.text);
+        c = c.child(match key {
+            keys::IMPORT_COOKIES => button.on_press_tx(actions::import_cookies),
+            keys::CHECK_UPDATE => button.on_press(actions::check_update),
+            keys::CHECK_ENGINE => button.on_press(actions::check_engine),
+            keys::SHOW_SHORTCUTS => button.on_press(actions::show_shortcuts),
+            keys::GET_SUPPORT => button.on_press_tx(actions::get_support),
+            // TODO(shared): `actions::see_plans` (the plans sheet); no action opens it yet.
+            _ => button,
+        });
     }
     c
 }
@@ -343,7 +369,7 @@ pub(crate) fn destination(p: &Pal, r: &Row) -> El {
                 .child(text(format!("{parent}\\")).font(mono(13.0, 400.0)).color(p.muted).single_line().truncate_head().shrink())
                 .child(text(leaf.to_string()).font(mono(13.0, 500.0)).color(p.text).single_line()),
         )
-        .child(ghost(p, keys::CHANGE_FOLDER, None, r.button.unwrap_or(w::CHANGE), p.text))
+        .child(ghost(p, keys::CHANGE_FOLDER, None, r.button.unwrap_or(w::CHANGE), p.text).on_press_tx(actions::choose_folder))
 }
 
 /// The three download defaults side by side, each with its name above it.
@@ -383,14 +409,20 @@ fn danger(s: &State, p: &Pal, r: &Row) -> El {
         .child(text(desc).font(sans(12.0, 400.0)).color(p.text2).wrap());
     let l = row().key(keys::arm(which)).w_full().min_h(56.0).py(12.0).gap(24.0).center_y().child(words);
     match r.armed {
-        Some((_, confirm)) if armed => {
-            l.child(row().gap(8.0).center_y().child(ghost(p, keys::CONFIRM_NO, None, w::CANCEL, p.text)).child(danger_button(
-                p,
-                keys::CONFIRM_YES,
-                confirm,
-            )))
-        }
-        _ => l.hover(p.soft(p.error)).focusable(true).role("button").label(r.label).child(icon(&icons::CARET_RIGHT, 16.0).color(p.muted)),
+        Some((_, confirm)) if armed => l.child(
+            row()
+                .gap(8.0)
+                .center_y()
+                .child(ghost(p, keys::CONFIRM_NO, None, w::CANCEL, p.text).on_press(actions::disarm))
+                .child(danger_button(p, keys::CONFIRM_YES, confirm).on_press(actions::confirm)),
+        ),
+        _ => l
+            .hover(p.soft(p.error))
+            .focusable(true)
+            .role("button")
+            .label(r.label)
+            .on_press(move |s: &mut State| actions::arm(s, which))
+            .child(icon(&icons::CARET_RIGHT, 16.0).color(p.muted)),
     }
 }
 

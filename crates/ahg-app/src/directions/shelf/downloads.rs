@@ -2,8 +2,9 @@
 //! record stands beside the sleeve, its rim filling; once it is done the record is back inside
 //! and the row reads as a file you own: its name and where it is.
 use ahg_engine::types::{DownloadStatus as St, DownloadTask, ErrorCode};
-use rune::{Color, El, Icon, ScrollSpec, col, el, icon, row, text};
+use rune::{Color, El, Icon, ScrollSpec, col, el, icon, row, text, text_input};
 
+use super::handlers;
 use super::parts::{self, Disc, danger_button, ghost, icon_button, primary, run, run_mono, runs};
 use super::theme::{Pal, mono, sans, serif};
 use crate::gate::{Confirm, Filter, Nav, State};
@@ -40,8 +41,8 @@ pub(crate) fn armed(p: &Pal, aria: &str, question: &str) -> El {
         .role("group")
         .label(aria)
         .child(text(question).font(sans(13.0, 500.0)).color(p.text).single_line().mr(4.0))
-        .child(ghost(p, keys::CONFIRM_NO, None, copy::DL_CONFIRM_CANCEL, p.text))
-        .child(danger_button(p, keys::CONFIRM_YES, copy::DL_CONFIRM_YES))
+        .child(ghost(p, keys::CONFIRM_NO, None, copy::DL_CONFIRM_CANCEL, p.text).on_press(actions::disarm))
+        .child(danger_button(p, keys::CONFIRM_YES, copy::DL_CONFIRM_YES).on_press(actions::confirm))
 }
 
 /// A quiet text button, no edge.
@@ -69,15 +70,17 @@ pub(crate) fn selection(s: &State, p: &Pal) -> El {
     let remove = if s.confirm == Some(Confirm::Remove) {
         armed(p, copy::DL_REMOVE_CONFIRM_ARIA, &copy::remove_confirm(finished))
     } else {
-        off(ghost(p, keys::arm(Confirm::Remove), Some(&icons::REMOVE), copy::DL_SELECTION_REMOVE, p.text), finished > 0)
+        let arm = ghost(p, keys::arm(Confirm::Remove), Some(&icons::REMOVE), copy::DL_SELECTION_REMOVE, p.text);
+        off(arm.on_press(|s: &mut State| actions::arm(s, Confirm::Remove)), finished > 0)
     };
     row()
         .key("selection")
         .gap(8.0)
         .center_y()
         .child(text(copy::selected_count(s.selected.len())).font(mono(12.0, 500.0)).color(p.text).single_line().mr(4.0))
-        .child(off(ghost(p, keys::CANCEL_SELECTED, None, copy::DL_SELECTION_CANCEL, p.text), active))
+        .child(off(ghost(p, keys::CANCEL_SELECTED, None, copy::DL_SELECTION_CANCEL, p.text).on_press(actions::cancel_selected), active))
         .child(remove)
+        // TODO(shared): `actions::clear_selection` (nothing empties `State.selected` but a select-all on a full selection).
         .child(plain(p, keys::CLEAR_SELECTION, copy::DL_SELECTION_CLEAR))
 }
 
@@ -86,14 +89,25 @@ pub(crate) fn select_all(s: &State, p: &Pal) -> El {
     let shown: Vec<&DownloadTask> = actions::visible(s).collect();
     let ticked = shown.iter().filter(|t| s.selected.contains(&t.task_id)).count();
     let all = !shown.is_empty() && ticked == shown.len();
-    parts::checkbox(p, keys::SELECT_ALL.into(), copy::DL_SELECT_ALL_ARIA, all, ticked > 0 && !all)
+    parts::checkbox(p, keys::SELECT_ALL.into(), copy::DL_SELECT_ALL_ARIA, all, ticked > 0 && !all).on_press(actions::toggle_select_all)
 }
 
-/// The search box: what is typed, or the placeholder.
+/// The search box's field, bound to `State.query`; the placeholder shows while it is empty.
 pub(crate) fn search_text(s: &State, p: &Pal) -> El {
-    let typed = s.query.text.as_str();
-    let (shown, ink) = if typed.is_empty() { (copy::DL_SEARCH_PLACEHOLDER, p.muted) } else { (typed, p.text) };
-    text(shown).font(sans(13.0, 400.0)).color(ink).single_line().truncate().shrink()
+    let input = text_input(&s.query, sans(13.0, 400.0))
+        .key(keys::DOWNLOADS_SEARCH)
+        .label(copy::DL_SEARCH_ARIA)
+        .color(p.text)
+        .single_line()
+        .w_full()
+        .on_edit(|s: &mut State| &mut s.query);
+    let mut field = el().grow(1.0).min_w(0.0);
+    // The placeholder is drawn as the plain text it was (an input's own sits half a point lower), under the input.
+    if s.query.text.is_empty() {
+        field = field
+            .child(text(copy::DL_SEARCH_PLACEHOLDER).font(sans(13.0, 400.0)).color(p.muted).single_line().truncate().absolute(0.0, 0.0));
+    }
+    field.child(input)
 }
 
 /// The filter and the search show nothing although downloads exist: why, and the way back.
@@ -106,8 +120,9 @@ pub(crate) fn filtered_empty(s: &State, p: &Pal, sleeve: f32) -> El {
         // Electron's wording for a search that matches nothing under All (CONTENT.md 5).
         Filter::All => (&icons::CLOCK, copy::EMPTY_FILTER_FAILED),
     };
-    // TODO(shared): keys::SHOW_ALL, the filtered-empty state's "Show all N".
-    let show_all = ghost(p, "show-all", None, &copy::show_all(total), p.text);
+    // TODO(shared): `actions::show_all`, which also empties the search; the filter alone is put back here.
+    let show_all =
+        ghost(p, keys::SHOW_ALL, None, &copy::show_all(total), p.text).on_press(|s: &mut State| actions::set_filter(s, Filter::All));
     empty_shape(p, sleeve, glyph, title, &copy::empty_filter_body(total), show_all)
 }
 
@@ -182,7 +197,9 @@ fn header(s: &State, p: &Pal) -> El {
 
     let mut right = row().grow(1.0).gap(8.0).center_y().justify_end();
     if tasks.iter().any(|t| t.progress.status == St::Failed && !format::is_permanent(t.error_code)) {
-        right = right.child(ghost(p, keys::RETRY_ALL_FAILED, Some(&icons::RETRY), copy::DL_RETRY_ALL_FAILED, p.text));
+        right = right.child(
+            ghost(p, keys::RETRY_ALL_FAILED, Some(&icons::RETRY), copy::DL_RETRY_ALL_FAILED, p.text).on_press(actions::retry_all_failed),
+        );
     }
     let done = st(&|s| s == St::Done);
     if done > 0 {
@@ -190,17 +207,21 @@ fn header(s: &State, p: &Pal) -> El {
             armed(p, copy::DL_CLEAR_CONFIRM_ARIA, &copy::clear_confirm(done))
         } else {
             ghost(p, keys::arm(Confirm::Clear), Some(&icons::REMOVE), copy::DL_CLEAR_COMPLETED, p.text)
+                .on_press(|s: &mut State| actions::arm(s, Confirm::Clear))
         });
     }
     if any_paused || st(&|s| matches!(s, St::Queued | St::FetchingInfo | St::Downloading)) > 0 {
-        right = right.child(if all_paused {
-            ghost(p, keys::PAUSE_ALL, Some(&icons::PLAY), copy::DL_RESUME_ALL, p.accent)
-        } else {
-            ghost(p, keys::PAUSE_ALL, Some(&icons::PAUSE), copy::DL_PAUSE_ALL, p.text)
-        });
+        right = right.child(
+            if all_paused {
+                ghost(p, keys::PAUSE_ALL, Some(&icons::PLAY), copy::DL_RESUME_ALL, p.accent)
+            } else {
+                ghost(p, keys::PAUSE_ALL, Some(&icons::PAUSE), copy::DL_PAUSE_ALL, p.text)
+            }
+            .on_press(actions::pause_or_resume_all),
+        );
     }
     if active > 0 {
-        right = right.child(ghost(p, keys::CANCEL_ALL, Some(&icons::CANCEL), copy::DL_CANCEL_ALL, p.text));
+        right = right.child(ghost(p, keys::CANCEL_ALL, Some(&icons::CANCEL), copy::DL_CANCEL_ALL, p.text).on_press(actions::cancel_all));
     }
     row().w_full().gap(24.0).items_end().child(left).child(right)
 }
@@ -233,13 +254,13 @@ fn strip(s: &State, p: &Pal) -> El {
             .focusable(true)
             .role("radio")
             .checked(on)
+            .on_press(move |s: &mut State| actions::set_filter(s, filter))
             .child(text(label).font(sans(13.0, if on { 500.0 } else { 400.0 })).color(if on { p.text } else { p.text2 }))
             .child(text(count.to_string()).font(mono(12.0, 400.0)).color(p.muted));
         seg = if on { seg.fill(p.raised).border(1.0, p.line_soft) } else { seg.hover(p.raised.alpha(0.6)) };
         group = group.child(seg);
     }
     let search = row()
-        .key(keys::DOWNLOADS_SEARCH)
         .w(240.0)
         .h(32.0)
         .px(12.0)
@@ -281,8 +302,11 @@ fn banner(p: &Pal, n: usize) -> El {
             .single_line(),
         )
         .child(el().grow(1.0))
-        .child(primary(p, keys::RESUME_INTERRUPTED, Some(&icons::PLAY), copy::DL_INTERRUPTED_RESUME))
-        .child(ghost(p, keys::DISCARD_INTERRUPTED, Some(&icons::REMOVE), copy::DL_INTERRUPTED_DISCARD, p.text))
+        .child(primary(p, keys::RESUME_INTERRUPTED, Some(&icons::PLAY), copy::DL_INTERRUPTED_RESUME).on_press(actions::resume_interrupted))
+        .child(
+            ghost(p, keys::DISCARD_INTERRUPTED, Some(&icons::REMOVE), copy::DL_INTERRUPTED_DISCARD, p.text)
+                .on_press(actions::discard_interrupted),
+        )
 }
 
 // ── The list ────────────────────────────────────────────────────────────────
@@ -392,7 +416,7 @@ fn group_header(p: &Pal, key: &str, name: &str, count: usize, paused: bool, tota
 }
 
 fn empty_row(p: &Pal) -> El {
-    let paste = ghost(p, "paste-a-link", None, copy::EMPTY_NONE_ACTION, p.text).on_press(|s: &mut State| s.nav = Nav::Home);
+    let paste = ghost(p, "paste-a-link", None, copy::EMPTY_NONE_ACTION, p.text).on_press(|s: &mut State| actions::go(s, Nav::Home));
     empty_shape(p, SLEEVE, &icons::DOWNLOAD, copy::EMPTY_NONE_TITLE, copy::EMPTY_NONE_BODY, paste)
 }
 
@@ -431,6 +455,7 @@ fn task_row(s: &State, p: &Pal, t: &DownloadTask, grip: bool, do_next: bool) -> 
     let label = format::label(t);
     let failed = status == St::Failed;
     let selected = s.selected.contains(id);
+    let pick = id.clone();
     let finished = matches!(status, St::Done | St::Cancelled);
     let reason = format::reason(t);
 
@@ -530,7 +555,8 @@ fn task_row(s: &State, p: &Pal, t: &DownloadTask, grip: bool, do_next: bool) -> 
     let kind = t.error_code.unwrap_or(ErrorCode::Unknown);
     let mut actions = row().min_w(100.0).gap(4.0).center_y().justify_end();
     let mut act = |which: RowAct, glyph: &'static Icon, name: &'static str, ink: Color| {
-        actions = std::mem::replace(&mut actions, row()).child(icon_button(p, keys::row_action(which, id), glyph, name, ink));
+        let button = icon_button(p, keys::row_action(which, id), glyph, name, ink).on_press_tx(handlers::row_act(which, id));
+        actions = std::mem::replace(&mut actions, row()).child(button);
     };
     if do_next {
         act(RowAct::Promote, &icons::TO_FRONT, copy::ACT_DO_THIS_NEXT, p.text2);
@@ -567,8 +593,8 @@ fn task_row(s: &State, p: &Pal, t: &DownloadTask, grip: bool, do_next: bool) -> 
         act(RowAct::ShowInFolder, &icons::FOLDER, copy::ACT_SHOW_IN_FOLDER, p.text2);
     }
     if matches!(status, St::Done | St::Failed | St::Cancelled) {
-        actions = actions
-            .child(icon_button(p, keys::row_action(RowAct::Remove, id), &icons::REMOVE, copy::ACT_REMOVE, p.muted).group_opacity(0.0, 1.0));
+        let remove = icon_button(p, keys::row_action(RowAct::Remove, id), &icons::REMOVE, copy::ACT_REMOVE, p.muted);
+        actions = actions.child(remove.on_press_tx(handlers::row_act(RowAct::Remove, id)).group_opacity(0.0, 1.0));
     }
 
     let mut r = row()
@@ -584,7 +610,10 @@ fn task_row(s: &State, p: &Pal, t: &DownloadTask, grip: bool, do_next: bool) -> 
         .hover_group()
         .hover(p.raised.alpha(0.35))
         .child(grip_cell)
-        .child(parts::checkbox(p, keys::row_select(id), copy::ROW_SELECT_ARIA, selected, false))
+        .child(
+            parts::checkbox(p, keys::row_select(id), copy::ROW_SELECT_ARIA, selected, false)
+                .on_press(move |s: &mut State| actions::toggle_select(s, &pick)),
+        )
         .child(slot)
         .child(block)
         .child(state)

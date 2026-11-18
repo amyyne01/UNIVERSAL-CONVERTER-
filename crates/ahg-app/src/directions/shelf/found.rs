@@ -7,16 +7,17 @@
 //! the format the file will have, so changing the choice re-prints it. A look-up is a blank
 //! sleeve with its record beside it, the waiting ring on the rim.
 //!
-//! Drawing only: the controls carry their keys from `crate::keys`; handlers come in step 54.
+//! The controls carry their keys from `crate::keys` and call `crate::actions` (`super::handlers` routes the choice).
 use ahg_engine::tier::{self, BASIC_LIMITS, Plan, is_premium_format};
 use ahg_engine::types::{AUDIO_ONLY_SOURCES, LOSSLESS_FORMATS, MediaMetadata, Playlist, SearchResult, SourcePlatform as Src, VideoQuality};
 use ahg_engine::url_detector::detect_url;
 use rune::{Color, Cursor, El, Icon, ScrollSpec, col, el, icon, row, spacer, text};
 
+use super::handlers;
 use super::parts::{self, Run, ghost, icon_button, keycap, primary, run, run_mono, runs};
 use super::theme::{self, Pal, mono, sans};
 use crate::copy::{self, found as f};
-use crate::gate::{Band, Card, Found, Matched, State};
+use crate::gate::{Band, Card, Choice, Found, Matched, State};
 use crate::{actions, format, icons, keys, ring};
 
 /// The video qualities, in the order of `f::VIDEO_QUALITIES`.
@@ -29,12 +30,6 @@ const SOURCES: [(Src, &str); 3] =
     [(Src::Youtube, copy::SEARCH_BAND_YOUTUBE), (Src::Soundcloud, copy::SEARCH_BAND_SOUNDCLOUD), (Src::Spotify, copy::SEARCH_BAND_SPOTIFY)];
 /// The format a video arrives in, as the spine label prints it.
 const VIDEO_FORMAT: &str = "mp4";
-// TODO(shared): keys::FOUND_RETRY, the failed look-up's Try again (and the all-failed search's).
-const KEY_RETRY: &str = "found-retry";
-// TODO(shared): keys::CHOICE_FORMAT, the playlist's format drop-down (the chips have `keys::choice_format`).
-const KEY_FORMAT: &str = "choice-format";
-// TODO(shared): keys::RESULTS_CLEAR, the search selection's Clear.
-const KEY_RESULTS_CLEAR: &str = "results-clear";
 
 /// The panel, or `None` while the field has found nothing.
 pub(crate) fn view(s: &State, p: &Pal) -> Option<El> {
@@ -106,7 +101,7 @@ fn head(p: &Pal, lead: El, words: El) -> El {
         .child(words.single_line().truncate().min_w(0.0).shrink())
         .child(spacer())
         .child(keycap(p, copy::KEYCAP_ESC))
-        .child(icon_button(p, keys::FOUND_CLOSE.into(), &icons::CLOSE, copy::NOTICE_DISMISS, p.text2))
+        .child(icon_button(p, keys::FOUND_CLOSE.into(), &icons::CLOSE, copy::NOTICE_DISMISS, p.text2).on_press(actions::dismiss_found))
 }
 
 /// The foot: the outcome on the left, the one ink button on the right.
@@ -124,7 +119,7 @@ fn foot(p: &Pal, left: El, right: El) -> El {
 }
 
 fn download(p: &Pal, words: &str) -> El {
-    primary(p, keys::FOUND_DOWNLOAD, Some(&icons::DOWNLOAD), words).h(40.0).px(16.0)
+    primary(p, keys::FOUND_DOWNLOAD, Some(&icons::DOWNLOAD), words).h(40.0).px(16.0).on_press(actions::download_found)
 }
 
 /// A Basic limit just met, under the header, with the way to lift it. Raised, not red.
@@ -143,8 +138,8 @@ fn notice(p: &Pal, words: &str) -> El {
         .role("status")
         .child(lock(p.text2))
         .child(text(words).font(sans(13.0, 400.0)).color(p.text).wrap().grow(1.0).min_w(0.0))
-        .child(ghost(p, keys::NOTICE_ACTION, None, f::SEE_PLANS, p.text))
-        .child(icon_button(p, keys::NOTICE_DISMISS.into(), &icons::CLOSE, copy::NOTICE_DISMISS, p.text2))
+        .child(ghost(p, keys::NOTICE_ACTION, None, f::SEE_PLANS, p.text).on_press_tx(actions::notice_action))
+        .child(icon_button(p, keys::NOTICE_DISMISS.into(), &icons::CLOSE, copy::NOTICE_DISMISS, p.text2).on_press(actions::dismiss_notice))
 }
 
 /// A skeleton block: the shape of something still coming.
@@ -215,6 +210,7 @@ fn readout(p: &Pal, outcome: String) -> El {
 /// An audio format. A locked one (Basic) stays pressable, so choosing it can say what Premium
 /// adds: a lock before its name and a dashed edge, in ink, never the accent.
 fn chip(p: &Pal, value: &str, name: &str, on: bool, locked: bool) -> El {
+    let pick = value.to_owned();
     let mut c = row()
         .key(keys::choice_format(value))
         .h(32.0)
@@ -226,7 +222,8 @@ fn chip(p: &Pal, value: &str, name: &str, on: bool, locked: bool) -> El {
         .focusable(true)
         .role("radio")
         .checked(on)
-        .cursor(Cursor::Pointer);
+        .cursor(Cursor::Pointer)
+        .on_press(handlers::choose(move |c: &mut Choice| c.format = pick.clone()));
     c = if on { c.fill(p.bg) } else { c.hover(p.raised) };
     if locked {
         c = c.pl(8.0).border_dash(3.0, 3.0).label(f::lock_chip_aria(name)).help(f::lock_chip_title(name)).child(lock(p.text2));
@@ -269,7 +266,7 @@ fn value(p: &Pal, words: &str) -> El {
 
 /// Video or Audio, as two halves of one control.
 fn capsule(p: &Pal, video: bool) -> El {
-    let side = |key: &'static str, glyph_: &'static Icon, words: &'static str, on: bool| {
+    let side = |key: &'static str, glyph_: &'static Icon, words: &'static str, on: bool, to_video: bool| {
         let c = row()
             .key(key)
             .h(24.0)
@@ -282,6 +279,7 @@ fn capsule(p: &Pal, video: bool) -> El {
             .role("radio")
             .checked(on)
             .label(words)
+            .on_press(handlers::choose(move |c: &mut Choice| c.video = to_video))
             .child(icon(glyph_, 16.0).color(if on { p.text } else { p.muted }))
             .child(text(words).font(sans(13.0, if on { 500.0 } else { 400.0 })).color(if on { p.text } else { p.text2 }));
         if on { c.fill(p.card).border(1.0, p.line) } else { c.hover(p.bg) }
@@ -292,8 +290,8 @@ fn capsule(p: &Pal, video: bool) -> El {
         .radius(8.0)
         .fill(p.raised)
         .role("radiogroup")
-        .child(side(keys::CHOICE_VIDEO, &icons::VIDEO, f::MEDIA_VIDEO, video))
-        .child(side(keys::CHOICE_AUDIO, &icons::MUSIC, f::MEDIA_AUDIO, !video))
+        .child(side(keys::CHOICE_VIDEO, &icons::VIDEO, f::MEDIA_VIDEO, video, true))
+        .child(side(keys::CHOICE_AUDIO, &icons::MUSIC, f::MEDIA_AUDIO, !video, false))
 }
 
 /// What Basic includes here, with the way to see the plans: the positive side of a lock.
@@ -304,6 +302,7 @@ fn basic_line(p: &Pal, words: &str) -> El {
         .flex_wrap()
         .child(lock(p.muted))
         .child(text(words).font(sans(13.0, 400.0)).color(p.text2))
+        // TODO(shared): `actions::see_plans` (the plans sheet); no action opens it yet.
         .child(ghost(p, keys::FOUND_SEE_PLANS, None, f::SEE_PLANS, p.text).ml(4.0))
 }
 
@@ -392,7 +391,7 @@ fn failed(p: &Pal, why: &str, input: &str) -> El {
                     .center_y()
                     .child(text(input).font(mono(12.0, 400.0)).color(p.muted).single_line().truncate().min_w(0.0).shrink())
                     .child(spacer())
-                    .child(ghost(p, KEY_RETRY, Some(&icons::RETRY), f::ERROR_TRY_AGAIN, p.text)),
+                    .child(ghost(p, keys::FOUND_RETRY, Some(&icons::RETRY), f::ERROR_TRY_AGAIN, p.text).on_press_tx(actions::submit)),
             ),
         );
     // No ring after a dead look-up: one on the rim would read as still waiting.
@@ -468,24 +467,6 @@ fn single(s: &State, p: &Pal, m: &MediaMetadata, matched: Option<&str>) -> (El, 
 
 // ── A short-form post ───────────────────────────────────────────────────────
 
-// TODO(shared): format::short_count (`999`, `1.2K`, `4.8M`, `1.5B`, a trailing `.0` dropped; CONTENT-FOUND.md 7).
-fn short_count(n: f64) -> String {
-    let (v, unit) = [(1e9, "B"), (1e6, "M"), (1e3, "K")].into_iter().find(|(at, _)| n >= *at).map_or((n, ""), |(at, u)| (n / at, u));
-    let figure = if unit.is_empty() { format!("{}", v.round()) } else { format!("{v:.1}") };
-    format!("{}{unit}", figure.strip_suffix(".0").unwrap_or(&figure))
-}
-
-// TODO(shared): format::short_date (`Mar 9, 2024` from yt-dlp's `YYYYMMDD`; CONTENT-FOUND.md 7).
-fn short_date(ymd: &str) -> Option<String> {
-    if ymd.len() != 8 || !ymd.bytes().all(|b| b.is_ascii_digit()) {
-        return None;
-    }
-    let month = format::month_name(&format!("{}-{}", &ymd[..4], &ymd[4..6]));
-    let day: u32 = ymd[6..].parse().ok()?;
-    month.chars().next().filter(char::is_ascii_alphabetic)?;
-    Some(format!("{} {day}, {}", month.get(..3)?, &ymd[..4]))
-}
-
 fn short(s: &State, p: &Pal, m: &MediaMetadata, label: &str) -> (El, El) {
     let source = source_of(m);
     let video = s.choice.video;
@@ -513,9 +494,9 @@ fn short(s: &State, p: &Pal, m: &MediaMetadata, label: &str) -> (El, El) {
     let facts: Vec<String> = [
         Some(length).filter(|l| !l.is_empty()),
         m.width.zip(m.height).map(|(w, h)| f::short_size(w as u32, h as u32)),
-        m.view_count.map(|n| f::short_views(&short_count(n))),
-        m.like_count.map(|n| f::short_likes(&short_count(n))),
-        m.upload_date.as_deref().and_then(short_date),
+        m.view_count.map(|n| f::short_views(&format::short_count(n))),
+        m.like_count.map(|n| f::short_likes(&format::short_count(n))),
+        m.upload_date.as_deref().and_then(format::short_date),
     ]
     .into_iter()
     .flatten()
@@ -635,6 +616,7 @@ fn album(s: &State, p: &Pal, pl: &Playlist, matched: &[Matched], selected: &[boo
                 .cursor(Cursor::Pointer)
                 .focusable(true)
                 .role("button")
+                .on_press(actions::toggle_all_tracks)
                 .child(tick(p, all, true))
                 .child(text(if all { f::PLAYLIST_DESELECT_ALL } else { f::PLAYLIST_SELECT_ALL }).font(sans(13.0, 500.0)).color(p.text)),
         );
@@ -732,6 +714,9 @@ fn album(s: &State, p: &Pal, pl: &Playlist, matched: &[Matched], selected: &[boo
         .role("checkbox")
         .checked(on)
         .label(f::playlist_row_aria(&t.name, &t.artist, &length, capped));
+        if can {
+            r = r.on_press(move |s: &mut State| actions::toggle_track(s, i));
+        }
         if can && !fixed {
             r = r.cursor(Cursor::Pointer).hover(p.raised);
         }
@@ -765,7 +750,7 @@ fn album(s: &State, p: &Pal, pl: &Playlist, matched: &[Matched], selected: &[boo
     if let Some(full) = &folder {
         folder_pick = folder_pick.help(full.clone());
     }
-    let mut format_pick = select(p, KEY_FORMAT, f::PLAYLIST_FORMAT, f::PLAYLIST_FORMAT_ARIA, value(p, f::AUDIO_FORMATS[fi]), 96.0);
+    let mut format_pick = select(p, keys::CHOICE_FORMAT, f::PLAYLIST_FORMAT, f::PLAYLIST_FORMAT_ARIA, value(p, f::AUDIO_FORMATS[fi]), 96.0);
     let mut quality_pick =
         select(p, keys::CHOICE_AUDIO_QUALITY, f::PLAYLIST_QUALITY, f::PLAYLIST_QUALITY_ARIA, value(p, f::AUDIO_QUALITIES[ai]), 128.0);
     if basic {
@@ -813,7 +798,7 @@ fn search(s: &State, p: &Pal, query: &str, bands: &[Band; 3]) -> (El, El, Option
                 .role("alert")
                 .child(glyph(&icons::ALERT, p.error))
                 .child(text(copy::SEARCH_ALL_FAILED).font(sans(14.0, 400.0)).color(p.text).wrap().grow(1.0).min_w(0.0))
-                .child(ghost(p, KEY_RETRY, Some(&icons::RETRY), copy::SEARCH_TRY_AGAIN, p.text)),
+                .child(ghost(p, keys::FOUND_RETRY, Some(&icons::RETRY), copy::SEARCH_TRY_AGAIN, p.text).on_press_tx(actions::submit)),
         )
     } else if shown.iter().all(|i| matches!(bands[*i], Band::Empty)) {
         col()
@@ -834,7 +819,8 @@ fn search(s: &State, p: &Pal, query: &str, bands: &[Band; 3]) -> (El, El, Option
             p,
             row().gap(12.0).center_y().child(text(f::results_selected(picked)).font(sans(13.0, 500.0)).color(p.text)).child(ghost(
                 p,
-                KEY_RESULTS_CLEAR,
+                // TODO(shared): `actions::clear_picked` (nothing empties `State.picked` but ticking each row again).
+                keys::RESULTS_CLEAR,
                 None,
                 f::RESULTS_CLEAR,
                 p.text2,
@@ -889,13 +875,18 @@ fn band(s: &State, p: &Pal, i: usize, band: &Band) -> El {
                     .child(glyph(&icons::ALERT, p.error))
                     .child(text(copy::search_source_failed(name)).font(sans(13.0, 400.0)).color(p.text).wrap().min_w(0.0).shrink()),
             )
-            .child(ghost(p, &keys::band_retry(i), Some(&icons::RETRY), copy::SEARCH_RETRY, p.text).self_start()),
+            .child(
+                ghost(p, &keys::band_retry(i), Some(&icons::RETRY), copy::SEARCH_RETRY, p.text)
+                    .on_press(move |s: &mut State| actions::retry_band(s, i))
+                    .self_start(),
+            ),
         Band::Results(rs) => {
             let open = s.expanded[i];
             let mut c = rs.iter().take(if open { rs.len() } else { SHOWN }).fold(c, |c, r| c.child(result_row(s, p, r)));
             if rs.len() > SHOWN && !open {
                 c = c.child(
                     ghost(p, &keys::band_more(i), Some(&icons::CARET_DOWN), &copy::search_show_more(rs.len() - SHOWN), p.text2)
+                        .on_press(move |s: &mut State| actions::show_more(s, i))
                         .self_start()
                         .mt(8.0),
                 );
@@ -916,6 +907,7 @@ fn art_w(source: Src) -> f32 {
 
 fn result_row(s: &State, p: &Pal, r: &SearchResult) -> El {
     let on = s.picked.contains(&r.id);
+    let (row_id, tick_id) = (r.id.clone(), r.id.clone());
     let tint = p.source(r.source);
     let length = format::duration(r.duration);
     let mut sub = Vec::new();
@@ -945,7 +937,13 @@ fn result_row(s: &State, p: &Pal, r: &SearchResult) -> El {
         .focusable(true)
         .role("button")
         .label(copy::search_row_aria(&r.title, &r.uploader))
-        .child(tick(p, on, true).label(f::results_pick_aria(&r.title)))
+        .on_press(move |s: &mut State| actions::toggle_result(s, &row_id))
+        .child(
+            tick(p, on, true)
+                .key(keys::result_tick(&r.id))
+                .label(f::results_pick_aria(&r.title))
+                .on_press(move |s: &mut State| actions::toggle_result(s, &tick_id)),
+        )
         .child(art)
         .child(
             col()
@@ -960,19 +958,4 @@ fn result_row(s: &State, p: &Pal, r: &SearchResult) -> El {
         c = c.fill(p.soft(p.text));
     }
     c
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{short_count, short_date};
-
-    #[test]
-    fn counts_and_dates_read_as_the_old_poster_did() {
-        assert_eq!(short_count(999.0), "999");
-        assert_eq!(short_count(1_200.0), "1.2K");
-        assert_eq!(short_count(48_210.0), "48.2K");
-        assert_eq!(short_count(1_000_000.0), "1M");
-        assert_eq!(short_date("20240309").as_deref(), Some("Mar 9, 2024"));
-        assert_eq!(short_date("2024"), None);
-    }
 }

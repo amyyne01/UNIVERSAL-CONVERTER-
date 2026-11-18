@@ -2,20 +2,20 @@
 //! standing on a shelf.
 use ahg_engine::stats::DownloadStats;
 use ahg_engine::types::{DownloadStatus as St, DownloadTask};
-use rune::{Color, El, ScrollSpec, col, el, icon, row, text};
+use rune::{Color, El, ScrollSpec, col, el, icon, row, text, text_input};
 
 use super::parts::{self, Disc, keycap, run, run_mono, runs};
 use super::theme::{Pal, label_paper, mono, sans, serif, vinyl};
 use crate::format;
 use crate::gate::{Nav, State};
-use crate::{copy, icons, keys};
+use crate::{actions, copy, icons, keys};
 
 pub fn view(s: &State, p: &Pal, active: usize) -> El {
     let finished: Vec<&DownloadTask> = s.tasks.iter().filter(|t| t.progress.status == St::Done).collect();
     let counted = s.stats.as_ref().is_some_and(|st| st.current.files > 0.0 || st.previous.as_ref().is_some_and(|b| b.files > 0.0));
     let quiet = !counted && finished.is_empty() && active == 0;
 
-    let top = col().w_full().gap(16.0).child(headline(p, active)).child(field(p, &s.input)).child(status_line(s, p));
+    let top = col().w_full().gap(16.0).child(headline(p, active)).child(field(s, p)).child(status_line(s, p));
     // What the field found takes the page's place, under the field it came out of.
     if let Some(found) = super::found::view(s, p) {
         let page =
@@ -73,7 +73,7 @@ fn headline(p: &Pal, active: usize) -> El {
             .hover(p.raised)
             .focusable(true)
             .role("button")
-            .on_press(|s: &mut State| s.nav = Nav::Downloads)
+            .on_press(|s: &mut State| actions::go(s, Nav::Downloads))
             .child(el().size(8.0, 8.0).radius(4.0).fill(p.accent))
             .child(
                 runs(vec![run_mono(active.to_string(), p.text), run(copy::HOME_IN_FLIGHT_SUFFIX, p.text2)])
@@ -86,8 +86,7 @@ fn headline(p: &Pal, active: usize) -> El {
     r
 }
 
-fn field(p: &Pal, input: &str) -> El {
-    let (shown, ink) = if input.is_empty() { (copy::FIELD_PLACEHOLDER, p.muted) } else { (input, p.text) };
+fn field(s: &State, p: &Pal) -> El {
     let button = row()
         .key(keys::LOOK_UP)
         .h(48.0)
@@ -101,10 +100,10 @@ fn field(p: &Pal, input: &str) -> El {
         .focusable(true)
         .role("button")
         .label(copy::FIELD_BUTTON_LOOK_UP)
+        .on_press_tx(actions::submit)
         .child(text(copy::FIELD_BUTTON_LOOK_UP).font(sans(15.0, 500.0)).color(p.bg))
         .child(icon(&icons::FORWARD, 16.0).color(p.bg));
     row()
-        .key(keys::FIELD)
         .w_full()
         .h(64.0)
         .pl(24.0)
@@ -114,10 +113,20 @@ fn field(p: &Pal, input: &str) -> El {
         .radius(16.0)
         .fill(p.card)
         .border(1.0, p.control.alpha(0.55))
-        .role("textbox")
-        .label(copy::FIELD_ARIA)
         .child(icon(&icons::LINK, 16.0).color(p.muted))
-        .child(text(shown).font(sans(15.0, 400.0)).color(ink).grow(1.0).single_line().truncate())
+        .child(
+            text_input(&s.field, sans(15.0, 400.0))
+                .key(keys::FIELD)
+                .label(copy::FIELD_ARIA)
+                .color(p.text)
+                .placeholder(copy::FIELD_PLACEHOLDER, p.muted)
+                .single_line()
+                .grow(1.0)
+                .min_w(0.0)
+                .on_edit(|s: &mut State| &mut s.field)
+                .on_input_change(|s: &mut State, _| s.input = s.field.text.clone())
+                .on_submit(actions::submit),
+        )
         .child(button)
 }
 
@@ -150,7 +159,8 @@ fn status_line(s: &State, p: &Pal) -> El {
                     .ml(8.0)
                     .focusable(true)
                     .role("button")
-                    .label(copy::REST_CHANGE_ARIA),
+                    .label(copy::REST_CHANGE_ARIA)
+                    .on_press_tx(actions::choose_folder),
             );
     }
     let quiet = |t: &str| text(t).font(sans(13.0, 400.0)).color(p.muted).single_line();
@@ -374,7 +384,7 @@ fn shelf(s: &State, p: &Pal, finished: &[&DownloadTask]) -> El {
         .center_y()
         .focusable(true)
         .role("button")
-        .on_press(|s: &mut State| s.nav = Nav::Downloads)
+        .on_press(|s: &mut State| actions::go(s, Nav::Downloads))
         .child(text(copy::CELL_RECENT_VIEW_ALL).font(sans(13.0, 500.0)).color(p.text2))
         .child(icon(&icons::FORWARD, 16.0).color(p.text2));
     let gap = 28.0;
@@ -417,7 +427,7 @@ fn shelf(s: &State, p: &Pal, finished: &[&DownloadTask]) -> El {
             .focusable(true)
             .role("button")
             .label(copy::recent_details_aria(&title))
-            .on_press(|s: &mut State| s.nav = Nav::Downloads)
+            .on_press(|s: &mut State| actions::go(s, Nav::Downloads))
             .child(art);
         sleeves = sleeves.child(tile);
         captions = captions.child(caption);

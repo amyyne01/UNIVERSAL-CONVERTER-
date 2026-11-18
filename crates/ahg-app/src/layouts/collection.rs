@@ -33,15 +33,16 @@ mod nav;
 mod settings;
 
 use ahg_engine::types::{DownloadStatus as St, DownloadTask, ErrorCode, SourcePlatform};
-use rune::{Color, Cx, El, Icon, ScrollSpec, Span, col, el, icon, rich, row, text};
+use rune::{Color, Cx, El, Icon, ScrollSpec, Span, col, el, icon, rich, row, text, text_input};
 
 use crate::directions::shelf;
+use crate::directions::shelf::handlers;
 use crate::directions::shelf::parts::{self, Disc, run, run_mono, runs};
 use crate::directions::shelf::theme::{self, Pal, mono, sans, serif};
-use crate::gate::{Confirm, Nav, State};
+use crate::gate::{Confirm, Nav, Overlay, State};
 use crate::keys::{self, RowAct};
 use crate::ring::Pass;
-use crate::{copy, format, icons};
+use crate::{actions, copy, format, icons};
 
 /// The wall's side margin.
 const PAD: f32 = 32.0;
@@ -79,7 +80,6 @@ fn titlebar(s: &State, p: &Pal, leading: f32, trailing: f32) -> El {
     .font(sans(13.0, 400.0))
     .single_line();
     let add = row()
-        .key(keys::FIELD)
         .w(440.0)
         .h(32.0)
         .pl(12.0)
@@ -91,17 +91,19 @@ fn titlebar(s: &State, p: &Pal, leading: f32, trailing: f32) -> El {
         .border(1.0, p.line)
         .hover(p.raised)
         .no_window_drag()
-        .focusable(true)
-        .role("textbox")
-        .label(copy::FIELD_ARIA)
         .child(icon(&icons::LINK, 16.0).color(p.muted))
         .child(
-            text(if s.input.is_empty() { copy::FIELD_PLACEHOLDER } else { &s.input })
-                .font(sans(13.0, 400.0))
-                .color(if s.input.is_empty() { p.muted } else { p.text })
-                .grow(1.0)
+            text_input(&s.field, sans(13.0, 400.0))
+                .key(keys::FIELD)
+                .label(copy::FIELD_ARIA)
+                .color(p.text)
+                .placeholder(copy::FIELD_PLACEHOLDER, p.muted)
                 .single_line()
-                .truncate(),
+                .grow(1.0)
+                .min_w(0.0)
+                .on_edit(|s: &mut State| &mut s.field)
+                .on_input_change(|s: &mut State, _| s.input = s.field.text.clone())
+                .on_submit(actions::submit),
         )
         .child(keys(p, &[copy::KEY_CTRL, copy::REST_KEY_V]));
     let palette = row()
@@ -116,6 +118,7 @@ fn titlebar(s: &State, p: &Pal, leading: f32, trailing: f32) -> El {
         .role("button")
         .label(copy::PALETTE_ARIA)
         .help(copy::PALETTE_ARIA)
+        .on_press(|s: &mut State| actions::open(s, Overlay::Palette))
         .child(keys(p, &[copy::KEY_CTRL, copy::KEY_K]));
     row()
         .key("titlebar")
@@ -372,13 +375,11 @@ fn in_progress(s: &State, p: &Pal, tasks: &[&DownloadTask], alone: bool) -> El {
         actions = actions.child(interrupted_line(p, interrupted));
     }
     actions = actions.child(
-        row().gap(4.0).center_y().child(quiet(p, keys::PAUSE_ALL, Some(&icons::PAUSE), copy::DL_PAUSE_ALL, p.text2)).child(quiet(
-            p,
-            keys::CANCEL_ALL,
-            Some(&icons::CANCEL),
-            copy::DL_CANCEL_ALL,
-            p.text2,
-        )),
+        row()
+            .gap(4.0)
+            .center_y()
+            .child(quiet(p, keys::PAUSE_ALL, Some(&icons::PAUSE), copy::DL_PAUSE_ALL, p.text2).on_press(actions::pause_or_resume_all))
+            .child(quiet(p, keys::CANCEL_ALL, Some(&icons::CANCEL), copy::DL_CANCEL_ALL, p.text2).on_press(actions::cancel_all)),
     );
 
     // Arriving now leads, large; what waits stands smaller beside it.
@@ -419,7 +420,7 @@ fn needs_attention(s: &State, p: &Pal, tasks: &[&DownloadTask]) -> El {
             copy::GROUP_NEEDS_ATTENTION,
             tasks.len(),
             None,
-            quiet(p, keys::RETRY_ALL_FAILED, Some(&icons::RETRY), copy::DL_RETRY_ALL_FAILED, p.text2),
+            quiet(p, keys::RETRY_ALL_FAILED, Some(&icons::RETRY), copy::DL_RETRY_ALL_FAILED, p.text2).on_press(actions::retry_all_failed),
         ))
         .child(wall)
 }
@@ -436,7 +437,8 @@ fn completed(s: &State, p: &Pal, tasks: &[&DownloadTask], size: f32) -> El {
             copy::GROUP_COMPLETED,
             tasks.len(),
             None,
-            quiet(p, keys::arm(Confirm::Clear), Some(&icons::REMOVE), copy::DL_CLEAR_COMPLETED, p.text2),
+            quiet(p, keys::arm(Confirm::Clear), Some(&icons::REMOVE), copy::DL_CLEAR_COMPLETED, p.text2)
+                .on_press(|s: &mut State| actions::arm(s, Confirm::Clear)),
         ))
         .child(wall)
 }
@@ -563,7 +565,7 @@ fn trouble(p: &Pal, t: &DownloadTask) -> El {
             .single_line()
             .grow(1.0),
         )
-        .child(icon_button(p, keys::row_action(act, &t.task_id), glyph, label, p.text2));
+        .child(icon_button(p, keys::row_action(act, &t.task_id), glyph, label, p.text2).on_press_tx(handlers::row_act(act, &t.task_id)));
     let mut c = col().w_full().gap(4.0).mt(-4.0).child(state);
     if let Some(r) = format::reason(t) {
         c = c.child(text(r).font(sans(12.0, 400.0)).color(p.text2).wrap().max_lines(3).help(t.progress.error.clone()));
@@ -595,8 +597,8 @@ fn interrupted_line(p: &Pal, n: usize) -> El {
         .child(
             runs(vec![run_mono(n.to_string(), p.text), run(copy::interrupted_sentence(n), p.text2)]).font(sans(13.0, 400.0)).single_line(),
         )
-        .child(quiet(p, keys::RESUME_INTERRUPTED, None, copy::DL_INTERRUPTED_RESUME, p.text).ml(8.0))
-        .child(quiet(p, keys::DISCARD_INTERRUPTED, None, copy::DL_INTERRUPTED_DISCARD, p.text2))
+        .child(quiet(p, keys::RESUME_INTERRUPTED, None, copy::DL_INTERRUPTED_RESUME, p.text).on_press(actions::resume_interrupted).ml(8.0))
+        .child(quiet(p, keys::DISCARD_INTERRUPTED, None, copy::DL_INTERRUPTED_DISCARD, p.text2).on_press(actions::discard_interrupted))
 }
 
 /// The one action a troubled sleeve offers on the wall (the rest are in its notes).
@@ -654,23 +656,28 @@ fn notes(s: &State, p: &Pal, t: &DownloadTask) -> El {
     if let Some(r) = format::reason(t) {
         text_col = text_col.child(text(r).font(sans(13.0, 400.0)).color(p.error).wrap().mt(8.0));
     }
-    let actions = if pr.status == St::Done {
-        row()
-            .child(quiet(p, &keys::row_action(RowAct::OpenFile, &t.task_id), Some(&icons::EXTERNAL), copy::ACT_OPEN_FILE, p.text))
-            .child(quiet(p, &keys::row_action(RowAct::ShowInFolder, &t.task_id), Some(&icons::FOLDER), copy::ACT_SHOW_IN_FOLDER, p.text))
+    let id = &t.task_id;
+    let note_action = |act: RowAct, glyph: &'static Icon, label: &str, ink: Color| {
+        quiet(p, &keys::row_action(act, id), Some(glyph), label, ink).on_press_tx(handlers::row_act(act, id))
+    };
+    let buttons = if pr.status == St::Done {
+        row().child(note_action(RowAct::OpenFile, &icons::EXTERNAL, copy::ACT_OPEN_FILE, p.text)).child(note_action(
+            RowAct::ShowInFolder,
+            &icons::FOLDER,
+            copy::ACT_SHOW_IN_FOLDER,
+            p.text,
+        ))
     } else {
-        row().child(quiet(p, &keys::row_action(RowAct::Pause, &t.task_id), Some(&icons::PAUSE), copy::ACT_PAUSE, p.text)).child(quiet(
-            p,
-            &keys::row_action(RowAct::Cancel, &t.task_id),
-            Some(&icons::CANCEL),
+        row().child(note_action(RowAct::Pause, &icons::PAUSE, copy::ACT_PAUSE, p.text)).child(note_action(
+            RowAct::Cancel,
+            &icons::CANCEL,
             copy::ACT_CANCEL,
             p.text,
         ))
     };
-    text_col = text_col.child(actions.gap(4.0).mt(12.0).ml(-8.0).child(quiet(
-        p,
-        &keys::row_action(RowAct::CopyDetails, &t.task_id),
-        Some(&icons::COPY),
+    text_col = text_col.child(buttons.gap(4.0).mt(12.0).ml(-8.0).child(note_action(
+        RowAct::CopyDetails,
+        &icons::COPY,
         copy::ACT_COPY_DETAILS,
         p.text2,
     )));

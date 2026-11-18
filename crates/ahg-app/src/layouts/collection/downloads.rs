@@ -6,6 +6,7 @@ use rune::{Color, El, Icon, ScrollSpec, col, el, icon, row, text};
 
 use super::{PAD, disc, icon_button, interrupted_line, quiet, tab};
 use crate::directions::shelf::downloads as shelf;
+use crate::directions::shelf::handlers;
 use crate::directions::shelf::parts::{self, run, run_mono, runs};
 use crate::directions::shelf::theme::{Pal, mono, sans, serif};
 use crate::gate::{Confirm, Filter, State};
@@ -22,7 +23,6 @@ pub fn view(s: &State, p: &Pal) -> El {
         return shell(page.child(empty(p)));
     }
     let search = row()
-        .key(keys::DOWNLOADS_SEARCH)
         .w(280.0)
         .h(32.0)
         .px(12.0)
@@ -31,7 +31,6 @@ pub fn view(s: &State, p: &Pal) -> El {
         .radius(8.0)
         .border(1.0, p.line)
         .hover(p.raised)
-        .focusable(true)
         .role("searchbox")
         .label(copy::DL_SEARCH_ARIA)
         .child(icon(&icons::SEARCH, 16.0).color(p.muted))
@@ -39,7 +38,9 @@ pub fn view(s: &State, p: &Pal) -> El {
     let labels = [copy::DL_FILTER_ALL, copy::DL_FILTER_ACTIVE, copy::DL_FILTER_DONE, copy::DL_FILTER_FAILED];
     let mut tabs = row().gap(16.0).role("tablist").label(copy::DL_FILTER_ARIA);
     for ((f, label), n) in Filter::ALL.into_iter().zip(labels).zip(counts) {
-        tabs = tabs.child(tab(p, &keys::filter(f), label, Some(n), None, 0, s.filter == f));
+        tabs = tabs.child(
+            tab(p, &keys::filter(f), label, Some(n), None, 0, s.filter == f).on_press(move |s: &mut State| actions::set_filter(s, f)),
+        );
     }
     let mut strip = row()
         .w_full()
@@ -114,7 +115,9 @@ fn header(s: &State, p: &Pal, active: usize) -> El {
     let any = |f: &dyn Fn(St) -> bool| tasks.iter().filter(|t| f(t.progress.status)).count();
     let mut bulk = row().gap(4.0).center_y();
     if tasks.iter().any(|t| t.progress.status == St::Failed && !format::is_permanent(t.error_code)) {
-        bulk = bulk.child(quiet(p, keys::RETRY_ALL_FAILED, Some(&icons::RETRY), copy::DL_RETRY_ALL_FAILED, p.text2));
+        bulk = bulk.child(
+            quiet(p, keys::RETRY_ALL_FAILED, Some(&icons::RETRY), copy::DL_RETRY_ALL_FAILED, p.text2).on_press(actions::retry_all_failed),
+        );
     }
     let done = any(&|st| st == St::Done);
     if done > 0 {
@@ -122,17 +125,21 @@ fn header(s: &State, p: &Pal, active: usize) -> El {
             shelf::armed(p, copy::DL_CLEAR_CONFIRM_ARIA, &copy::clear_confirm(done))
         } else {
             quiet(p, keys::arm(Confirm::Clear), Some(&icons::REMOVE), copy::DL_CLEAR_COMPLETED, p.text2)
+                .on_press(|s: &mut State| actions::arm(s, Confirm::Clear))
         });
     }
     if any(&|st| matches!(st, St::Paused | St::Queued | St::FetchingInfo | St::Downloading)) > 0 {
-        bulk = bulk.child(if all_paused {
-            quiet(p, keys::PAUSE_ALL, Some(&icons::PLAY), copy::DL_RESUME_ALL, p.accent)
-        } else {
-            quiet(p, keys::PAUSE_ALL, Some(&icons::PAUSE), copy::DL_PAUSE_ALL, p.text2)
-        });
+        bulk = bulk.child(
+            if all_paused {
+                quiet(p, keys::PAUSE_ALL, Some(&icons::PLAY), copy::DL_RESUME_ALL, p.accent)
+            } else {
+                quiet(p, keys::PAUSE_ALL, Some(&icons::PAUSE), copy::DL_PAUSE_ALL, p.text2)
+            }
+            .on_press(actions::pause_or_resume_all),
+        );
     }
     if active > 0 {
-        bulk = bulk.child(quiet(p, keys::CANCEL_ALL, Some(&icons::CANCEL), copy::DL_CANCEL_ALL, p.text2));
+        bulk = bulk.child(quiet(p, keys::CANCEL_ALL, Some(&icons::CANCEL), copy::DL_CANCEL_ALL, p.text2).on_press(actions::cancel_all));
     }
     row().w_full().pb(16.0).items_end().justify_between().gap(24.0).child(words).child(bulk)
 }
@@ -280,17 +287,16 @@ fn task_row(s: &State, p: &Pal, t: &DownloadTask) -> El {
     };
     let mut acts = row().w(124.0).gap(4.0).justify_end();
     for (act, glyph, name) in actions(t) {
-        acts = acts.child(icon_button(
-            p,
-            keys::row_action(act, &t.task_id),
-            glyph,
-            name,
-            if act == RowAct::Retry { p.error } else { p.text2 },
-        ));
+        acts = acts.child(
+            icon_button(p, keys::row_action(act, &t.task_id), glyph, name, if act == RowAct::Retry { p.error } else { p.text2 })
+                .on_press_tx(handlers::row_act(act, &t.task_id)),
+        );
     }
     // The tick shows on hover, and stays while anything is ticked.
     let selected = s.selected.contains(&t.task_id);
-    let tick = parts::checkbox(p, keys::row_select(&t.task_id), copy::ROW_SELECT_ARIA, selected, false);
+    let pick = t.task_id.clone();
+    let tick = parts::checkbox(p, keys::row_select(&t.task_id), copy::ROW_SELECT_ARIA, selected, false)
+        .on_press(move |s: &mut State| actions::toggle_select(s, &pick));
     let tick = if s.selected.is_empty() { tick.group_opacity(0.0, 1.0) } else { tick };
     let tint = if selected {
         p.soft(p.accent)

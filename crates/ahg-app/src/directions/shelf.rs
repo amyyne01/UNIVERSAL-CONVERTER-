@@ -8,6 +8,9 @@
 //! place beside it, chosen by `State.nav`.
 pub(crate) mod downloads;
 pub(crate) mod found;
+pub(crate) mod handlers;
+#[cfg(test)]
+mod handlers_tests;
 mod home;
 pub(crate) mod icons;
 mod nav;
@@ -17,8 +20,8 @@ pub(crate) mod theme;
 
 use rune::{Cx, El, Image, col, el, icon, rich, row, text};
 
-use crate::copy;
-use crate::gate::{Nav, State};
+use crate::gate::{Nav, Overlay, State};
+use crate::{actions, copy};
 use parts::{is_active, keycap};
 use theme::{Pal, sans};
 
@@ -76,6 +79,7 @@ fn titlebar(s: &State, p: &Pal, leading: f32, trailing: f32) -> El {
         .focusable(true)
         .role("button")
         .label(copy::SEARCH_CAPSULE_ARIA)
+        .on_press(|s: &mut State| actions::open(s, Overlay::Palette))
         .child(icon(&icons::SEARCH, 16.0).color(p.muted))
         .child(text(copy::SEARCH_CAPSULE).font(sans(13.0, 400.0)).color(p.muted))
         .child(el().grow(1.0))
