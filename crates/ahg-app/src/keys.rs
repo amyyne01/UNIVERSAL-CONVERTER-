@@ -63,6 +63,16 @@ pub fn choice_format(format: &str) -> String {
     format!("choice-format-{format}")
 }
 
+/// A video quality chip in the found step (`720p` ...).
+pub fn choice_video_quality(q: &str) -> String {
+    format!("choice-video-quality-{q}")
+}
+
+/// An audio quality chip in the found step (`320`, `lossless` ...).
+pub fn choice_audio_quality(q: &str) -> String {
+    format!("choice-audio-quality-{q}")
+}
+
 /// A playlist row's tick.
 pub fn track(index: usize) -> String {
     format!("track-{index}")
@@ -90,6 +100,8 @@ pub fn band_more(band: usize) -> String {
 
 // ── Downloads
 pub const DOWNLOADS_SEARCH: &str = "dl-search";
+/// The name the plan and the walk test use.
+pub const DL_SEARCH: &str = DOWNLOADS_SEARCH;
 pub const SELECT_ALL: &str = "dl-select-all";
 pub const SHOW_ALL: &str = "dl-show-all";
 pub const RESULTS_CLEAR: &str = "results-clear";
@@ -199,6 +211,11 @@ pub fn setting(key: &str) -> String {
     format!("set-{key}")
 }
 
+/// A Settings text field's editor, by its config key.
+pub fn setting_edit(key: &str) -> String {
+    format!("set-edit-{key}")
+}
+
 /// A palette swatch: 0 is the look's own, 1 to 7 the app's palettes.
 pub fn palette(index: usize) -> String {
     format!("set-palette-{index}")
@@ -230,6 +247,9 @@ mod tests {
             result("yt-1"),
             result_tick("yt-1"),
             choice_format("mp3"),
+            choice_video_quality("720p"),
+            choice_audio_quality("320"),
+            setting_edit("outputTemplate"),
             theme(0),
             palette(0),
             setting("theme"),
@@ -242,5 +262,6 @@ mod tests {
         for k in &keys {
             assert!(seen.insert(k), "{k} is used twice");
         }
+        assert_eq!(DL_SEARCH, DOWNLOADS_SEARCH);
     }
 }

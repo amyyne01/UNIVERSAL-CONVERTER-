@@ -7,9 +7,9 @@ use ahg_engine::downloader::errors::Fix;
 use ahg_engine::queue::{TaskInit, create_task};
 use ahg_engine::text::{ascii_ci_regex, is_js_whitespace, js_len, js_trim};
 use ahg_engine::tier::{BASIC_LIMITS, Plan, is_premium_format, is_premium_video_quality};
-use ahg_engine::types::{AUDIO_ONLY_SOURCES, ContentType, DownloadStatus as St, DownloadTask, SourcePlatform, Track};
+use ahg_engine::types::{AUDIO_ONLY_SOURCES, ContentType, DownloadStatus as St, DownloadTask, SourcePlatform, Track, VideoQuality};
 use ahg_engine::url_detector::detect_url;
-use rune::Tx;
+use rune::{Mods, TextEdit, Tx};
 use serde_json::Value;
 
 use crate::copy::{self, found as fc};
@@ -20,6 +20,7 @@ use crate::gate::{
 use crate::live::Change;
 use crate::motion::{self, LOADING_DELAY};
 use crate::ring::Pass;
+use crate::settings_spec::{self, Kind, Opt};
 use crate::timeline::{self, Due};
 use crate::{format, live};
 use ahg_runtime::core::{CookiesImport, Core, Shown};
@@ -466,6 +467,28 @@ pub fn set_choice(s: &mut State, c: Choice) {
     s.sync();
 }
 
+/// One change to the found step's choice.
+pub enum ChoiceChange {
+    Video(bool),
+    Format(String),
+    AudioQuality(String),
+    VideoQuality(VideoQuality),
+    Folder(Option<String>),
+}
+
+/// `set_choice` for one change: the rest of the choice stays as it is.
+pub fn set_choice_with(s: &mut State, change: ChoiceChange) {
+    let mut c = s.choice.clone();
+    match change {
+        ChoiceChange::Video(v) => c.video = v,
+        ChoiceChange::Format(f) => c.format = f,
+        ChoiceChange::AudioQuality(q) => c.audio_quality = q,
+        ChoiceChange::VideoQuality(q) => c.video_quality = q,
+        ChoiceChange::Folder(f) => c.folder = f,
+    }
+    set_choice(s, c);
+}
+
 /// A YouTube playlist on Basic cannot be picked from: it says so instead.
 fn picking_locked(s: &mut State) -> bool {
     let locked = s.plan == Plan::Basic && matches!(&s.found, Found::Playlist { playlist, .. } if !is_spotify(&playlist.url));
@@ -500,6 +523,35 @@ pub fn toggle_all_tracks(s: &mut State) {
         let all = selected.iter().all(|t| *t);
         selected.iter_mut().for_each(|t| *t = !all);
     }
+    s.sync();
+}
+
+/// "Deselect all" of the playlist: every track unticked.
+pub fn deselect_all_tracks(s: &mut State) {
+    if picking_locked(s) {
+        return;
+    }
+    if let Found::Playlist { selected, .. } = &mut s.found {
+        selected.iter_mut().for_each(|t| *t = false);
+    }
+    s.sync();
+}
+
+/// The search results' Clear: no row ticked.
+pub fn clear_results(s: &mut State) {
+    s.picked.clear();
+    s.sync();
+}
+
+/// The Plan row's "See plans".
+pub fn see_plans(s: &mut State) {
+    // TODO(upgrade sheet, step 68): open the sheet; until then the notice says what Premium is.
+    let (title, lead) = if s.plan == Plan::Basic {
+        (copy::settings::UPGRADE_TITLE_BASIC, copy::settings::UPGRADE_LEAD_BASIC)
+    } else {
+        (copy::settings::UPGRADE_TITLE_PREMIUM, copy::settings::UPGRADE_LEAD_PREMIUM)
+    };
+    notify(s, Tone::Premium, format!("{title}. {lead}"), None);
     s.sync();
 }
 
@@ -1005,6 +1057,37 @@ pub fn toggle_select(s: &mut State, id: &str) {
     s.sync();
 }
 
+/// Downloads' selection let go.
+pub fn clear_selection(s: &mut State) {
+    s.selected.clear();
+    s.sync();
+}
+
+/// The filtered-empty state's "Show all": the filter to All and the search emptied.
+pub fn show_all(s: &mut State) {
+    s.filter = Filter::All;
+    s.query.replace_text("");
+    s.sync();
+}
+
+/// A press on a row's tick: it toggles; with Shift, every row from the last pick to this one is ticked.
+pub fn pick_row(s: &mut State, id: &str, mods: Mods) {
+    let shown: Vec<String> = visible(s).map(|t| t.task_id.clone()).collect();
+    let anchor = s.last_picked.as_deref().and_then(|a| shown.iter().position(|t| t == a));
+    match (mods.shift, anchor, shown.iter().position(|t| t == id)) {
+        (true, Some(from), Some(to)) => s.selected.extend(shown[from.min(to)..=from.max(to)].iter().cloned()),
+        _ => {
+            if !s.selected.remove(id) {
+                s.selected.insert(id.into());
+            }
+        }
+    }
+    if !mods.shift {
+        s.last_picked = Some(id.into());
+    }
+    s.sync();
+}
+
 /// The rows on show: the filter, then the search over title, uploader and link.
 pub fn visible(s: &State) -> impl Iterator<Item = &DownloadTask> {
     let q = js_trim(&s.query.text).to_lowercase();
@@ -1095,6 +1178,54 @@ pub fn set_setting(s: &mut State, key: &str, value: Value) -> bool {
     }
     s.sync();
     ok
+}
+
+/// The editor of a Settings text field, made from the setting on first use.
+pub fn edit_text<'a>(s: &'a mut State, key: &str) -> &'a mut TextEdit {
+    let now = s.settings.get(key).and_then(Value::as_str).unwrap_or("").to_owned();
+    s.edits.entry(key.into()).or_insert_with(|| {
+        let mut e = TextEdit::default();
+        e.replace_text(&now);
+        e
+    })
+}
+
+/// Writes the edited text as the setting. A refusal leaves the text and the key in `invalid`;
+/// a good value resets the edit from the setting.
+pub fn commit_text(s: &mut State, key: &str) -> bool {
+    let text = edit_text(s, key).text.clone();
+    let ok = set_setting(s, key, Value::String(text));
+    if ok {
+        s.edits.remove(key);
+    }
+    ok
+}
+
+/// A select's choice as the setting. A locked one says why on Basic and writes nothing.
+pub fn pick_setting(s: &mut State, _tx: &mut Tx, key: &str, value: &str) -> bool {
+    if let Some(why) = select_options(s, key).into_iter().find(|o| o.value == value).and_then(|o| o.lock) {
+        premium(s, &why);
+        return false;
+    }
+    // A number setting (the simultaneous downloads) is picked by its digits.
+    let number = ahg_engine::config::default_config().get(key).is_some_and(Value::is_number);
+    let v = match value.parse::<u64>() {
+        Ok(n) if number => n.into(),
+        _ => value.into(),
+    };
+    set_setting(s, key, v)
+}
+
+/// A select row's choices with their locks, for a popup.
+pub fn select_options(s: &State, key: &str) -> Vec<Opt> {
+    settings_spec::sections(s)
+        .into_iter()
+        .flat_map(|sec| sec.rows)
+        .find_map(|r| match r.kind {
+            Kind::Select(o) if r.key == Some(key) => Some(o),
+            _ => None,
+        })
+        .unwrap_or_default()
 }
 
 /// `light`, `dark` or `system`. Nothing is re-keyed: only the colours spring.
@@ -2469,5 +2600,136 @@ mod tests {
         assert_eq!(keys.iter().filter(|k| s.waits[*k].answered.is_none()).count(), 3);
         answer_wait(&mut s, WaitKey::Lookup); // no such wait: nothing happens
         assert_eq!(s.waits.len(), 4);
+    }
+
+    // ── Shared actions of step 54X
+
+    fn ids(s: &State) -> Vec<String> {
+        s.tasks.iter().map(|t| t.task_id.clone()).collect()
+    }
+
+    #[test]
+    fn clear_selection_and_results_empty_their_sets() {
+        let mut s = state();
+        s.selected.insert("a".into());
+        s.picked.insert("b".into());
+        clear_selection(&mut s);
+        assert!(s.selected.is_empty() && !s.picked.is_empty());
+        clear_results(&mut s);
+        assert!(s.picked.is_empty());
+    }
+
+    #[test]
+    fn show_all_resets_filter_and_search() {
+        let mut s = state();
+        s.filter = Filter::Failed;
+        s.query.replace_text("zzz");
+        show_all(&mut s);
+        assert_eq!(s.filter, Filter::All);
+        assert_eq!(s.query.text, "");
+    }
+
+    #[test]
+    fn pick_row_toggles_and_shift_takes_the_range() {
+        let mut s = state();
+        let all = ids(&s);
+        assert!(all.len() >= 4);
+        let shift = Mods { shift: true, ..Mods::default() };
+        let ctrl = Mods { ctrl: true, cmd: true, ..Mods::default() };
+        pick_row(&mut s, &all[1], Mods::default());
+        assert_eq!(s.selected.len(), 1);
+        pick_row(&mut s, &all[1], ctrl);
+        assert!(s.selected.is_empty(), "ctrl toggles");
+        pick_row(&mut s, &all[1], Mods::default());
+        pick_row(&mut s, &all[3], shift);
+        let want: std::collections::HashSet<String> = all[1..=3].iter().cloned().collect();
+        assert_eq!(s.selected, want, "shift takes the range");
+        assert_eq!(s.last_picked.as_deref(), Some(all[1].as_str()), "shift keeps the anchor");
+        // Shift with no anchor is a plain toggle.
+        let mut s = state();
+        pick_row(&mut s, &all[2], shift);
+        assert_eq!(s.selected.len(), 1);
+    }
+
+    #[test]
+    fn deselect_all_tracks_unticks_everything_and_respects_the_basic_lock() {
+        let mut s = state();
+        playlist(&mut s, false);
+        deselect_all_tracks(&mut s);
+        assert!(selected(&s).iter().all(|t| !t));
+        // A YouTube playlist on Basic cannot be changed.
+        let mut s = state();
+        s.plan = Plan::Basic;
+        playlist(&mut s, true);
+        deselect_all_tracks(&mut s);
+        assert!(selected(&s).iter().all(|t| *t));
+        assert_eq!(notice(&s).text, fc::LOCK_PICK_PLAYLIST);
+    }
+
+    #[test]
+    fn see_plans_sets_the_plan_notice() {
+        for (plan, title) in [(Plan::Basic, copy::settings::UPGRADE_TITLE_BASIC), (Plan::Premium, copy::settings::UPGRADE_TITLE_PREMIUM)] {
+            let mut s = state();
+            s.plan = plan;
+            see_plans(&mut s);
+            assert!(notice(&s).text.starts_with(title));
+        }
+    }
+
+    #[test]
+    fn set_choice_with_changes_one_field() {
+        let mut s = state();
+        let before = s.choice.clone();
+        let cases = [
+            ChoiceChange::Video(!before.video),
+            ChoiceChange::Format("flac".into()),
+            ChoiceChange::AudioQuality("192".into()),
+            ChoiceChange::VideoQuality(VideoQuality::P720),
+            ChoiceChange::Folder(Some("D:/x".into())),
+        ];
+        for change in cases {
+            let mut s = state();
+            set_choice_with(&mut s, change);
+            assert_ne!(s.choice, before);
+        }
+        s.plan = Plan::Basic;
+        set_choice_with(&mut s, ChoiceChange::Format("flac".into()));
+        assert_eq!(s.choice, before, "a Basic lock changes nothing");
+        assert_eq!(notice(&s).text, fc::lock_format("FLAC"));
+    }
+
+    #[test]
+    fn commit_text_keeps_a_refused_value_and_resets_after_an_accepted_one() {
+        let mut s = state();
+        edit_text(&mut s, "outputTemplate").replace_text("%(title)s");
+        assert!(commit_text(&mut s, "outputTemplate"));
+        assert_eq!(s.settings["outputTemplate"], json!("%(title)s"));
+        assert!(!s.edits.contains_key("outputTemplate"), "the edit is rebuilt from the setting");
+        assert_eq!(edit_text(&mut s, "outputTemplate").text, "%(title)s", "created from the setting on first use");
+        // Not a setting: refused, the text stays for the red edge.
+        edit_text(&mut s, "nope").replace_text("x");
+        assert!(!commit_text(&mut s, "nope"));
+        assert!(s.invalid.contains("nope"));
+        assert_eq!(s.edits["nope"].text, "x");
+    }
+
+    #[test]
+    fn pick_setting_writes_and_honours_basic_locks() {
+        let mut s = state();
+        let mut tx = Tx::default();
+        assert!(pick_setting(&mut s, &mut tx, "videoContainer", "mkv"));
+        assert_eq!(s.settings["videoContainer"], json!("mkv"));
+        assert!(pick_setting(&mut s, &mut tx, "maxConcurrentDownloads", "2"));
+        assert_eq!(s.settings["maxConcurrentDownloads"], json!(2));
+        let mut s = state();
+        s.plan = Plan::Basic;
+        let before = s.settings["defaultFormat"].clone();
+        assert!(!pick_setting(&mut s, &mut tx, "defaultFormat", "flac"));
+        assert_eq!(s.settings["defaultFormat"], before);
+        assert_eq!(notice(&s).text, fc::lock_format("FLAC"));
+        let opts = select_options(&s, "defaultFormat");
+        assert!(opts.iter().any(|o| o.value == "flac" && o.lock.is_some()));
+        assert!(opts.iter().any(|o| o.value == "mp3" && o.lock.is_none()));
+        assert!(select_options(&s, "theme").is_empty(), "only selects have options");
     }
 }

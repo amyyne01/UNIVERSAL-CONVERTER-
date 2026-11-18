@@ -21,6 +21,9 @@ fn settle(rt: &mut Runtime<State>) {
 
 /// Press the control with this key. A missing key is a panic naming the preset and the key.
 fn click(rt: &mut Runtime<State>, preset: &str, key: &str) {
+    let k = key.to_owned();
+    rt.update(move |_, tx| tx.scroll_into_view(k));
+    settle(rt);
     let (x, y) = rt.find(key).unwrap_or_else(|| panic!("preset {preset}: no element with key `{key}`"));
     rt.pointer_move(x, y);
     rt.pointer_down(x, y);

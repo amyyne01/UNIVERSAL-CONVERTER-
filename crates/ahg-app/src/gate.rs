@@ -293,6 +293,10 @@ pub struct State {
     pub selected: HashSet<String>,
     /// The search results ticked, by result id.
     pub picked: HashSet<String>,
+    /// The row last ticked on Downloads, where a Shift press starts its range.
+    pub last_picked: Option<String>,
+    /// The Settings text fields being edited, by config key (`actions::edit_text`).
+    pub edits: HashMap<String, TextEdit>,
     /// The queued row held for a keyboard reorder.
     pub grabbed: Option<String>,
     /// Format, quality and folder in the found step.
@@ -412,6 +416,8 @@ impl State {
             filter: Filter::All,
             selected: HashSet::new(),
             picked: HashSet::new(),
+            last_picked: None,
+            edits: HashMap::new(),
             grabbed: None,
             card: Card::default(),
             expanded: [false; 3],
