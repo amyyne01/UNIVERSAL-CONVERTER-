@@ -214,7 +214,8 @@ fn downloads_filter_search_select_and_remove_through_the_confirm() {
         rt.update(|s, _| s.query.clear());
         settle(rt);
 
-        let done: Vec<String> = rt.state.tasks.iter().filter(|t| t.progress.status == St::Done).take(2).map(|t| t.task_id.clone()).collect();
+        let done: Vec<String> =
+            rt.state.tasks.iter().filter(|t| t.progress.status == St::Done).take(2).map(|t| t.task_id.clone()).collect();
         assert_eq!(done.len(), 2, "two finished rows to pick");
         for id in &done {
             if name == "Signal" {
@@ -238,7 +239,8 @@ fn downloads_filter_search_select_and_remove_through_the_confirm() {
 fn the_bulk_buttons_pause_cancel_retry_and_clear() {
     each(|rt, name| {
         go(rt, Nav::Downloads);
-        let waiting = |rt: &Runtime<State>| rt.state.tasks.iter().filter(|t| matches!(t.progress.status, St::Queued | St::Downloading)).count();
+        let waiting =
+            |rt: &Runtime<State>| rt.state.tasks.iter().filter(|t| matches!(t.progress.status, St::Queued | St::Downloading)).count();
         click(rt, name, keys::PAUSE_ALL);
         assert_eq!(waiting(rt), 0, "preset {name}: Pause all");
         let failed = first(rt, St::Failed);
