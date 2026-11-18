@@ -78,7 +78,6 @@ fn set_up_works_for_every_preset() {
 }
 
 #[test]
-#[ignore = "red until steps 54/55: presets do not use keys.rs yet"]
 fn walk_every_preset() {
     assert!(!PRESETS.is_empty());
     // Every preset is walked, then all the failures are reported together.
