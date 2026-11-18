@@ -10,6 +10,8 @@ pub(crate) mod draw;
 pub(crate) mod found;
 mod home;
 // The shared layer took over what these three hold; the old copies go in the cleanup.
+#[cfg(test)]
+mod handlers_tests;
 #[allow(dead_code)] // unused until cleanup (step 19)
 pub(crate) mod icons;
 #[allow(dead_code)] // unused until cleanup (step 19)
@@ -19,10 +21,12 @@ pub(crate) mod model;
 mod nav;
 pub(crate) mod settings;
 
-use rune::{ChromeInsets, Color, Cx, El, Icon, SurfaceFit, col, el, icon, row, spacer};
+use rune::{ChromeInsets, Color, Cx, El, Icon, PopupItem, PopupMenu, SurfaceFit, Tx, col, el, icon, row, spacer};
 
+use crate::actions;
 use crate::copy;
-use crate::gate::{Nav, State};
+use crate::gate::{Nav, Overlay, State};
+use crate::keys::RowAct;
 use ahg_engine::types::DownloadTask;
 use look::{FIG, Pal, SMALL, SMALL_M, mix, txt};
 
@@ -68,6 +72,7 @@ fn titlebar(s: &State, p: &Pal, insets: ChromeInsets) -> El {
         .hover(p.raised)
         .cursor(rune::Cursor::Pointer)
         .no_window_drag()
+        .on_press(|s: &mut State| actions::open(s, Overlay::Palette))
         .label(copy::SEARCH_CAPSULE_ARIA)
         .child(icon(&crate::icons::SEARCH, 16.0).color(p.muted))
         .child(txt(copy::SEARCH_CAPSULE, SMALL, p.muted))
@@ -91,6 +96,40 @@ fn titlebar(s: &State, p: &Pal, insets: ChromeInsets) -> El {
 }
 
 // ── Pieces both screens use ─────────────────────────────────────────────────
+
+/// A row's button calls the action of its `RowAct` on the row's task. Both presets draw row
+/// buttons, so the one place a `RowAct` becomes a call is here.
+// TODO(shared): `actions::row_act(s, tx, act, id)`, the same match, for the six presets.
+pub(crate) fn on_row(b: El, act: RowAct, id: &str) -> El {
+    let id = id.to_owned();
+    b.on_press_tx(move |s: &mut State, tx: &mut Tx| match act {
+        RowAct::Promote => actions::promote(s, tx, &id),
+        RowAct::Pause => actions::pause(s, tx, &id),
+        RowAct::Resume => actions::resume(s, tx, &id),
+        RowAct::Cancel => actions::cancel(s, tx, &id),
+        RowAct::CopyDetails => actions::copy_details(s, tx, &id),
+        RowAct::Fix => actions::fix(s, tx, &id),
+        RowAct::DownloadAgain => actions::download_again(s, tx, &id),
+        RowAct::Retry => actions::retry(s, tx, &id),
+        RowAct::OpenFile => actions::open_file(s, tx, &id),
+        RowAct::ShowInFolder => actions::show_in_folder(s, tx, &id),
+        RowAct::Remove => actions::remove(s, tx, &id),
+    })
+}
+
+/// A control that opens a native pick list under itself; `pick` gets the chosen id.
+pub(crate) fn pick_list(b: El, key: &str, options: Vec<PopupItem>, current: &str, pick: impl Fn(&mut State, &str) + 'static) -> El {
+    let (key, current, pick) = (key.to_owned(), current.to_owned(), std::rc::Rc::new(pick));
+    b.on_press_tx(move |_: &mut State, tx: &mut Tx| {
+        let menu = PopupMenu::new().items(options.clone()).selected(current.clone());
+        let pick = pick.clone();
+        tx.popup_menu(menu, key.clone(), move |s: &mut State, id: Option<&str>, _: &mut Tx| {
+            if let Some(id) = id {
+                pick(s, id)
+            }
+        });
+    })
+}
 
 pub(super) fn keycap(p: &Pal, label: &str) -> El {
     row().h(20.0).px(4.0).center().radius(4.0).fill(p.raised).border(1.0, p.line).child(txt(label, FIG, p.text2))

@@ -2,12 +2,13 @@
 //! own mark at a size that means it.
 use ahg_engine::stats::DownloadStats;
 use ahg_engine::types::{DownloadStatus as St, DownloadTask};
-use rune::{Color, El, Icon, ScrollSpec, canvas, col, el, icon, row, spacer};
+use rune::{Color, El, Icon, ScrollSpec, TextEdit, canvas, col, el, icon, row, spacer, text_input};
 
 use super::draw::{planet, trace};
 use super::look::{BODY, BODY_M, CELL_TITLE, DISPLAY, FIG, FIG_L, FIG_S, FIG_XL, Pal, SMALL, SMALL_M, mix, txt};
 use super::model;
 use super::{Tone, button, cover, found, keycap};
+use crate::actions;
 use crate::copy;
 use crate::format::{self, Bucket, is_active};
 use crate::gate::{Nav, State};
@@ -27,7 +28,7 @@ pub fn view(s: &State, p: &Pal) -> El {
     let mark = canvas(planet(planet_w, mix(p.text, p.bg, 0.08), p.bg)).key("planet").size(planet_w, planet_w * 0.592);
 
     let mut launch =
-        col().grow(1.0).min_w(0.0).gap(20.0).child(headline(p, active.len())).child(field(p, &s.input, false)).child(status(s, p));
+        col().grow(1.0).min_w(0.0).gap(20.0).child(headline(p, active.len())).child(field(p, &s.field, false)).child(status(s, p));
     if quiet {
         launch = launch.child(works_with(p).mt(12.0));
     }
@@ -70,7 +71,7 @@ fn headline(p: &Pal, in_flight: usize) -> El {
                 .cursor(rune::Cursor::Pointer)
                 .role("button")
                 .focusable(true)
-                .on_press(|s: &mut State| s.nav = Nav::Downloads)
+                .on_press(|s: &mut State| actions::go(s, Nav::Downloads))
                 .child(el().size(8.0, 8.0).radius(4.0).fill(p.text2))
                 .child(row().center_y().child(txt(in_flight.to_string(), FIG, p.text)).child(txt(
                     copy::HOME_IN_FLIGHT_SUFFIX,
@@ -85,7 +86,7 @@ fn headline(p: &Pal, in_flight: usize) -> El {
 
 /// The paste field. `open`: it has opened into the found surface, so it carries the way back
 /// and Look up steps down to an outline (the surface's Download is the lit control then).
-fn field(p: &Pal, input: &str, open: bool) -> El {
+fn field(p: &Pal, edit: &TextEdit, open: bool) -> El {
     let (fill, ink, edge, over) =
         if open { (Color::TRANSPARENT, p.text, p.track, p.raised) } else { (p.accent, p.on_accent, p.accent, mix(p.accent, p.text, 0.15)) };
     let go = row()
@@ -102,6 +103,7 @@ fn field(p: &Pal, input: &str, open: bool) -> El {
         .role("button")
         .focusable(true)
         .cursor(rune::Cursor::Pointer)
+        .on_press_tx(actions::submit)
         .child(txt(copy::FIELD_BUTTON_LOOK_UP, BODY_M, ink))
         .child(icon(&icons::FORWARD, 16.0).color(ink));
     let mut r = row()
@@ -115,13 +117,18 @@ fn field(p: &Pal, input: &str, open: bool) -> El {
         .label(copy::FIELD_ARIA)
         .child(icon(&icons::LINK, 16.0).color(p.muted))
         .child(
-            if input.is_empty() {
-                txt(copy::FIELD_PLACEHOLDER, BODY.lh(22.0), p.muted)
-            } else {
-                txt(input.to_string(), BODY.lh(22.0), p.text)
-            }
-            .grow(1.0)
-            .truncate(),
+            text_input(edit, BODY.lh(22.0))
+                .key(keys::FIELD)
+                .label(copy::FIELD_ARIA)
+                .single_line()
+                .color(p.text)
+                .caret(p.text, p.accent.alpha(0.3))
+                .placeholder(copy::FIELD_PLACEHOLDER, p.muted)
+                .grow(1.0)
+                .min_w(0.0)
+                .on_edit(|s: &mut State| &mut s.field)
+                .on_input_change(|s: &mut State, _| s.input = s.field.text.clone())
+                .on_submit(actions::submit),
         );
     if open {
         r = r.child(found::dismiss(p));
@@ -137,7 +144,7 @@ fn found_page(s: &State, p: &Pal, in_flight: usize, body: El) -> El {
     let fills = found::fills(s);
     let mut inner = col().w_full().padding(24.0).border_sides([1.0, 0.0, 0.0, 0.0], p.line).child(body);
     let mut unit =
-        col().key(keys::FOUND).w_full().min_h(0.0).radius(16.0).fill(p.card).border(1.0, p.track).child(field(p, &s.input, true));
+        col().key(keys::FOUND).w_full().min_h(0.0).radius(16.0).fill(p.card).border(1.0, p.track).child(field(p, &s.field, true));
     if fills {
         inner = inner.grow(1.0).min_h(0.0);
         unit = unit.grow(1.0);
@@ -166,7 +173,13 @@ fn status(s: &State, p: &Pal) -> El {
                 .child(txt(copy::rest_saves_as(setting("defaultFormat")), SMALL, p.text2))
                 .child(txt(name, SMALL_M, p.text).help(folder))
                 .child(txt(" ", SMALL, p.text2))
-                .child(txt(copy::REST_CHANGE, SMALL_M, p.text2).label(copy::REST_CHANGE_ARIA).cursor(rune::Cursor::Pointer)),
+                .child(
+                    txt(copy::REST_CHANGE, SMALL_M, p.text2)
+                        .key(keys::CHANGE_FOLDER)
+                        .label(copy::REST_CHANGE_ARIA)
+                        .cursor(rune::Cursor::Pointer)
+                        .on_press_tx(actions::choose_folder),
+                ),
         );
     }
     // The strings carry their own spaces, so the pieces sit flush.
@@ -377,13 +390,19 @@ fn recent(s: &State, p: &Pal, done: &[&DownloadTask]) -> El {
                 row().w_full().child(txt(t.format.to_uppercase(), FIG_S, p.text2)).child(spacer()).child(txt(size(t), FIG_S, p.muted)),
             )
         };
-        tiles =
-            tiles.child(tile.key(format!("recent-{}", t.task_id)).cursor(rune::Cursor::Pointer).help(copy::recent_details_aria(&title(t))));
+        let id = t.task_id.clone();
+        tiles = tiles.child(
+            tile.key(format!("recent-{id}"))
+                .cursor(rune::Cursor::Pointer)
+                .help(copy::recent_details_aria(&title(t)))
+                .on_press(|s: &mut State| actions::go(s, Nav::Downloads)),
+        );
     }
     for _ in done.len().min(4)..4 {
         tiles = tiles.child(el().grow(1.0));
     }
-    let view_all = button(p, "view-all", copy::CELL_RECENT_VIEW_ALL, None, Tone::Ghost).on_press(|s: &mut State| s.nav = Nav::Downloads);
+    let view_all =
+        button(p, "view-all", copy::CELL_RECENT_VIEW_ALL, None, Tone::Ghost).on_press(|s: &mut State| actions::go(s, Nav::Downloads));
     cell(p, copy::CELL_RECENT, Some(view_all), tiles)
 }
 

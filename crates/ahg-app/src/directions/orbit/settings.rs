@@ -4,14 +4,15 @@
 //! do the grouping, the margin makes it scannable. Sections, rows, wording, values, locks and
 //! dimming all come from `settings_spec::sections`; this file only draws them. Now playing
 //! draws the same rows (`words`, `control`) in its own frame.
-use rune::{Color, El, Icon, ScrollSpec, TextStyle, col, el, icon, row, spacer};
+use rune::{Color, El, Icon, PopupItem, ScrollSpec, TextStyle, col, el, icon, row, spacer};
 use serde_json::Value;
 
 use super::look::{BODY, BODY_M, CELL_TITLE, FIG, FIG_L, PAGE_TITLE, Pal, SMALL, SMALL_M, mix, txt};
-use super::{Tone, button, keycap};
+use super::{Tone, button, keycap, pick_list};
+use crate::actions;
 use crate::copy::{self, found as f, settings as w};
 use crate::format;
-use crate::gate::{self, Confirm, State};
+use crate::gate::{self, Confirm, Overlay, State};
 use crate::icons;
 use crate::keys;
 use crate::settings_spec::{self, Kind, Row};
@@ -22,8 +23,8 @@ const MARGIN: f32 = 216.0;
 pub(crate) const DIM: f32 = 0.48;
 // TODO(shared): State.transfer_cooldown, the local end date of the 7-day move cooldown.
 const TRANSFER_COOLDOWN: Option<&str> = None;
-// TODO(shared): keys::SEE_PLANS, the Plan row's See plans.
-const SEE_PLANS_KEY: &str = "see-plans";
+/// The saved theme values, in the order of `copy::settings::THEMES`.
+const THEME_VALUES: [&str; 3] = ["light", "dark", "system"];
 
 pub fn view(s: &State, p: &Pal) -> El {
     let head = col().w_full().gap(4.0).child(txt(w::TITLE, PAGE_TITLE, p.text)).child(txt(w::SAVES, SMALL, p.text2));
@@ -122,6 +123,20 @@ fn confirm_of(r: &Row) -> Confirm {
     if r.label == w::DEACTIVATE.0 { Confirm::Deactivate } else { Confirm::Move }
 }
 
+/// A status row's button calls its action; See plans has none yet.
+// TODO(shared): `actions::see_plans(s)`.
+fn wire(b: El, key: &str) -> El {
+    match key {
+        keys::CHANGE_FOLDER => b.on_press_tx(actions::choose_folder),
+        keys::IMPORT_COOKIES => b.on_press_tx(actions::import_cookies),
+        keys::CHECK_UPDATE => b.on_press(actions::check_update),
+        keys::CHECK_ENGINE => b.on_press(actions::check_engine),
+        keys::SHOW_SHORTCUTS => b.on_press(actions::show_shortcuts),
+        keys::GET_SUPPORT => b.on_press_tx(actions::get_support),
+        _ => b,
+    }
+}
+
 /// A status row's button: its key and its glyph, by its word.
 fn action(word: &'static str) -> (&'static str, Option<&'static Icon>) {
     match word {
@@ -132,17 +147,28 @@ fn action(word: &'static str) -> (&'static str, Option<&'static Icon>) {
         w::SHOW_SHORTCUTS => (keys::SHOW_SHORTCUTS, None),
         w::GET_SUPPORT => (keys::GET_SUPPORT, Some(&icons::EXTERNAL)),
         w::LAYOUT_CHOOSE => (keys::LAYOUT_CHOOSE, None),
-        _ => (SEE_PLANS_KEY, None),
+        _ => (keys::SEE_PLANS, None),
     }
+}
+
+/// The saved value of a row as text.
+fn saved(r: &Row) -> String {
+    match &r.value {
+        Value::String(t) => t.clone(),
+        Value::Null => String::new(),
+        other => other.to_string(),
+    }
+}
+
+/// What the select's option `id` is saved as: a number where the setting holds one.
+// TODO(shared): `actions::set_select(s, key, id)`, which also tells what a locked pick needs.
+fn typed(current: &Value, id: &str) -> Value {
+    if current.is_number() { id.parse::<u64>().map_or(Value::Null, Value::from) } else { id.into() }
 }
 
 /// The value of a row as text: a select's label for the saved value, a typed value as it is.
 fn shown(r: &Row) -> String {
-    let saved = match &r.value {
-        Value::String(t) => t.clone(),
-        Value::Null => String::new(),
-        other => other.to_string(),
-    };
+    let saved = saved(r);
     match &r.kind {
         Kind::Select(options) => options.iter().find(|o| o.value == saved).map(|o| o.label.clone()).unwrap_or_default(),
         _ => saved,
@@ -154,16 +180,40 @@ fn shown(r: &Row) -> String {
 pub(crate) fn control(s: &State, p: &Pal, r: &Row) -> El {
     // Every row drawn as a toggle, select or field has a config key.
     let key = keys::setting(r.key.unwrap_or_default());
+    // A locked row (Basic) does not answer: it is dimmed and carries the lock sentence.
+    let live = r.lock.is_none();
     let c = match &r.kind {
-        Kind::Toggle => toggle(p, key, r.label, r.value.as_bool().unwrap_or(false)),
+        Kind::Toggle => {
+            let (cfg, on) = (r.key.unwrap_or_default(), r.value.as_bool().unwrap_or(false));
+            let t = toggle(p, key, r.label, on);
+            if live {
+                t.on_press(move |s: &mut State| {
+                    actions::set_setting(s, cfg, Value::Bool(!on));
+                })
+            } else {
+                t
+            }
+        }
         Kind::Select(options) => {
             let locks = options.iter().any(|o| o.lock.is_some());
-            let mut f = field(p, key, r.label, &shown(r), true, false);
+            let mut f = field(p, key.clone(), r.label, &shown(r), true, false);
             if locks {
                 f = f.help(f::LOCK_SELECT_TITLE).child(icon(&icons::LOCK_ORBIT, 16.0).color(p.muted));
             }
-            f
+            let now = saved(r);
+            // A locked choice cannot be picked here: it waits for the action that says what Premium adds.
+            let items =
+                options.iter().map(|o| PopupItem::new(o.value.clone(), o.label.clone()).checked(o.value == now).enabled(o.lock.is_none()));
+            let (cfg, current) = (r.key.unwrap_or_default(), r.value.clone());
+            if live {
+                pick_list(f, &key, items.collect(), &now, move |s, id| {
+                    actions::set_setting(s, cfg, typed(&current, id));
+                })
+            } else {
+                f
+            }
         }
+        // TODO(shared): a text edit per setting (`State` has none) that calls `actions::set_setting` on commit.
         Kind::Text => {
             let value = shown(r);
             match r.placeholder {
@@ -172,21 +222,21 @@ pub(crate) fn control(s: &State, p: &Pal, r: &Row) -> El {
             }
         }
         Kind::Time => field(p, key, r.label, &shown(r), false, false).min_w(96.0),
-        Kind::Days => days(p, r),
+        Kind::Days => days(p, r, live),
         Kind::Theme => theme(p, r),
         Kind::Palette => swatches(s, p),
         Kind::Layout => layout(s, p, r),
         Kind::Folder | Kind::Status => match r.button {
             Some(b) => {
                 let (k, glyph) = action(b);
-                button(p, k, b, glyph, Tone::Ghost)
+                wire(button(p, k, b, glyph, Tone::Ghost), k)
             }
             // Premium's plan: the good mark.
             None => el().size(8.0, 8.0).radius(4.0).fill(p.success),
         },
         Kind::Danger => danger(s, p, r),
     };
-    if r.lock.is_some() { c.opacity(DIM) } else { c }
+    if live { c } else { c.opacity(DIM) }
 }
 
 fn toggle(p: &Pal, key: String, label: &str, on: bool) -> El {
@@ -230,14 +280,14 @@ fn field(p: &Pal, key: String, label: &str, value: &str, select: bool, muted: bo
 
 /// Light, Dark or System, as the saved theme says.
 fn theme(p: &Pal, r: &Row) -> El {
-    let now = ["light", "dark", "system"].iter().position(|t| Some(*t) == r.value.as_str()).unwrap_or(2);
+    let now = THEME_VALUES.iter().position(|t| Some(*t) == r.value.as_str()).unwrap_or(2);
     let mut group =
         row().key(keys::setting("theme")).gap(4.0).padding(4.0).radius(8.0).border(1.0, p.track).role("radiogroup").label(r.label);
     for (i, name) in w::THEMES.into_iter().enumerate() {
         let on = i == now;
-        // TODO(shared): keys::theme(i), one key per theme choice.
         let mut seg = el()
-            .key(format!("{}-{i}", keys::setting("theme")))
+            .key(keys::theme(i))
+            .on_press_tx(move |s: &mut State, tx: &mut rune::Tx| actions::set_theme(s, THEME_VALUES[i], tx))
             .h(24.0)
             .px(12.0)
             .center()
@@ -261,6 +311,7 @@ fn swatches(s: &State, p: &Pal) -> El {
         let on = i == s.palette;
         group = group.child(
             el().key(keys::palette(i))
+                .on_press_tx(move |s: &mut State, tx: &mut rune::Tx| actions::set_palette(s, i, tx))
                 .size(28.0, 28.0)
                 .radius(14.0)
                 .center()
@@ -292,17 +343,18 @@ fn layout(s: &State, p: &Pal, r: &Row) -> El {
         .center_y()
         .child(txt(gate::PRESETS[gate::preset(s)].0, SMALL_M, p.text))
         .child(row().center_y().gap(4.0).child(keycap(p, copy::KEY_CTRL)).child(keycap(p, ".")))
-        .child(button(p, keys::LAYOUT_CHOOSE, word, None, Tone::Ghost).on_press(|s: &mut State| s.picker = true))
+        .child(button(p, keys::LAYOUT_CHOOSE, word, None, Tone::Ghost).on_press(|s: &mut State| actions::open(s, Overlay::Picker)))
 }
 
 /// The schedule's days, Sunday first; the saved ones lit.
-fn days(p: &Pal, r: &Row) -> El {
+fn days(p: &Pal, r: &Row, live: bool) -> El {
     let chosen: Vec<u64> = r.value.as_array().map(|a| a.iter().filter_map(Value::as_u64).collect()).unwrap_or_default();
     let mut group = row().gap(4.0).role("group").label(r.label);
     for (i, (full, short)) in w::DAYS.iter().zip(w::DAYS_SHORT).enumerate() {
         let on = chosen.contains(&(i as u64));
+        let day = el().key(keys::day(i));
         group = group.child(
-            el().key(keys::day(i))
+            if live { day.on_press(move |s: &mut State| actions::toggle_day(s, i as u8)) } else { day }
                 .size(28.0, 28.0)
                 .radius(14.0)
                 .center()
@@ -327,10 +379,11 @@ fn danger(s: &State, p: &Pal, r: &Row) -> El {
         Some((_, yes)) if s.confirm == Some(c) => row()
             .gap(8.0)
             .center_y()
-            .child(button(p, keys::CONFIRM_NO, w::CANCEL, None, Tone::Ghost))
-            .child(button(p, keys::CONFIRM_YES, yes, None, Tone::Danger)),
+            .child(button(p, keys::CONFIRM_NO, w::CANCEL, None, Tone::Ghost).on_press(actions::disarm))
+            .child(button(p, keys::CONFIRM_YES, yes, None, Tone::Danger).on_press(actions::confirm)),
         _ => el()
             .key(keys::arm(c))
+            .on_press(move |s: &mut State| actions::arm(s, c))
             .size(32.0, 32.0)
             .center()
             .radius(8.0)

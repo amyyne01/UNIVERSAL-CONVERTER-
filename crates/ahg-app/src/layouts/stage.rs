@@ -57,15 +57,17 @@ mod sheet;
 
 use ahg_engine::stats::DownloadStats;
 use ahg_engine::types::{DownloadStatus as St, DownloadTask};
-use rune::{Color, Cursor, Cx, El, Icon, canvas, col, el, row, spacer};
+use rune::{Color, Cursor, Cx, El, Icon, canvas, col, el, row, spacer, text_input};
 
+use crate::actions;
 use crate::copy;
 use crate::directions::orbit::draw::{self, Pass, planet};
 use crate::directions::orbit::found;
 use crate::directions::orbit::look::{Pal, mix, txt};
 use crate::directions::orbit::model;
+use crate::directions::orbit::on_row;
 use crate::format::{self, Bucket, is_active};
-use crate::gate::{Confirm, Found, Nav, State};
+use crate::gate::{Confirm, Found, Nav, Overlay, State};
 use crate::icons;
 use crate::keys;
 use parts::{BODY, BODY_M, FIG, FIG_L, FIG_XL, HERO, SMALL, SMALL_M, button, cover, glyph, icon_button, keys, state_word, text_button};
@@ -159,6 +161,7 @@ fn tools(s: &State, p: &Pal, fit: Fit) -> El {
         .cursor(Cursor::Pointer)
         .role("button")
         .no_window_drag()
+        .on_press_tx(actions::choose_folder)
         .label(copy::REST_CHANGE_ARIA)
         .help(dir.to_string())
         .child(glyph(&icons::FOLDER, p.text2));
@@ -178,6 +181,7 @@ fn tools(s: &State, p: &Pal, fit: Fit) -> El {
         .cursor(Cursor::Pointer)
         .role("button")
         .no_window_drag()
+        .on_press(|s: &mut State| actions::open(s, Overlay::Palette))
         .label(copy::SEARCH_CAPSULE_ARIA)
         .help(copy::SEARCH_CAPSULE_ARIA)
         .child(glyph(&icons::SEARCH, p.text2))
@@ -189,7 +193,8 @@ fn tools(s: &State, p: &Pal, fit: Fit) -> El {
 
 /// Which in-flight task takes the stage: the first downloading one, else starting,
 /// converting, retrying, paused.
-fn staged(tasks: &[DownloadTask]) -> Option<&DownloadTask> {
+fn staged(s: &State) -> Option<&DownloadTask> {
+    let tasks = &s.tasks;
     let rank = |t: &DownloadTask| match t.progress.status {
         St::Downloading => Some(0),
         St::FetchingInfo => Some(1),
@@ -198,11 +203,12 @@ fn staged(tasks: &[DownloadTask]) -> Option<&DownloadTask> {
         St::Paused => Some(4),
         _ => None,
     };
-    tasks.iter().enumerate().filter_map(|(i, t)| rank(t).map(|r| ((r, i), t))).min_by_key(|(k, _)| *k).map(|(_, t)| t)
+    let chosen = s.staged.as_ref().and_then(|id| tasks.iter().find(|t| &t.task_id == id && rank(t).is_some()));
+    chosen.or_else(|| tasks.iter().enumerate().filter_map(|(i, t)| rank(t).map(|r| ((r, i), t))).min_by_key(|(k, _)| *k).map(|(_, t)| t))
 }
 
 fn player(s: &State, p: &Pal, fit: Fit) -> El {
-    let on_stage = staged(&s.tasks);
+    let on_stage = staged(s);
     let landed: Vec<&DownloadTask> = s.tasks.iter().filter(|t| t.progress.status == St::Done).collect();
     let satellites: Vec<&DownloadTask> = s
         .tasks
@@ -296,7 +302,7 @@ fn live_stage(s: &State, p: &Pal, t: &DownloadTask, fit: Fit) -> El {
         .label(copy::speed_aria(&format::bytes(pr.speed)));
     let mut acts = row().gap(8.0);
     for (label, i) in parts::actions(t) {
-        acts = acts.child(button(p, format!("stage-{label}"), label, Some(i), false));
+        acts = acts.child(act_button(p, t, label, i));
     }
     let info = col()
         .grow(1.0)
@@ -317,13 +323,19 @@ fn live_stage(s: &State, p: &Pal, t: &DownloadTask, fit: Fit) -> El {
         .child(info)
 }
 
+/// One of a task's buttons: its shared key, its action.
+fn act_button(p: &Pal, t: &DownloadTask, label: &str, i: &'static Icon) -> El {
+    let act = parts::act(label);
+    on_row(button(p, keys::row_action(act, &t.task_id), label, Some(i), false), act, &t.task_id)
+}
+
 /// Nothing in flight: the last file that landed, square, and the month under it.
 fn landed_stage(s: &State, p: &Pal, t: &DownloadTask, fit: Fit) -> El {
     let (word, tone) = state_word(p, t);
     let file = format::file_name(&t.progress.filename).to_string();
     let mut acts = row().gap(8.0);
     for (label, i) in parts::actions(t) {
-        acts = acts.child(button(p, format!("stage-{label}"), label, Some(i), false));
+        acts = acts.child(act_button(p, t, label, i));
     }
     let mut info = col()
         .grow(1.0)
@@ -530,6 +542,11 @@ fn satellite(s: &State, p: &Pal, t: &DownloadTask) -> El {
         .role("button")
         .focusable(true)
         .label(format::label(t))
+        // TODO(shared): `actions::stage(s, id)`.
+        .on_press({
+            let id = t.task_id.clone();
+            move |s: &mut State| s.staged = Some(id.clone())
+        })
         .child(on_orbit(s, p, t, 48.0, 8.0))
         .child(col().grow(1.0).min_w(0.0).gap(4.0).child(txt(format::label(t), BODY_M, p.text).truncate()).child(motion_line(p, t)))
 }
@@ -544,12 +561,17 @@ fn shelf(s: &State, p: &Pal, landed: &[&DownloadTask], fit: Fit) -> El {
         .child(txt(copy::GROUP_COMPLETED, BODY_M, p.text2))
         .child(txt(landed.len().to_string(), FIG, p.muted))
         .child(spacer())
-        .child(text_button(p, keys::arm(Confirm::Clear).into(), copy::DL_CLEAR_COMPLETED));
+        .child(
+            text_button(p, keys::arm(Confirm::Clear).into(), copy::DL_CLEAR_COMPLETED)
+                .on_press(|s: &mut State| actions::arm(s, Confirm::Clear)),
+        );
     let mut tiles = row().w_full().gap(16.0);
     for t in landed.iter().take(7) {
         let size = format::bytes(t.progress.downloaded);
+        let id = t.task_id.clone();
         let mut tile = col()
             .key(format!("tile-{}", t.task_id))
+            .on_press_tx(move |s: &mut State, tx: &mut rune::Tx| actions::show_in_folder(s, tx, &id))
             .w(fit.tile + 24.0)
             .gap(8.0)
             .cursor(Cursor::Pointer)
@@ -665,13 +687,25 @@ fn transport(s: &State, p: &Pal, fit: Fit) -> El {
         .label(copy::FIELD_ARIA)
         .child(glyph(&icons::LINK, p.muted))
         .child(
-            if s.input.is_empty() { txt(copy::FIELD_PLACEHOLDER, BODY, p.muted) } else { txt(s.input.clone(), BODY, p.text) }
-                .truncate()
+            text_input(&s.field, BODY)
+                .key(keys::FIELD)
+                .label(copy::FIELD_ARIA)
+                .single_line()
+                .color(p.text)
+                .caret(p.text, p.accent.alpha(0.3))
+                .placeholder(copy::FIELD_PLACEHOLDER, p.muted)
                 .grow(1.0)
-                .min_w(0.0),
+                .min_w(0.0)
+                .on_edit(|s: &mut State| &mut s.field)
+                .on_input_change(|s: &mut State, _| s.input = s.field.text.clone())
+                .on_submit(actions::submit),
         )
         // While an answer is open its Download is the lit control, so Look up steps down.
-        .child(button(p, keys::LOOK_UP.into(), copy::FIELD_BUTTON_LOOK_UP, None, matches!(s.found, Found::Nothing)).radius(4.0));
+        .child(
+            button(p, keys::LOOK_UP.into(), copy::FIELD_BUTTON_LOOK_UP, None, matches!(s.found, Found::Nothing))
+                .on_press_tx(actions::submit)
+                .radius(4.0),
+        );
 
     // Play-pause and stop, as on any player: one for everything in flight.
     let (pp_label, pp_icon) = if all_paused { (copy::DL_RESUME_ALL, &icons::PLAY) } else { (copy::DL_PAUSE_ALL, &icons::PAUSE) };
@@ -688,9 +722,11 @@ fn transport(s: &State, p: &Pal, fit: Fit) -> El {
         .label(pp_label)
         .help(pp_label)
         .focusable(true)
+        .on_press(actions::pause_or_resume_all)
         .child(glyph(pp_icon, ink));
     let stop =
-        icon_button(p, keys::CANCEL_ALL.into(), copy::DL_CANCEL_ALL, &icons::CANCEL, if active.is_empty() { p.muted } else { p.text2 });
+        icon_button(p, keys::CANCEL_ALL.into(), copy::DL_CANCEL_ALL, &icons::CANCEL, if active.is_empty() { p.muted } else { p.text2 })
+            .on_press(actions::cancel_all);
 
     // The whole flight: everything known in bytes, as one line.
     let (done, total) =
@@ -774,7 +810,7 @@ fn dock(s: &State, p: &Pal, active: usize) -> El {
             .focusable(true)
             .label(name)
             .help(copy::nav_tooltip(name, i + 1))
-            .on_press(move |s: &mut State| s.nav = nav)
+            .on_press(move |s: &mut State| actions::go(s, nav))
             .child(el().h(8.0).center().child(body))
             .child(label);
         if !on {

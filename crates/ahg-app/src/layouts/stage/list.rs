@@ -9,9 +9,10 @@ use super::{Fit, motion_line, on_orbit};
 use crate::actions as acts;
 use crate::copy;
 use crate::directions::orbit::Tone;
-use crate::directions::orbit::downloads::{Make, SHOW_ALL_KEY, clear, filtered_words, search_text, select_all, selection, tick};
+use crate::directions::orbit::downloads::{Make, clear, filtered_words, search_text, select_all, selection, tick};
 use crate::directions::orbit::look::{Pal, mix, txt};
 use crate::directions::orbit::model;
+use crate::directions::orbit::on_row;
 use crate::format::{self, is_active, is_live};
 use crate::gate::{Filter, State};
 use crate::icons;
@@ -83,7 +84,6 @@ fn header(s: &State, p: &Pal) -> El {
         left = left.child(txt(copy::downloads_summary(tasks.len(), &format::summary_parts(tasks)), SMALL, p.text2));
     }
     let search = row()
-        .key(keys::DOWNLOADS_SEARCH)
         .w(280.0)
         .h(36.0)
         .px(12.0)
@@ -111,7 +111,8 @@ fn filtered(s: &State, p: &Pal, make: Make) -> El {
         .child(txt(title, BODY_M, p.text))
         .child(txt(body, SMALL, p.text2))
         .child(spacer())
-        .child(make(SHOW_ALL_KEY, &all, None, Tone::Ghost))
+        // TODO(shared): `actions::show_all(s)`, which also empties the search box.
+        .child(make(keys::SHOW_ALL, &all, None, Tone::Ghost).on_press(|s: &mut State| acts::set_filter(s, Filter::All)))
 }
 
 fn strip(s: &State, p: &Pal, make: Make) -> El {
@@ -137,6 +138,7 @@ fn strip(s: &State, p: &Pal, make: Make) -> El {
             .checked(on)
             .focusable(true)
             .cursor(Cursor::Pointer)
+            .on_press(move |s: &mut State| acts::set_filter(s, Filter::ALL[i]))
             .child(txt(*label, SMALL_M, if on { p.text } else { p.text2 }))
             .child(txt(n.to_string(), FIG, p.muted));
         seg = seg.child(if on { cell.fill(p.raised) } else { cell.hover(p.hover) });
@@ -146,18 +148,23 @@ fn strip(s: &State, p: &Pal, make: Make) -> El {
     let all_paused = format::all_paused(tasks);
     let mut bulk = row().gap(8.0).center_y();
     if tasks.iter().any(|t| t.progress.status == St::Failed && !format::is_permanent(t.error_code)) {
-        bulk = bulk.child(button(p, keys::RETRY_ALL_FAILED.into(), copy::DL_RETRY_ALL_FAILED, Some(&icons::RETRY), false));
+        bulk = bulk.child(
+            button(p, keys::RETRY_ALL_FAILED.into(), copy::DL_RETRY_ALL_FAILED, Some(&icons::RETRY), false)
+                .on_press(acts::retry_all_failed),
+        );
     }
     if tasks.iter().any(|t| t.progress.status == St::Done) {
         bulk = bulk.child(clear(s, p, make));
     }
     if all_paused {
-        bulk = bulk.child(button(p, keys::PAUSE_ALL.into(), copy::DL_RESUME_ALL, Some(&icons::PLAY), false));
+        bulk = bulk
+            .child(button(p, keys::PAUSE_ALL.into(), copy::DL_RESUME_ALL, Some(&icons::PLAY), false).on_press(acts::pause_or_resume_all));
     } else if paused || tasks.iter().any(|t| matches!(t.progress.status, St::Queued | St::FetchingInfo | St::Downloading)) {
-        bulk = bulk.child(button(p, keys::PAUSE_ALL.into(), copy::DL_PAUSE_ALL, Some(&icons::PAUSE), false));
+        bulk = bulk
+            .child(button(p, keys::PAUSE_ALL.into(), copy::DL_PAUSE_ALL, Some(&icons::PAUSE), false).on_press(acts::pause_or_resume_all));
     }
     if tasks.iter().any(is_active) {
-        bulk = bulk.child(button(p, keys::CANCEL_ALL.into(), copy::DL_CANCEL_ALL, Some(&icons::CANCEL), false));
+        bulk = bulk.child(button(p, keys::CANCEL_ALL.into(), copy::DL_CANCEL_ALL, Some(&icons::CANCEL), false).on_press(acts::cancel_all));
     }
     // While anything is ticked the selection's actions take the bulk actions' place.
     let right = if s.selected.is_empty() { bulk } else { selection(s, p, make) };
@@ -178,8 +185,11 @@ fn banner(p: &Pal, n: usize) -> El {
         .child(glyph(&icons::PAUSE, p.warning))
         .child(row().center_y().child(txt(n.to_string(), FIG, p.text)).child(txt(copy::interrupted_sentence(n), BODY, p.text)))
         .child(spacer())
-        .child(button(p, keys::RESUME_INTERRUPTED.into(), copy::DL_INTERRUPTED_RESUME, Some(&icons::PLAY), false))
-        .child(button(p, keys::DISCARD_INTERRUPTED.into(), copy::DL_INTERRUPTED_DISCARD, None, false))
+        .child(
+            button(p, keys::RESUME_INTERRUPTED.into(), copy::DL_INTERRUPTED_RESUME, Some(&icons::PLAY), false)
+                .on_press(acts::resume_interrupted),
+        )
+        .child(button(p, keys::DISCARD_INTERRUPTED.into(), copy::DL_INTERRUPTED_DISCARD, None, false).on_press(acts::discard_interrupted))
 }
 
 /// The rows on show, after the filter and the search.
@@ -247,18 +257,12 @@ fn task_row(s: &State, p: &Pal, t: &DownloadTask) -> El {
     };
     let mut acts = row().w(136.0).justify_end().gap(0.0);
     for (label, i) in actions(t) {
-        acts = acts.child(icon_button(
-            p,
-            keys::row_action(act(label), &t.task_id),
-            label,
-            i,
-            if label == copy::ACT_RETRY || label == copy::ACT_RESUME { p.text } else { p.text2 },
-        ));
+        let ink = if label == copy::ACT_RETRY || label == copy::ACT_RESUME { p.text } else { p.text2 };
+        acts = acts.child(on_row(icon_button(p, keys::row_action(act(label), &t.task_id), label, i, ink), act(label), &t.task_id));
     }
     if model::is_finished(t) {
-        acts = acts.child(
-            icon_button(p, keys::row_action(RowAct::Remove, &t.task_id), copy::ACT_REMOVE, &icons::REMOVE, p.muted).group_opacity(0.0, 1.0),
-        );
+        let remove = icon_button(p, keys::row_action(RowAct::Remove, &t.task_id), copy::ACT_REMOVE, &icons::REMOVE, p.muted);
+        acts = acts.child(on_row(remove.group_opacity(0.0, 1.0), RowAct::Remove, &t.task_id));
     }
     let mut r = row()
         .key(keys::row(&t.task_id))
@@ -273,19 +277,23 @@ fn task_row(s: &State, p: &Pal, t: &DownloadTask) -> El {
     if ticked {
         r = r.fill(mix(p.bg, p.text, 0.06));
     }
-    r.child(tick(p, keys::row_select(&t.task_id), if ticked { copy::ROW_DESELECT_ARIA } else { copy::ROW_SELECT_ARIA }, ticked, false))
-        .child(art)
-        .child(
-            col()
-                .grow(1.0)
-                .min_w(0.0)
-                .gap(4.0)
-                .child(
-                    txt(format::label(t), if landed { BODY } else { BODY_M }, if st == St::Done || !landed { p.text } else { p.text2 })
-                        .truncate(),
-                )
-                .child(line2),
-        )
-        .child(state)
-        .child(acts)
+    let id = t.task_id.clone();
+    r.child(
+        tick(p, keys::row_select(&t.task_id), if ticked { copy::ROW_DESELECT_ARIA } else { copy::ROW_SELECT_ARIA }, ticked, false)
+            .on_press(move |s: &mut State| acts::toggle_select(s, &id)),
+    )
+    .child(art)
+    .child(
+        col()
+            .grow(1.0)
+            .min_w(0.0)
+            .gap(4.0)
+            .child(
+                txt(format::label(t), if landed { BODY } else { BODY_M }, if st == St::Done || !landed { p.text } else { p.text2 })
+                    .truncate(),
+            )
+            .child(line2),
+    )
+    .child(state)
+    .child(acts)
 }

@@ -5,12 +5,12 @@
 //! The selection, the armed confirms and the filtered-empty words are drawn here once and
 //! handed a button maker, so Now playing's list draws them in its own buttons.
 use ahg_engine::types::{DownloadStatus as St, DownloadTask, ErrorCode};
-use rune::{Color, El, Icon, ScrollSpec, col, el, icon, row, spacer};
+use rune::{Color, El, Icon, ScrollSpec, col, el, icon, row, spacer, text_input};
 
 use super::draw::{self, Pass};
 use super::look::{BODY, BODY_M, FIG, FIG_M, FIG_S, PAGE_TITLE, Pal, SMALL, SMALL_M, mix, txt};
 use super::model;
-use super::{Tone, button, cover, icon_button};
+use super::{Tone, button, cover, icon_button, on_row};
 use crate::actions;
 use crate::copy;
 use crate::format::{self, is_active, is_live};
@@ -23,8 +23,6 @@ const ROW_H: f32 = 64.0;
 const RING: f32 = 52.0;
 /// What a control that cannot act right now is drawn at.
 const DISABLED: f32 = 0.48;
-// TODO(shared): keys::SHOW_ALL, the filtered-empty row's `Show all {N}`.
-pub(crate) const SHOW_ALL_KEY: &str = "dl-show-all";
 
 /// A button in a preset's own style: key, word, glyph, tone.
 pub(crate) type Make<'a> = &'a dyn Fn(&str, &str, Option<&'static Icon>, Tone) -> El;
@@ -74,7 +72,6 @@ fn header(s: &State, p: &Pal) -> El {
                 .radius(8.0)
                 .fill(p.card)
                 .border(1.0, p.track)
-                .key(keys::DOWNLOADS_SEARCH)
                 .label(copy::DL_SEARCH_ARIA)
                 .child(icon(&icons::SEARCH, 16.0).color(p.muted))
                 .child(search_text(s, p, SMALL)),
@@ -83,10 +80,18 @@ fn header(s: &State, p: &Pal) -> El {
     head
 }
 
-/// What the search box holds, or its placeholder.
+/// The search box: a text field on `State.query`; the rows on show follow it (`actions::visible`).
 pub(crate) fn search_text(s: &State, p: &Pal, style: rune::TextStyle) -> El {
-    let q = &s.query.text;
-    if q.is_empty() { txt(copy::DL_SEARCH_PLACEHOLDER, style, p.muted) } else { txt(q.clone(), style, p.text) }.truncate()
+    text_input(&s.query, style)
+        .key(keys::DOWNLOADS_SEARCH)
+        .label(copy::DL_SEARCH_ARIA)
+        .single_line()
+        .color(p.text)
+        .caret(p.text, p.accent.alpha(0.3))
+        .placeholder(copy::DL_SEARCH_PLACEHOLDER, p.muted)
+        .grow(1.0)
+        .min_w(0.0)
+        .on_edit(|s: &mut State| &mut s.query)
 }
 
 /// The header's bulk actions, in Electron's order.
@@ -97,19 +102,26 @@ fn bulk(s: &State, p: &Pal, make: Make) -> El {
     let all_paused = format::all_paused(tasks);
     let mut right = row().gap(8.0).center_y().flex_wrap().justify_end();
     if tasks.iter().any(|t| t.progress.status == St::Failed && !format::is_permanent(t.error_code)) {
-        right = right.child(button(p, keys::RETRY_ALL_FAILED, copy::DL_RETRY_ALL_FAILED, Some(&icons::RETRY), Tone::Ghost));
+        right = right.child(
+            button(p, keys::RETRY_ALL_FAILED, copy::DL_RETRY_ALL_FAILED, Some(&icons::RETRY), Tone::Ghost)
+                .on_press(actions::retry_all_failed),
+        );
     }
     if tasks.iter().any(|t| t.progress.status == St::Done) {
         right = right.child(clear(s, p, make));
     }
     let pausable = tasks.iter().any(|t| matches!(t.progress.status, St::Queued | St::FetchingInfo | St::Downloading));
     if all_paused {
-        right = right.child(button(p, keys::PAUSE_ALL, copy::DL_RESUME_ALL, Some(&icons::PLAY), Tone::Primary));
+        right = right.child(
+            button(p, keys::PAUSE_ALL, copy::DL_RESUME_ALL, Some(&icons::PLAY), Tone::Primary).on_press(actions::pause_or_resume_all),
+        );
     } else if paused || pausable {
-        right = right.child(button(p, keys::PAUSE_ALL, copy::DL_PAUSE_ALL, Some(&icons::PAUSE), Tone::Ghost));
+        right = right
+            .child(button(p, keys::PAUSE_ALL, copy::DL_PAUSE_ALL, Some(&icons::PAUSE), Tone::Ghost).on_press(actions::pause_or_resume_all));
     }
     if active > 0 {
-        right = right.child(button(p, keys::CANCEL_ALL, copy::DL_CANCEL_ALL, Some(&icons::CANCEL), Tone::Ghost));
+        right =
+            right.child(button(p, keys::CANCEL_ALL, copy::DL_CANCEL_ALL, Some(&icons::CANCEL), Tone::Ghost).on_press(actions::cancel_all));
     }
     right
 }
@@ -162,13 +174,14 @@ pub(crate) fn select_all(s: &State, p: &Pal) -> El {
     let shown: Vec<&DownloadTask> = actions::visible(s).collect();
     let picked = shown.iter().filter(|t| s.selected.contains(&t.task_id)).count();
     let all = !shown.is_empty() && picked == shown.len();
-    tick(p, keys::SELECT_ALL.into(), copy::DL_SELECT_ALL_ARIA, all, picked > 0 && !all)
+    tick(p, keys::SELECT_ALL.into(), copy::DL_SELECT_ALL_ARIA, all, picked > 0 && !all).on_press(actions::toggle_select_all)
 }
 
 /// `Clear completed`, or once armed `Clear {n}?`, Cancel and the red Confirm.
 pub(crate) fn clear(s: &State, p: &Pal, make: Make) -> El {
     if s.confirm != Some(Confirm::Clear) {
-        return make(keys::arm(Confirm::Clear), copy::DL_CLEAR_COMPLETED, Some(&icons::REMOVE), Tone::Ghost);
+        return make(keys::arm(Confirm::Clear), copy::DL_CLEAR_COMPLETED, Some(&icons::REMOVE), Tone::Ghost)
+            .on_press(|s: &mut State| actions::arm(s, Confirm::Clear));
     }
     let done = s.tasks.iter().filter(|t| t.progress.status == St::Done).count();
     armed(p, copy::DL_CLEAR_CONFIRM_ARIA, copy::clear_confirm(done), make)
@@ -182,8 +195,8 @@ fn armed(p: &Pal, aria: &'static str, question: String, make: Make) -> El {
         .role("group")
         .label(aria)
         .child(txt(question, SMALL_M, p.text2))
-        .child(make(keys::CONFIRM_NO, copy::DL_CONFIRM_CANCEL, None, Tone::Ghost))
-        .child(make(keys::CONFIRM_YES, copy::DL_CONFIRM_YES, None, Tone::Danger))
+        .child(make(keys::CONFIRM_NO, copy::DL_CONFIRM_CANCEL, None, Tone::Ghost).on_press(actions::disarm))
+        .child(make(keys::CONFIRM_YES, copy::DL_CONFIRM_YES, None, Tone::Danger).on_press(actions::confirm))
 }
 
 /// With anything ticked: `{n} selected`, Cancel, Remove (armed: `Remove {n}?`) and Clear
@@ -192,17 +205,21 @@ pub(crate) fn selection(s: &State, p: &Pal, make: Make) -> El {
     let ticked: Vec<&DownloadTask> = s.tasks.iter().filter(|t| s.selected.contains(&t.task_id)).collect();
     let finished = ticked.iter().filter(|t| model::is_finished(t)).count();
     let faded = |e: El, can: bool| if can { e } else { e.opacity(DISABLED).inert() };
-    let mut r = row()
-        .gap(8.0)
-        .center_y()
-        .child(txt(copy::selected_count(s.selected.len()), FIG, p.text2))
-        .child(faded(make(keys::CANCEL_SELECTED, copy::DL_SELECTION_CANCEL, None, Tone::Ghost), ticked.iter().any(|t| is_active(t))));
+    let mut r = row().gap(8.0).center_y().child(txt(copy::selected_count(s.selected.len()), FIG, p.text2)).child(faded(
+        make(keys::CANCEL_SELECTED, copy::DL_SELECTION_CANCEL, None, Tone::Ghost).on_press(actions::cancel_selected),
+        ticked.iter().any(|t| is_active(t)),
+    ));
     r = if s.confirm == Some(Confirm::Remove) {
         r.child(armed(p, copy::DL_REMOVE_CONFIRM_ARIA, copy::remove_confirm(finished), make))
     } else {
-        r.child(faded(make(keys::arm(Confirm::Remove), copy::DL_SELECTION_REMOVE, Some(&icons::REMOVE), Tone::Ghost), finished > 0))
+        r.child(faded(
+            make(keys::arm(Confirm::Remove), copy::DL_SELECTION_REMOVE, Some(&icons::REMOVE), Tone::Ghost)
+                .on_press(|s: &mut State| actions::arm(s, Confirm::Remove)),
+            finished > 0,
+        ))
     };
-    r.child(make(keys::CLEAR_SELECTION, copy::DL_SELECTION_CLEAR, None, Tone::Ghost))
+    // TODO(shared): `actions::clear_selection(s)`.
+    r.child(make(keys::CLEAR_SELECTION, copy::DL_SELECTION_CLEAR, None, Tone::Ghost).on_press(|s: &mut State| s.selected.clear()))
 }
 
 /// The filter and search show nothing: the filter's sentence, the total, and `Show all`.
@@ -233,7 +250,8 @@ fn filtered_row(s: &State, p: &Pal, make: Make) -> El {
                 .child(el().size(40.0, 40.0).radius(8.0).fill(p.raised).center().child(icon(glyph, 16.0).color(p.muted))),
         )
         .child(col().grow(1.0).gap(4.0).child(txt(title, BODY_M, p.text)).child(txt(body, SMALL, p.text2)))
-        .child(make(SHOW_ALL_KEY, &all, None, Tone::Ghost))
+        // TODO(shared): `actions::show_all(s)`, which also empties the search box.
+        .child(make(keys::SHOW_ALL, &all, None, Tone::Ghost).on_press(|s: &mut State| actions::set_filter(s, Filter::All)))
 }
 
 fn strip(s: &State, p: &Pal, make: Make) -> El {
@@ -258,6 +276,7 @@ fn strip(s: &State, p: &Pal, make: Make) -> El {
             .checked(on)
             .focusable(true)
             .cursor(rune::Cursor::Pointer)
+            .on_press(move |s: &mut State| actions::set_filter(s, Filter::ALL[i]))
             .child(txt(*label, SMALL_M, if on { p.text } else { p.text2 }))
             .child(txt(n.to_string(), FIG, p.muted));
         seg = if on { seg.fill(p.raised) } else { seg.hover(p.hover) };
@@ -280,8 +299,10 @@ fn strip(s: &State, p: &Pal, make: Make) -> El {
 }
 
 fn banner(p: &Pal, n: usize) -> El {
-    let resume = button(p, keys::RESUME_INTERRUPTED, copy::DL_INTERRUPTED_RESUME, Some(&icons::PLAY), Tone::Primary);
-    let discard = button(p, keys::DISCARD_INTERRUPTED, copy::DL_INTERRUPTED_DISCARD, Some(&icons::REMOVE), Tone::Ghost);
+    let resume = button(p, keys::RESUME_INTERRUPTED, copy::DL_INTERRUPTED_RESUME, Some(&icons::PLAY), Tone::Primary)
+        .on_press(actions::resume_interrupted);
+    let discard = button(p, keys::DISCARD_INTERRUPTED, copy::DL_INTERRUPTED_DISCARD, Some(&icons::REMOVE), Tone::Ghost)
+        .on_press(actions::discard_interrupted);
     row()
         .w_full()
         .h(48.0)
@@ -396,7 +417,7 @@ fn group_head(p: &Pal, name: &'static str, n: usize, paused: bool, aside: El, fi
 }
 
 fn empty_row(p: &Pal) -> El {
-    let go = button(p, "paste-a-link", copy::EMPTY_NONE_ACTION, None, Tone::Ghost).on_press(|s: &mut State| s.nav = Nav::Home);
+    let go = button(p, "paste-a-link", copy::EMPTY_NONE_ACTION, None, Tone::Ghost).on_press(|s: &mut State| actions::go(s, Nav::Home));
     row()
         .w_full()
         .h(ROW_H)
@@ -559,7 +580,12 @@ fn task_row(s: &State, p: &Pal, t: &DownloadTask, rule: bool, grip: bool) -> El 
         .hover_group()
         .border_sides([if rule { 1.0 } else { 0.0 }, 0.0, 0.0, 0.0], p.line)
         .child(grip_cell(p, grip, &label))
-        .child(tick(p, keys::row_select(id), if ticked { copy::ROW_DESELECT_ARIA } else { copy::ROW_SELECT_ARIA }, ticked, false))
+        .child(tick(p, keys::row_select(id), if ticked { copy::ROW_DESELECT_ARIA } else { copy::ROW_SELECT_ARIA }, ticked, false).on_press(
+            {
+                let id = id.clone();
+                move |s: &mut State| actions::toggle_select(s, &id)
+            },
+        ))
         .child(art)
         .child(col().grow(1.0).min_w(0.0).gap(4.0).child(line1).child(line2))
         .child(state)
@@ -580,8 +606,9 @@ fn actions(p: &Pal, t: &DownloadTask) -> El {
     let st = t.progress.status;
     let id = &t.task_id;
     let mut a = row().min_w(100.0).gap(4.0).justify_end().center_y();
-    let b =
-        |act: RowAct, label: &'static str, glyph: &'static Icon, ink: Color| icon_button(p, keys::row_action(act, id), label, glyph, ink);
+    let b = |act: RowAct, label: &'static str, glyph: &'static Icon, ink: Color| {
+        on_row(icon_button(p, keys::row_action(act, id), label, glyph, ink), act, id)
+    };
     if matches!(st, St::Queued | St::FetchingInfo | St::Downloading) {
         a = a.child(b(RowAct::Pause, copy::ACT_PAUSE, &icons::PAUSE, p.text2));
     }

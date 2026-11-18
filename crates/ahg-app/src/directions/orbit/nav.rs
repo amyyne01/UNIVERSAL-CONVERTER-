@@ -7,6 +7,7 @@ use rune::{El, Icon, col, el, icon, row, spacer};
 
 use super::draw;
 use super::look::{BODY, BODY_M, FIG, Pal, SMALL, mix, txt};
+use crate::actions;
 use crate::copy;
 use crate::format;
 use crate::gate::{Nav, State};
@@ -107,7 +108,7 @@ fn item(s: &State, p: &Pal, nav: Nav, glyph: &'static Icon, label: &str, n: usiz
         .label(label.to_string())
         .help(copy::nav_tooltip(label, n))
         .cursor(rune::Cursor::Pointer)
-        .on_press(move |s: &mut State| s.nav = nav)
+        .on_press(move |s: &mut State| actions::go(s, nav))
         .child(body);
     if !on {
         r = r.hover(p.hover);
@@ -142,7 +143,7 @@ fn pin(s: &State, p: &Pal) -> El {
         .checked(on)
         .label(copy::KEEP_OPEN)
         .cursor(rune::Cursor::Pointer)
-        .on_press(|s: &mut State| s.nav_pinned = !s.nav_pinned)
+        .on_press(actions::toggle_pin)
         .child(el().size(SLOT, 40.0).center().child(icon(&icons::PIN, 16.0).color(ink)))
         .child(txt(copy::KEEP_OPEN, SMALL, ink))
 }

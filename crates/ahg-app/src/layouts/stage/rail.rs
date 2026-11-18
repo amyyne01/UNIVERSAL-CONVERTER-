@@ -5,9 +5,11 @@ use rune::{El, ScrollSpec, col, el, row, spacer};
 
 use super::parts::{BODY_M, FIG, SMALL, SMALL_M, button, glyph, icon_button, text_button};
 use super::{Fit, on_orbit};
+use crate::actions;
 use crate::copy;
 use crate::directions::orbit::look::{Pal, mix, txt};
 use crate::directions::orbit::model;
+use crate::directions::orbit::on_row;
 use crate::format;
 use crate::gate::State;
 use crate::icons;
@@ -62,8 +64,14 @@ fn interrupted_note(p: &Pal, n: usize) -> El {
             row()
                 .gap(8.0)
                 .pl(24.0)
-                .child(button(p, keys::RESUME_INTERRUPTED.into(), copy::DL_INTERRUPTED_RESUME, Some(&icons::PLAY), false))
-                .child(button(p, keys::DISCARD_INTERRUPTED.into(), copy::DL_INTERRUPTED_DISCARD, None, false)),
+                .child(
+                    button(p, keys::RESUME_INTERRUPTED.into(), copy::DL_INTERRUPTED_RESUME, Some(&icons::PLAY), false)
+                        .on_press(actions::resume_interrupted),
+                )
+                .child(
+                    button(p, keys::DISCARD_INTERRUPTED.into(), copy::DL_INTERRUPTED_DISCARD, None, false)
+                        .on_press(actions::discard_interrupted),
+                ),
         )
 }
 
@@ -92,12 +100,20 @@ fn up_next(s: &State, p: &Pal, queued: &[&DownloadTask]) -> El {
                 .child(on_orbit(s, p, t, 48.0, 8.0))
                 .child(col().grow(1.0).min_w(0.0).gap(4.0).child(txt(format::label(t), BODY_M, p.text).truncate()).child(line))
                 .child(
-                    icon_button(p, keys::row_action(RowAct::Promote, &t.task_id), copy::ACT_DO_THIS_NEXT, &icons::FORWARD, p.text2)
-                        .group_opacity(0.0, 1.0),
+                    on_row(
+                        icon_button(p, keys::row_action(RowAct::Promote, &t.task_id), copy::ACT_DO_THIS_NEXT, &icons::FORWARD, p.text2),
+                        RowAct::Promote,
+                        &t.task_id,
+                    )
+                    .group_opacity(0.0, 1.0),
                 )
                 .child(
-                    icon_button(p, keys::row_action(RowAct::Cancel, &t.task_id), copy::ACT_CANCEL, &icons::CANCEL, p.text2)
-                        .group_opacity(0.0, 1.0),
+                    on_row(
+                        icon_button(p, keys::row_action(RowAct::Cancel, &t.task_id), copy::ACT_CANCEL, &icons::CANCEL, p.text2),
+                        RowAct::Cancel,
+                        &t.task_id,
+                    )
+                    .group_opacity(0.0, 1.0),
                 ),
         );
     }
@@ -106,7 +122,8 @@ fn up_next(s: &State, p: &Pal, queued: &[&DownloadTask]) -> El {
 
 fn attention(p: &Pal, trouble: &[&DownloadTask]) -> El {
     let retryable = trouble.iter().any(|t| t.progress.status == St::Failed && !format::is_permanent(t.error_code));
-    let aside = retryable.then(|| text_button(p, keys::RETRY_ALL_FAILED.into(), copy::DL_RETRY_ALL_FAILED));
+    let aside =
+        retryable.then(|| text_button(p, keys::RETRY_ALL_FAILED.into(), copy::DL_RETRY_ALL_FAILED).on_press(actions::retry_all_failed));
     let mut c = col().w_full().gap(16.0).child(head(p, copy::GROUP_NEEDS_ATTENTION, trouble.len(), aside));
     for t in trouble {
         c = c.child(problem(p, t));
@@ -122,7 +139,8 @@ fn problem(p: &Pal, t: &DownloadTask) -> El {
     let mut buttons = row().gap(0.0);
     for (label, i) in super::parts::actions(t) {
         let ink = if label == copy::ACT_RETRY { p.text } else { p.text2 };
-        buttons = buttons.child(icon_button(p, keys::row_action(super::parts::act(label), &t.task_id), label, i, ink));
+        let act = super::parts::act(label);
+        buttons = buttons.child(on_row(icon_button(p, keys::row_action(act, &t.task_id), label, i, ink), act, &t.task_id));
     }
     let title = row()
         .w_full()

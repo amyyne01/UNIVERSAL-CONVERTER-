@@ -8,11 +8,12 @@
 //! `bone`s, flat blocks in the raised colour that can shimmer later.
 use ahg_engine::tier::{self, BASIC_LIMITS, Plan};
 use ahg_engine::types::{AUDIO_ONLY_SOURCES, MediaMetadata, Playlist, SearchResult, SourcePlatform as Src, VideoQuality};
-use rune::{El, Icon, ScrollSpec, TextStyle, col, el, icon, row, spacer};
+use rune::{El, Icon, PopupItem, ScrollSpec, TextStyle, col, el, icon, row, spacer};
 
 use super::draw;
 use super::look::{BODY, BODY_M, FIG, FIG_L, Pal, SMALL, SMALL_M, mix, txt};
-use super::{Tone, button, icon_button, keycap, model};
+use super::{Tone, button, icon_button, keycap, model, pick_list};
+use crate::actions;
 use crate::copy::{self, found as f};
 use crate::format;
 use crate::gate::{Band, Card, Choice, Found, Matched, State};
@@ -40,8 +41,8 @@ const AUDIO_QUALITY_VALUES: [&str; 5] = ["128", "192", "256", "320", "lossless"]
 /// The labels run in the order of the engine's qualities and formats.
 const QUALITIES: [VideoQuality; 6] =
     [VideoQuality::P360, VideoQuality::P480, VideoQuality::P720, VideoQuality::P1080, VideoQuality::P2160, VideoQuality::Best];
-// TODO(shared): keys::RESULTS_CLEAR, the results bar's Clear.
-const RESULTS_CLEAR_KEY: &str = "results-clear";
+/// The video qualities' values, in the order of `QUALITIES`.
+const VIDEO_QUALITY_VALUES: [&str; 6] = ["360p", "480p", "720p", "1080p", "2160p", "best"];
 
 /// A view or like count as printed. TODO(shared): format::count_short (`1.2K`, `4.8M`,
 /// a trailing `.0` dropped); the whole number stands in until it exists.
@@ -66,10 +67,16 @@ fn folder(s: &State) -> String {
     s.choice.folder.clone().or_else(|| s.settings.get("outputDir").and_then(|v| v.as_str()).map(str::to_owned)).unwrap_or_default()
 }
 
-/// Puts the field back to empty: the found surface goes.
-pub(crate) fn clear(s: &mut State) {
-    s.found = Found::Nothing;
-    s.input.clear();
+/// The found step's choice with one part changed, through `actions::set_choice` (which says what a locked pick needs).
+fn set(s: &mut State, change: impl FnOnce(&mut Choice)) {
+    let mut c = s.choice.clone();
+    change(&mut c);
+    actions::set_choice(s, c);
+}
+
+/// A pick list's entries, the one at `on` checked.
+fn entries(labels: &[&str], values: &[&str], on: usize) -> Vec<PopupItem> {
+    labels.iter().zip(values).enumerate().map(|(i, (l, v))| PopupItem::new(*v, *l).checked(i == on)).collect()
 }
 
 /// The way back: the Esc keycap and a close button.
@@ -78,7 +85,7 @@ pub(crate) fn dismiss(p: &Pal) -> El {
         .gap(8.0)
         .center_y()
         .child(keycap(p, copy::KEYCAP_ESC))
-        .child(icon_button(p, keys::FOUND_CLOSE.into(), f::RESULTS_CLEAR, &icons::CLOSE, p.text2).on_press(|s: &mut State| clear(s)))
+        .child(icon_button(p, keys::FOUND_CLOSE.into(), f::RESULTS_CLEAR, &icons::CLOSE, p.text2).on_press(actions::dismiss_found))
 }
 
 /// True when the body is tall enough to need all the height it can get (a track list).
@@ -167,10 +174,18 @@ fn chip(p: &Pal, label: &str, on: bool, tag: Option<&str>, locked: bool) -> El {
 }
 
 /// A labelled row of choices; `locked` says which need Premium.
-fn choices(p: &Pal, label: &str, items: &[&str], on: usize, lossless_from: Option<usize>, locked: &dyn Fn(usize) -> bool) -> El {
-    let mut r = row().gap(8.0).flex_wrap().role("radiogroup").label(label.to_string());
+fn choices(
+    p: &Pal,
+    (label, group): (&str, &str),
+    items: &[&str],
+    on: usize,
+    lossless_from: Option<usize>,
+    locked: &dyn Fn(usize) -> bool,
+    at: &dyn Fn(El, usize) -> El,
+) -> El {
+    let mut r = row().key(group.to_string()).gap(8.0).flex_wrap().role("radiogroup").label(label.to_string());
     for (i, item) in items.iter().enumerate() {
-        r = r.child(chip(p, item, i == on, lossless_from.filter(|from| i >= *from).map(|_| f::TAG_LOSSLESS), locked(i)));
+        r = r.child(at(chip(p, item, i == on, lossless_from.filter(|from| i >= *from).map(|_| f::TAG_LOSSLESS), locked(i)), i));
     }
     col().gap(8.0).child(txt(label.to_string(), SMALL, p.text2)).child(r)
 }
@@ -182,6 +197,7 @@ fn basic_line(p: &Pal, words: &str) -> El {
         .center_y()
         .child(icon(&icons::LOCK_ORBIT, 16.0).color(p.muted))
         .child(txt(words.to_string(), SMALL, p.text2))
+        // TODO(shared): `actions::see_plans(s)`; the notice's See plans is `Act::SeePlans`, a no-op until the plans sheet.
         .child(txt(f::SEE_PLANS, SMALL_M, p.text).key(keys::FOUND_SEE_PLANS).role("button").focusable(true).cursor(rune::Cursor::Pointer))
 }
 
@@ -206,16 +222,15 @@ pub(crate) fn notice(s: &State, p: &Pal) -> Option<El> {
             .role("status")
             .child(icon(&icons::LOCK_ORBIT, 16.0).color(p.text2))
             .child(txt(words.clone(), SMALL, p.text).wrap().grow(1.0).min_w(0.0))
-            .child(button(p, keys::NOTICE_ACTION, f::SEE_PLANS, None, Tone::Ghost))
+            .child(button(p, keys::NOTICE_ACTION, f::SEE_PLANS, None, Tone::Ghost).on_press_tx(actions::notice_action))
             .child(
-                icon_button(p, keys::NOTICE_DISMISS.into(), f::CLIPBOARD_DISMISS, &icons::CLOSE, p.text2)
-                    .on_press(|s: &mut State| s.notice = None),
+                icon_button(p, keys::NOTICE_DISMISS.into(), f::CLIPBOARD_DISMISS, &icons::CLOSE, p.text2).on_press(actions::dismiss_notice),
             ),
     )
 }
 
 /// A drop-down showing its value, its name over it.
-fn select(p: &Pal, label: &str, value: &str, glyph: Option<&'static Icon>) -> El {
+fn select(p: &Pal, label: &str, value: &str, glyph: Option<&'static Icon>, at: impl FnOnce(El) -> El) -> El {
     let mut b = row()
         .h(32.0)
         .px(12.0)
@@ -232,7 +247,7 @@ fn select(p: &Pal, label: &str, value: &str, glyph: Option<&'static Icon>) -> El
         b = b.child(icon(g, 16.0).color(p.text2));
     }
     b = b.child(txt(value.to_string(), FIG, p.text)).child(icon(&icons::CARET_DOWN, 16.0).color(p.muted));
-    col().gap(8.0).child(txt(label.to_string(), SMALL, p.text2)).child(b)
+    col().gap(8.0).child(txt(label.to_string(), SMALL, p.text2)).child(at(b))
 }
 
 fn readout(p: &Pal, outcome: String) -> El {
@@ -270,13 +285,11 @@ fn failed(p: &Pal, input: &str, why: &str) -> El {
     let mark =
         el().size(40.0, 40.0).radius(20.0).center().border(1.0, mix(p.error, p.card, 0.5)).child(icon(&icons::ALERT, 16.0).color(p.error));
     row().w_full().gap(16.0).items_start().role("alert").child(mark).child(
-        col()
-            .grow(1.0)
-            .min_w(0.0)
-            .gap(8.0)
-            .child(subject(p, input))
-            .child(txt(why.to_string(), BODY, p.text).wrap().max_w(640.0))
-            .child(row().mt(8.0).child(button(p, "found-retry", f::ERROR_TRY_AGAIN, Some(&icons::RETRY), Tone::Ghost))),
+        col().grow(1.0).min_w(0.0).gap(8.0).child(subject(p, input)).child(txt(why.to_string(), BODY, p.text).wrap().max_w(640.0)).child(
+            row()
+                .mt(8.0)
+                .child(button(p, keys::FOUND_RETRY, f::ERROR_TRY_AGAIN, Some(&icons::RETRY), Tone::Ghost).on_press_tx(actions::submit)),
+        ),
     )
 }
 
@@ -371,8 +384,12 @@ fn media(p: &Pal, m: &MediaMetadata, s: &State) -> El {
 
     // Video or audio, then that kind's own choices.
     let mut kind = row().self_start().gap(4.0).padding(4.0).radius(8.0).border(1.0, p.track).role("radiogroup");
-    for (label, glyph, on) in [(f::MEDIA_VIDEO, &icons::VIDEO, video), (f::MEDIA_AUDIO, &icons::MUSIC, !video)] {
+    for (label, glyph, on, key) in
+        [(f::MEDIA_VIDEO, &icons::VIDEO, video, keys::CHOICE_VIDEO), (f::MEDIA_AUDIO, &icons::MUSIC, !video, keys::CHOICE_AUDIO)]
+    {
         let mut seg = row()
+            .key(key)
+            .on_press(move |s: &mut State| set(s, |c| c.video = key == keys::CHOICE_VIDEO))
             .h(24.0)
             .px(12.0)
             .gap(8.0)
@@ -395,20 +412,49 @@ fn media(p: &Pal, m: &MediaMetadata, s: &State) -> El {
         options = options.child(kind);
     }
     if video {
-        options = options.child(choices(p, f::VIDEO_QUALITY_LABEL, &f::VIDEO_QUALITIES, vq, None, &|i| {
-            basic && tier::is_premium_video_quality(QUALITIES[i])
-        }));
+        options = options.child(choices(
+            p,
+            (f::VIDEO_QUALITY_LABEL, keys::CHOICE_VIDEO_QUALITY),
+            &f::VIDEO_QUALITIES,
+            vq,
+            None,
+            &|i| basic && tier::is_premium_video_quality(QUALITIES[i]),
+            // TODO(shared): keys::choice_video_quality(value), one key per chip.
+            &|c, i| {
+                c.key(format!("{}-{}", keys::CHOICE_VIDEO_QUALITY, VIDEO_QUALITY_VALUES[i]))
+                    .on_press(move |s: &mut State| set(s, |c| c.video_quality = QUALITIES[i]))
+            },
+        ));
         if basic {
             options = options.child(basic_line(p, f::BASIC_VIDEO));
         }
     } else {
         options = options
-            .child(choices(p, f::PLAYLIST_FORMAT, &f::AUDIO_FORMATS, af, Some(5), &|i| {
-                basic && tier::is_premium_format(&f::AUDIO_FORMATS[i].to_lowercase())
-            }))
-            .child(choices(p, f::AUDIO_QUALITY_LABEL, &f::AUDIO_QUALITIES, aq, None, &|i| {
-                basic && !BASIC_LIMITS.lossless && i == f::AUDIO_QUALITIES.len() - 1
-            }));
+            .child(choices(
+                p,
+                (f::PLAYLIST_FORMAT, keys::CHOICE_FORMAT),
+                &f::AUDIO_FORMATS,
+                af,
+                Some(5),
+                &|i| basic && tier::is_premium_format(&f::AUDIO_FORMATS[i].to_lowercase()),
+                &|c, i| {
+                    c.key(keys::choice_format(AUDIO_FORMAT_VALUES[i]))
+                        .on_press(move |s: &mut State| set(s, |c| c.format = AUDIO_FORMAT_VALUES[i].into()))
+                },
+            ))
+            .child(choices(
+                p,
+                (f::AUDIO_QUALITY_LABEL, keys::CHOICE_AUDIO_QUALITY),
+                &f::AUDIO_QUALITIES,
+                aq,
+                None,
+                &|i| basic && !BASIC_LIMITS.lossless && i == f::AUDIO_QUALITIES.len() - 1,
+                // TODO(shared): keys::choice_audio_quality(value), one key per chip.
+                &|c, i| {
+                    c.key(format!("{}-{}", keys::CHOICE_AUDIO_QUALITY, AUDIO_QUALITY_VALUES[i]))
+                        .on_press(move |s: &mut State| set(s, |c| c.audio_quality = AUDIO_QUALITY_VALUES[i].into()))
+                },
+            ));
         if basic {
             options = options.child(basic_line(p, f::BASIC_AUDIO));
         }
@@ -421,7 +467,9 @@ fn media(p: &Pal, m: &MediaMetadata, s: &State) -> El {
         .border_sides([1.0, 0.0, 0.0, 0.0], p.line)
         .child(readout(p, outcome))
         .child(spacer())
-        .child(button(p, keys::FOUND_DOWNLOAD, f::SINGLE_DOWNLOAD, Some(&icons::DOWNLOAD), Tone::Primary));
+        .child(
+            button(p, keys::FOUND_DOWNLOAD, f::SINGLE_DOWNLOAD, Some(&icons::DOWNLOAD), Tone::Primary).on_press(actions::download_found),
+        );
     col()
         .w_full()
         .gap(24.0)
@@ -508,6 +556,7 @@ fn tracks(p: &Pal, pl: &Playlist, matched: &[Matched], selected: &[bool], choice
     let all = picked.len() == n;
     let mut select_all = row()
         .key(keys::FOUND_SELECT_ALL)
+        .on_press(actions::toggle_all_tracks)
         .h(28.0)
         .px(8.0)
         .gap(8.0)
@@ -516,7 +565,11 @@ fn tracks(p: &Pal, pl: &Playlist, matched: &[Matched], selected: &[bool], choice
         .role("button")
         .focusable(true)
         .cursor(rune::Cursor::Pointer)
-        .child(if pick_locked { icon(&icons::LOCK_ORBIT, 16.0).color(p.text2) } else { tick(p, all, true) })
+        .child(if pick_locked {
+            icon(&icons::LOCK_ORBIT, 16.0).color(p.text2)
+        } else {
+            tick(p, all, true).on_press(actions::toggle_all_tracks)
+        })
         .child(txt(
             if all { f::PLAYLIST_DESELECT_ALL } else { f::PLAYLIST_SELECT_ALL },
             SMALL_M,
@@ -575,7 +628,7 @@ fn tracks(p: &Pal, pl: &Playlist, matched: &[Matched], selected: &[bool], choice
             if pick_locked {
                 el().size(20.0, 20.0).center().child(icon(&icons::LOCK_ORBIT, 16.0).color(p.muted))
             } else {
-                tick(p, on, usable)
+                tick(p, on, usable).on_press(move |s: &mut State| actions::toggle_track(s, i))
             },
             txt((i + 1).to_string(), FIG, p.muted),
             txt(t.name.clone(), BODY, ink).truncate(),
@@ -584,6 +637,7 @@ fn tracks(p: &Pal, pl: &Playlist, matched: &[Matched], selected: &[bool], choice
             txt(time.clone(), FIG, p.text2).align(rune::Align::End),
         )
         .key(keys::track(i))
+        .on_press(move |s: &mut State| actions::toggle_track(s, i))
         .h(40.0)
         .px(12.0)
         .border_sides([0.0, 0.0, 1.0, 0.0], p.line)
@@ -612,12 +666,32 @@ fn tracks(p: &Pal, pl: &Playlist, matched: &[Matched], selected: &[bool], choice
         .items_end()
         .pt(16.0)
         .border_sides([1.0, 0.0, 0.0, 0.0], p.line)
-        .child(select(p, f::PLAYLIST_FORMAT, f::AUDIO_FORMATS[af], None).label(f::PLAYLIST_FORMAT_ARIA))
-        .child(select(p, f::PLAYLIST_QUALITY, f::AUDIO_QUALITIES[aq], None).label(f::PLAYLIST_QUALITY_ARIA))
-        .child(select(p, f::PLAYLIST_FOLDER, folder, Some(&icons::FOLDER)).help(folder))
+        .child(
+            select(p, f::PLAYLIST_FORMAT, f::AUDIO_FORMATS[af], None, |b| {
+                let items = entries(&f::AUDIO_FORMATS, &AUDIO_FORMAT_VALUES, af);
+                pick_list(b.key(keys::CHOICE_FORMAT), keys::CHOICE_FORMAT, items, AUDIO_FORMAT_VALUES[af], |s, id| {
+                    set(s, |c| c.format = id.into())
+                })
+            })
+            .label(f::PLAYLIST_FORMAT_ARIA),
+        )
+        .child(
+            select(p, f::PLAYLIST_QUALITY, f::AUDIO_QUALITIES[aq], None, |b| {
+                let items = entries(&f::AUDIO_QUALITIES, &AUDIO_QUALITY_VALUES, aq);
+                pick_list(b.key(keys::CHOICE_AUDIO_QUALITY), keys::CHOICE_AUDIO_QUALITY, items, AUDIO_QUALITY_VALUES[aq], |s, id| {
+                    set(s, |c| c.audio_quality = id.into())
+                })
+            })
+            .label(f::PLAYLIST_QUALITY_ARIA),
+        )
+        // TODO(shared): a download's own folder (`Choice.folder`); `actions::choose_folder` sets the saved `outputDir`.
+        .child(select(p, f::PLAYLIST_FOLDER, folder, Some(&icons::FOLDER), |b| b.key(keys::CHOICE_FOLDER)).help(folder))
         .child(spacer())
         .child(txt(sum, FIG, p.text2).mb(8.0))
-        .child(button(p, keys::FOUND_DOWNLOAD, &f::playlist_download_label(picked_n, queued), Some(&icons::DOWNLOAD), Tone::Primary));
+        .child(
+            button(p, keys::FOUND_DOWNLOAD, &f::playlist_download_label(picked_n, queued), Some(&icons::DOWNLOAD), Tone::Primary)
+                .on_press(actions::download_found),
+        );
 
     let mut c = col().w_full().grow(1.0).min_h(0.0).gap(16.0).child(head);
     if basic && picked_n > cap {
@@ -678,9 +752,13 @@ fn search(s: &State, p: &Pal, bands: &[Band; 3]) -> El {
         .pt(16.0)
         .border_sides([1.0, 0.0, 0.0, 0.0], p.line)
         .child(txt(f::results_selected(n), FIG, p.text2))
-        .child(button(p, RESULTS_CLEAR_KEY, f::RESULTS_CLEAR, None, Tone::Ghost))
+        // TODO(shared): `actions::clear_picked(s)`.
+        .child(button(p, keys::RESULTS_CLEAR, f::RESULTS_CLEAR, None, Tone::Ghost).on_press(|s: &mut State| s.picked.clear()))
         .child(spacer())
-        .child(button(p, keys::FOUND_DOWNLOAD, &f::results_download_n(n), Some(&icons::DOWNLOAD), Tone::Primary));
+        .child(
+            button(p, keys::FOUND_DOWNLOAD, &f::results_download_n(n), Some(&icons::DOWNLOAD), Tone::Primary)
+                .on_press(actions::download_found),
+        );
     col().w_full().gap(16.0).child(cols).child(bar)
 }
 
@@ -709,6 +787,7 @@ fn band_view(s: &State, p: &Pal, i: usize, (name, glyph, color): (&str, &'static
                     c = c.child(
                         row()
                             .key(keys::band_more(i))
+                            .on_press(move |s: &mut State| actions::show_more(s, i))
                             .h(32.0)
                             .px(8.0)
                             .gap(8.0)
@@ -734,7 +813,10 @@ fn band_view(s: &State, p: &Pal, i: usize, (name, glyph, color): (&str, &'static
                 .role("alert")
                 .child(icon(&icons::ALERT, 16.0).color(p.error))
                 .child(txt(copy::search_source_failed(name), SMALL, p.text).grow(1.0).min_w(0.0).truncate())
-                .child(button(p, &keys::band_retry(i), copy::SEARCH_RETRY, Some(&icons::RETRY), Tone::Ghost)),
+                .child(
+                    button(p, &keys::band_retry(i), copy::SEARCH_RETRY, Some(&icons::RETRY), Tone::Ghost)
+                        .on_press(move |s: &mut State| actions::retry_band(s, i)),
+                ),
         };
     col().grow(1.0).min_w(0.0).gap(8.0).child(head.pb(8.0).border_sides([0.0, 0.0, 1.0, 0.0], p.line)).child(body)
 }
@@ -751,8 +833,10 @@ fn result_row(p: &Pal, r: &SearchResult, on: bool) -> El {
     if !duration.is_empty() {
         second = second.child(txt(duration, FIG, p.muted));
     }
+    let (row_id, tick_id) = (r.id.clone(), r.id.clone());
     let row_el = row()
         .key(keys::result(&r.id))
+        .on_press(move |s: &mut State| actions::toggle_result(s, &row_id))
         .w_full()
         .h(56.0)
         .px(8.0)
@@ -765,7 +849,12 @@ fn result_row(p: &Pal, r: &SearchResult, on: bool) -> El {
         .label(copy::search_row_aria(&r.title, &subtitle));
     let row_el = if on { row_el.fill(mix(p.card, p.text, 0.06)) } else { row_el.hover(p.hover) };
     row_el
-        .child(tick(p, on, true).label(f::results_pick_aria(&r.title)))
+        .child(
+            tick(p, on, true)
+                .key(keys::result_tick(&r.id))
+                .on_press(move |s: &mut State| actions::toggle_result(s, &tick_id))
+                .label(f::results_pick_aria(&r.title)),
+        )
         .child(art(p, r.source, w, 36.0, glyph))
         .child(col().grow(1.0).min_w(0.0).gap(4.0).child(txt(r.title.clone(), SMALL_M, p.text).truncate()).child(second))
         .child(icon(&icons::DOWNLOAD, 16.0).color(p.text2).help(copy::SEARCH_ROW_DOWNLOAD))
