@@ -16,6 +16,12 @@ pub fn view(s: &State, p: &Pal, active: usize) -> El {
     let quiet = !counted && finished.is_empty() && active == 0;
 
     let top = col().w_full().gap(16.0).child(headline(p, active)).child(field(p, &s.input)).child(status_line(s, p));
+    // What the field found takes the page's place, under the field it came out of.
+    if let Some(found) = super::found::view(s, p) {
+        let page =
+            col().w_full().max_w(1480.0).self_center().h_full().min_h(0.0).px(40.0).pt(28.0).pb(40.0).gap(24.0).child(top).child(found);
+        return col().key("home").w_full().grow(1.0).min_h(0.0).child(page);
+    }
     if quiet {
         // First launch: the field is the whole screen, set a little above the middle.
         return col()

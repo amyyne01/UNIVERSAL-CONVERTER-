@@ -348,37 +348,42 @@ pub fn sleeve(s: &State, p: &Pal, t: &DownloadTask, size: f32, disc: Disc, faded
         Disc::Out(_) => holder = holder.child(record(p, t.source, size * 0.94).absolute(size * 0.03, size * 0.03)),
         Disc::None => {}
     }
-    let r = (size * 0.06).round().max(3.0);
     let face = match s.cover(&t.task_id) {
         Some(img) => el().size(size, size).pixels_fit(img.pixels(), SurfaceFit::Fill),
         None => blank_face(p, t.source, size),
     };
-    let spine_w = (size * 0.25).round().clamp(14.0, 24.0);
-    let format = t.format.to_uppercase();
-    let label_size = (spine_w * 0.64).round().clamp(9.0, 13.0);
-    let printed = el()
-        .size(size, spine_w)
-        .center()
-        .absolute(spine_w / 2.0 - size / 2.0, size / 2.0 - spine_w / 2.0)
-        .rotate(-std::f32::consts::FRAC_PI_2)
-        .child(text(format).font(mono(label_size, 500.0).tracking(label_size * 0.12)).color(theme::label_ink()).single_line());
-    let spine = el()
-        .size(spine_w, size)
-        .absolute(0.0, 0.0)
-        .fill(theme::label_paper())
-        .border_sides([0.0, 1.0, 0.0, 0.0], theme::label_ink().alpha(0.18));
-    let mut cover = el().size(size, size).absolute(0.0, 0.0).clip_rounded(r).fill(p.raised).child(face).child(spine).child(printed);
-    if !p.dark {
-        cover = cover.shadow(1.0, 3.0, theme::label_ink().alpha(0.18));
-    }
+    let mut cover = jacket(p, face, size, &t.format).absolute(0.0, 0.0);
     if faded {
         cover = cover.opacity(0.5);
     }
     holder.child(cover)
 }
 
+/// The sleeve's jacket: a face (cover art or a blank) with the spine label down its left edge,
+/// printed with `format` upper-cased (empty: a bare label, nothing printed yet).
+pub fn jacket(p: &Pal, face: El, size: f32, format: &str) -> El {
+    let r = (size * 0.06).round().max(3.0);
+    let spine_w = (size * 0.25).round().clamp(14.0, 24.0);
+    let label_size = (spine_w * 0.64).round().clamp(9.0, 13.0);
+    let printed = el()
+        .size(size, spine_w)
+        .center()
+        .absolute(spine_w / 2.0 - size / 2.0, size / 2.0 - spine_w / 2.0)
+        .rotate(-std::f32::consts::FRAC_PI_2)
+        .child(
+            text(format.to_uppercase()).font(mono(label_size, 500.0).tracking(label_size * 0.12)).color(theme::label_ink()).single_line(),
+        );
+    let spine = el()
+        .size(spine_w, size)
+        .absolute(0.0, 0.0)
+        .fill(theme::label_paper())
+        .border_sides([0.0, 1.0, 0.0, 0.0], theme::label_ink().alpha(0.18));
+    let cover = el().size(size, size).clip_rounded(r).fill(p.raised).child(face).child(spine).child(printed);
+    if p.dark { cover } else { cover.shadow(1.0, 3.0, theme::label_ink().alpha(0.18)) }
+}
+
 /// A plain company sleeve: a tint of the source with a die-cut hole showing the record's label.
-fn blank_face(p: &Pal, source: SourcePlatform, size: f32) -> El {
+pub fn blank_face(p: &Pal, source: SourcePlatform, size: f32) -> El {
     let hue = p.source(source);
     let hole = (size * 0.56).round();
     let label = (size * 0.30).round();
@@ -400,7 +405,7 @@ fn rim_ring(s: &State, p: &Pal, t: &DownloadTask, d: f32) -> El {
 }
 
 /// The record: vinyl with a groove and a label in the source's colour.
-fn record(p: &Pal, source: SourcePlatform, d: f32) -> El {
+pub fn record(p: &Pal, source: SourcePlatform, d: f32) -> El {
     let outer = (d * 0.86).round();
     let groove = (d * 0.66).round();
     let label = (d * 0.40).round();

@@ -11,9 +11,9 @@
 //! | Home page                                  | Home: the wall, grouped "In progress" / "Needs attention" / "Completed" |
 //! | Home paste field, Look up, Ctrl+V          | The add field in the title bar ("Paste a link or search", Ctrl V), on every place |
 //! | Home headline, Works with, rest caption    | Home on first launch: the headline, the paste keys and four empty record slots, one per source |
-//! | Home search results (unified search)       | Typing words in the add field: results join the top of the wall as a temporary group (not drawn) |
+//! | Home search results (unified search)       | Typing words in the add field: results open at the top of the wall, under the add field |
 //! | YouTube / Spotify / SoundCloud / Reels tabs| Source filters on the wall; their search is the add field's; per-platform overrides sit in the add field's folder and format "Change" (not drawn) |
-//! | Playlist and short-form previews           | Open under the add field when a pasted link is a collection (not drawn) |
+//! | Playlist and short-form previews           | Open at the top of the wall, under the add field (`shelf::found`) |
 //! | Clipboard offer                            | A quiet line under the add field (not drawn) |
 //! | Home "This month", "Where it came from"    | Home's masthead: the month's file count as the headline, size and comparison as a sentence, the source split beside it |
 //! | Home "Speed" cell                          | The "In progress" header (Home) and group header (Downloads): transferring count and total speed |
@@ -35,6 +35,7 @@ mod settings;
 use ahg_engine::types::{DownloadStatus as St, DownloadTask, ErrorCode, SourcePlatform};
 use rune::{Color, Cx, El, Icon, ScrollSpec, Span, col, el, icon, rich, row, text};
 
+use crate::directions::shelf;
 use crate::directions::shelf::parts::{self, Disc, run, run_mono, runs};
 use crate::directions::shelf::theme::{self, Pal, mono, sans, serif};
 use crate::gate::{Confirm, Nav, State};
@@ -94,7 +95,14 @@ fn titlebar(s: &State, p: &Pal, leading: f32, trailing: f32) -> El {
         .role("textbox")
         .label(copy::FIELD_ARIA)
         .child(icon(&icons::LINK, 16.0).color(p.muted))
-        .child(text(copy::FIELD_PLACEHOLDER).font(sans(13.0, 400.0)).color(p.muted).grow(1.0).single_line().truncate())
+        .child(
+            text(if s.input.is_empty() { copy::FIELD_PLACEHOLDER } else { &s.input })
+                .font(sans(13.0, 400.0))
+                .color(if s.input.is_empty() { p.muted } else { p.text })
+                .grow(1.0)
+                .single_line()
+                .truncate(),
+        )
         .child(keys(p, &[copy::KEY_CTRL, copy::REST_KEY_V]));
     let palette = row()
         .key("palette")
@@ -165,6 +173,10 @@ fn quiet(p: &Pal, key: &str, glyph: Option<&'static Icon>, label: &str, ink: Col
 
 fn wall(s: &State, p: &Pal) -> El {
     let mut page = col().w_full().px(PAD).pt(16.0).pb(48.0);
+    // What the add field found opens at the top of the wall, above what is already on it.
+    if let Some(found) = shelf::found::view(s, p) {
+        page = page.child(found.mb(32.0));
+    }
     if s.tasks.is_empty() && s.stats.is_none() {
         page = page.child(first_run(s, p));
     } else {

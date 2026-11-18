@@ -7,6 +7,7 @@
 //! This file draws the shell: the title bar, the sidebar (`nav`) and the
 //! place beside it, chosen by `State.nav`.
 mod downloads;
+pub(crate) mod found;
 mod home;
 pub(crate) mod icons;
 mod nav;
