@@ -52,7 +52,7 @@ pub fn view(s: &State, p: &Pal) -> Option<El> {
         Found::Playlist { playlist, matched, selected } => album(s, playlist, matched, selected, p),
         Found::Search { query, bands } => (search_head(s, query, bands, p), search(s, bands, p), picked_bar(s, p)),
     };
-    let mut c = col()
+    let c = col()
         .key(keys::FOUND)
         .w_full()
         .shrink()
@@ -63,9 +63,6 @@ pub fn view(s: &State, p: &Pal) -> Option<El> {
         .clip_rounded(12.0)
         .role("region")
         .child(head);
-    if let Some(n) = &s.notice {
-        c = c.child(notice(n, p));
-    }
     let mut c = c.child(body.shrink().min_h(0.0).scroll(ScrollSpec { stick_bottom: false }));
     if let Some(foot) = foot {
         c = c.child(foot);
@@ -85,30 +82,9 @@ fn lock(p: &Pal) -> El {
     glyph(&icons::LOCK_SIGNAL, p.text2)
 }
 
-/// An open door to Premium, never the accent. It carries the key unless the notice's own does.
-fn see_plans(s: &State, p: &Pal) -> El {
-    let b = button(None, f::SEE_PLANS, p.text, p);
-    if s.notice.is_none() { b.key(keys::FOUND_SEE_PLANS) } else { b }
-}
-
-/// The surface's notice line, under its header: a Basic limit just met, with
-/// the way to lift it. Raised, not red: it explains, it does not scold.
-fn notice(words: &str, p: &Pal) -> El {
-    row()
-        .w_full()
-        .min_h(56.0)
-        .pl(16.0)
-        .pr(12.0)
-        .py(8.0)
-        .gap(12.0)
-        .center_y()
-        .fill(p.raised)
-        .border_sides([0.0, 0.0, 1.0, 0.0], p.line)
-        .role("status")
-        .child(lock(p))
-        .child(label(words, sans(13.0, 400.0), p.text).wrap().grow(1.0).min_w(0.0))
-        .child(button(None, f::SEE_PLANS, p.text, p).key(keys::FOUND_SEE_PLANS))
-        .child(icon_button(&icons::CLOSE, copy::NOTICE_DISMISS, p.text2, p).on_press(|s: &mut State| s.notice = None))
+/// An open door to Premium, never the accent.
+fn see_plans(p: &Pal) -> El {
+    button(None, f::SEE_PLANS, p.text, p).key(keys::FOUND_SEE_PLANS)
 }
 
 fn glyph(i: &'static Icon, c: Color) -> El {
@@ -346,7 +322,7 @@ fn media(s: &State, m: &MediaMetadata, p: &Pal) -> (El, El, Option<El>) {
             .center_y()
             .child(lock(p))
             .child(label(if video { f::BASIC_VIDEO } else { f::BASIC_AUDIO }, sans(13.0, 400.0), p.text2))
-            .child(see_plans(s, p).h(28.0))
+            .child(see_plans(p).h(28.0))
     });
     let h = head_with(
         s,
@@ -720,7 +696,7 @@ fn album(s: &State, pl: &Playlist, matched: &[Matched], selected: &[bool], p: &P
                 .border_sides([0.0, 0.0, 1.0, 0.0], p.line)
                 .child(lock(p))
                 .child(words.grow(1.0).min_w(0.0))
-                .child(see_plans(s, p)),
+                .child(see_plans(p)),
         );
     }
     let body = body.child(header).child(list);

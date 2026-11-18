@@ -104,10 +104,13 @@ fn totals(s: &State, p: &Pal) -> El {
     if active > 0 {
         actions = actions.child(ghost(Some(&icons::CANCEL), copy::DL_CANCEL_ALL, p.text2, p).key(keys::CANCEL_ALL));
     }
-    let summary =
-        col().gap(4.0).min_w(0.0).child(label(copy::active_and_total(active, tasks.len(), all_paused), mono(12.0, 400.0), p.muted)).child(
+    let mut summary =
+        col().gap(4.0).min_w(0.0).child(label(copy::active_and_total(active, tasks.len(), all_paused), mono(12.0, 400.0), p.muted));
+    if tasks.len() >= 2 {
+        summary = summary.child(
             label(copy::downloads_summary(tasks.len(), &format::summary_parts(tasks)), sans(13.0, 400.0), p.text2).single_line().truncate(),
         );
+    }
     row().w_full().gap(16.0).center_y().child(summary.grow(1.0)).child(actions)
 }
 
