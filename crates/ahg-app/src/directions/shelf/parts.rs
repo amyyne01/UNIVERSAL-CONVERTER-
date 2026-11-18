@@ -10,7 +10,6 @@ use crate::copy;
 use crate::format::Bucket;
 use crate::gate::State;
 use crate::ring;
-use crate::settings_spec::{self, Kind, Row};
 
 /// The colour of one group of "where it came from".
 pub fn bucket_hue(p: &Pal, bucket: Bucket) -> Color {
@@ -166,37 +165,9 @@ pub fn month_name(ym: &str) -> String {
 
 // ── Settings values ─────────────────────────────────────────────────────────
 
-/// Every settings row, flat: the one list the values below are read from.
-pub fn rows(s: &State) -> Vec<Row> {
-    settings_spec::sections(s).into_iter().flat_map(|section| section.rows).collect()
-}
-
-pub fn find<'a>(rows: &'a [Row], key: &str) -> Option<&'a Row> {
-    rows.iter().find(|r| r.key == Some(key))
-}
-
-fn as_text(v: &Value) -> String {
+/// What a settings value holds, as text.
+pub fn text_of(v: &Value) -> String {
     v.as_str().map_or_else(|| v.to_string(), str::to_owned)
-}
-
-/// A toggle's state.
-pub fn on(rows: &[Row], key: &str) -> bool {
-    find(rows, key).and_then(|r| r.value.as_bool()).unwrap_or(false)
-}
-
-/// What a text row holds.
-pub fn raw(rows: &[Row], key: &str) -> String {
-    find(rows, key).map(|r| as_text(&r.value)).unwrap_or_default()
-}
-
-/// What a row shows: a select's chosen label, else its text.
-pub fn shown(rows: &[Row], key: &str) -> String {
-    match find(rows, key) {
-        Some(Row { kind: Kind::Select(options), value, .. }) => {
-            options.iter().find(|o| o.value == as_text(value)).map(|o| o.label.clone()).unwrap_or_default()
-        }
-        _ => raw(rows, key),
-    }
 }
 
 /// The app's own version, as the Software line prints it.
@@ -299,6 +270,34 @@ pub fn primary(p: &Pal, key: &str, glyph: Option<&'static Icon>, label: &str) ->
         b = b.child(icon(g, 16.0).color(p.bg));
     }
     b.child(text(label).font(sans(13.0, 500.0)).color(p.bg))
+}
+
+/// The red confirm of a two-step action: cream ink on the error colour (label ink on the lighter red of dark).
+pub fn danger_button(p: &Pal, key: &str, label: &str) -> El {
+    row()
+        .key(key)
+        .h(32.0)
+        .px(12.0)
+        .center_y()
+        .radius(8.0)
+        .fill(p.error)
+        .hover(p.error.mix(theme::label_ink(), 0.15))
+        .focusable(true)
+        .role("button")
+        .label(label)
+        .child(text(label).font(sans(13.0, 500.0)).color(if p.dark { theme::label_ink() } else { theme::label_paper() }))
+}
+
+/// A tick box: empty, ticked, or mixed (some of the rows on show ticked).
+pub fn checkbox(p: &Pal, key: String, label: &str, on: bool, mixed: bool) -> El {
+    let b = el().key(key).size(16.0, 16.0).radius(4.0).center().focusable(true).role("checkbox").label(label);
+    if on {
+        b.fill(p.text).checked(true).child(icon(&crate::icons::CHECK_SHELF, 12.0).color(p.bg))
+    } else if mixed {
+        b.fill(p.text).checked_mixed().child(el().size(8.0, 2.0).radius(1.0).fill(p.bg))
+    } else {
+        b.border(1.0, p.control).hover(p.raised).checked(false)
+    }
 }
 
 /// A square icon button; its label is the tooltip and the accessible name.

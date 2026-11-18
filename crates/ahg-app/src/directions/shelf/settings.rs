@@ -2,20 +2,26 @@
 //! like the index card in a record box. Each section's name and hint stand in
 //! a left margin under a numbered spine label; its settings run beside them,
 //! one per line, the control at the right. Where files go leads, on its own.
-//! Both of the old app's disclosures are drawn open. Wording is
-//! `copy::settings`, word for word; values are read from `State.settings`.
+//! Both of the old app's disclosures are drawn open. Every section and row is
+//! `settings_spec::sections`, so the wording is `copy::settings` word for word
+//! and the values, locks and dimming are the spec's. The controls below are
+//! shared with The collection, which wears this look.
 use rune::{Color, El, Icon, ScrollSpec, col, el, icon, row, text};
 use serde_json::Value;
 
-use super::parts::{app_version, find, ghost, on, raw, rows, shown};
+use super::parts::{app_version, danger_button, ghost, text_of};
 use super::theme::{self, Pal, mono, sans, serif};
-use crate::copy::settings as w;
+use crate::copy::{found, settings as w};
 use crate::gate::{self, Confirm, State};
-use crate::settings_spec::Row;
+use crate::settings_spec::{self, Kind, Opt, Row, Section};
 use crate::{copy, icons, keys, palette};
 
 /// The margin that holds each section's name.
 const MARGIN: f32 = 248.0;
+/// A select's or a field's width in a row.
+const CONTROL: f32 = 200.0;
+// TODO(shared): keys::SEE_PLANS, the Plan row's "See plans" on Basic.
+const SEE_PLANS: &str = "see-plans";
 
 pub fn view(s: &State, p: &Pal) -> El {
     let head = row()
@@ -25,32 +31,29 @@ pub fn view(s: &State, p: &Pal) -> El {
         .child(text(w::TITLE).font(serif(44.0).lh(48.0)).color(p.text))
         .child(el().grow(1.0))
         .child(text(w::SAVES).font(sans(13.0, 400.0)).color(p.muted).mb(4.0));
-    let rows = rows(s);
-    let rows = rows.as_slice();
-    let page = col()
-        .w_full()
-        .max_w(1040.0)
-        .self_center()
-        .px(40.0)
-        .pt(24.0)
-        .pb(48.0)
-        .child(head)
-        .child(destination(rows, p).mt(24.0).mb(8.0))
-        .child(section(p, 1, w::DEFAULTS, Some(w::DEFAULTS_HINT), defaults(rows, p)))
-        .child(section(p, 2, w::MORE, Some(w::MORE_HINT), more(rows, p)))
-        .child(section(p, 3, w::APPEARANCE, None, appearance(s, rows, p)))
-        .child(section(p, 4, w::SCHEDULE, Some(w::SCHEDULE_HINT), schedule(rows, p)))
-        .child(section(p, 5, w::SOFTWARE, Some(w::SOFTWARE_HINT), software(s, rows, p)))
-        .child(section(p, 6, w::ADVANCED, Some(w::ADVANCED_HINT), advanced(rows, p)))
-        .child(section(p, 7, w::PLAN, None, plan(p)))
-        .child(section(p, 8, w::HELP, None, help(p)));
+    let mut page = col().w_full().max_w(1040.0).self_center().px(40.0).pt(24.0).pb(48.0).child(head);
+    for (i, sec) in settings_spec::sections(s).iter().enumerate() {
+        page = page.child(if sec.title.is_empty() {
+            destination(p, &sec.rows[0])
+                .key(keys::section(i))
+                .h(64.0)
+                .px(16.0)
+                .mt(24.0)
+                .mb(8.0)
+                .radius(12.0)
+                .fill(p.card)
+                .border(1.0, p.line_soft)
+        } else {
+            section(s, p, i, sec)
+        });
+    }
     col().key("settings").w_full().grow(1.0).min_h(0.0).scroll(ScrollSpec { stick_bottom: false }).child(page)
 }
 
 // ── Structure ───────────────────────────────────────────────────────────────
 
 /// A section: a rule across, the name in the margin under its spine label, the settings beside it.
-fn section(p: &Pal, n: usize, title: &str, hint: Option<&str>, rows: El) -> El {
+fn section(s: &State, p: &Pal, n: usize, sec: &Section) -> El {
     let tag = el()
         .h(20.0)
         .px(4.0)
@@ -59,37 +62,115 @@ fn section(p: &Pal, n: usize, title: &str, hint: Option<&str>, rows: El) -> El {
         .fill(theme::label_paper())
         .border(1.0, theme::label_ink().alpha(0.18))
         .child(text(format!("{n:02}")).font(mono(11.0, 500.0)).color(theme::label_ink()));
-    let mut name = col()
-        .w(MARGIN)
-        .pr(32.0)
-        .gap(8.0)
-        .child(row().child(tag))
-        .child(text(title.to_string()).font(sans(15.0, 500.0)).color(p.text).wrap());
-    if let Some(h) = hint {
-        name = name.child(text(h.to_string()).font(sans(12.0, 400.0)).color(p.muted).wrap());
+    let mut name =
+        col().w(MARGIN).pr(32.0).gap(8.0).child(row().child(tag)).child(text(sec.title).font(sans(15.0, 500.0)).color(p.text).wrap());
+    if let Some(h) = sec.hint {
+        name = name.child(text(h).font(sans(12.0, 400.0)).color(p.muted).wrap());
     }
-    row().w_full().pt(24.0).pb(16.0).items_start().border_sides([1.0, 0.0, 0.0, 0.0], p.line).child(name).child(rows.grow(1.0).min_w(0.0))
+    let mut c = col();
+    for (i, it) in body(s, p, sec, |r| line(s, p, r)).into_iter().enumerate() {
+        c = c.child(if i == 0 { it } else { it.border_sides([1.0, 0.0, 0.0, 0.0], p.line_soft) });
+    }
+    row()
+        .key(keys::section(n))
+        .w_full()
+        .pt(24.0)
+        .pb(16.0)
+        .items_start()
+        .border_sides([1.0, 0.0, 0.0, 0.0], p.line)
+        .child(name)
+        .child(c.grow(1.0).min_w(0.0))
 }
 
-/// The settings of a section, a hairline between each.
-fn lines(items: Vec<El>, p: &Pal) -> El {
-    let mut c = col();
-    for (i, it) in items.into_iter().enumerate() {
-        c = c.child(if i == 0 { it } else { it.border_sides([1.0, 0.0, 0.0, 0.0], p.line_soft) });
+/// A section's parts in order: Download defaults set its three choices side by side, Plan &
+/// license ends with the machine line. `each` draws one row in the preset's own frame.
+pub(crate) fn body(s: &State, p: &Pal, sec: &Section, each: impl Fn(&Row) -> El) -> Vec<El> {
+    let mut rows = sec.rows.as_slice();
+    let mut out = Vec::new();
+    if sec.title == w::DEFAULTS && rows.len() >= 3 {
+        out.push(trio(p, &rows[..3]));
+        rows = &rows[3..];
+    }
+    out.extend(rows.iter().map(each));
+    if sec.title == w::PLAN {
+        out.push(machine(s, p));
+    }
+    out
+}
+
+/// A setting: its name and description, the control at the right; a dimmed one a step back.
+pub(crate) fn line(s: &State, p: &Pal, r: &Row) -> El {
+    if r.kind == Kind::Danger {
+        return danger(s, p, r);
+    }
+    let l = row().w_full().min_h(56.0).py(12.0).gap(24.0).center_y().child(words(s, p, r)).child(control(s, p, r));
+    if r.dimmed { l.opacity(0.6) } else { l }
+}
+
+/// A row's name (with its version for the two updaters), its description, and on Basic its lock.
+fn words(s: &State, p: &Pal, r: &Row) -> El {
+    let mut name = row().gap(8.0).center_y().child(text(r.label).font(sans(13.0, 500.0)).color(p.text));
+    let version = match r.label {
+        w::APP_NAME => Some(app_version()),
+        w::ENGINE_NAME => Some(s.engine.current.clone()),
+        _ => None,
+    };
+    if let Some(v) = version {
+        name = name.child(text(v).font(mono(12.0, 400.0)).color(p.muted));
+    }
+    if r.lock.is_none() && r.gated() {
+        // Some of its choices need Premium: the drop-down's title says what that means.
+        name = name.child(lock(p.muted).help(found::LOCK_SELECT_TITLE));
+    }
+    let mut c = col().grow(1.0).min_w(0.0).gap(4.0).child(name);
+    if !r.desc.is_empty() {
+        c = c.child(text(r.desc.clone()).font(sans(12.0, 400.0)).color(p.text2).wrap());
+    }
+    if let Some(sentence) = &r.lock {
+        c = c.child(
+            row()
+                .gap(8.0)
+                .center_y()
+                .child(lock(p.text2))
+                .child(text(sentence.clone()).font(sans(12.0, 400.0)).color(p.text2).wrap().shrink()),
+        );
     }
     c
 }
 
-/// A setting: its name and description, the control at the right.
-fn setting(p: &Pal, (label, desc): (&str, &str), control: El) -> El {
-    let mut words = col().grow(1.0).min_w(0.0).gap(4.0).child(text(label.to_string()).font(sans(13.0, 500.0)).color(p.text));
-    if !desc.is_empty() {
-        words = words.child(text(desc.to_string()).font(sans(12.0, 400.0)).color(p.text2).wrap());
-    }
-    row().w_full().min_h(56.0).py(12.0).gap(24.0).center_y().child(words).child(control)
+/// "Available with Premium": a lock in ink, never the accent.
+fn lock(ink: Color) -> El {
+    icon(&icons::LOCK_SIGNAL, 16.0).color(ink)
 }
 
 // ── Controls ────────────────────────────────────────────────────────────────
+
+/// The control a row's kind asks for, keyed by its config key.
+fn control(s: &State, p: &Pal, r: &Row) -> El {
+    let invalid = r.key.is_some_and(|k| s.invalid.contains(k));
+    let c = match &r.kind {
+        Kind::Toggle => toggle(p, r.label, r.value.as_bool().unwrap_or(false)),
+        Kind::Select(options) => select(p, r.label, &chosen(options, &r.value)).w(CONTROL),
+        Kind::Text => input(p, r.label, &text_of(&r.value), r.placeholder.unwrap_or_default(), invalid).w(CONTROL),
+        Kind::Time => input(p, r.label, &text_of(&r.value), "", invalid).w(96.0),
+        Kind::Days => days(p, &r.value),
+        Kind::Theme => theme_switch(p, &r.value),
+        Kind::Palette => swatches(s, p),
+        Kind::Layout => row()
+            .gap(12.0)
+            .center_y()
+            .child(text(gate::PRESETS[gate::preset(s)].0).font(sans(13.0, 400.0)).color(p.text2))
+            .child(ghost(p, keys::LAYOUT_CHOOSE, None, w::LAYOUT_CHOOSE, p.text).on_press(|s: &mut State| s.picker = true)),
+        Kind::Status => status(p, r),
+        Kind::Folder | Kind::Danger => el(),
+    };
+    let c = match r.key {
+        Some(k) => c.key(keys::setting(k)),
+        None => c,
+    };
+    // Locked on Basic: still pressable, so a tap can say what Premium adds. A dimmed row is already faded.
+    if r.lock.is_some() && !r.dimmed { c.opacity(0.5) } else { c }
+}
 
 fn toggle(p: &Pal, label: &str, on: bool) -> El {
     el().size(36.0, 20.0)
@@ -97,15 +178,20 @@ fn toggle(p: &Pal, label: &str, on: bool) -> El {
         .fill(if on { p.accent } else { p.control.alpha(0.6) })
         .focusable(true)
         .role("switch")
-        .label(label.to_string())
+        .label(label)
         .checked(on)
         .child(el().size(12.0, 12.0).radius(6.0).fill(if on { p.bg } else { p.card }).absolute(if on { 20.0 } else { 4.0 }, 4.0))
 }
 
+/// The label of the chosen option.
+fn chosen(options: &[Opt], value: &Value) -> String {
+    let v = text_of(value);
+    options.iter().find(|o| o.value == v).map(|o| o.label.clone()).unwrap_or_default()
+}
+
 /// A select showing its value, with a caret.
-fn select(p: &Pal, label: &str, value: &str, width: f32) -> El {
+fn select(p: &Pal, label: &str, value: &str) -> El {
     row()
-        .w(width)
         .h(32.0)
         .px(12.0)
         .gap(8.0)
@@ -116,119 +202,53 @@ fn select(p: &Pal, label: &str, value: &str, width: f32) -> El {
         .hover(p.raised)
         .focusable(true)
         .role("combobox")
-        .label(label.to_string())
-        .child(text(value.to_string()).font(sans(13.0, 400.0)).color(p.text).single_line().truncate().grow(1.0))
+        .label(label)
+        .child(text(value).font(sans(13.0, 400.0)).color(p.text).single_line().truncate().grow(1.0).min_w(0.0))
         .child(icon(&icons::CARET_DOWN, 16.0).color(p.muted))
 }
 
-/// A typed value in the figures face, or its placeholder, muted.
-fn input(p: &Pal, label: &str, value: &str, placeholder: &str) -> El {
+/// A typed value in the figures face, or its placeholder, muted; a refused one edged in red.
+fn input(p: &Pal, label: &str, value: &str, placeholder: &str, invalid: bool) -> El {
     let (shown, ink) = if value.is_empty() { (placeholder, p.muted) } else { (value, p.text) };
     row()
-        .w(200.0)
         .h(32.0)
         .px(12.0)
         .center_y()
         .radius(8.0)
         .fill(p.card)
-        .border(1.0, p.control.alpha(0.55))
+        .border(1.0, if invalid { p.error } else { p.control.alpha(0.55) })
         .focusable(true)
         .role("textbox")
-        .label(label.to_string())
-        .child(text(shown.to_string()).font(mono(12.0, 400.0)).color(ink).single_line().truncate())
+        .label(label)
+        .invalid(invalid)
+        .child(text(shown).font(mono(12.0, 400.0)).color(ink).single_line().truncate().min_w(0.0))
 }
 
-fn button(p: &Pal, key: &str, glyph: Option<&'static Icon>, label: &str) -> El {
-    ghost(p, key, glyph, label, p.text)
+/// The weekday chips, Sunday first as in Electron.
+fn days(p: &Pal, value: &Value) -> El {
+    let chosen: Vec<u64> = value.as_array().map_or_else(Vec::new, |d| d.iter().filter_map(Value::as_u64).collect());
+    let mut days = row().gap(4.0).role("group").label(w::ACTIVE_DAYS.0);
+    for (i, day) in w::DAYS.iter().enumerate() {
+        let on = chosen.contains(&(i as u64));
+        days = days.child(
+            el().key(keys::day(i))
+                .size(32.0, 28.0)
+                .center()
+                .radius(8.0)
+                .fill(if on { p.raised } else { Color::TRANSPARENT })
+                .border(1.0, if on { p.control } else { p.line })
+                .focusable(true)
+                .role("checkbox")
+                .checked(on)
+                .label(*day)
+                .child(text(w::DAYS_SHORT[i]).font(mono(12.0, 500.0)).color(if on { p.text } else { p.muted })),
+        );
+    }
+    days
 }
 
-// ── Sections ────────────────────────────────────────────────────────────────
-
-/// Where files go: no heading in the old app, so it leads the page on its own.
-fn destination(rows: &[Row], p: &Pal) -> El {
-    let folder = raw(rows, "outputDir");
-    let (parent, leaf) = folder.rsplit_once('\\').unwrap_or(("", folder.as_str()));
-    row()
-        .key("destination")
-        .w_full()
-        .h(64.0)
-        .pl(16.0)
-        .pr(16.0)
-        .gap(16.0)
-        .center_y()
-        .radius(12.0)
-        .fill(p.card)
-        .border(1.0, p.line_soft)
-        .child(icon(&icons::FOLDER, 16.0).color(p.text2))
-        .child(text(w::SAVING_TO).font(sans(13.0, 400.0)).color(p.text2))
-        .child(
-            row()
-                .grow(1.0)
-                .min_w(0.0)
-                .child(text(format!("{parent}\\")).font(mono(13.0, 400.0)).color(p.muted).single_line())
-                .child(text(leaf.to_string()).font(mono(13.0, 500.0)).color(p.text).single_line()),
-        )
-        .child(button(p, keys::CHANGE_FOLDER, None, w::CHANGE))
-}
-
-fn defaults(rows: &[Row], p: &Pal) -> El {
-    let labelled = |label: &str, value: &str| {
-        col()
-            .grow(1.0)
-            .min_w(0.0)
-            .gap(8.0)
-            .child(text(label.to_string()).font(sans(12.0, 400.0)).color(p.text2))
-            .child(select(p, label, value, 160.0).w_full())
-    };
-    let trio = row()
-        .w_full()
-        .gap(16.0)
-        .pb(16.0)
-        .child(labelled(w::AUDIO_FORMAT, &shown(rows, "defaultFormat")))
-        .child(labelled(w::AUDIO_QUALITY, &shown(rows, "defaultQuality")))
-        .child(labelled(w::VIDEO_QUALITY, &shown(rows, "defaultVideoQuality")));
-    lines(
-        vec![
-            trio,
-            setting(p, w::SKIP_EXISTING, toggle(p, w::SKIP_EXISTING.0, on(rows, "skipExisting"))),
-            setting(p, w::EMBED_THUMBNAIL, toggle(p, w::EMBED_THUMBNAIL.0, on(rows, "embedThumbnail"))),
-            setting(p, w::EMBED_METADATA, toggle(p, w::EMBED_METADATA.0, on(rows, "embedMetadata"))),
-            setting(p, w::SIMULTANEOUS, select(p, w::SIMULTANEOUS.0, &shown(rows, "maxConcurrentDownloads"), 160.0)),
-        ],
-        p,
-    )
-}
-
-fn more(rows: &[Row], p: &Pal) -> El {
-    lines(
-        vec![
-            setting(p, (w::SIGN_IN_WITH, ""), select(p, w::SIGN_IN_WITH, &shown(rows, "cookieBrowser"), 200.0)),
-            setting(p, w::IMPORT_COOKIES, button(p, keys::IMPORT_COOKIES, Some(&icons::FOLDER), w::CHOOSE_FILE)),
-            setting(p, (w::SUBTITLES, ""), select(p, w::SUBTITLES, &shown(rows, "subtitleMode"), 200.0)),
-            setting(
-                p,
-                (w::SUBTITLE_LANGUAGES, ""),
-                input(p, w::SUBTITLE_LANGUAGES, &raw(rows, "subtitleLangs"), w::SUBTITLE_LANGUAGES_PLACEHOLDER),
-            ),
-            setting(p, w::AUTO_CAPTIONS, toggle(p, w::AUTO_CAPTIONS.0, on(rows, "subtitleAuto"))),
-            setting(p, (w::SPONSOR_SEGMENTS, ""), select(p, w::SPONSOR_SEGMENTS, &shown(rows, "sponsorBlock"), 200.0)),
-            setting(p, (w::VIDEO_CONTAINER, ""), select(p, w::VIDEO_CONTAINER, &shown(rows, "videoContainer"), 200.0)),
-            setting(p, (w::VIDEO_CODEC, ""), select(p, w::VIDEO_CODEC, &shown(rows, "videoCodec"), 200.0)),
-            setting(p, w::EMBED_CHAPTERS, toggle(p, w::EMBED_CHAPTERS.0, on(rows, "embedChapters"))),
-            setting(p, w::SPLIT_BY_CHAPTER, toggle(p, w::SPLIT_BY_CHAPTER.0, on(rows, "splitChapters"))),
-            setting(p, w::SAVE_COVER_ART, toggle(p, w::SAVE_COVER_ART.0, on(rows, "writeThumbnail"))),
-            setting(p, w::FILE_NAMING, input(p, w::FILE_NAMING.0, &raw(rows, "outputTemplate"), w::FILE_NAMING_PLACEHOLDER)),
-        ],
-        p,
-    )
-}
-
-fn appearance(s: &State, rows: &[Row], p: &Pal) -> El {
-    let chosen = match raw(rows, "theme").as_str() {
-        "light" => 0,
-        "dark" => 1,
-        _ => 2,
-    };
+fn theme_switch(p: &Pal, value: &Value) -> El {
+    let chosen = ["light", "dark", "system"].iter().position(|t| *t == text_of(value)).unwrap_or(2);
     let mut theme =
         row().h(32.0).padding(4.0).gap(4.0).radius(8.0).fill(p.sunk).border(1.0, p.line_soft).role("radiogroup").label(w::THEME.0);
     for (i, name) in w::THEMES.into_iter().enumerate() {
@@ -245,13 +265,19 @@ fn appearance(s: &State, rows: &[Row], p: &Pal) -> El {
                 .child(text(name).font(sans(13.0, if on { 500.0 } else { 400.0 })).color(if on { p.text } else { p.text2 })),
         );
     }
-    let mut swatches = row().gap(8.0).role("radiogroup").label(w::PALETTE_ARIA);
+    theme
+}
+
+/// Shelf's own palette (warm paper) first, then the app's seven, each a swatch of its paper and accent.
+fn swatches(s: &State, p: &Pal) -> El {
+    let mut swatches = row().gap(8.0).flex_wrap().justify_end().role("radiogroup").label(w::PALETTE_ARIA);
     for i in 0..=palette::NAMES.len() {
         let name = if i == 0 { copy::PRESET_SHELF } else { palette::NAMES[i - 1] };
         let sw = Pal::new(i, p.dark);
         let on = i == s.palette;
         swatches = swatches.child(
-            el().size(24.0, 24.0)
+            el().key(keys::palette(i))
+                .size(24.0, 24.0)
                 .radius(12.0)
                 .center()
                 .fill(sw.bg)
@@ -265,147 +291,122 @@ fn appearance(s: &State, rows: &[Row], p: &Pal) -> El {
                 .child(el().size(8.0, 8.0).radius(4.0).fill(sw.accent)),
         );
     }
-    let preset = gate::PRESETS[gate::preset(s)].0;
-    let layout = row()
-        .gap(12.0)
-        .center_y()
-        .child(text(preset).font(sans(13.0, 400.0)).color(p.text2))
-        .child(button(p, keys::LAYOUT_CHOOSE, None, w::LAYOUT_CHOOSE).on_press(|s: &mut State| s.picker = true));
-    lines(
-        vec![
-            setting(p, w::THEME, theme),
-            setting(p, w::PALETTE, swatches),
-            setting(p, w::LAYOUT, layout),
-            setting(p, w::CLIPBOARD_WATCHER, toggle(p, w::CLIPBOARD_WATCHER.0, on(rows, "clipboardWatch"))),
-            setting(p, w::NOTIFICATIONS, toggle(p, w::NOTIFICATIONS.0, on(rows, "showNotifications"))),
-            setting(p, w::DISCORD, toggle(p, w::DISCORD.0, on(rows, "discordRichPresence"))),
-        ],
-        p,
-    )
+    swatches.max_w(256.0)
 }
 
-fn schedule(rows: &[Row], p: &Pal) -> El {
-    let chosen: Vec<u64> =
-        find(rows, "scheduleDays").and_then(|r| r.value.as_array()).map_or_else(Vec::new, |d| d.iter().filter_map(Value::as_u64).collect());
-    let mut days = row().gap(4.0).role("group").label(w::ACTIVE_DAYS.0);
-    for (i, day) in w::DAYS.iter().enumerate() {
-        // Electron's order: Sunday first.
-        let on = chosen.contains(&(i as u64));
-        days = days.child(
-            el().size(32.0, 28.0)
+/// A row that is a line with a button: the plan's stamp, an updater, the cookies import, help.
+fn status(p: &Pal, r: &Row) -> El {
+    let mut c = row().gap(12.0).center_y();
+    if r.label == w::YOUR_PLAN {
+        // The plan, stamped on the sleeves' paper.
+        c = c.child(
+            el().h(24.0)
+                .px(8.0)
                 .center()
-                .radius(8.0)
-                .fill(if on { p.raised } else { Color::TRANSPARENT })
-                .border(1.0, if on { p.control } else { p.line })
-                .focusable(true)
-                .role("checkbox")
-                .checked(on)
-                .label(*day)
-                .child(text(&day[..2]).font(mono(12.0, 500.0)).color(if on { p.text } else { p.muted })),
+                .radius(4.0)
+                .fill(theme::label_paper())
+                .border(1.0, theme::label_ink().alpha(0.18))
+                .child(text(text_of(&r.value)).font(sans(13.0, 500.0)).color(theme::label_ink())),
         );
     }
-    lines(
-        vec![
-            setting(p, (w::ENABLE_SCHEDULER, ""), toggle(p, w::ENABLE_SCHEDULER, on(rows, "scheduleEnabled"))),
-            setting(p, w::START_TIME, input(p, w::START_TIME.0, &raw(rows, "scheduleTime"), "").w(96.0)),
-            setting(p, w::ACTIVE_DAYS, days),
-            setting(p, w::SHUTDOWN, toggle(p, w::SHUTDOWN.0, on(rows, "scheduleShutdown"))),
-        ],
-        p,
-    )
+    if let Some(b) = r.button {
+        let (key, glyph): (&str, Option<&'static Icon>) = match b {
+            w::CHOOSE_FILE => (keys::IMPORT_COOKIES, Some(&icons::FOLDER)),
+            w::CHECK_FOR_UPDATES => (keys::CHECK_UPDATE, Some(&icons::REFRESH)),
+            w::ENGINE_CHECK => (keys::CHECK_ENGINE, Some(&icons::REFRESH)),
+            w::SHOW_SHORTCUTS => (keys::SHOW_SHORTCUTS, None),
+            w::GET_SUPPORT => (keys::GET_SUPPORT, Some(&icons::EXTERNAL)),
+            _ => (SEE_PLANS, None),
+        };
+        c = c.child(ghost(p, key, glyph, b, p.text));
+    }
+    c
 }
 
-/// An updater: its name and version, what it is doing, its one button.
-fn updater(p: &Pal, name: &str, version: &str, desc: &str, action: El) -> El {
-    let mut words = col().grow(1.0).min_w(0.0).gap(4.0).child(
+// ── Pieces ──────────────────────────────────────────────────────────────────
+
+/// Where files go: no heading in the old app, so it leads the page on its own.
+pub(crate) fn destination(p: &Pal, r: &Row) -> El {
+    let folder = text_of(&r.value);
+    let (parent, leaf) = folder.rsplit_once('\\').unwrap_or(("", folder.as_str()));
+    row()
+        .w_full()
+        .gap(16.0)
+        .center_y()
+        .child(icon(&icons::FOLDER, 16.0).color(p.text2))
+        .child(text(r.label).font(sans(13.0, 400.0)).color(p.text2))
+        .child(
+            row()
+                .grow(1.0)
+                .min_w(0.0)
+                .help(folder.clone())
+                .child(text(format!("{parent}\\")).font(mono(13.0, 400.0)).color(p.muted).single_line().truncate_head().shrink())
+                .child(text(leaf.to_string()).font(mono(13.0, 500.0)).color(p.text).single_line()),
+        )
+        .child(ghost(p, keys::CHANGE_FOLDER, None, r.button.unwrap_or(w::CHANGE), p.text))
+}
+
+/// The three download defaults side by side, each with its name above it.
+fn trio(p: &Pal, rows: &[Row]) -> El {
+    let mut trio = row().w_full().gap(16.0).pb(16.0);
+    for r in rows {
+        let mut name = row().gap(8.0).center_y().child(text(r.label).font(sans(12.0, 400.0)).color(p.text2));
+        if r.gated() {
+            name = name.child(lock(p.muted).help(found::LOCK_SELECT_TITLE));
+        }
+        let value = match &r.kind {
+            Kind::Select(options) => chosen(options, &r.value),
+            _ => text_of(&r.value),
+        };
+        let pick = select(p, r.label, &value).w_full();
+        trio = trio.child(col().grow(1.0).min_w(0.0).gap(8.0).child(name).child(match r.key {
+            Some(k) => pick.key(keys::setting(k)),
+            None => pick,
+        }));
+    }
+    trio
+}
+
+/// A licence action: its name in the error colour; armed, the warning and the confirm in its place.
+fn danger(s: &State, p: &Pal, r: &Row) -> El {
+    let which = if r.label == w::DEACTIVATE.0 { Confirm::Deactivate } else { Confirm::Move };
+    let armed = s.confirm == Some(which);
+    let desc = match r.armed {
+        Some((warning, _)) if armed => warning.to_string(),
+        _ => r.desc.clone(),
+    };
+    let words = col()
+        .grow(1.0)
+        .min_w(0.0)
+        .gap(4.0)
+        .child(text(r.label).font(sans(13.0, 500.0)).color(p.error))
+        .child(text(desc).font(sans(12.0, 400.0)).color(p.text2).wrap());
+    let l = row().key(keys::arm(which)).w_full().min_h(56.0).py(12.0).gap(24.0).center_y().child(words);
+    match r.armed {
+        Some((_, confirm)) if armed => {
+            l.child(row().gap(8.0).center_y().child(ghost(p, keys::CONFIRM_NO, None, w::CANCEL, p.text)).child(danger_button(
+                p,
+                keys::CONFIRM_YES,
+                confirm,
+            )))
+        }
+        _ => l.hover(p.soft(p.error)).focusable(true).role("button").label(r.label).child(icon(&icons::CARET_RIGHT, 16.0).color(p.muted)),
+    }
+}
+
+/// What a licence key binds to on this computer, and when a move is next allowed.
+fn machine(s: &State, p: &Pal) -> El {
+    // TODO(shared): the licence's transfer cooldown end date on `State`; none exists yet.
+    let cooldown: Option<&str> = None;
+    let mut c = col().w_full().py(12.0).gap(4.0).child(
         row()
             .gap(8.0)
-            .center_y()
-            .child(text(name.to_string()).font(sans(13.0, 500.0)).color(p.text))
-            .child(text(version.to_string()).font(mono(12.0, 400.0)).color(p.muted)),
+            .help(w::MACHINE_ID_TITLE)
+            .child(text(w::MACHINE_ID).font(sans(12.0, 400.0)).color(p.muted))
+            .child(text(s.machine_id.clone()).font(mono(12.0, 400.0)).color(p.muted)),
     );
-    if !desc.is_empty() {
-        words = words.child(text(desc.to_string()).font(sans(12.0, 400.0)).color(p.text2).wrap());
+    if let Some(date) = cooldown {
+        c = c.child(text(w::cooldown_note(date)).font(sans(12.0, 400.0)).color(p.text2).wrap());
     }
-    row().w_full().min_h(56.0).py(12.0).gap(24.0).center_y().child(words).child(action)
-}
-
-fn software(s: &State, rows: &[Row], p: &Pal) -> El {
-    lines(
-        vec![
-            updater(
-                p,
-                w::APP_NAME,
-                &app_version(),
-                w::APP_REST,
-                button(p, keys::CHECK_UPDATE, Some(&icons::REFRESH), w::CHECK_FOR_UPDATES),
-            ),
-            updater(p, w::ENGINE_NAME, &s.engine.current, "", button(p, keys::CHECK_ENGINE, Some(&icons::REFRESH), w::ENGINE_CHECK)),
-            setting(p, w::AUTO_UPDATE_ENGINE, toggle(p, w::AUTO_UPDATE_ENGINE.0, on(rows, "autoUpdateEngine"))),
-        ],
-        p,
-    )
-}
-
-fn advanced(rows: &[Row], p: &Pal) -> El {
-    lines(
-        vec![
-            setting(p, w::RATE_LIMIT, input(p, w::RATE_LIMIT.0, &raw(rows, "rateLimit"), w::RATE_LIMIT_PLACEHOLDER)),
-            setting(p, w::PROXY, input(p, w::PROXY.0, &raw(rows, "proxy"), w::PROXY_PLACEHOLDER)),
-            setting(p, w::GLOBAL_HOTKEY, input(p, w::GLOBAL_HOTKEY.0, &raw(rows, "globalHotkey"), w::GLOBAL_HOTKEY_PLACEHOLDER)),
-        ],
-        p,
-    )
-}
-
-fn plan(p: &Pal) -> El {
-    // The plan, stamped on the sleeves' paper.
-    let stamp = el()
-        .h(24.0)
-        .px(8.0)
-        .center()
-        .radius(4.0)
-        .fill(theme::label_paper())
-        .border(1.0, theme::label_ink().alpha(0.18))
-        .child(text(w::PLAN_PREMIUM.0).font(sans(13.0, 500.0)).color(theme::label_ink()));
-    let danger = |key: &str, (label, desc): (&str, &str)| {
-        row()
-            .key(key)
-            .w_full()
-            .min_h(56.0)
-            .py(12.0)
-            .gap(24.0)
-            .center_y()
-            .hover(p.soft(p.error))
-            .focusable(true)
-            .role("button")
-            .label(label.to_string())
-            .child(
-                col()
-                    .grow(1.0)
-                    .min_w(0.0)
-                    .gap(4.0)
-                    .child(text(label.to_string()).font(sans(13.0, 500.0)).color(p.error))
-                    .child(text(desc.to_string()).font(sans(12.0, 400.0)).color(p.text2).wrap()),
-            )
-            .child(icon(&icons::CARET_RIGHT, 16.0).color(p.muted))
-    };
-    lines(
-        vec![
-            setting(p, (w::YOUR_PLAN, w::PLAN_PREMIUM.1), stamp),
-            danger(keys::arm(Confirm::Deactivate), w::DEACTIVATE),
-            danger(keys::arm(Confirm::Move), w::MOVE),
-        ],
-        p,
-    )
-}
-
-fn help(p: &Pal) -> El {
-    lines(
-        vec![
-            setting(p, w::SHORTCUTS, button(p, keys::SHOW_SHORTCUTS, None, w::SHOW_SHORTCUTS)),
-            setting(p, w::REPORT, button(p, keys::GET_SUPPORT, Some(&icons::EXTERNAL), w::GET_SUPPORT)),
-        ],
-        p,
-    )
+    c
 }

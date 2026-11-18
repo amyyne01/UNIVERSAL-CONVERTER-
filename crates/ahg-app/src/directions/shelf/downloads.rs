@@ -4,35 +4,145 @@
 use ahg_engine::types::{DownloadStatus as St, DownloadTask, ErrorCode};
 use rune::{Color, El, Icon, ScrollSpec, col, el, icon, row, text};
 
-use super::parts::{self, Disc, ghost, icon_button, primary, run, run_mono, runs};
+use super::parts::{self, Disc, danger_button, ghost, icon_button, primary, run, run_mono, runs};
 use super::theme::{Pal, mono, sans, serif};
 use crate::gate::{Confirm, Filter, Nav, State};
 use crate::keys::{self, RowAct};
 use crate::ring::Pass;
-use crate::{copy, format, icons};
+use crate::{actions, copy, format, icons};
 
 const ROW_H: f32 = 60.0;
 const SLEEVE: f32 = 48.0;
 
 pub fn view(s: &State, p: &Pal) -> El {
     let tasks = &s.tasks;
-    let mut page =
-        col().w_full().max_w(1480.0).self_center().h_full().min_h(0.0).px(40.0).pt(16.0).pb(24.0).gap(16.0).child(header(p, tasks));
+    let mut page = col().w_full().max_w(1480.0).self_center().h_full().min_h(0.0).px(40.0).pt(16.0).pb(24.0).gap(16.0).child(header(s, p));
     if !tasks.is_empty() {
-        page = page.child(strip(p, tasks));
+        page = page.child(strip(s, p));
     }
     let interrupted = tasks.iter().filter(|t| t.progress.status == St::Paused && t.interrupted == Some(true)).count();
     if interrupted > 0 {
         page = page.child(banner(p, interrupted));
     }
+    let shown: Vec<&DownloadTask> = actions::visible(s).collect();
     page = page
-        .child(col().key("list-scroll").w_full().grow(1.0).min_h(0.0).scroll(ScrollSpec { stick_bottom: false }).child(list(s, p, tasks)));
+        .child(col().key("list-scroll").w_full().grow(1.0).min_h(0.0).scroll(ScrollSpec { stick_bottom: false }).child(list(s, p, &shown)));
     col().key("downloads").w_full().grow(1.0).min_h(0.0).child(page)
+}
+
+// ── States shared with The collection ───────────────────────────────────────
+
+/// An armed two-step action: its question, a way back, and the red confirm.
+pub(crate) fn armed(p: &Pal, aria: &str, question: &str) -> El {
+    row()
+        .gap(8.0)
+        .center_y()
+        .role("group")
+        .label(aria)
+        .child(text(question).font(sans(13.0, 500.0)).color(p.text).single_line().mr(4.0))
+        .child(ghost(p, keys::CONFIRM_NO, None, copy::DL_CONFIRM_CANCEL, p.text))
+        .child(danger_button(p, keys::CONFIRM_YES, copy::DL_CONFIRM_YES))
+}
+
+/// A quiet text button, no edge.
+fn plain(p: &Pal, key: &str, label: &str) -> El {
+    row()
+        .key(key)
+        .h(32.0)
+        .px(8.0)
+        .center_y()
+        .radius(8.0)
+        .hover(p.raised)
+        .focusable(true)
+        .role("button")
+        .label(label)
+        .child(text(label).font(sans(13.0, 500.0)).color(p.text2).single_line())
+}
+
+/// What is ticked: the count, Cancel for the active ones, Remove for the finished ones
+/// (armed, "Remove N?"), and the way to clear the ticks. Selection includes hidden rows.
+pub(crate) fn selection(s: &State, p: &Pal) -> El {
+    let picked = |t: &&DownloadTask| s.selected.contains(&t.task_id);
+    let active = s.tasks.iter().filter(picked).any(format::is_active);
+    let finished = s.tasks.iter().filter(picked).filter(|t| matches!(t.progress.status, St::Done | St::Failed | St::Cancelled)).count();
+    let off = |b: El, on: bool| if on { b } else { b.disabled(true).opacity(0.4) };
+    let remove = if s.confirm == Some(Confirm::Remove) {
+        armed(p, copy::DL_REMOVE_CONFIRM_ARIA, &copy::remove_confirm(finished))
+    } else {
+        off(ghost(p, keys::arm(Confirm::Remove), Some(&icons::REMOVE), copy::DL_SELECTION_REMOVE, p.text), finished > 0)
+    };
+    row()
+        .key("selection")
+        .gap(8.0)
+        .center_y()
+        .child(text(copy::selected_count(s.selected.len())).font(mono(12.0, 500.0)).color(p.text).single_line().mr(4.0))
+        .child(off(ghost(p, keys::CANCEL_SELECTED, None, copy::DL_SELECTION_CANCEL, p.text), active))
+        .child(remove)
+        .child(plain(p, keys::CLEAR_SELECTION, copy::DL_SELECTION_CLEAR))
+}
+
+/// The select-all tick: it acts on the rows on show after the filter and the search.
+pub(crate) fn select_all(s: &State, p: &Pal) -> El {
+    let shown: Vec<&DownloadTask> = actions::visible(s).collect();
+    let ticked = shown.iter().filter(|t| s.selected.contains(&t.task_id)).count();
+    let all = !shown.is_empty() && ticked == shown.len();
+    parts::checkbox(p, keys::SELECT_ALL.into(), copy::DL_SELECT_ALL_ARIA, all, ticked > 0 && !all)
+}
+
+/// The search box: what is typed, or the placeholder.
+pub(crate) fn search_text(s: &State, p: &Pal) -> El {
+    let typed = s.query.text.as_str();
+    let (shown, ink) = if typed.is_empty() { (copy::DL_SEARCH_PLACEHOLDER, p.muted) } else { (typed, p.text) };
+    text(shown).font(sans(13.0, 400.0)).color(ink).single_line().truncate().shrink()
+}
+
+/// The filter and the search show nothing although downloads exist: why, and the way back.
+pub(crate) fn filtered_empty(s: &State, p: &Pal, sleeve: f32) -> El {
+    let total = s.tasks.len();
+    let (glyph, title) = match s.filter {
+        Filter::Active => (&icons::CLOCK, copy::EMPTY_FILTER_ACTIVE),
+        Filter::Done => (&icons::CLOCK, copy::EMPTY_FILTER_DONE),
+        Filter::Failed => (&icons::CHECK_SHELF, copy::EMPTY_FILTER_FAILED),
+        // Electron's wording for a search that matches nothing under All (CONTENT.md 5).
+        Filter::All => (&icons::CLOCK, copy::EMPTY_FILTER_FAILED),
+    };
+    // TODO(shared): keys::SHOW_ALL, the filtered-empty state's "Show all N".
+    let show_all = ghost(p, "show-all", None, &copy::show_all(total), p.text);
+    empty_shape(p, sleeve, glyph, title, &copy::empty_filter_body(total), show_all)
+}
+
+/// An empty state in a row's shape, so the columns stay aligned: a blank sleeve, words, one button.
+fn empty_shape(p: &Pal, sleeve: f32, glyph: &'static Icon, title: &str, body: &str, button: El) -> El {
+    let blank = el()
+        .size(sleeve, sleeve)
+        .radius(4.0)
+        .border(1.0, p.control.alpha(0.6))
+        .border_dash(4.0, 4.0)
+        .center()
+        .child(icon(glyph, 16.0).color(p.muted));
+    row()
+        .key("empty")
+        .w_full()
+        .h(ROW_H + 12.0)
+        .pl(64.0)
+        .pr(16.0)
+        .gap(16.0)
+        .center_y()
+        .child(blank)
+        .child(
+            col()
+                .grow(1.0)
+                .gap(4.0)
+                .child(text(title).font(sans(15.0, 500.0)).color(p.text))
+                .child(text(body).font(sans(13.0, 400.0)).color(p.text2)),
+        )
+        .child(button)
 }
 
 // ── Header ──────────────────────────────────────────────────────────────────
 
-fn header(p: &Pal, tasks: &[DownloadTask]) -> El {
+fn header(s: &State, p: &Pal) -> El {
+    let tasks = &s.tasks;
     let st = |f: &dyn Fn(St) -> bool| tasks.iter().filter(|t| f(t.progress.status)).count();
     let active = format::active_count(tasks);
     let any_paused = st(&|s| s == St::Paused) > 0;
@@ -58,20 +168,29 @@ fn header(p: &Pal, tasks: &[DownloadTask]) -> El {
         counts.push(run_mono(part, color));
         rest = &rest[part.len()..];
     }
+    // The words give way to the actions (an armed "Clear N?" is the widest): the summary wraps.
     let mut left = col()
+        .shrink()
+        .min_w(0.0)
         .gap(4.0)
         .child(text(copy::DL_TITLE).font(serif(44.0).lh(48.0)).color(p.text))
         .child(runs(counts).font(mono(12.0, 400.0)).single_line());
     if tasks.len() >= 2 {
-        left = left.child(text(copy::downloads_summary(tasks.len(), &format::summary_parts(tasks))).font(sans(13.0, 400.0)).color(p.text2));
+        left = left
+            .child(text(copy::downloads_summary(tasks.len(), &format::summary_parts(tasks))).font(sans(13.0, 400.0)).color(p.text2).wrap());
     }
 
-    let mut right = row().grow(1.0).min_w(0.0).gap(8.0).center_y().justify_end().flex_wrap();
+    let mut right = row().grow(1.0).gap(8.0).center_y().justify_end();
     if tasks.iter().any(|t| t.progress.status == St::Failed && !format::is_permanent(t.error_code)) {
         right = right.child(ghost(p, keys::RETRY_ALL_FAILED, Some(&icons::RETRY), copy::DL_RETRY_ALL_FAILED, p.text));
     }
-    if tasks.iter().any(|t| t.progress.status == St::Done) {
-        right = right.child(ghost(p, keys::arm(Confirm::Clear), Some(&icons::REMOVE), copy::DL_CLEAR_COMPLETED, p.text));
+    let done = st(&|s| s == St::Done);
+    if done > 0 {
+        right = right.child(if s.confirm == Some(Confirm::Clear) {
+            armed(p, copy::DL_CLEAR_CONFIRM_ARIA, &copy::clear_confirm(done))
+        } else {
+            ghost(p, keys::arm(Confirm::Clear), Some(&icons::REMOVE), copy::DL_CLEAR_COMPLETED, p.text)
+        });
     }
     if any_paused || st(&|s| matches!(s, St::Queued | St::FetchingInfo | St::Downloading)) > 0 {
         right = right.child(if all_paused {
@@ -88,14 +207,10 @@ fn header(p: &Pal, tasks: &[DownloadTask]) -> El {
 
 // ── Control strip ───────────────────────────────────────────────────────────
 
-fn checkbox(p: &Pal, key: String, label: &str) -> El {
-    el().key(key).size(16.0, 16.0).radius(4.0).border(1.0, p.control).hover(p.raised).focusable(true).role("checkbox").label(label)
-}
-
-fn strip(p: &Pal, tasks: &[DownloadTask]) -> El {
-    let counts = format::filter_counts(tasks);
+fn strip(s: &State, p: &Pal) -> El {
+    let counts = format::filter_counts(&s.tasks);
     let labels = [copy::DL_FILTER_ALL, copy::DL_FILTER_ACTIVE, copy::DL_FILTER_DONE, copy::DL_FILTER_FAILED];
-    let segments = Filter::ALL.into_iter().zip(labels).zip(counts).map(|((filter, label), count)| (keys::filter(filter), label, count));
+    let segments = Filter::ALL.into_iter().zip(labels).zip(counts).map(|((filter, label), count)| (filter, label, count));
     let mut group = row()
         .h(36.0)
         .padding(4.0)
@@ -106,10 +221,10 @@ fn strip(p: &Pal, tasks: &[DownloadTask]) -> El {
         .border(1.0, p.line_soft)
         .role("radiogroup")
         .label(copy::DL_FILTER_ARIA);
-    for (i, (key, label, count)) in segments.into_iter().enumerate() {
-        let on = i == 0;
+    for (filter, label, count) in segments {
+        let on = s.filter == filter;
         let mut seg = row()
-            .key(key)
+            .key(keys::filter(filter))
             .h(28.0)
             .px(12.0)
             .gap(8.0)
@@ -117,6 +232,7 @@ fn strip(p: &Pal, tasks: &[DownloadTask]) -> El {
             .radius(6.0)
             .focusable(true)
             .role("radio")
+            .checked(on)
             .child(text(label).font(sans(13.0, if on { 500.0 } else { 400.0 })).color(if on { p.text } else { p.text2 }))
             .child(text(count.to_string()).font(mono(12.0, 400.0)).color(p.muted));
         seg = if on { seg.fill(p.raised).border(1.0, p.line_soft) } else { seg.hover(p.raised.alpha(0.6)) };
@@ -135,17 +251,12 @@ fn strip(p: &Pal, tasks: &[DownloadTask]) -> El {
         .role("searchbox")
         .label(copy::DL_SEARCH_ARIA)
         .child(icon(&icons::SEARCH, 16.0).color(p.muted))
-        .child(text(copy::DL_SEARCH_PLACEHOLDER).font(sans(13.0, 400.0)).color(p.muted).single_line().truncate());
-    row()
-        .w_full()
-        .h(36.0)
-        .gap(16.0)
-        .center_y()
-        .pl(28.0)
-        .child(checkbox(p, keys::SELECT_ALL.into(), copy::DL_SELECT_ALL_ARIA).ml(8.0))
-        .child(group)
-        .child(el().grow(1.0))
-        .child(search)
+        .child(search_text(s, p));
+    let mut strip = row().w_full().h(36.0).gap(16.0).center_y().pl(28.0).child(select_all(s, p).ml(8.0)).child(group).child(el().grow(1.0));
+    if !s.selected.is_empty() {
+        strip = strip.child(selection(s, p));
+    }
+    strip.child(search)
 }
 
 fn banner(p: &Pal, n: usize) -> El {
@@ -176,19 +287,24 @@ fn banner(p: &Pal, n: usize) -> El {
 
 // ── The list ────────────────────────────────────────────────────────────────
 
-fn list(s: &State, p: &Pal, tasks: &[DownloadTask]) -> El {
+/// The rows on show (`tasks`: after the filter and the search), grouped.
+fn list(s: &State, p: &Pal, tasks: &[&DownloadTask]) -> El {
     let surface = col().key("list").w_full().radius(14.0).fill(p.card).border(1.0, p.line_soft).clip_rounded(14.0);
-    if tasks.is_empty() {
+    if s.tasks.is_empty() {
         return surface.child(empty_row(p));
     }
-    let live: Vec<&DownloadTask> = tasks.iter().filter(|t| format::is_live(t)).collect();
-    let paused: Vec<&DownloadTask> = tasks.iter().filter(|t| t.progress.status == St::Paused).collect();
-    let queued: Vec<&DownloadTask> = tasks.iter().filter(|t| t.progress.status == St::Queued).collect();
-    let attention: Vec<&DownloadTask> = tasks.iter().filter(|t| matches!(t.progress.status, St::Failed | St::Cancelled)).collect();
-    let done: Vec<&DownloadTask> = tasks.iter().filter(|t| t.progress.status == St::Done).collect();
+    if tasks.is_empty() {
+        return surface.child(filtered_empty(s, p, SLEEVE));
+    }
+    let only = |f: &dyn Fn(St) -> bool| -> Vec<&DownloadTask> { tasks.iter().copied().filter(|t| f(t.progress.status)).collect() };
+    let live: Vec<&DownloadTask> = tasks.iter().copied().filter(|t| format::is_live(t)).collect();
+    let paused = only(&|st| st == St::Paused);
+    let queued = only(&|st| st == St::Queued);
+    let attention = only(&|st| matches!(st, St::Failed | St::Cancelled));
+    let done = only(&|st| st == St::Done);
     let in_progress = live.len() + paused.len() + queued.len();
     let groups = [in_progress, attention.len(), done.len()].iter().filter(|n| **n > 0).count();
-    let all_paused = format::all_paused(tasks);
+    let all_paused = format::all_paused(&s.tasks);
 
     let mut out = surface;
     let mut first = true;
@@ -202,7 +318,7 @@ fn list(s: &State, p: &Pal, tasks: &[DownloadTask]) -> El {
             let total = if live.is_empty() {
                 None
             } else {
-                let sp = format::speed(format::total_speed(tasks));
+                let sp = format::speed(format::total_speed(&s.tasks));
                 let line = if sp.is_empty() { live.len().to_string() } else { format!("{} · {sp}", live.len()) };
                 Some(
                     row()
@@ -276,30 +392,8 @@ fn group_header(p: &Pal, key: &str, name: &str, count: usize, paused: bool, tota
 }
 
 fn empty_row(p: &Pal) -> El {
-    let blank = el()
-        .size(SLEEVE, SLEEVE)
-        .radius(4.0)
-        .border(1.0, p.control.alpha(0.6))
-        .border_dash(4.0, 4.0)
-        .center()
-        .child(icon(&icons::DOWNLOAD, 16.0).color(p.muted));
-    row()
-        .key("empty")
-        .w_full()
-        .h(ROW_H + 12.0)
-        .pl(64.0)
-        .pr(16.0)
-        .gap(16.0)
-        .center_y()
-        .child(blank)
-        .child(
-            col()
-                .grow(1.0)
-                .gap(4.0)
-                .child(text(copy::EMPTY_NONE_TITLE).font(sans(15.0, 500.0)).color(p.text))
-                .child(text(copy::EMPTY_NONE_BODY).font(sans(13.0, 400.0)).color(p.text2)),
-        )
-        .child(ghost(p, "paste-a-link", None, copy::EMPTY_NONE_ACTION, p.text).on_press(|s: &mut State| s.nav = Nav::Home))
+    let paste = ghost(p, "paste-a-link", None, copy::EMPTY_NONE_ACTION, p.text).on_press(|s: &mut State| s.nav = Nav::Home);
+    empty_shape(p, SLEEVE, &icons::DOWNLOAD, copy::EMPTY_NONE_TITLE, copy::EMPTY_NONE_BODY, paste)
 }
 
 // ── A row ───────────────────────────────────────────────────────────────────
@@ -336,6 +430,7 @@ fn task_row(s: &State, p: &Pal, t: &DownloadTask, grip: bool, do_next: bool) -> 
     let id = &t.task_id;
     let label = format::label(t);
     let failed = status == St::Failed;
+    let selected = s.selected.contains(id);
     let finished = matches!(status, St::Done | St::Cancelled);
     let reason = format::reason(t);
 
@@ -489,12 +584,14 @@ fn task_row(s: &State, p: &Pal, t: &DownloadTask, grip: bool, do_next: bool) -> 
         .hover_group()
         .hover(p.raised.alpha(0.35))
         .child(grip_cell)
-        .child(checkbox(p, keys::row_select(id), copy::ROW_SELECT_ARIA))
+        .child(parts::checkbox(p, keys::row_select(id), copy::ROW_SELECT_ARIA, selected, false))
         .child(slot)
         .child(block)
         .child(state)
         .child(actions);
-    if failed {
+    if selected {
+        r = r.fill(p.soft(p.accent));
+    } else if failed {
         r = r.fill(p.error.alpha(0.05)).hover(p.error.alpha(0.08));
     }
     r

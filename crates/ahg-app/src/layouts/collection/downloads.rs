@@ -5,18 +5,19 @@ use ahg_engine::types::{DownloadStatus as St, DownloadTask, ErrorCode};
 use rune::{Color, El, Icon, ScrollSpec, col, el, icon, row, text};
 
 use super::{PAD, disc, icon_button, interrupted_line, quiet, tab};
+use crate::directions::shelf::downloads as shelf;
 use crate::directions::shelf::parts::{self, run, run_mono, runs};
 use crate::directions::shelf::theme::{Pal, mono, sans, serif};
 use crate::gate::{Confirm, Filter, State};
 use crate::keys::{self, RowAct};
-use crate::{copy, format, icons};
+use crate::{actions, copy, format, icons};
 
 const THUMB: f32 = 40.0;
 
 pub fn view(s: &State, p: &Pal) -> El {
     let tasks = &s.tasks;
-    let [_, active, done, failed] = format::filter_counts(tasks);
-    let mut page = col().w_full().px(PAD).pt(16.0).pb(48.0).child(header(p, tasks, active));
+    let counts = format::filter_counts(tasks);
+    let mut page = col().w_full().px(PAD).pt(16.0).pb(48.0).child(header(s, p, counts[1]));
     if tasks.is_empty() {
         return shell(page.child(empty(p)));
     }
@@ -34,37 +35,40 @@ pub fn view(s: &State, p: &Pal) -> El {
         .role("searchbox")
         .label(copy::DL_SEARCH_ARIA)
         .child(icon(&icons::SEARCH, 16.0).color(p.muted))
-        .child(text(copy::DL_SEARCH_PLACEHOLDER).font(sans(13.0, 400.0)).color(p.muted).single_line().truncate().shrink());
-    page = page.child(
-        row()
-            .w_full()
-            .mb(16.0)
-            .gap(16.0)
-            .center_y()
-            .border_sides([0.0, 0.0, 1.0, 0.0], p.line_soft)
-            .child(
-                row()
-                    .gap(16.0)
-                    .role("tablist")
-                    .label(copy::DL_FILTER_ARIA)
-                    .child(tab(p, &keys::filter(Filter::All), copy::DL_FILTER_ALL, Some(tasks.len()), None, 0, true))
-                    .child(tab(p, &keys::filter(Filter::Active), copy::DL_FILTER_ACTIVE, Some(active), None, 0, false))
-                    .child(tab(p, &keys::filter(Filter::Done), copy::DL_FILTER_DONE, Some(done), None, 0, false))
-                    .child(tab(p, &keys::filter(Filter::Failed), copy::DL_FILTER_FAILED, Some(failed), None, 0, false)),
-            )
-            .child(el().grow(1.0))
-            .child(search.mb(4.0)),
-    );
+        .child(shelf::search_text(s, p));
+    let labels = [copy::DL_FILTER_ALL, copy::DL_FILTER_ACTIVE, copy::DL_FILTER_DONE, copy::DL_FILTER_FAILED];
+    let mut tabs = row().gap(16.0).role("tablist").label(copy::DL_FILTER_ARIA);
+    for ((f, label), n) in Filter::ALL.into_iter().zip(labels).zip(counts) {
+        tabs = tabs.child(tab(p, &keys::filter(f), label, Some(n), None, 0, s.filter == f));
+    }
+    let mut strip = row()
+        .w_full()
+        .mb(16.0)
+        .gap(16.0)
+        .center_y()
+        .border_sides([0.0, 0.0, 1.0, 0.0], p.line_soft)
+        .child(shelf::select_all(s, p).ml(12.0))
+        .child(tabs)
+        .child(el().grow(1.0));
+    if !s.selected.is_empty() {
+        strip = strip.child(shelf::selection(s, p).mb(4.0));
+    }
+    page = page.child(strip.child(search.mb(4.0)));
     let interrupted = tasks.iter().filter(|t| t.progress.status == St::Paused && t.interrupted == Some(true)).count();
     if interrupted > 0 {
         page = page.child(
             row().w_full().h(48.0).px(12.0).mb(16.0).center_y().radius(8.0).fill(p.soft(p.warning)).child(interrupted_line(p, interrupted)),
         );
     }
-    let running: Vec<&DownloadTask> = tasks.iter().filter(|t| format::is_active(t) && t.progress.status != St::Queued).collect();
-    let waiting: Vec<&DownloadTask> = tasks.iter().filter(|t| t.progress.status == St::Queued).collect();
-    let trouble: Vec<&DownloadTask> = tasks.iter().filter(|t| matches!(t.progress.status, St::Failed | St::Cancelled)).collect();
-    let finished: Vec<&DownloadTask> = tasks.iter().filter(|t| t.progress.status == St::Done).collect();
+    let shown: Vec<&DownloadTask> = actions::visible(s).collect();
+    if shown.is_empty() {
+        return shell(page.child(shelf::filtered_empty(s, p, THUMB).pl(12.0)));
+    }
+    let only = |f: &dyn Fn(&DownloadTask) -> bool| -> Vec<&DownloadTask> { shown.iter().copied().filter(|t| f(t)).collect() };
+    let running = only(&|t| format::is_active(t) && t.progress.status != St::Queued);
+    let waiting = only(&|t| t.progress.status == St::Queued);
+    let trouble = only(&|t| matches!(t.progress.status, St::Failed | St::Cancelled));
+    let finished = only(&|t| t.progress.status == St::Done);
     if !running.is_empty() {
         let (live, speed) = format::in_flight(tasks);
         let aside = row()
@@ -91,7 +95,8 @@ fn shell(page: El) -> El {
     col().key("downloads-place").grow(1.0).h_full().min_w(0.0).min_h(0.0).scroll(ScrollSpec { stick_bottom: false }).child(page)
 }
 
-fn header(p: &Pal, tasks: &[DownloadTask], active: usize) -> El {
+fn header(s: &State, p: &Pal, active: usize) -> El {
+    let tasks = &s.tasks;
     let all_paused = format::all_paused(tasks);
     let mut words = col().gap(4.0).child(
         row()
@@ -105,15 +110,31 @@ fn header(p: &Pal, tasks: &[DownloadTask], active: usize) -> El {
             text(copy::downloads_summary(tasks.len(), &format::summary_parts(tasks))).font(sans(13.0, 400.0)).color(p.text2).single_line(),
         );
     }
-    let mut actions = row().gap(4.0).center_y();
-    if !tasks.is_empty() {
-        actions = actions
-            .child(quiet(p, keys::RETRY_ALL_FAILED, Some(&icons::RETRY), copy::DL_RETRY_ALL_FAILED, p.text2))
-            .child(quiet(p, keys::arm(Confirm::Clear), Some(&icons::REMOVE), copy::DL_CLEAR_COMPLETED, p.text2))
-            .child(quiet(p, keys::PAUSE_ALL, Some(&icons::PAUSE), copy::DL_PAUSE_ALL, p.text2))
-            .child(quiet(p, keys::CANCEL_ALL, Some(&icons::CANCEL), copy::DL_CANCEL_ALL, p.text2));
+    // Each bulk action only when it has something to act on (CONTENT.md 3.1).
+    let any = |f: &dyn Fn(St) -> bool| tasks.iter().filter(|t| f(t.progress.status)).count();
+    let mut bulk = row().gap(4.0).center_y();
+    if tasks.iter().any(|t| t.progress.status == St::Failed && !format::is_permanent(t.error_code)) {
+        bulk = bulk.child(quiet(p, keys::RETRY_ALL_FAILED, Some(&icons::RETRY), copy::DL_RETRY_ALL_FAILED, p.text2));
     }
-    row().w_full().pb(16.0).items_end().justify_between().gap(24.0).child(words).child(actions)
+    let done = any(&|st| st == St::Done);
+    if done > 0 {
+        bulk = bulk.child(if s.confirm == Some(Confirm::Clear) {
+            shelf::armed(p, copy::DL_CLEAR_CONFIRM_ARIA, &copy::clear_confirm(done))
+        } else {
+            quiet(p, keys::arm(Confirm::Clear), Some(&icons::REMOVE), copy::DL_CLEAR_COMPLETED, p.text2)
+        });
+    }
+    if any(&|st| matches!(st, St::Paused | St::Queued | St::FetchingInfo | St::Downloading)) > 0 {
+        bulk = bulk.child(if all_paused {
+            quiet(p, keys::PAUSE_ALL, Some(&icons::PLAY), copy::DL_RESUME_ALL, p.accent)
+        } else {
+            quiet(p, keys::PAUSE_ALL, Some(&icons::PAUSE), copy::DL_PAUSE_ALL, p.text2)
+        });
+    }
+    if active > 0 {
+        bulk = bulk.child(quiet(p, keys::CANCEL_ALL, Some(&icons::CANCEL), copy::DL_CANCEL_ALL, p.text2));
+    }
+    row().w_full().pb(16.0).items_end().justify_between().gap(24.0).child(words).child(bulk)
 }
 
 fn empty(p: &Pal) -> El {
@@ -267,6 +288,17 @@ fn task_row(s: &State, p: &Pal, t: &DownloadTask) -> El {
             if act == RowAct::Retry { p.error } else { p.text2 },
         ));
     }
+    // The tick shows on hover, and stays while anything is ticked.
+    let selected = s.selected.contains(&t.task_id);
+    let tick = parts::checkbox(p, keys::row_select(&t.task_id), copy::ROW_SELECT_ARIA, selected, false);
+    let tick = if s.selected.is_empty() { tick.group_opacity(0.0, 1.0) } else { tick };
+    let tint = if selected {
+        p.soft(p.accent)
+    } else if troubled && st == St::Failed {
+        p.error.alpha(0.05)
+    } else {
+        Color::TRANSPARENT
+    };
     row()
         .key(keys::row(&t.task_id))
         .w_full()
@@ -276,11 +308,13 @@ fn task_row(s: &State, p: &Pal, t: &DownloadTask) -> El {
         .gap(16.0)
         .center_y()
         .radius(8.0)
+        .hover_group()
         .hover(p.raised)
         .focusable(true)
         .role("listitem")
         .label(copy::row_name_with_link(&label, &t.url))
-        .fill(if troubled && st == St::Failed { p.error.alpha(0.05) } else { Color::TRANSPARENT })
+        .fill(tint)
+        .child(tick)
         .child(thumb)
         .child(words)
         .child(state)

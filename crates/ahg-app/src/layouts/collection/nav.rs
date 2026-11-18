@@ -23,19 +23,22 @@ static PIN: Icon = Icon {
 
 pub fn view(s: &State, p: &Pal) -> El {
     let active = format::active_count(&s.tasks);
+    let pinned = s.own.nav_pinned;
+    // Pinned, the dividers take their width in the layout; opened by hover they float over the wall.
+    let floating = s.nav_open && !pinned;
     let mut slot = el()
         .key("dividers")
-        .w(STRIP)
+        .w(if pinned { OPEN } else { STRIP })
         .h_full()
         .on_hover_change(|s: &mut State, over: bool, _| s.nav_open = over)
-        .child(panel(s, p, active, s.nav_open));
-    if s.nav_open {
+        .child(panel(s, p, active, s.nav_open || pinned, floating));
+    if floating {
         slot = slot.raise();
     }
     slot
 }
 
-fn panel(s: &State, p: &Pal, active: usize, open: bool) -> El {
+fn panel(s: &State, p: &Pal, active: usize, open: bool, floating: bool) -> El {
     let w = if open { OPEN } else { STRIP };
     let mut c = col()
         .w(w)
@@ -65,7 +68,7 @@ fn panel(s: &State, p: &Pal, active: usize, open: bool) -> El {
             .focusable(true)
             .key(keys::NAV_PIN)
             .role("switch")
-            .checked(s.nav_pinned)
+            .checked(s.own.nav_pinned)
             .label(copy::KEEP_OPEN)
             .border_sides([1.0, 0.0, 0.0, 0.0], p.line_soft)
             .child(icon(&icons::PIN, 16.0).color(p.text2))
@@ -73,7 +76,7 @@ fn panel(s: &State, p: &Pal, active: usize, open: bool) -> El {
     } else {
         el().h(32.0).mt(8.0)
     });
-    if open {
+    if floating {
         c = c.shadow(8.0, 24.0, theme::label_ink().alpha(if p.dark { 0.5 } else { 0.16 }));
     }
     c.absolute(0.0, 0.0)

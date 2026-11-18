@@ -6,13 +6,13 @@
 //!
 //! This file draws the shell: the title bar, the sidebar (`nav`) and the
 //! place beside it, chosen by `State.nav`.
-mod downloads;
+pub(crate) mod downloads;
 pub(crate) mod found;
 mod home;
 pub(crate) mod icons;
 mod nav;
 pub(crate) mod parts;
-mod settings;
+pub(crate) mod settings;
 pub(crate) mod theme;
 
 use rune::{Cx, El, Image, col, el, icon, rich, row, text};
