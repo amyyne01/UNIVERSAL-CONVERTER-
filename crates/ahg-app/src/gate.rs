@@ -317,6 +317,8 @@ pub struct State {
     pub notices: Vec<Notice>,
     pub engine: EngineStatus,
     pub update: UpdateStatus,
+    /// The date text of `copy::settings::cooldown_note`, while a licence transfer is on cooldown.
+    pub transfer_cooldown: Option<String>,
     /// What a licence key binds to on this computer.
     pub machine_id: String,
     /// The last speed samples, in bytes per second, oldest first.
@@ -421,6 +423,7 @@ impl State {
             notices: Vec::new(),
             engine: sample::engine(),
             update: sample::update(),
+            transfer_cooldown: None,
             machine_id: sample::MACHINE_ID.into(),
             speed: sample::speed(),
             loading: Loading::Ready,
@@ -848,6 +851,32 @@ pub const SCENES: &[(&str, fn(&mut State))] = &[
     ("media", |s| {
         s.set_field("https://www.youtube.com/watch?v=example");
         s.found = Found::Media(sample::media());
+    }),
+    // Scenes the three lanes of step 53 could not add: a Spotify match line, ticked results, armed confirms, a typed query.
+    ("media-matched", |s| {
+        s.set_field("https://www.youtube.com/watch?v=example");
+        s.found = Found::Media(sample::media());
+        s.card = Card::Single { matched: Some(crate::copy::found::matched_name("Daft Punk", "Get Lucky")) };
+    }),
+    ("search-picked", |s| {
+        s.set_field(sample::QUERY);
+        s.found = Found::Search { query: sample::QUERY.into(), bands: sample::search().map(Band::Results) };
+        s.picked.extend(["yt-2", "sp-1"].map(String::from));
+    }),
+    ("selected-armed", |s| {
+        actions::go(s, Nav::Downloads);
+        for id in ["get-lucky", "dreams", "removed"] {
+            actions::toggle_select(s, id);
+        }
+        actions::arm(s, Confirm::Remove);
+    }),
+    ("downloads-query", |s| {
+        actions::go(s, Nav::Downloads);
+        s.query.replace_text("artemis");
+    }),
+    ("settings-armed", |s| {
+        actions::go(s, Nav::Settings);
+        actions::arm(s, Confirm::Deactivate);
     }),
     // The scenes below came with the shared state (step 36); the old layouts draw them as they can.
     ("selected", |s| {

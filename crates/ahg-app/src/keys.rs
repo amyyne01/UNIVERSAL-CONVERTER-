@@ -54,6 +54,9 @@ pub const CHOICE_AUDIO: &str = "choice-audio";
 pub const CHOICE_AUDIO_QUALITY: &str = "choice-audio-quality";
 pub const CHOICE_VIDEO_QUALITY: &str = "choice-video-quality";
 pub const CHOICE_FOLDER: &str = "choice-folder";
+pub const CHOICE_FORMAT: &str = "choice-format";
+pub const SEE_PLANS: &str = "see-plans";
+pub const FOUND_RETRY: &str = "found-retry";
 
 /// An audio format chip in the found step (`mp3`, `flac` ...).
 pub fn choice_format(format: &str) -> String {
@@ -63,6 +66,11 @@ pub fn choice_format(format: &str) -> String {
 /// A playlist row's tick.
 pub fn track(index: usize) -> String {
     format!("track-{index}")
+}
+
+/// A search result's own tick box.
+pub fn result_tick(id: &str) -> String {
+    format!("result-tick-{id}")
 }
 
 /// A search result's row.
@@ -83,6 +91,8 @@ pub fn band_more(band: usize) -> String {
 // ── Downloads
 pub const DOWNLOADS_SEARCH: &str = "dl-search";
 pub const SELECT_ALL: &str = "dl-select-all";
+pub const SHOW_ALL: &str = "dl-show-all";
+pub const RESULTS_CLEAR: &str = "results-clear";
 pub const CLEAR_SELECTION: &str = "dl-clear-selection";
 pub const CANCEL_SELECTED: &str = "dl-cancel-selected";
 pub const PAUSE_ALL: &str = "pause-all";
@@ -194,7 +204,43 @@ pub fn palette(index: usize) -> String {
     format!("set-palette-{index}")
 }
 
+/// A theme choice (Light, Dark, System), by its place in the list.
+pub fn theme(index: usize) -> String {
+    format!("set-theme-{index}")
+}
+
 /// A weekday chip of the schedule, 0 Sunday.
 pub fn day(index: usize) -> String {
     format!("set-day-{index}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every `pub const NAME: &str = "value";` of this file, and one sample of each key function.
+    #[test]
+    fn every_key_is_unique() {
+        let mut keys: Vec<String> = include_str!("keys.rs")
+            .lines()
+            .filter_map(|l| l.strip_prefix("pub const ")?.split_once(": &str = \"")?.1.strip_suffix("\";").map(String::from))
+            .collect();
+        assert!(keys.len() > 50, "the constants were not found");
+        keys.extend([
+            result("yt-1"),
+            result_tick("yt-1"),
+            choice_format("mp3"),
+            theme(0),
+            palette(0),
+            setting("theme"),
+            track(0),
+            row("a"),
+            row_select("a"),
+            ring("a"),
+        ]);
+        let mut seen = std::collections::HashSet::new();
+        for k in &keys {
+            assert!(seen.insert(k), "{k} is used twice");
+        }
+    }
 }

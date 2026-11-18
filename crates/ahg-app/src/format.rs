@@ -5,6 +5,8 @@
 use ahg_engine::downloader::errors;
 use ahg_engine::stats::DownloadStats;
 use ahg_engine::types::{DownloadStatus as St, DownloadTask, ErrorCode, RETRY_BACKOFF_MS, SourcePlatform};
+use ahg_engine::updater::UpdateState;
+use ahg_engine::ytdlp_updater::YtdlpStatus;
 
 use crate::copy;
 
@@ -73,6 +75,56 @@ pub fn month_name(year_month: &str) -> String {
         .and_then(|(_, m)| m.parse::<usize>().ok())
         .and_then(|m| NAMES.get(m.wrapping_sub(1)))
         .map_or_else(|| year_month.to_string(), |n| (*n).to_string())
+}
+
+/// A count as a short figure: `999`, `1.2K`, `4.8M`, `1.5B`; a trailing `.0` is dropped; not a count, `0`.
+pub fn short_count(n: f64) -> String {
+    if n.is_nan() || n < 0.0 {
+        return "0".into();
+    }
+    let (v, unit) = [(1e9, "B"), (1e6, "M"), (1e3, "K")].into_iter().find(|(at, _)| n >= *at).map_or((n, ""), |(at, u)| (n / at, u));
+    let figure = if unit.is_empty() { format!("{}", v.round()) } else { format!("{v:.1}") };
+    format!("{}{unit}", figure.strip_suffix(".0").unwrap_or(&figure))
+}
+
+/// yt-dlp's `YYYYMMDD` as `Mar 9, 2024`; anything else is `None`.
+pub fn short_date(ymd: &str) -> Option<String> {
+    if ymd.len() != 8 || !ymd.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let month = month_name(&format!("{}-{}", &ymd[..4], &ymd[4..6]));
+    let day: u32 = ymd[6..].parse().ok()?;
+    month.chars().next().filter(char::is_ascii_alphabetic)?;
+    Some(format!("{} {day}, {}", month.get(..3)?, &ymd[..4]))
+}
+
+/// The app update's line in Settings (SettingsTab.tsx `updateDesc`); the version carries no `v`.
+pub fn update_line(u: &UpdateState) -> String {
+    use copy::settings as w;
+    let v = u.version.as_deref().unwrap_or_default();
+    match u.phase {
+        "checking" => w::APP_CHECKING.into(),
+        "available" => w::app_available(v),
+        "downloading" => w::APP_DOWNLOADING.into(),
+        "ready" => w::app_ready(v),
+        "uptodate" => w::APP_UP_TO_DATE.into(),
+        "error" => w::APP_FAILED.into(),
+        _ => w::APP_REST.into(),
+    }
+}
+
+/// The engine's line in Settings (SettingsTab.tsx `engineDesc`).
+pub fn engine_line(e: &YtdlpStatus) -> String {
+    use copy::settings as w;
+    match e.state {
+        "checking" => w::ENGINE_CHECKING.into(),
+        "available" => w::engine_available(&e.latest),
+        "downloading" => w::ENGINE_DOWNLOADING.into(),
+        "updated" => w::engine_updated(if e.current.is_empty() { &e.latest } else { &e.current }),
+        "uptodate" => w::ENGINE_UP_TO_DATE.into(),
+        "error" => e.message.as_deref().filter(|m| !m.is_empty()).unwrap_or(w::ENGINE_FAILED).into(),
+        _ => w::ENGINE_IDLE.into(),
+    }
 }
 
 /// `linkLabel`: the stand-in title for a download that has none yet. What `new URL()` gives in
@@ -638,5 +690,72 @@ mod tests {
         assert_eq!(sentence(month("2026-11", 4.0, 1.0, &[]), prev(4.0)), copy::month_same_count("October"));
         assert_eq!(sentence(month("2026-11", 4.0, 1.0, &[]), prev(1.0)), copy::month_diff(3, "October"));
         assert_eq!(sentence(month("2026-11", 1.0, 1.0, &[]), prev(4.0)), copy::month_diff(-3, "October"));
+    }
+
+    #[test]
+    fn counts_are_short() {
+        let table = [
+            (0.0, "0"),
+            (999.0, "999"),
+            (1_000.0, "1K"),
+            (1_200.0, "1.2K"),
+            (48_210.0, "48.2K"),
+            (1_000_000.0, "1M"),
+            (4_800_000.0, "4.8M"),
+            (1_500_000_000.0, "1.5B"),
+            (f64::NAN, "0"),
+            (-5.0, "0"),
+        ];
+        assert!(!table.is_empty());
+        for (n, want) in table {
+            assert_eq!(short_count(n), want, "{n}");
+        }
+    }
+
+    #[test]
+    fn dates_are_short() {
+        let ok = [("20240309", "Mar 9, 2024"), ("20261118", "Nov 18, 2026"), ("20250101", "Jan 1, 2025"), ("20251231", "Dec 31, 2025")];
+        assert!(!ok.is_empty());
+        for (ymd, want) in ok {
+            assert_eq!(short_date(ymd).as_deref(), Some(want), "{ymd}");
+        }
+        for bad in ["", "2024", "2024030", "202403099", "2024-3-9", "20241301", "20240001", "2024030x", "٢٠٢٤٠٣٠٩"] {
+            assert_eq!(short_date(bad), None, "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn the_update_line_follows_the_phase() {
+        use copy::settings as w;
+        let line = |phase, version: Option<&str>| {
+            update_line(&UpdateState { phase, version: version.map(Into::into), percent: None, message: None })
+        };
+        assert_eq!(line("idle", None), w::APP_REST);
+        assert_eq!(line("checking", None), w::APP_CHECKING);
+        assert_eq!(line("available", Some("2.0.1")), w::app_available("2.0.1"));
+        assert_eq!(line("downloading", None), w::APP_DOWNLOADING);
+        assert_eq!(line("ready", Some("2.0.1")), w::app_ready("2.0.1"));
+        assert_eq!(line("uptodate", None), w::APP_UP_TO_DATE);
+        assert_eq!(line("error", None), w::APP_FAILED);
+        assert_eq!(line("anything else", None), w::APP_REST);
+    }
+
+    #[test]
+    fn the_engine_line_follows_the_state() {
+        use copy::settings as w;
+        let line = |state, current: &str, latest: &str, message: Option<&str>| {
+            engine_line(&YtdlpStatus { current: current.into(), latest: latest.into(), state, message: message.map(Into::into) })
+        };
+        assert_eq!(line("idle", "1", "", None), w::ENGINE_IDLE);
+        assert_eq!(line("checking", "1", "", None), w::ENGINE_CHECKING);
+        assert_eq!(line("available", "1", "2", None), w::engine_available("2"));
+        assert_eq!(line("downloading", "1", "2", None), w::ENGINE_DOWNLOADING);
+        assert_eq!(line("updated", "2", "2", None), w::engine_updated("2"));
+        assert_eq!(line("updated", "", "3", None), w::engine_updated("3"));
+        assert_eq!(line("uptodate", "1", "1", None), w::ENGINE_UP_TO_DATE);
+        assert_eq!(line("error", "1", "", Some("offline")), "offline");
+        assert_eq!(line("error", "1", "", None), w::ENGINE_FAILED);
+        assert_eq!(line("error", "1", "", Some("")), w::ENGINE_FAILED);
+        assert_eq!(line("anything else", "1", "", None), w::ENGINE_IDLE);
     }
 }
