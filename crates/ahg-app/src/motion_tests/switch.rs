@@ -150,7 +150,10 @@ fn every_ordered_pair_dissolves_without_a_flash() {
                 assert_eq!(rt.presented(&keys::preset(to)).map(|r| r.0), tile, "{case}, frame {f}: the picker's tile moved");
                 rt.frame(DT);
             }
-            assert!(blurred, "{case}: the dissolve has no blur");
+            // The blur only exists while `DISSOLVE` is `FadeBlur` (Round 0 chose the plain fade).
+            if matches!(crate::motion::DISSOLVE, crate::motion::Dissolve::FadeBlur(_)) {
+                assert!(blurred, "{case}: the dissolve has no blur");
+            }
             let els = rt.elements();
             assert!(shown(&els, from).is_none(), "{case}: the old preset never left");
             let (_, new) = shown(&els, to).unwrap_or_else(|| panic!("{case}: the new preset left"));

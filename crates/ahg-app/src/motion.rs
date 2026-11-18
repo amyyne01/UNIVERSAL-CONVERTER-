@@ -67,10 +67,10 @@ pub const STAGGER_MAX: usize = 6;
 pub enum Dissolve {
     /// Fade with a blur of this many points, no scale.
     FadeBlur(f32),
-    /// Plain fade; flip `DISSOLVE` to this if the blur costs frames.
+    /// Plain fade: the owner's rule (blur only if it holds 60 fps) failed in Round 0, 2026-11-18 (the blur's first frame costs 36-58 ms against 19-26 ms).
     Fade,
 }
-pub const DISSOLVE: Dissolve = Dissolve::FadeBlur(1.5);
+pub const DISSOLVE: Dissolve = Dissolve::Fade;
 /// The dissolve rides `ROW` (0.30 s in, 0.24 s out).
 pub const DISSOLVE_SPRING: SpringPair = ROW;
 
@@ -329,7 +329,7 @@ mod tests {
 
     #[test]
     fn ring_and_owner_decisions() {
-        assert_eq!(DISSOLVE, Dissolve::FadeBlur(1.5));
+        assert_eq!(DISSOLVE, Dissolve::Fade);
         assert_eq!(DIGITS, Digits::Crossfade);
         assert_eq!(DISSOLVE_SPRING, ROW);
         assert_eq!(PLACE.0, t::CSS_ENTER);
