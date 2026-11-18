@@ -4,8 +4,10 @@ use ahg_engine::types::{DownloadTask, SourcePlatform};
 use rune::{Color, El, Icon, Span, SurfaceFit, TextStyle, col, el, icon, rich, row, text};
 
 use super::theme::{Pal, source_color};
-use crate::gate::State;
+use crate::copy;
+use crate::gate::{Filter, State};
 use crate::icons;
+use crate::keys;
 use crate::ring;
 use crate::settings_spec::{self, Kind, Row};
 use serde_json::Value;
@@ -220,8 +222,9 @@ impl Spec {
     pub fn value(&self, key: &str) -> Value {
         self.0.iter().find(|r| r.key == Some(key)).map_or(Value::Null, |r| r.value.clone())
     }
-    pub fn on(&self, key: &str) -> bool {
-        self.value(key).as_bool().unwrap_or(false)
+    /// The value of the row with this label, for rows that are not a setting (the plan).
+    pub fn text_where(&self, label: &str) -> String {
+        self.0.iter().find(|r| r.label == label).and_then(|r| r.value.as_str()).unwrap_or_default().to_owned()
     }
     pub fn text(&self, key: &str) -> String {
         match self.value(key) {
@@ -238,5 +241,35 @@ impl Spec {
             _ => None,
         });
         label.unwrap_or(value)
+    }
+}
+
+/// A two-step action asking once more: the question, a quiet Cancel, a red Confirm.
+pub fn confirm(question: &str, aria: &str, p: &Pal) -> El {
+    row()
+        .gap(4.0)
+        .center_y()
+        .role("group")
+        .label(aria)
+        .child(label(question, sans(13.0, 500.0), p.text2).mr(4.0))
+        .child(ghost(None, copy::DL_CONFIRM_CANCEL, p.text2, p).key(keys::CONFIRM_NO))
+        .child(ghost(None, copy::DL_CONFIRM_YES, p.deep, p).fill(p.error).hover(p.deep.alpha(0.12)).key(keys::CONFIRM_YES))
+}
+
+// TODO(shared): `format::selection(tasks, selected) -> (active, finished)`; Signal and One bar use this copy.
+/// The selected rows that can be canceled (active) and removed (finished: done, failed, canceled).
+pub fn selection(s: &State) -> (usize, usize) {
+    let picked = || s.tasks.iter().filter(|t| s.selected.contains(&t.task_id));
+    (picked().filter(|t| crate::format::is_active(t)).count(), picked().filter(|t| !crate::format::is_active(t)).count())
+}
+
+// TODO(shared): `copy::empty_filter_title(Filter)`; the table of CONTENT.md 3.4, `All` included.
+/// The title of a list that the filter and the search empty, and its glyph.
+pub fn filtered_empty(filter: Filter) -> (&'static str, &'static Icon) {
+    match filter {
+        Filter::Active => (copy::EMPTY_FILTER_ACTIVE, &icons::CLOCK),
+        Filter::Done => (copy::EMPTY_FILTER_DONE, &icons::CLOCK),
+        Filter::Failed => (copy::EMPTY_FILTER_FAILED, &icons::CHECK_SIGNAL),
+        Filter::All => (copy::EMPTY_FILTER_FAILED, &icons::CLOCK),
     }
 }

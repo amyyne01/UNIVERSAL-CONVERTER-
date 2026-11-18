@@ -10,6 +10,7 @@ use crate::copy;
 use crate::format::{self, Bucket};
 use crate::gate::{Found, Nav, State};
 use crate::icons;
+use crate::keys;
 
 pub fn view(s: &State, p: &Pal) -> El {
     let active = format::active_count(&s.tasks);
@@ -17,8 +18,9 @@ pub fn view(s: &State, p: &Pal) -> El {
     let has_counts = s.stats.as_ref().is_some_and(|st| st.current.files > 0.0 || st.previous.as_ref().is_some_and(|m| m.files > 0.0));
     let quiet = !has_counts && done.is_empty() && active == 0;
 
-    if quiet {
-        // First launch: the field is the whole screen, set a little above the middle.
+    // First launch: the field is the whole screen, set a little above the middle.
+    // A paste or a search there takes the page below, as it does with history.
+    if quiet && matches!(s.found, Found::Nothing) {
         let hero = col()
             .w_full()
             .max_w(880.0)
@@ -119,6 +121,7 @@ fn field(s: &State, p: &Pal) -> El {
         .cursor(rune::Cursor::Pointer)
         .focusable(true)
         .role("button")
+        .key(keys::LOOK_UP)
         .child(label(words, sans(14.0, 500.0), p.bg))
         .child(icon(&icons::FORWARD, 16.0).color(p.bg));
     let typed = if input.is_empty() {
@@ -137,7 +140,16 @@ fn field(s: &State, p: &Pal) -> El {
         .child(typed.grow(1.0).single_line().truncate().min_w(0.0))
         .child(go);
     let level = el().w_full().h(16.0).px(12.0).pb(8.0).child(meter(lit, 120, None, 8.0, 2.0, level_color, p.unlit));
-    col().w_full().radius(12.0).fill(p.surface).border(1.0, p.line_strong).role("textbox").label(copy::FIELD_ARIA).child(line).child(level)
+    col()
+        .key(keys::FIELD)
+        .w_full()
+        .radius(12.0)
+        .fill(p.surface)
+        .border(1.0, p.line_strong)
+        .role("textbox")
+        .label(copy::FIELD_ARIA)
+        .child(line)
+        .child(level)
 }
 
 /// The rest-state status line (reading 8).

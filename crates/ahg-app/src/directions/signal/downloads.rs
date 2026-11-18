@@ -5,13 +5,14 @@ use ahg_engine::types::{DownloadStatus as St, DownloadTask};
 use rune::{Align, Color, El, ScrollSpec, col, el, icon, row, spacer};
 
 use super::model;
-use super::parts::{Line, art, button, checkbox, ghost, icon_button, idle_ring, label, mono, sans, stack, task_ring};
+use super::parts::{self, Line, art, button, checkbox, confirm, ghost, icon_button, idle_ring, label, mono, sans, stack, task_ring};
 use super::theme::{Pal, source_color};
+use crate::actions;
 use crate::copy;
 use crate::format::{self, Group};
-use crate::gate::{Nav, State};
+use crate::gate::{Confirm, Filter, Nav, State};
 use crate::icons;
-use crate::keys;
+use crate::keys::{self, RowAct};
 
 const INSTRUMENT: f32 = 220.0;
 /// A finished row's file takes more room than the instrument: names are long.
@@ -21,19 +22,20 @@ const ACTIONS: f32 = 124.0;
 
 pub fn view(s: &State, p: &Pal) -> El {
     let tasks = &s.tasks;
-    let mut page = col().w_full().max_w(1600.0).px(32.0).pt(28.0).pb(32.0).gap(16.0).child(header(tasks, p));
+    let mut page = col().w_full().max_w(1600.0).px(32.0).pt(28.0).pb(32.0).gap(16.0).child(header(s, p));
     let interrupted = tasks.iter().filter(|t| t.progress.status == St::Paused && t.interrupted == Some(true)).count();
     if interrupted > 0 {
         page = page.child(banner(interrupted, p));
     }
     if !tasks.is_empty() {
-        page = page.child(strip(tasks, p));
+        page = page.child(strip(s, p));
     }
     page = page.child(list(s, p));
     col().w_full().h_full().scroll(ScrollSpec { stick_bottom: false }).min_h(0.0).items_center().child(page)
 }
 
-fn header(tasks: &[DownloadTask], p: &Pal) -> El {
+fn header(s: &State, p: &Pal) -> El {
+    let tasks = &s.tasks;
     let active = format::active_count(tasks);
     let all_paused = format::all_paused(tasks);
     let mut left = stack(8.0).child(label(copy::DL_TITLE, sans(28.0, 500.0), p.text)).child(label(
@@ -46,8 +48,10 @@ fn header(tasks: &[DownloadTask], p: &Pal) -> El {
     }
     let mut right = row().gap(4.0).center_y();
     if !tasks.is_empty() {
+        let typed = s.query.text.as_str();
         right = right.child(
             row()
+                .key(keys::DOWNLOADS_SEARCH)
                 .w(240.0)
                 .h(32.0)
                 .px(12.0)
@@ -60,25 +64,32 @@ fn header(tasks: &[DownloadTask], p: &Pal) -> El {
                 .role("searchbox")
                 .label(copy::DL_SEARCH_ARIA)
                 .child(icon(&icons::SEARCH, 16.0).color(p.muted))
-                .child(label(copy::DL_SEARCH_PLACEHOLDER, sans(13.0, 400.0), p.muted)),
+                .child(if typed.is_empty() {
+                    label(copy::DL_SEARCH_PLACEHOLDER, sans(13.0, 400.0), p.muted)
+                } else {
+                    label(typed, sans(13.0, 400.0), p.text).single_line().truncate().min_w(0.0)
+                }),
         );
     }
     if tasks.iter().any(|t| t.progress.status == St::Failed && !format::is_permanent(t.error_code)) {
-        right = right.child(ghost(Some(&icons::RETRY), copy::DL_RETRY_ALL_FAILED, p.text2, p));
+        right = right.child(ghost(Some(&icons::RETRY), copy::DL_RETRY_ALL_FAILED, p.text2, p).key(keys::RETRY_ALL_FAILED));
     }
-    if tasks.iter().any(|t| t.progress.status == St::Done) {
-        right = right.child(ghost(Some(&icons::REMOVE), copy::DL_CLEAR_COMPLETED, p.text2, p));
+    let done = tasks.iter().filter(|t| t.progress.status == St::Done).count();
+    if s.confirm == Some(Confirm::Clear) && done > 0 {
+        right = right.child(confirm(&copy::clear_confirm(done), copy::DL_CLEAR_CONFIRM_ARIA, p));
+    } else if done > 0 {
+        right = right.child(ghost(Some(&icons::REMOVE), copy::DL_CLEAR_COMPLETED, p.text2, p).key(keys::arm(Confirm::Clear)));
     }
     let pausable = tasks.iter().any(|t| matches!(t.progress.status, St::Queued | St::FetchingInfo | St::Downloading));
     if pausable || tasks.iter().any(|t| t.progress.status == St::Paused) {
         right = right.child(if all_paused {
-            button(Some(&icons::PLAY), copy::DL_RESUME_ALL, p.accent_ink, p)
+            button(Some(&icons::PLAY), copy::DL_RESUME_ALL, p.accent_ink, p).key(keys::PAUSE_ALL)
         } else {
-            button(Some(&icons::PAUSE), copy::DL_PAUSE_ALL, p.text, p)
+            button(Some(&icons::PAUSE), copy::DL_PAUSE_ALL, p.text, p).key(keys::PAUSE_ALL)
         });
     }
     if active > 0 {
-        right = right.child(ghost(Some(&icons::CANCEL), copy::DL_CANCEL_ALL, p.text2, p));
+        right = right.child(ghost(Some(&icons::CANCEL), copy::DL_CANCEL_ALL, p.text2, p).key(keys::CANCEL_ALL));
     }
     row().w_full().items_end().justify_between().gap(16.0).flex_wrap().child(left).child(right)
 }
@@ -96,8 +107,8 @@ fn banner(n: usize, p: &Pal) -> El {
         .border(1.0, p.warning.alpha(0.22))
         .child(icon(&icons::PAUSE, 16.0).color(p.warning))
         .child(Line::new().fig(&n.to_string(), p.text).add(&copy::interrupted_sentence(n), p.text).one(sans(13.0, 400.0)).grow(1.0))
-        .child(primary(Some(&icons::PLAY), copy::DL_INTERRUPTED_RESUME, p))
-        .child(ghost(Some(&icons::REMOVE), copy::DL_INTERRUPTED_DISCARD, p.text2, p))
+        .child(primary(Some(&icons::PLAY), copy::DL_INTERRUPTED_RESUME, p).key(keys::RESUME_INTERRUPTED))
+        .child(ghost(Some(&icons::REMOVE), copy::DL_INTERRUPTED_DISCARD, p.text2, p).key(keys::DISCARD_INTERRUPTED))
 }
 
 /// The one filled button: off-white ink on dark, ink on light.
@@ -105,7 +116,21 @@ fn primary(i: Option<&'static rune::Icon>, words: &str, p: &Pal) -> El {
     ghost(i, words, p.bg, p).fill(p.text).hover(p.bg.alpha(0.12))
 }
 
-fn strip(tasks: &[DownloadTask], p: &Pal) -> El {
+/// A tick: empty, ticked, or `mixed` (some of the rows on show).
+fn tick(on: bool, mixed: bool, p: &Pal) -> El {
+    let b = checkbox(p).center().checked(on);
+    if on {
+        b.fill(p.text).border(1.0, p.text).child(icon(&icons::CHECK_SIGNAL, 12.0).color(p.surface))
+    } else if mixed {
+        b.child(el().size(8.0, 2.0).radius(1.0).fill(p.text))
+    } else {
+        b
+    }
+}
+
+/// The control strip: the select-all tick and the filters; with a selection, its actions at the right.
+fn strip(s: &State, p: &Pal) -> El {
+    let tasks = &s.tasks;
     let counts = format::filter_counts(tasks);
     let filters = [
         (copy::DL_FILTER_ALL, counts[0]),
@@ -115,9 +140,12 @@ fn strip(tasks: &[DownloadTask], p: &Pal) -> El {
     ];
     let mut seg = row().padding(4.0).gap(4.0).radius(8.0).fill(p.deep).border(1.0, p.line).role("radiogroup").label(copy::DL_FILTER_ARIA);
     for (i, (name, n)) in filters.into_iter().enumerate() {
-        let on = i == 0;
+        let on = Filter::ALL[i] == s.filter;
         seg = seg.child(
             row()
+                .key(keys::filter(Filter::ALL[i]))
+                .role("radio")
+                .checked(on)
                 .h(28.0)
                 .px(12.0)
                 .gap(8.0)
@@ -130,15 +158,52 @@ fn strip(tasks: &[DownloadTask], p: &Pal) -> El {
                 .child(label(n.to_string(), mono(12.0, 400.0), p.muted)),
         );
     }
-    row().w_full().h(40.0).pl(16.0).gap(16.0).center_y().child(checkbox(p).label(copy::DL_SELECT_ALL_ARIA)).child(seg)
+    let shown: Vec<&DownloadTask> = actions::visible(s).collect();
+    let ticked = shown.iter().filter(|t| s.selected.contains(&t.task_id)).count();
+    let all = !shown.is_empty() && ticked == shown.len();
+    let mut r = row()
+        .w_full()
+        .h(40.0)
+        .pl(16.0)
+        .gap(16.0)
+        .center_y()
+        .child(tick(all, ticked > 0 && !all, p).key(keys::SELECT_ALL).label(copy::DL_SELECT_ALL_ARIA))
+        .child(seg);
+    if !s.selected.is_empty() {
+        r = r.child(spacer()).child(selection(s, p));
+    }
+    r
+}
+
+/// What a selection can do: cancel the active ones, remove the finished ones (asking once more), or let go.
+fn selection(s: &State, p: &Pal) -> El {
+    let (active, finished) = parts::selection(s);
+    let mut r = row().gap(4.0).center_y().child(label(copy::selected_count(s.selected.len()), mono(12.0, 500.0), p.text).mr(8.0));
+    let cancel = ghost(Some(&icons::CANCEL), copy::DL_SELECTION_CANCEL, p.text2, p).key(keys::CANCEL_SELECTED);
+    let armed = s.confirm == Some(Confirm::Remove) && finished > 0;
+    if !armed {
+        r = r.child(if active > 0 { cancel } else { cancel.opacity(0.4) });
+    }
+    if s.confirm == Some(Confirm::Remove) && finished > 0 {
+        r = r.child(confirm(&copy::remove_confirm(finished), copy::DL_REMOVE_CONFIRM_ARIA, p));
+    } else {
+        let remove = ghost(Some(&icons::REMOVE), copy::DL_SELECTION_REMOVE, p.text2, p).key(keys::arm(Confirm::Remove));
+        r = r.child(if finished > 0 { remove } else { remove.opacity(0.4) });
+    }
+    r.child(ghost(None, copy::DL_SELECTION_CLEAR, p.text2, p).key(keys::CLEAR_SELECTION))
 }
 
 fn list(s: &State, p: &Pal) -> El {
-    let tasks = &s.tasks;
     let surface = col().w_full().radius(12.0).fill(p.surface).border(1.0, p.line).clip_rounded(12.0);
-    if tasks.is_empty() {
+    if s.tasks.is_empty() {
         return surface.child(empty_row(s, p));
     }
+    // The filter and the search decide the rows; the group headers count what is left.
+    let shown: Vec<DownloadTask> = actions::visible(s).cloned().collect();
+    if shown.is_empty() {
+        return surface.child(filtered_row(s, p));
+    }
+    let tasks = &shown;
     let groups = [Group::InProgress, Group::Attention, Group::Completed];
     let present: Vec<Group> = groups.into_iter().filter(|g| tasks.iter().any(|t| format::group_of(t) == *g)).collect();
     let mut out = surface;
@@ -153,7 +218,7 @@ fn list(s: &State, p: &Pal) -> El {
             });
         }
         if present.len() > 1 {
-            out = out.child(group_header(*g, &rows, tasks, p));
+            out = out.child(group_header(*g, &rows, &s.tasks, p));
         }
         let queued = rows.iter().filter(|t| t.progress.status == St::Queued).count();
         let mut seam_done = false;
@@ -235,9 +300,30 @@ fn empty_row(s: &State, p: &Pal) -> El {
         )
 }
 
+/// The filter and the search leave nothing: which, how many there are, and the way back to all.
+fn filtered_row(s: &State, p: &Pal) -> El {
+    let (title, glyph) = parts::filtered_empty(s.filter);
+    let total = s.tasks.len();
+    row()
+        .w_full()
+        .h(64.0)
+        .px(16.0)
+        .gap(12.0)
+        .center_y()
+        .child(el().w(44.0))
+        .child(el().size(40.0, 40.0).radius(8.0).fill(p.raised).center().child(icon(glyph, 16.0).color(p.muted)))
+        .child(stack(4.0).grow(1.0).child(label(title, sans(14.0, 500.0), p.text)).child(label(
+            copy::empty_filter_body(total),
+            sans(13.0, 400.0),
+            p.text2,
+        )))
+        .child(ghost(None, &copy::show_all(total), p.text2, p).key(keys::filter(Filter::All)))
+}
+
 fn task_row(s: &State, t: &DownloadTask, rule_above: bool, p: &Pal) -> El {
     let st = t.progress.status;
     let failed = st == St::Failed;
+    let on = s.selected.contains(&t.task_id);
     let mut r = row()
         .key(keys::row(&t.task_id))
         .w_full()
@@ -248,13 +334,15 @@ fn task_row(s: &State, t: &DownloadTask, rule_above: bool, p: &Pal) -> El {
         .hover_group()
         .hover(p.hover)
         .child(el().w(16.0))
-        .child(checkbox(p).label(copy::ROW_SELECT_ARIA))
+        .child(tick(on, false, p).key(keys::row_select(&t.task_id)).label(copy::ROW_SELECT_ARIA))
         .child(art(s, t, Some(40.0), 40.0, 6.0, p))
         .child(title_block(t, p));
     if rule_above {
         r = r.border_sides([1.0, 0.0, 0.0, 0.0], p.line);
     }
-    if failed {
+    if on {
+        r = r.fill(p.accent.alpha(0.10));
+    } else if failed {
         r = r.fill(p.error_soft);
     }
     if let Some(slot) = instrument(s, t, p) {
@@ -375,42 +463,45 @@ fn state_col(t: &DownloadTask, p: &Pal) -> El {
 fn actions(t: &DownloadTask, p: &Pal) -> El {
     use ahg_engine::types::ErrorCode as E;
     let st = t.progress.status;
+    let id = &t.task_id;
+    let act =
+        |i: &'static rune::Icon, words: &str, ink: Color, which: RowAct| icon_button(i, words, ink, p).key(keys::row_action(which, id));
     let mut a = row().w(ACTIONS).gap(4.0).justify_end().center_y();
     if matches!(st, St::Queued | St::FetchingInfo | St::Downloading) {
-        a = a.child(icon_button(&icons::PAUSE, copy::ACT_PAUSE, p.text2, p));
+        a = a.child(act(&icons::PAUSE, copy::ACT_PAUSE, p.text2, RowAct::Pause));
     }
     if st == St::Paused {
-        a = a.child(icon_button(&icons::PLAY, copy::ACT_RESUME, p.accent_ink, p));
+        a = a.child(act(&icons::PLAY, copy::ACT_RESUME, p.accent_ink, RowAct::Resume));
     }
     if format::is_active(t) {
-        a = a.child(icon_button(&icons::CANCEL, copy::ACT_CANCEL, p.text2, p));
+        a = a.child(act(&icons::CANCEL, copy::ACT_CANCEL, p.text2, RowAct::Cancel));
     }
     let attention = matches!(st, St::Failed | St::Cancelled);
     if st == St::Failed && !t.progress.error.is_empty() {
-        a = a.child(icon_button(&icons::COPY, copy::ACT_COPY_DETAILS, p.text2, p));
+        a = a.child(act(&icons::COPY, copy::ACT_COPY_DETAILS, p.text2, RowAct::CopyDetails));
     }
     if attention && matches!(t.error_code, Some(E::Private | E::AgeRestricted | E::LoginRequired | E::DiskFull)) {
-        a = a.child(icon_button(&icons::SETTINGS, copy::ACT_OPEN_SETTINGS, p.text2, p));
+        a = a.child(act(&icons::SETTINGS, copy::ACT_OPEN_SETTINGS, p.text2, RowAct::Fix));
     }
     if attention && t.error_code == Some(E::Unknown) {
-        a = a.child(icon_button(&icons::REFRESH, copy::ACT_UPDATE_ENGINE, p.text2, p));
+        a = a.child(act(&icons::REFRESH, copy::ACT_UPDATE_ENGINE, p.text2, RowAct::Fix));
     }
     if st == St::Done && t.progress.already_on_disk == Some(true) {
-        a = a.child(icon_button(&icons::DOWNLOAD, copy::ACT_DOWNLOAD_AGAIN, p.text2, p));
+        a = a.child(act(&icons::DOWNLOAD, copy::ACT_DOWNLOAD_AGAIN, p.text2, RowAct::DownloadAgain));
     }
     if attention && !format::is_permanent(t.error_code) {
-        a = a.child(icon_button(&icons::RETRY, copy::ACT_RETRY, p.error, p));
+        a = a.child(act(&icons::RETRY, copy::ACT_RETRY, p.error, RowAct::Retry));
     }
     if st == St::Done {
-        a = a.child(icon_button(&icons::EXTERNAL, copy::ACT_OPEN_FILE, p.text2, p)).child(icon_button(
+        a = a.child(act(&icons::EXTERNAL, copy::ACT_OPEN_FILE, p.text2, RowAct::OpenFile)).child(act(
             &icons::FOLDER,
             copy::ACT_SHOW_IN_FOLDER,
             p.text2,
-            p,
+            RowAct::ShowInFolder,
         ));
     }
     if matches!(st, St::Done | St::Failed | St::Cancelled) {
-        a = a.child(icon_button(&icons::REMOVE, copy::ACT_REMOVE, p.muted, p).group_opacity(0.0, 1.0));
+        a = a.child(act(&icons::REMOVE, copy::ACT_REMOVE, p.muted, RowAct::Remove).group_opacity(0.0, 1.0));
     }
     a
 }

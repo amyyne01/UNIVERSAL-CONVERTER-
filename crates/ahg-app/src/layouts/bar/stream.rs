@@ -6,14 +6,15 @@ use ahg_engine::types::{DownloadStatus as St, DownloadTask, ErrorCode as E};
 use rune::{Align, Color, El, Icon, ScrollSpec, col, el, icon, row, spacer};
 
 use super::cover;
+use crate::actions;
 use crate::copy;
 use crate::directions::signal::model;
-use crate::directions::signal::parts::{Line, ghost, icon_button, label, mono, sans, stack, task_ring};
+use crate::directions::signal::parts::{self, Line, ghost, icon_button, label, mono, sans, stack, task_ring};
 use crate::directions::signal::theme::{Pal, source_color};
 use crate::format::{self, Group};
-use crate::gate::{Nav, State};
+use crate::gate::{Filter, Nav, State};
 use crate::icons;
-use crate::keys;
+use crate::keys::{self, RowAct};
 
 const COUNTER: f32 = 72.0;
 /// The ring's slot, as wide as the meter it replaced so the readings stay in line.
@@ -25,13 +26,16 @@ const OWNED: f32 = 272.0;
 const RECENT: usize = 3;
 
 pub fn view(s: &State, p: &Pal, home: bool) -> El {
-    let tasks = &s.tasks;
+    // Downloads shows what the filter and the search leave; Home shows everything.
+    let tasks: Vec<&DownloadTask> = if home { s.tasks.iter().collect() } else { actions::visible(s).collect() };
     let mut out = col().w_full().pb(32.0).gap(24.0);
-    if tasks.is_empty() {
+    if s.tasks.is_empty() {
         out = out.child(nothing_yet(p));
+    } else if tasks.is_empty() {
+        out = out.child(filtered_empty(s, p));
     }
     for g in [Group::InProgress, Group::Attention, Group::Completed] {
-        let mut rows: Vec<&DownloadTask> = tasks.iter().filter(|t| format::group_of(t) == g).collect();
+        let mut rows: Vec<&DownloadTask> = tasks.iter().copied().filter(|t| format::group_of(t) == g).collect();
         if rows.is_empty() {
             continue;
         }
@@ -59,6 +63,27 @@ fn nothing_yet(p: &Pal) -> El {
         .border(1.0, p.line)
         .child(icon(&icons::DOWNLOAD, 16.0).color(p.muted))
         .child(label(copy::EMPTY_NONE_TITLE, sans(13.0, 400.0), p.text2))
+}
+
+/// The filter and the search leave nothing: say which, and the way back to all.
+fn filtered_empty(s: &State, p: &Pal) -> El {
+    let (title, glyph) = parts::filtered_empty(s.filter);
+    let total = s.tasks.len();
+    row()
+        .w_full()
+        .h(64.0)
+        .px(16.0)
+        .gap(12.0)
+        .center_y()
+        .radius(8.0)
+        .border(1.0, p.line)
+        .child(icon(glyph, 16.0).color(p.muted))
+        .child(stack(4.0).grow(1.0).child(label(title, sans(13.0, 500.0), p.text)).child(label(
+            copy::empty_filter_body(total),
+            sans(13.0, 400.0),
+            p.text2,
+        )))
+        .child(ghost(None, &copy::show_all(total), p.text2, p).key(keys::filter(Filter::All)))
 }
 
 fn view_all(p: &Pal) -> El {
@@ -158,8 +183,13 @@ fn banner(n: usize, p: &Pal) -> El {
         .fill(p.warning_soft)
         .child(icon(&icons::PAUSE, 16.0).color(p.warning))
         .child(Line::new().fig(&n.to_string(), p.text).add(&copy::interrupted_sentence(n), p.text).one(sans(13.0, 400.0)).grow(1.0))
-        .child(ghost(Some(&icons::PLAY), copy::DL_INTERRUPTED_RESUME, p.bg, p).fill(p.text).hover(p.bg.alpha(0.12)))
-        .child(ghost(Some(&icons::REMOVE), copy::DL_INTERRUPTED_DISCARD, p.text2, p))
+        .child(
+            ghost(Some(&icons::PLAY), copy::DL_INTERRUPTED_RESUME, p.bg, p)
+                .fill(p.text)
+                .hover(p.bg.alpha(0.12))
+                .key(keys::RESUME_INTERRUPTED),
+        )
+        .child(ghost(Some(&icons::REMOVE), copy::DL_INTERRUPTED_DISCARD, p.text2, p).key(keys::DISCARD_INTERRUPTED))
 }
 
 /// A channel: what it is, its tape counter, its ring, its reading.
@@ -184,12 +214,18 @@ fn live_row(s: &State, t: &DownloadTask, p: &Pal) -> El {
         .gap(12.0)
         .center_y()
         .hover(p.hover)
+        .fill(picked(s, t, p))
         .child(cover(s, t, 32.0, p))
         .child(title_block(t, true, p))
         .child(counter)
         .child(el().w(RING_SLOT).center_y().child(task_ring(s, t, p)))
         .child(reading(t, p))
         .child(live_actions(t, p))
+}
+
+/// A selected row (Ctrl or Shift and a click) sits under a faint wash of the accent.
+fn picked(s: &State, t: &DownloadTask, p: &Pal) -> Color {
+    if s.selected.contains(&t.task_id) { p.accent.alpha(0.10) } else { Color::TRANSPARENT }
 }
 
 fn title_block(t: &DownloadTask, strong: bool, p: &Pal) -> El {
@@ -242,13 +278,14 @@ fn reading(t: &DownloadTask, p: &Pal) -> El {
 fn live_actions(t: &DownloadTask, p: &Pal) -> El {
     let st = t.progress.status;
     let mut a = row().w(ACTIONS).gap(4.0).justify_end().center_y();
+    let id = &t.task_id;
     if matches!(st, St::Queued | St::FetchingInfo | St::Downloading) {
-        a = a.child(icon_button(&icons::PAUSE, copy::ACT_PAUSE, p.text2, p));
+        a = a.child(icon_button(&icons::PAUSE, copy::ACT_PAUSE, p.text2, p).key(keys::row_action(RowAct::Pause, id)));
     }
     if st == St::Paused {
-        a = a.child(icon_button(&icons::PLAY, copy::ACT_RESUME, p.accent_ink, p));
+        a = a.child(icon_button(&icons::PLAY, copy::ACT_RESUME, p.accent_ink, p).key(keys::row_action(RowAct::Resume, id)));
     }
-    a.child(icon_button(&icons::CANCEL, copy::ACT_CANCEL, p.text2, p))
+    a.child(icon_button(&icons::CANCEL, copy::ACT_CANCEL, p.text2, p).key(keys::row_action(RowAct::Cancel, id)))
 }
 
 /// A row that needs a hand: the reason in full, and what to do about it.
@@ -275,19 +312,26 @@ fn trouble_row(s: &State, t: &DownloadTask, p: &Pal) -> El {
         St::Failed => (&icons::ALERT, copy::STATE_FAILED, p.error),
         _ => (&icons::CANCEL, copy::STATE_CANCELED, p.muted),
     };
+    let id = &t.task_id;
     let mut a = row().w(ACTIONS + 32.0).gap(4.0).justify_end().center_y();
     if failed && !t.progress.error.is_empty() {
-        a = a.child(icon_button(&icons::COPY, copy::ACT_COPY_DETAILS, p.text2, p));
+        a = a.child(icon_button(&icons::COPY, copy::ACT_COPY_DETAILS, p.text2, p).key(keys::row_action(RowAct::CopyDetails, id)));
     }
     if matches!(t.error_code, Some(E::Private | E::AgeRestricted | E::LoginRequired | E::DiskFull)) {
         // Goes to the Settings place, at the section it names.
-        a = a.child(icon_button(&icons::SETTINGS, copy::ACT_OPEN_SETTINGS, p.text2, p).on_press(|s: &mut State| s.nav = Nav::Settings));
+        a = a.child(
+            icon_button(&icons::SETTINGS, copy::ACT_OPEN_SETTINGS, p.text2, p)
+                .key(keys::row_action(RowAct::Fix, id))
+                .on_press(|s: &mut State| s.nav = Nav::Settings),
+        );
     }
     if t.error_code == Some(E::Unknown) && failed {
-        a = a.child(icon_button(&icons::REFRESH, copy::ACT_UPDATE_ENGINE, p.text2, p));
+        a = a.child(icon_button(&icons::REFRESH, copy::ACT_UPDATE_ENGINE, p.text2, p).key(keys::row_action(RowAct::Fix, id)));
     }
     if !format::is_permanent(t.error_code) || !failed {
-        a = a.child(icon_button(&icons::RETRY, copy::ACT_RETRY, if failed { p.error } else { p.text2 }, p));
+        a = a.child(
+            icon_button(&icons::RETRY, copy::ACT_RETRY, if failed { p.error } else { p.text2 }, p).key(keys::row_action(RowAct::Retry, id)),
+        );
     }
     // A failed line carries one lit segment in the error colour on its edge, outside the grid.
     let edge = el().w(2.0).radius(1.0).fill(if failed { p.error } else { p.line_strong }).pin(Some(0.0), Some(12.0), None, Some(12.0));
@@ -300,6 +344,7 @@ fn trouble_row(s: &State, t: &DownloadTask, p: &Pal) -> El {
         .items_center()
         .hover_group()
         .hover(p.hover)
+        .fill(picked(s, t, p))
         .child(edge)
         .child(cover(s, t, 32.0, p))
         .child(text)
@@ -330,14 +375,15 @@ fn owned_row(s: &State, t: &DownloadTask, p: &Pal) -> El {
         )
         .help(pr.filename.clone());
     let word = if skipped { copy::STATE_SKIPPED } else { copy::STATE_DONE };
+    let id = &t.task_id;
     let mut a = row().w(ACTIONS + 32.0).gap(4.0).justify_end().center_y();
     if skipped {
-        a = a.child(icon_button(&icons::DOWNLOAD, copy::ACT_DOWNLOAD_AGAIN, p.text2, p));
+        a = a.child(icon_button(&icons::DOWNLOAD, copy::ACT_DOWNLOAD_AGAIN, p.text2, p).key(keys::row_action(RowAct::DownloadAgain, id)));
     }
     a = a
-        .child(icon_button(&icons::EXTERNAL, copy::ACT_OPEN_FILE, p.text2, p))
-        .child(icon_button(&icons::FOLDER, copy::ACT_SHOW_IN_FOLDER, p.text2, p))
-        .child(icon_button(&icons::REMOVE, copy::ACT_REMOVE, p.muted, p).group_opacity(0.0, 1.0));
+        .child(icon_button(&icons::EXTERNAL, copy::ACT_OPEN_FILE, p.text2, p).key(keys::row_action(RowAct::OpenFile, id)))
+        .child(icon_button(&icons::FOLDER, copy::ACT_SHOW_IN_FOLDER, p.text2, p).key(keys::row_action(RowAct::ShowInFolder, id)))
+        .child(icon_button(&icons::REMOVE, copy::ACT_REMOVE, p.muted, p).group_opacity(0.0, 1.0).key(keys::row_action(RowAct::Remove, id)));
     row()
         .key(keys::row(&t.task_id))
         .w_full()
@@ -347,6 +393,7 @@ fn owned_row(s: &State, t: &DownloadTask, p: &Pal) -> El {
         .center_y()
         .hover_group()
         .hover(p.hover)
+        .fill(picked(s, t, p))
         .child(cover(s, t, 32.0, p))
         .child(title_block(t, false, p))
         .child(owned)

@@ -50,8 +50,9 @@ use crate::directions::signal::model;
 use crate::directions::signal::parts::{Line, RING, config_text, idle_ring, label, mono, platform_icon, ring_material, sans};
 use crate::directions::signal::theme::{self, Pal, source_color};
 use crate::format;
-use crate::gate::{Nav, State};
+use crate::gate::{Found, Nav, Overlay, State};
 use crate::icons;
+use crate::keys;
 use crate::ring;
 
 /// The bar's measure, and the stream's.
@@ -64,7 +65,8 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> El {
     cx.caption_color(if p.dark { Color::WHITE } else { Color::BLACK });
     let trailing = cx.chrome_insets().trailing;
     let body = match s.nav {
-        Nav::Home if s.tasks.is_empty() && s.stats.is_none() => first_launch(s, &p),
+        // A first paste, a search or Ctrl+K drop from the bar as they do with history.
+        Nav::Home if s.tasks.is_empty() && s.stats.is_none() && matches!(s.found, Found::Nothing) && !commanding(s) => first_launch(s, &p),
         Nav::Home => home(s, &p),
         Nav::Downloads => places::downloads(s, &p),
         Nav::Settings => places::settings(s, &p),
@@ -93,6 +95,7 @@ fn titlebar(s: &State, p: &Pal, trailing: f32) -> El {
     {
         let on = s.nav == place;
         let mut tab = row()
+            .key(keys::nav(place))
             .h(32.0)
             .px(12.0)
             .gap(8.0)
@@ -131,13 +134,19 @@ fn titlebar(s: &State, p: &Pal, trailing: f32) -> El {
         .child(el().w(240.0f32.max(trailing + 12.0)))
 }
 
+/// The bar is a command line: Ctrl+K (the palette overlay), or the `nav` scene.
+fn commanding(s: &State) -> bool {
+    s.nav_open || s.overlay == Overlay::Palette
+}
+
 /// Home with history: the bar, its caption, what is in flight and what landed.
-/// In the `nav` scene the bar is in command mode with its panel dropped.
+/// In command mode the bar holds what is typed and its panel is dropped.
 fn home(s: &State, p: &Pal) -> El {
-    let command = s.nav_open;
+    let command = commanding(s);
     // What the field found drops from the bar like the command panel, over the stream.
     let found = if command { None } else { found::view(s, p) };
-    let mut top = col().w_full().child(bar(p, &s.input, command, command || found.is_some(), deck(s, p)));
+    let typed = if command { s.command.text.as_str() } else { s.input.as_str() };
+    let mut top = col().w_full().child(bar(p, typed, command, command || found.is_some(), deck(s, p)));
     if command {
         top = top.child(reach::panel(s, p).pin(Some(0.0), Some(INPUT_H + DECK_H + 8.0), Some(0.0), None).raise());
     }
@@ -228,7 +237,7 @@ fn bar(p: &Pal, input: &str, command: bool, listening: bool, lower: El) -> El {
         // The caret is the only lit thing on the line: the bar is listening.
         typed = typed.child(el().size(2.0, 20.0).radius(1.0).fill(p.accent));
     }
-    let typed = if command || input.is_empty() {
+    let typed = if input.is_empty() {
         typed.child(label(words, sans(16.0, 400.0), p.muted))
     } else {
         typed.child(label(input, sans(16.0, 400.0), p.text))
@@ -252,12 +261,14 @@ fn bar(p: &Pal, input: &str, command: bool, listening: bool, lower: El) -> El {
                 .cursor(Cursor::Pointer)
                 .focusable(true)
                 .role("button")
+                .key(keys::LOOK_UP)
                 .child(label(go, sans(14.0, 500.0), p.bg))
                 .child(icon(&icons::FORWARD, 16.0).color(p.bg)),
         )
     };
     let input =
         row().w_full().h(INPUT_H).px(12.0).gap(12.0).center_y().role("textbox").label(copy::FIELD_ARIA).child(jack).child(typed).child(end);
+    let input = if command { input.key(keys::PALETTE_SEARCH) } else { input.key(keys::FIELD) };
     col()
         .w_full()
         .radius(12.0)

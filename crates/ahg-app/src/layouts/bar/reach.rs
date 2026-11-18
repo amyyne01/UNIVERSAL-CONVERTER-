@@ -3,24 +3,23 @@
 //! list doubles as a status board. In command mode it drops out of the bar
 //! with the places, the search scopes and the actions under it, and the
 //! highlighted entry's sheet is shown beside it before Enter is pressed.
-use ahg_engine::types::SourcePlatform;
 use rune::{Color, Cursor, El, Icon, ScrollSpec, col, el, icon, row, spacer};
 
 use super::keycap;
+use crate::actions::{self, Command};
 use crate::copy;
 use crate::copy::settings as w;
-use crate::directions::signal::parts::{Spec, label, mono, platform_icon, sans, stack};
+use crate::directions::signal::parts::{Spec, label, mono, platform_icon, sans};
+use crate::directions::signal::settings::panel_of;
 use crate::directions::signal::theme::{Pal, source_color};
 use crate::format;
 use crate::gate::State;
 use crate::icons;
+use crate::keys;
+use crate::settings_spec::{self, Section};
 
 const PANEL_H: f32 = 520.0;
 const LIST_W: f32 = 336.0;
-/// The section shown open.
-pub(crate) const PICKED: &str = w::SCHEDULE;
-pub(crate) const SAVES_ITSELF: &str = w::SAVES;
-
 // The Settings sections, in the old app's order. Destination had no heading
 // there; its row's label stands for it.
 const SECTIONS: [(&str, &Icon); 9] = [
@@ -47,7 +46,7 @@ pub fn panel(s: &State, p: &Pal) -> El {
         .child(hint(copy::PALETTE_FOOTER_SELECT_CAP, copy::PALETTE_FOOTER_SELECT, p))
         .child(hint(copy::PALETTE_FOOTER_CLOSE_CAP, copy::PALETTE_FOOTER_CLOSE, p))
         .child(spacer())
-        .child(label(SAVES_ITSELF, sans(12.0, 400.0), p.muted));
+        .child(label(w::SAVES, sans(12.0, 400.0), p.muted));
     let list = col()
         .w(LIST_W)
         .h_full()
@@ -55,6 +54,9 @@ pub fn panel(s: &State, p: &Pal) -> El {
         .border_sides([0.0, 1.0, 0.0, 0.0], p.line)
         .scroll(ScrollSpec { stick_bottom: false })
         .child(command_list(s, p));
+    // The highlighted entry's sheet, before Enter is pressed.
+    let sections = settings_spec::sections(s);
+    let open = sections.get(s.section).map(|sec| crumbed(s, sec, p)).unwrap_or_else(el);
     col()
         .h(PANEL_H)
         .radius(12.0)
@@ -64,7 +66,7 @@ pub fn panel(s: &State, p: &Pal) -> El {
         .clip_rounded(12.0)
         .role("dialog")
         .label(copy::PALETTE_ARIA)
-        .child(row().w_full().grow(1.0).min_h(0.0).child(list).child(schedule_sheet(&Spec::new(s), p, true).px(24.0).py(20.0)))
+        .child(row().w_full().grow(1.0).min_h(0.0).child(list).child(open))
         .child(footer)
 }
 
@@ -72,8 +74,9 @@ fn hint(cap: &str, words: &str, p: &Pal) -> El {
     row().gap(4.0).center_y().child(keycap(cap, p)).child(label(words.trim(), sans(12.0, 400.0), p.muted))
 }
 
-/// The Settings sections, each with its state, and This month.
-pub(crate) fn section_list(s: &State, p: &Pal) -> El {
+/// The Settings sections, each with its state, and This month. `lit`: the one in view is marked
+/// (Settings); the command panel marks its highlighted command instead.
+pub(crate) fn section_list(s: &State, lit: bool, p: &Pal) -> El {
     let month = s.stats.as_ref().map(|st| st.current.files as u64).unwrap_or(0);
     let v = Spec::new(s);
     let status = |name: &str| -> String {
@@ -82,51 +85,41 @@ pub(crate) fn section_list(s: &State, p: &Pal) -> El {
             w::DEFAULTS => format!("{} · {}", v.text("defaultFormat").to_uppercase(), v.pick("defaultQuality")),
             w::SCHEDULE => v.text("scheduleTime"),
             w::SOFTWARE => env!("CARGO_PKG_VERSION").into(),
-            w::PLAN => w::PLAN_PREMIUM.0.into(),
+            w::PLAN => v.text_where(w::YOUR_PLAN),
             _ => String::new(),
         }
     };
     let mut l = col().w_full();
-    for (name, i) in SECTIONS {
-        l = l.child(entry(Some(i), None, name, &status(name), &[], name == PICKED, p));
+    for (at, (name, i)) in SECTIONS.into_iter().enumerate() {
+        l = l.child(entry(Some(i), None, name, &status(name), &[], lit && at == s.section, p).key(keys::section(at)));
     }
     l.child(entry(Some(&icons::TRACK), None, copy::CELL_THIS_MONTH, &format!("{month} {}", copy::file_word(month)), &[], false, p))
 }
 
+/// The palette's commands that match what is typed, in their groups, then the sections.
 fn command_list(s: &State, p: &Pal) -> El {
-    let mut l = col()
-        .w_full()
-        .padding(8.0)
-        .child(group(copy::NAV_SETTINGS, p))
-        .child(section_list(s, p))
-        .child(group(copy::PALETTE_GROUP_NAVIGATE, p));
-    for (i, name) in [copy::NAV_HOME, copy::NAV_DOWNLOADS, copy::NAV_SETTINGS].into_iter().enumerate() {
-        l = l.child(entry(None, None, &copy::palette_go_to(name), "", &[copy::KEY_CTRL, ["1", "2", "3"][i]], false, p));
+    let mut l = col().w_full().padding(8.0);
+    let all = actions::commands(s);
+    let found = actions::palette_filter(s);
+    if found.is_empty() {
+        l = l.child(row().w_full().h(48.0).px(8.0).center_y().child(label(copy::PALETTE_NO_MATCH, sans(13.0, 400.0), p.text2)));
     }
-    for (src, name) in [
-        (SourcePlatform::Youtube, copy::NAV_YOUTUBE),
-        (SourcePlatform::Spotify, copy::NAV_SPOTIFY),
-        (SourcePlatform::Soundcloud, copy::NAV_SOUNDCLOUD),
-        (SourcePlatform::Instagram, copy::NAV_REELS),
-    ] {
-        l = l.child(entry(Some(platform_icon(src)), Some(source_color(p, src)), name, "", &[], false, p));
+    let mut last = "";
+    for (at, c) in found.iter().enumerate() {
+        if c.group() != last {
+            last = c.group();
+            l = l.child(group(last, p));
+        }
+        let (glyph, tint) = match c {
+            Command::Scope(src) => (Some(platform_icon(*src)), Some(source_color(p, *src))),
+            _ => (None, None),
+        };
+        let hint = c.hint().unwrap_or_default();
+        let caps: Vec<&str> = hint.split('+').filter(|k| !k.is_empty()).collect();
+        let index = all.iter().position(|x| x == c).unwrap_or(0);
+        l = l.child(entry(glyph, tint, &c.label(s), "", &caps, at == s.command.highlight, p).key(keys::command(index)));
     }
-    l = l.child(group(copy::PALETTE_GROUP_ACTIONS, p));
-    let actions: [(&str, &[&str]); 9] = [
-        (copy::PALETTE_PASTE_AND_DOWNLOAD, &[copy::KEY_CTRL, copy::REST_KEY_V]),
-        (if p.dark { copy::PALETTE_SWITCH_TO_LIGHT } else { copy::PALETTE_SWITCH_TO_DARK }, &[]),
-        (copy::PALETTE_CHECK_UPDATES, &[]),
-        (copy::PALETTE_CLEAR_COMPLETED, &[]),
-        (copy::PALETTE_PAUSE_ALL, &[]),
-        (copy::PALETTE_RESUME_ALL, &[]),
-        (copy::PALETTE_CHANGE_FOLDER, &[]),
-        (copy::PALETTE_SHORTCUTS, &[copy::KEY_CTRL, copy::KEYCAP_SLASH]),
-        (copy::PALETTE_CANCEL_ALL, &[]),
-    ];
-    for (name, keys) in actions {
-        l = l.child(entry(None, None, name, "", keys, false, p));
-    }
-    l
+    l.child(group(copy::NAV_SETTINGS, p)).child(section_list(s, false, p))
 }
 
 fn group(name: &str, p: &Pal) -> El {
@@ -174,74 +167,28 @@ fn entry(i: Option<&'static Icon>, tint: Option<Color>, name: &str, status: &str
     r
 }
 
-/// The Scheduled downloads section, as the Electron Settings screen words it.
-/// `crumb`: show where it sits (in the bar's panel, which has no other title).
-pub(crate) fn schedule_sheet(v: &Spec, p: &Pal, crumb: bool) -> El {
-    let chosen = v.value("scheduleDays");
-    let mut chips = row().gap(4.0);
-    for (i, day) in w::DAYS.into_iter().enumerate() {
-        // The chips are short; the day's full name is their label.
-        let d = &day[..3];
-        let on = chosen.as_array().is_some_and(|d| d.iter().any(|x| x.as_u64() == Some(i as u64)));
-        let chip = el().h(32.0).w(48.0).center().radius(6.0).hover(p.hover).cursor(Cursor::Pointer).role("checkbox").checked(on).label(day);
-        chips = chips.child(if on {
-            chip.fill(p.raised)
-                .border(1.0, p.line_strong)
-                .child(label(d, sans(13.0, 500.0), p.text))
-                .child(el().size(16.0, 2.0).radius(1.0).fill(p.accent).absolute(16.0, 24.0))
-        } else {
-            chip.border(1.0, p.line).child(label(d, sans(13.0, 400.0), p.muted))
-        });
+/// A section as One bar shows it: its name and hint over its panel of rows.
+pub(crate) fn sheet(s: &State, sec: &Section, p: &Pal) -> El {
+    let mut c = col().w_full().gap(4.0);
+    if !sec.title.is_empty() {
+        c = c.child(label(sec.title, sans(16.0, 500.0), p.text));
     }
-    let time = row()
-        .h(32.0)
-        .px(12.0)
-        .gap(8.0)
+    if let Some(h) = sec.hint {
+        c = c.child(label(h, sans(13.0, 400.0), p.text2).wrap());
+    }
+    c.child(panel_of(s, sec, p).mt(12.0))
+}
+
+/// The sheet in the bar's panel, which has no other title: where it sits, then the sheet.
+fn crumbed(s: &State, sec: &Section, p: &Pal) -> El {
+    let name = SECTIONS.get(s.section).map_or(sec.title, |(n, _)| *n);
+    let crumb = row()
+        .w_full()
         .center_y()
-        .radius(6.0)
-        .fill(p.deep)
-        .border(1.0, p.line_strong)
-        .child(icon(&icons::CLOCK, 16.0).color(p.muted))
-        .child(label(v.text("scheduleTime"), mono(13.0, 500.0), p.text));
-    let mut c = col().grow(1.0).h_full().min_w(0.0).gap(4.0);
-    if crumb {
-        c = c.child(
-            row()
-                .w_full()
-                .center_y()
-                .gap(8.0)
-                .mb(8.0)
-                .child(label(copy::NAV_SETTINGS, sans(12.0, 400.0), p.muted))
-                .child(label("/", sans(12.0, 400.0), p.muted))
-                .child(label(PICKED, sans(12.0, 400.0), p.text2)),
-        );
-    }
-    c.child(label(PICKED, sans(16.0, 500.0), p.text))
-        .child(label(w::SCHEDULE_HINT, sans(13.0, 400.0), p.text2).mb(16.0))
-        .child(setting((w::ENABLE_SCHEDULER, ""), toggle(v.on("scheduleEnabled"), p), p))
-        .child(setting(w::START_TIME, time, p))
-        .child(setting(w::ACTIVE_DAYS, chips, p))
-        .child(setting(w::SHUTDOWN, toggle(v.on("scheduleShutdown"), p), p))
-}
-
-/// A Settings row: (label, description) and its control.
-pub(crate) fn setting(row_words: (&str, &str), control: El, p: &Pal) -> El {
-    let mut words = stack(4.0).grow(1.0).child(label(row_words.0, sans(13.0, 500.0), p.text));
-    if !row_words.1.is_empty() {
-        words = words.child(label(row_words.1, sans(13.0, 400.0), p.text2).wrap());
-    }
-    row().w_full().min_h(56.0).py(12.0).gap(16.0).center_y().border_sides([1.0, 0.0, 0.0, 0.0], p.line).child(words).child(control)
-}
-
-pub(crate) fn toggle(on: bool, p: &Pal) -> El {
-    let knob = el().size(12.0, 12.0).radius(6.0).fill(if on { p.bg } else { p.text2 }).absolute(if on { 24.0 } else { 4.0 }, 4.0);
-    el().size(40.0, 20.0)
-        .radius(10.0)
-        .fill(if on { p.accent } else { p.raised })
-        .border(1.0, if on { p.accent } else { p.line_strong })
-        .cursor(Cursor::Pointer)
-        .focusable(true)
-        .role("switch")
-        .checked(on)
-        .child(knob)
+        .gap(8.0)
+        .mb(8.0)
+        .child(label(copy::NAV_SETTINGS, sans(12.0, 400.0), p.muted))
+        .child(label("/", sans(12.0, 400.0), p.muted))
+        .child(label(name, sans(12.0, 400.0), p.text2));
+    col().grow(1.0).h_full().min_w(0.0).px(24.0).py(20.0).scroll(ScrollSpec { stick_bottom: false }).child(crumb).child(sheet(s, sec, p))
 }

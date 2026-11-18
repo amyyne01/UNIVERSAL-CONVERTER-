@@ -1,23 +1,28 @@
 //! Settings: the desk's patch sheet. The folder leads in a recessed well (the
 //! one answer people come here for); then each section is a label column on
 //! the left and its panel of rows on the right, so the eye runs down the
-//! names. Panels vary by what they hold: a field grid for the choices, rows
-//! for switches, status lines for the two updaters. Wording is
-//! `copy::settings`, word for word; values come from `State.settings` through `settings_spec`.
-use rune::{Color, El, ScrollSpec, col, el, icon, row};
+//! names. Panels vary by what they hold: a field grid for the plain choices,
+//! rows for switches, status lines for the two updaters. Every section, row,
+//! word and value comes from `settings_spec::sections`; this file only draws.
+//! One bar places the same panels (`panel_of`) beside its section list.
+use rune::{Color, El, Icon, ScrollSpec, col, el, icon, row};
+use serde_json::Value;
 
-use super::parts::{Line, Spec, button, dot, label, mono, sans};
+use super::parts::{Line, button, dot, ghost, label, mono, sans};
 use super::theme::{self, Pal};
-use crate::copy::{self, settings as w};
-use crate::gate::{self, Confirm, State};
+use crate::copy::{self, found as f, settings as w};
+use crate::gate::{Confirm, State};
 use crate::icons;
 use crate::keys;
 use crate::palette;
+use crate::settings_spec::{self, Kind, Row, Section};
 
 /// The section names' column.
 const NAMES: f32 = 200.0;
 /// A select's or a field's width in a row.
 const CONTROL: f32 = 176.0;
+/// Plain choices set side by side in one grid line.
+const GRID: usize = 3;
 
 /// Palette names, `s.palette` order: Signal's own, then the app's seven.
 fn palette_name(i: usize) -> &'static str {
@@ -25,36 +30,25 @@ fn palette_name(i: usize) -> &'static str {
 }
 
 pub fn view(s: &State, p: &Pal) -> El {
-    let v = Spec::new(s);
     let head = row()
         .w_full()
         .items_end()
         .gap(16.0)
         .child(label(w::TITLE, sans(28.0, 500.0), p.text))
         .child(label(w::SAVES, sans(13.0, 400.0), p.muted).mb(4.0));
-    let page = col()
-        .w_full()
-        .max_w(1120.0)
-        .px(32.0)
-        .pt(28.0)
-        .pb(48.0)
-        .gap(32.0)
-        .child(head)
-        .child(destination(&v, p))
-        .child(section(w::DEFAULTS, Some(w::DEFAULTS_HINT), defaults(&v, p), p))
-        .child(section(w::MORE, Some(w::MORE_HINT), more(&v, p), p))
-        .child(section(w::APPEARANCE, None, appearance(s, &v, p), p))
-        .child(section(w::SCHEDULE, Some(w::SCHEDULE_HINT), schedule(&v, p), p))
-        .child(section(w::SOFTWARE, Some(w::SOFTWARE_HINT), software(s, &v, p), p))
-        .child(section(w::ADVANCED, Some(w::ADVANCED_HINT), advanced(&v, p), p))
-        .child(section(w::PLAN, None, plan(p), p))
-        .child(section(w::HELP, None, help(p), p));
+    let mut page = col().w_full().max_w(1120.0).px(32.0).pt(28.0).pb(48.0).gap(32.0).child(head);
+    for sec in settings_spec::sections(s) {
+        page = page.child(match sec.rows.first() {
+            Some(r) if sec.title.is_empty() && r.kind == Kind::Folder => destination(r, p),
+            _ => section(&sec, panel_of(s, &sec, p), p),
+        });
+    }
     col().key("settings").w_full().h_full().min_h(0.0).scroll(ScrollSpec { stick_bottom: false }).items_center().child(page)
 }
 
 /// Destination has no heading: the folder, set like a tape label in the desk's well.
-fn destination(v: &Spec, p: &Pal) -> El {
-    let dir = v.text("outputDir");
+fn destination(r: &Row, p: &Pal) -> El {
+    let dir = text_of(&r.value);
     let (parent, leaf) = dir.rsplit_once('\\').map_or(("", dir.as_str()), |(a, b)| (a, b));
     row()
         .w_full()
@@ -79,23 +73,48 @@ fn destination(v: &Spec, p: &Pal) -> El {
                 .grow(1.0)
                 .min_w(0.0)
                 .gap(4.0)
-                .child(label(w::SAVING_TO, sans(12.0, 400.0), p.text2))
+                .child(label(r.label, sans(12.0, 400.0), p.text2))
                 .child(Line::new().fig(&format!("{parent}\\"), p.text2).fig(leaf, p.text).one(mono(16.0, 500.0)).help(dir.clone())),
         )
-        .child(button(Some(&icons::FOLDER), w::CHANGE, p.text, p))
+        .child(button(Some(&icons::FOLDER), r.button.unwrap_or(w::CHANGE), p.text, p).key(keys::CHANGE_FOLDER))
 }
 
 /// A section: its name and hint in the left column, its panel beside them.
-fn section(title: &str, hint: Option<&str>, body: El, p: &Pal) -> El {
-    let mut names = col().w(NAMES).pt(8.0).gap(4.0).child(label(title, sans(16.0, 500.0), p.text));
-    if let Some(h) = hint {
+fn section(sec: &Section, body: El, p: &Pal) -> El {
+    let mut names = col().w(NAMES).pt(8.0).gap(4.0).child(label(sec.title, sans(16.0, 500.0), p.text));
+    if let Some(h) = sec.hint {
         names = names.child(label(h, sans(12.0, 400.0).lh(16.0), p.text2).wrap());
     }
     row().w_full().gap(24.0).items_start().child(names).child(body.grow(1.0).min_w(0.0))
 }
 
-/// The panel a section's rows sit on; a hairline between them.
-fn panel(parts: Vec<El>, p: &Pal) -> El {
+/// A section's rows on their panel, a hairline between them. Consecutive plain
+/// choices (a select or a field with no description) share a grid line.
+pub(crate) fn panel_of(s: &State, sec: &Section, p: &Pal) -> El {
+    let mut parts = Vec::new();
+    let mut cells: Vec<&Row> = Vec::new();
+    for r in &sec.rows {
+        if r.desc.is_empty() && matches!(r.kind, Kind::Select(_) | Kind::Text) {
+            cells.push(r);
+            if cells.len() == GRID {
+                parts.push(fields(&cells, p));
+                cells.clear();
+            }
+            continue;
+        }
+        if !cells.is_empty() {
+            parts.push(fields(&cells, p));
+            cells.clear();
+        }
+        parts.push(setting(s, r, p));
+    }
+    if !cells.is_empty() {
+        parts.push(fields(&cells, p));
+    }
+    if sec.title == w::PLAN {
+        parts.push(machine(s, p));
+        // TODO(shared): the transfer cooldown date (`w::cooldown_note`) has no fact in `State` yet.
+    }
     let mut c = col().radius(12.0).fill(p.surface).border(1.0, p.line).clip_rounded(12.0);
     for (i, part) in parts.into_iter().enumerate() {
         c = c.child(if i > 0 { part.border_sides([1.0, 0.0, 0.0, 0.0], p.line) } else { part });
@@ -103,20 +122,154 @@ fn panel(parts: Vec<El>, p: &Pal) -> El {
     c
 }
 
-/// A setting: its name and description, the control on the right.
-fn setting(words: (&str, &str), control: El, p: &Pal) -> El {
-    setting_dim(words, control, false, p)
+/// What a key binds to on this machine: a quiet figure under the plan.
+fn machine(s: &State, p: &Pal) -> El {
+    row()
+        .w_full()
+        .h(44.0)
+        .px(16.0)
+        .gap(12.0)
+        .center_y()
+        .help(w::MACHINE_ID_TITLE)
+        .child(label(w::MACHINE_ID, sans(12.0, 400.0), p.muted))
+        .child(label(s.machine_id.clone(), mono(12.0, 400.0), p.text2).selectable(true))
 }
 
-/// A setting that cannot be changed right now (it depends on another one): drawn a step back.
-fn setting_dim(words: (&str, &str), control: El, dim: bool, p: &Pal) -> El {
-    let (name, desc) = words;
-    let mut text = col().grow(1.0).min_w(0.0).gap(4.0).child(label(name, sans(14.0, 400.0), if dim { p.muted } else { p.text }));
-    if !desc.is_empty() {
-        text = text.child(label(desc, sans(12.0, 400.0).lh(16.0), if dim { p.muted } else { p.text2 }).wrap());
+/// The row's value as text; a number or a list as JSON.
+fn text_of(v: &Value) -> String {
+    match v {
+        Value::String(t) => t.clone(),
+        Value::Null => String::new(),
+        other => other.to_string(),
     }
-    let r = row().w_full().min_h(56.0).px(16.0).py(12.0).gap(16.0).center_y().child(text).child(control);
-    if dim { r.opacity(0.6) } else { r }
+}
+
+/// The label of the chosen option, or the raw value when it is not one of them.
+fn chosen(r: &Row) -> String {
+    let value = text_of(&r.value);
+    match &r.kind {
+        Kind::Select(options) => options.iter().find(|o| o.value == value).map_or(value, |o| o.label.clone()),
+        _ => value,
+    }
+}
+
+/// The key and icon of a row's one button, by its wording.
+fn button_of(words: &str) -> (Option<&'static str>, Option<&'static Icon>) {
+    match words {
+        w::CHANGE => (Some(keys::CHANGE_FOLDER), Some(&icons::FOLDER)),
+        w::CHOOSE_FILE => (Some(keys::IMPORT_COOKIES), Some(&icons::FOLDER)),
+        w::CHECK_FOR_UPDATES => (Some(keys::CHECK_UPDATE), Some(&icons::REFRESH)),
+        w::ENGINE_CHECK => (Some(keys::CHECK_ENGINE), Some(&icons::REFRESH)),
+        w::SHOW_SHORTCUTS => (Some(keys::SHOW_SHORTCUTS), None),
+        w::GET_SUPPORT => (Some(keys::GET_SUPPORT), Some(&icons::EXTERNAL)),
+        w::LAYOUT_CHOOSE => (Some(keys::LAYOUT_CHOOSE), None),
+        // TODO(shared): keys::SEE_PLANS (Settings' plan row).
+        _ => (None, None),
+    }
+}
+
+fn row_button(words: &str, p: &Pal) -> El {
+    let (key, glyph) = button_of(words);
+    let b = button(glyph, words, p.text, p);
+    match key {
+        Some(k) => b.key(k),
+        None => b,
+    }
+}
+
+/// The lock a Basic row carries, and the sentence that says what Premium adds.
+fn lock_line(sentence: &str, p: &Pal) -> El {
+    row()
+        .gap(8.0)
+        .items_start()
+        .child(el().size(16.0, 16.0).child(icon(&icons::LOCK_SIGNAL, 16.0).color(p.text2)))
+        .child(label(sentence, sans(12.0, 400.0).lh(16.0), p.text2).wrap().grow(1.0).min_w(0.0))
+}
+
+/// One row: its name and description on the left, its control on the right.
+/// A dimmed row (it depends on a switch that is off) and a locked one sit a step back.
+fn setting(s: &State, r: &Row, p: &Pal) -> El {
+    match r.kind {
+        Kind::Status if r.label == w::APP_NAME => {
+            let version = format!("v{}", env!("CARGO_PKG_VERSION"));
+            return status(r, &version, p.muted, p);
+        }
+        Kind::Status if r.label == w::ENGINE_NAME => return status(r, &s.engine.current, p.muted, p),
+        Kind::Status if r.label == w::YOUR_PLAN => return plan(r, p),
+        Kind::Danger => return danger(s, r, p),
+        _ => {}
+    }
+    let back = r.dimmed || r.lock.is_some();
+    let mut text = col().grow(1.0).min_w(0.0).gap(4.0).child(label(r.label, sans(14.0, 400.0), if back { p.muted } else { p.text }));
+    if !r.desc.is_empty() {
+        text = text.child(label(r.desc.clone(), sans(12.0, 400.0).lh(16.0), if back { p.muted } else { p.text2 }).wrap());
+    }
+    if let Some(lock) = &r.lock {
+        text = text.child(lock_line(lock, p).mt(4.0));
+    }
+    let c = control(s, r, Some(CONTROL), p);
+    let c = if back { c.opacity(0.6) } else { c };
+    row().w_full().min_h(56.0).px(16.0).py(12.0).gap(16.0).center_y().child(text).child(c)
+}
+
+/// Plain choices set side by side, each with its name above it.
+fn fields(cells: &[&Row], p: &Pal) -> El {
+    let mut r = row().w_full().px(16.0).pt(16.0).pb(20.0).gap(12.0).items_start();
+    for c in cells {
+        let mut name = row().gap(8.0).center_y();
+        if c.lock.is_some() {
+            name = name.child(el().size(16.0, 16.0).child(icon(&icons::LOCK_SIGNAL, 16.0).color(p.text2)));
+        }
+        name = name.child(label(c.label, sans(12.0, 400.0), p.text2));
+        let ctl = control_plain(c, None, p);
+        let mut cell = col().grow(1.0).min_w(0.0).gap(8.0).child(name).child(ctl);
+        if let Some(lock) = &c.lock {
+            cell = cell.child(label(lock.clone(), sans(12.0, 400.0).lh(16.0), p.text2).wrap());
+        }
+        r = r.child(if c.dimmed || c.lock.is_some() { cell.opacity(0.6) } else { cell });
+    }
+    r
+}
+
+/// The control of a row, by its kind.
+fn control(s: &State, r: &Row, w_: Option<f32>, p: &Pal) -> El {
+    let key = r.key.unwrap_or_default();
+    match &r.kind {
+        Kind::Toggle => switch(r.label, r.value.as_bool().unwrap_or(false), p).key(keys::setting(key)),
+        Kind::Days => days(r, p),
+        Kind::Theme => theme_control(r, p),
+        Kind::Palette => swatches(s, p),
+        Kind::Layout => row()
+            .gap(12.0)
+            .center_y()
+            .child(label(text_of(&r.value), mono(13.0, 400.0), p.text2))
+            .child(row_button(r.button.unwrap_or(w::LAYOUT_CHOOSE), p).on_press(|s: &mut State| s.picker = true)),
+        Kind::Folder => row()
+            .gap(12.0)
+            .center_y()
+            .min_w(0.0)
+            .shrink()
+            .child(label(text_of(&r.value), mono(13.0, 400.0), p.text).single_line().truncate().min_w(0.0).shrink())
+            .child(row_button(r.button.unwrap_or(w::CHANGE), p)),
+        Kind::Status => match r.button {
+            Some(b) => row_button(b, p),
+            None => el(),
+        },
+        Kind::Time => control_plain(r, Some(80.0), p),
+        _ => control_plain(r, w_, p),
+    }
+}
+
+/// A select or a typed field.
+fn control_plain(r: &Row, w_: Option<f32>, p: &Pal) -> El {
+    let key = keys::setting(r.key.unwrap_or_default());
+    match &r.kind {
+        Kind::Select(options) => {
+            let s = select(r.label, &chosen(r), w_, options.iter().any(|o| o.lock.is_some()), p).key(key);
+            if r.gated() { s.help(f::LOCK_SELECT_TITLE) } else { s }
+        }
+        _ => input(r.label, &text_of(&r.value), r.placeholder.unwrap_or_default(), w_, p).key(key),
+    }
 }
 
 /// A switch on the desk: a square-shouldered toggle; on, its track is the lit segment.
@@ -150,14 +303,18 @@ fn well(w_: Option<f32>, name: &str, role: &'static str) -> El {
     }
 }
 
-/// A closed select showing its value.
-fn select(name: &str, value: &str, w_: Option<f32>, p: &Pal) -> El {
-    well(w_, name, "combobox")
+/// A closed select showing its value. `locked`: some of its choices need
+/// Premium; a lock sits before the caret.
+fn select(name: &str, value: &str, w_: Option<f32>, locked: bool, p: &Pal) -> El {
+    let mut s = well(w_, name, "combobox")
         .fill(p.deep)
         .border(1.0, p.line_strong)
         .hover(p.hover)
-        .child(label(value, sans(13.0, 400.0), p.text).single_line().truncate().grow(1.0).min_w(0.0))
-        .child(icon(&icons::CARET_DOWN, 16.0).color(p.muted))
+        .child(label(value, sans(13.0, 400.0), p.text).single_line().truncate().grow(1.0).min_w(0.0));
+    if locked {
+        s = s.child(icon(&icons::LOCK_SIGNAL, 16.0).color(p.muted));
+    }
+    s.child(icon(&icons::CARET_DOWN, 16.0).color(p.muted))
 }
 
 /// A typed field: figures in mono; an empty one shows its placeholder.
@@ -169,77 +326,20 @@ fn input(name: &str, value: &str, placeholder: &str, w_: Option<f32>, p: &Pal) -
         .child(label(t, mono(13.0, 400.0), c).single_line().truncate().min_w(0.0))
 }
 
-/// Choices set side by side, each with its name above it.
-fn fields(items: Vec<(&str, El)>, p: &Pal) -> El {
-    let mut r = row().w_full().px(16.0).pt(16.0).pb(20.0).gap(12.0);
-    for (name, control) in items {
-        r = r.child(col().grow(1.0).min_w(0.0).gap(8.0).child(label(name, sans(12.0, 400.0), p.text2)).child(control));
-    }
-    r
-}
-
-fn defaults(v: &Spec, p: &Pal) -> El {
-    panel(
-        vec![
-            fields(
-                vec![
-                    (w::AUDIO_FORMAT, select(w::AUDIO_FORMAT, &v.pick("defaultFormat"), None, p)),
-                    (w::AUDIO_QUALITY, select(w::AUDIO_QUALITY, &v.pick("defaultQuality"), None, p)),
-                    (w::VIDEO_QUALITY, select(w::VIDEO_QUALITY, &v.pick("defaultVideoQuality"), None, p)),
-                ],
-                p,
-            ),
-            setting(w::SKIP_EXISTING, switch(w::SKIP_EXISTING.0, v.on("skipExisting"), p), p),
-            setting(w::EMBED_THUMBNAIL, switch(w::EMBED_THUMBNAIL.0, v.on("embedThumbnail"), p), p),
-            setting(w::EMBED_METADATA, switch(w::EMBED_METADATA.0, v.on("embedMetadata"), p), p),
-            setting(w::SIMULTANEOUS, select(w::SIMULTANEOUS.0, &v.pick("maxConcurrentDownloads"), Some(CONTROL), p), p),
-        ],
-        p,
-    )
-}
-
-fn more(v: &Spec, p: &Pal) -> El {
-    // With subtitles off the language and captions settings sit a step back, as in Electron.
-    let subtitles_off = v.text("subtitleMode") == "off";
-    panel(
-        vec![
-            fields(
-                vec![
-                    (w::SUBTITLES, select(w::SUBTITLES, &v.pick("subtitleMode"), None, p)),
-                    (
-                        w::SUBTITLE_LANGUAGES,
-                        input(w::SUBTITLE_LANGUAGES, &v.text("subtitleLangs"), w::SUBTITLE_LANGUAGES_PLACEHOLDER, None, p)
-                            .opacity(if subtitles_off { 0.6 } else { 1.0 }),
-                    ),
-                    (w::SPONSOR_SEGMENTS, select(w::SPONSOR_SEGMENTS, &v.pick("sponsorBlock"), None, p)),
-                ],
-                p,
-            ),
-            fields(
-                vec![
-                    (w::VIDEO_CONTAINER, select(w::VIDEO_CONTAINER, &v.pick("videoContainer"), None, p)),
-                    (w::VIDEO_CODEC, select(w::VIDEO_CODEC, &v.pick("videoCodec"), None, p)),
-                    (w::SIGN_IN_WITH, select(w::SIGN_IN_WITH, &v.pick("cookieBrowser"), None, p)),
-                ],
-                p,
-            ),
-            setting(w::IMPORT_COOKIES, button(Some(&icons::FOLDER), w::CHOOSE_FILE, p.text, p), p),
-            setting_dim(w::AUTO_CAPTIONS, switch(w::AUTO_CAPTIONS.0, v.on("subtitleAuto"), p), subtitles_off, p),
-            setting(w::EMBED_CHAPTERS, switch(w::EMBED_CHAPTERS.0, v.on("embedChapters"), p), p),
-            setting(w::SPLIT_BY_CHAPTER, switch(w::SPLIT_BY_CHAPTER.0, v.on("splitChapters"), p), p),
-            setting(w::SAVE_COVER_ART, switch(w::SAVE_COVER_ART.0, v.on("writeThumbnail"), p), p),
-            setting(w::FILE_NAMING, input(w::FILE_NAMING.0, &v.text("outputTemplate"), w::FILE_NAMING_PLACEHOLDER, Some(CONTROL), p), p),
-        ],
-        p,
-    )
-}
-
-fn appearance(s: &State, v: &Spec, p: &Pal) -> El {
-    let theme_on = ["light", "dark", "system"].iter().position(|t| *t == v.text("theme")).unwrap_or(2);
-    let mut theme = row().padding(4.0).gap(4.0).radius(8.0).fill(p.deep).border(1.0, p.line).role("radiogroup").label(w::THEME.0);
+fn theme_control(r: &Row, p: &Pal) -> El {
+    let on_at = ["light", "dark", "system"].iter().position(|t| *t == text_of(&r.value)).unwrap_or(2);
+    let mut g = row()
+        .key(keys::setting("theme"))
+        .padding(4.0)
+        .gap(4.0)
+        .radius(8.0)
+        .fill(p.deep)
+        .border(1.0, p.line)
+        .role("radiogroup")
+        .label(r.label);
     for (i, name) in w::THEMES.into_iter().enumerate() {
-        let on = i == theme_on;
-        theme = theme.child(
+        let on = i == on_at;
+        g = g.child(
             el().h(28.0)
                 .px(12.0)
                 .center()
@@ -252,13 +352,18 @@ fn appearance(s: &State, v: &Spec, p: &Pal) -> El {
                 .child(label(name, sans(13.0, if on { 500.0 } else { 400.0 }), if on { p.text } else { p.text2 })),
         );
     }
-    let mut swatches = row().gap(8.0).flex_wrap().justify_end().role("radiogroup").label(w::PALETTE_ARIA);
+    g
+}
+
+fn swatches(s: &State, p: &Pal) -> El {
+    let mut g = row().gap(8.0).flex_wrap().justify_end().max_w(280.0).role("radiogroup").label(w::PALETTE_ARIA);
     for i in 0..=palette::NAMES.len() {
         let name = palette_name(i);
         let sw = theme::pal(i, p.dark);
         let on = s.palette == i;
-        swatches = swatches.child(
-            el().size(28.0, 28.0)
+        g = g.child(
+            el().key(keys::palette(i))
+                .size(28.0, 28.0)
                 .radius(8.0)
                 .center()
                 .fill(sw.deep)
@@ -273,32 +378,16 @@ fn appearance(s: &State, v: &Spec, p: &Pal) -> El {
                 .child(el().size(12.0, 4.0).radius(1.0).fill(sw.accent)),
         );
     }
-    let preset = gate::PRESETS[gate::preset(s)].0;
-    let layout = row()
-        .gap(12.0)
-        .center_y()
-        .child(label(preset, mono(13.0, 400.0), p.text2))
-        .child(button(None, w::LAYOUT_CHOOSE, p.text, p).key(keys::LAYOUT_CHOOSE).on_press(|s: &mut State| s.picker = true));
-    panel(
-        vec![
-            setting(w::THEME, theme, p),
-            setting(w::PALETTE, swatches.max_w(280.0), p),
-            setting(w::LAYOUT, layout, p),
-            setting(w::CLIPBOARD_WATCHER, switch(w::CLIPBOARD_WATCHER.0, v.on("clipboardWatch"), p), p),
-            setting(w::NOTIFICATIONS, switch(w::NOTIFICATIONS.0, v.on("showNotifications"), p), p),
-            setting(w::DISCORD, switch(w::DISCORD.0, v.on("discordRichPresence"), p), p),
-        ],
-        p,
-    )
+    g
 }
 
-fn schedule(v: &Spec, p: &Pal) -> El {
-    let chosen = v.value("scheduleDays");
-    let mut days = row().gap(4.0).role("group").label(w::ACTIVE_DAYS.0);
+fn days(r: &Row, p: &Pal) -> El {
+    let mut g = row().gap(4.0).role("group").label(r.label);
     for (i, day) in w::DAYS.iter().enumerate() {
-        let on = chosen.as_array().is_some_and(|d| d.iter().any(|x| x.as_u64() == Some(i as u64)));
-        days = days.child(
-            el().size(32.0, 28.0)
+        let on = r.value.as_array().is_some_and(|d| d.iter().any(|x| x.as_u64() == Some(i as u64)));
+        g = g.child(
+            el().key(keys::day(i))
+                .size(32.0, 28.0)
                 .center()
                 .radius(6.0)
                 .fill(if on { p.raised } else { p.deep })
@@ -311,124 +400,97 @@ fn schedule(v: &Spec, p: &Pal) -> El {
                 .child(label(w::DAYS_SHORT[i], mono(12.0, 500.0), if on { p.text } else { p.muted })),
         );
     }
-    panel(
-        vec![
-            setting((w::ENABLE_SCHEDULER, ""), switch(w::ENABLE_SCHEDULER, v.on("scheduleEnabled"), p), p),
-            setting(w::START_TIME, input(w::START_TIME.0, &v.text("scheduleTime"), "", Some(80.0), p), p),
-            setting(w::ACTIVE_DAYS, days, p),
-            setting(w::SHUTDOWN, switch(w::SHUTDOWN.0, v.on("scheduleShutdown"), p), p),
-        ],
-        p,
-    )
+    g
 }
 
 /// An updater: name and version, its state on a tally light, its one button.
-fn status(name: &str, version: &str, state: &str, tone: Color, action: El, p: &Pal) -> El {
+// TODO(shared): the status sentence and tone from `State.update` / `State.engine` (checking,
+// available, failed ...); until then the row's own description, the idle state.
+fn status(r: &Row, version: &str, tone: Color, p: &Pal) -> El {
     let words = col()
         .grow(1.0)
         .min_w(0.0)
         .gap(4.0)
-        .child(row().gap(8.0).center_y().child(label(name, sans(14.0, 400.0), p.text)).child(label(version, mono(12.0, 400.0), p.muted)))
+        .child(row().gap(8.0).center_y().child(label(r.label, sans(14.0, 400.0), p.text)).child(label(version, mono(12.0, 400.0), p.muted)))
         .child(
             row()
                 .gap(8.0)
                 .center_y()
                 .child(dot(tone, 8.0))
-                .child(label(state, sans(12.0, 400.0), p.text2).single_line().truncate().min_w(0.0)),
+                .child(label(r.desc.clone(), sans(12.0, 400.0), p.text2).single_line().truncate().min_w(0.0)),
         );
-    row().w_full().min_h(64.0).px(16.0).py(12.0).gap(16.0).center_y().child(words).child(action)
+    let mut out = row().w_full().min_h(64.0).px(16.0).py(12.0).gap(16.0).center_y().child(words);
+    if let Some(b) = r.button {
+        out = out.child(row_button(b, p));
+    }
+    out
 }
 
-fn software(s: &State, v: &Spec, p: &Pal) -> El {
-    panel(
-        vec![
-            status(
-                w::APP_NAME,
-                &format!("v{}", env!("CARGO_PKG_VERSION")),
-                w::APP_REST,
-                p.muted,
-                button(Some(&icons::REFRESH), w::CHECK_FOR_UPDATES, p.text, p),
-                p,
-            ),
-            status(
-                w::ENGINE_NAME,
-                &s.engine.current,
-                w::ENGINE_UP_TO_DATE,
-                p.success,
-                button(Some(&icons::REFRESH), w::ENGINE_CHECK, p.text, p),
-                p,
-            ),
-            setting(w::AUTO_UPDATE_ENGINE, switch(w::AUTO_UPDATE_ENGINE.0, v.on("autoUpdateEngine"), p), p),
-        ],
-        p,
-    )
-}
-
-fn advanced(v: &Spec, p: &Pal) -> El {
-    panel(
-        vec![
-            setting(w::RATE_LIMIT, input(w::RATE_LIMIT.0, &v.text("rateLimit"), w::RATE_LIMIT_PLACEHOLDER, Some(CONTROL), p), p),
-            setting(w::PROXY, input(w::PROXY.0, &v.text("proxy"), w::PROXY_PLACEHOLDER, Some(CONTROL), p), p),
-            setting(
-                w::GLOBAL_HOTKEY,
-                input(w::GLOBAL_HOTKEY.0, &v.text("globalHotkey"), w::GLOBAL_HOTKEY_PLACEHOLDER, Some(CONTROL), p),
-                p,
-            ),
-        ],
-        p,
-    )
-}
-
-fn plan(p: &Pal) -> El {
-    // The licence actions cost the user something: their names in the error colour.
-    let danger = |key: &str, (name, desc): (&str, &str)| {
-        row()
-            .key(key.to_string())
-            .w_full()
-            .min_h(56.0)
-            .px(16.0)
-            .py(12.0)
-            .gap(16.0)
-            .center_y()
-            .hover(p.hover)
-            .cursor(rune::Cursor::Pointer)
-            .focusable(true)
-            .role("button")
-            .label(name.to_string())
-            .child(
-                col()
-                    .grow(1.0)
-                    .min_w(0.0)
-                    .gap(4.0)
-                    .child(label(name, sans(14.0, 400.0), p.error))
-                    .child(label(desc, sans(12.0, 400.0).lh(16.0), p.text2).wrap()),
-            )
-            .child(icon(&icons::CARET_RIGHT, 16.0).color(p.muted))
+/// The plan: Premium lit like the one segment that matters; Basic in ink, with the way up.
+fn plan(r: &Row, p: &Pal) -> El {
+    let name = text_of(&r.value);
+    let tag = if r.button.is_some() {
+        el().h(24.0).px(8.0).center().radius(4.0).fill(p.raised).border(1.0, p.line_strong).child(label(name, sans(12.0, 500.0), p.text))
+    } else {
+        el().h(24.0).px(8.0).center().radius(4.0).fill(p.accent).child(label(name, sans(12.0, 500.0), p.deep))
     };
-    let (premium, desc) = w::PLAN_PREMIUM;
-    let lit = el().h(24.0).px(8.0).center().radius(4.0).fill(p.accent).child(label(premium, sans(12.0, 500.0), p.deep));
-    let yours = row()
+    let mut end = row().gap(12.0).center_y().child(tag);
+    if let Some(b) = r.button {
+        end = end.child(row_button(b, p));
+    }
+    row()
         .w_full()
         .min_h(64.0)
         .px(16.0)
         .py(12.0)
         .gap(16.0)
         .center_y()
-        .child(col().grow(1.0).min_w(0.0).gap(4.0).child(label(w::YOUR_PLAN, sans(14.0, 400.0), p.text)).child(label(
-            desc,
-            sans(12.0, 400.0),
-            p.text2,
-        )))
-        .child(lit);
-    panel(vec![yours, danger(keys::arm(Confirm::Deactivate), w::DEACTIVATE), danger(keys::arm(Confirm::Move), w::MOVE)], p)
+        .child(
+            col()
+                .grow(1.0)
+                .min_w(0.0)
+                .gap(4.0)
+                .child(label(r.label, sans(14.0, 400.0), p.text))
+                .child(label(r.desc.clone(), sans(12.0, 400.0).lh(16.0), p.text2).wrap()),
+        )
+        .child(end)
 }
 
-fn help(p: &Pal) -> El {
-    panel(
-        vec![
-            setting(w::SHORTCUTS, button(None, w::SHOW_SHORTCUTS, p.text, p), p),
-            setting(w::REPORT, button(Some(&icons::EXTERNAL), w::GET_SUPPORT, p.text, p), p),
-        ],
-        p,
-    )
+/// A licence action: it costs the user something, so its name is in the error
+/// colour. Armed, it says what happens and asks once more.
+fn danger(s: &State, r: &Row, p: &Pal) -> El {
+    // TODO(shared): the row's own `Confirm` in the spec; matched by its wording until then.
+    let which = if r.label == w::DEACTIVATE.0 { Confirm::Deactivate } else { Confirm::Move };
+    let armed = s.confirm == Some(which);
+    let base = row().key(keys::arm(which)).w_full().min_h(56.0).px(16.0).py(12.0).gap(16.0).center_y();
+    if let (true, Some((sentence, yes))) = (armed, r.armed) {
+        return base
+            .fill(p.error_soft)
+            .role("alertdialog")
+            .label(r.label)
+            .child(
+                col()
+                    .grow(1.0)
+                    .min_w(0.0)
+                    .gap(4.0)
+                    .child(label(r.label, sans(14.0, 500.0), p.error))
+                    .child(label(sentence, sans(12.0, 400.0).lh(16.0), p.text).wrap()),
+            )
+            .child(ghost(None, w::CANCEL, p.text2, p).key(keys::CONFIRM_NO))
+            .child(ghost(None, yes, p.deep, p).fill(p.error).key(keys::CONFIRM_YES));
+    }
+    base.hover(p.hover)
+        .cursor(rune::Cursor::Pointer)
+        .focusable(true)
+        .role("button")
+        .label(r.label)
+        .child(
+            col()
+                .grow(1.0)
+                .min_w(0.0)
+                .gap(4.0)
+                .child(label(r.label, sans(14.0, 400.0), p.error))
+                .child(label(r.desc.clone(), sans(12.0, 400.0).lh(16.0), p.text2).wrap()),
+        )
+        .child(icon(&icons::CARET_RIGHT, 16.0).color(p.muted))
 }

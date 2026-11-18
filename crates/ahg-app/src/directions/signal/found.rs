@@ -13,7 +13,7 @@ use super::parts::{Line, RING, button, config_text, ghost, icon_button, keycap, 
 use super::theme::{Pal, source_color};
 use crate::copy::{self, found as f};
 use crate::format;
-use crate::gate::{Band, Found, Matched, State};
+use crate::gate::{Band, Card, Found, Matched, State};
 use crate::icons;
 use crate::keys;
 use crate::ring;
@@ -50,7 +50,7 @@ pub fn view(s: &State, p: &Pal) -> Option<El> {
         ),
         Found::Media(m) => media(s, m, p),
         Found::Playlist { playlist, matched, selected } => album(s, playlist, matched, selected, p),
-        Found::Search { query, bands } => (search_head(s, query, bands, p), search(bands, p), None),
+        Found::Search { query, bands } => (search_head(s, query, bands, p), search(s, bands, p), picked_bar(s, p)),
     };
     let mut c = col()
         .key(keys::FOUND)
@@ -85,9 +85,10 @@ fn lock(p: &Pal) -> El {
     glyph(&icons::LOCK_SIGNAL, p.text2)
 }
 
-/// An open door to Premium, never the accent.
-fn see_plans(p: &Pal) -> El {
-    button(None, f::SEE_PLANS, p.text, p)
+/// An open door to Premium, never the accent. It carries the key unless the notice's own does.
+fn see_plans(s: &State, p: &Pal) -> El {
+    let b = button(None, f::SEE_PLANS, p.text, p);
+    if s.notice.is_none() { b.key(keys::FOUND_SEE_PLANS) } else { b }
 }
 
 /// The surface's notice line, under its header: a Basic limit just met, with
@@ -106,7 +107,7 @@ fn notice(words: &str, p: &Pal) -> El {
         .role("status")
         .child(lock(p))
         .child(label(words, sans(13.0, 400.0), p.text).wrap().grow(1.0).min_w(0.0))
-        .child(see_plans(p))
+        .child(button(None, f::SEE_PLANS, p.text, p).key(keys::FOUND_SEE_PLANS))
         .child(icon_button(&icons::CLOSE, copy::NOTICE_DISMISS, p.text2, p).on_press(|s: &mut State| s.notice = None))
 }
 
@@ -136,7 +137,8 @@ fn head_with(_s: &State, lead: El, words: El, aside: Option<El>, p: &Pal) -> El 
     if let Some(aside) = aside {
         r = r.child(aside).child(el().w(1.0).h(20.0).fill(p.line).mx(4.0));
     }
-    r.child(keycap(copy::KEYCAP_ESC, p)).child(icon_button(&icons::CLOSE, copy::NOTICE_DISMISS, p.text2, p).on_press(dismiss))
+    r.child(keycap(copy::KEYCAP_ESC, p))
+        .child(icon_button(&icons::CLOSE, copy::NOTICE_DISMISS, p.text2, p).key(keys::FOUND_CLOSE).on_press(dismiss))
 }
 
 /// A skeleton bone: the shape of something still coming.
@@ -183,6 +185,7 @@ fn primary(words: &str, p: &Pal) -> El {
         .role("button")
         .child(icon(&icons::DOWNLOAD, 16.0).color(p.deep))
         .child(label(words, sans(14.0, 500.0), p.deep))
+        .key(keys::FOUND_DOWNLOAD)
 }
 
 /// The output strip under the body.
@@ -278,6 +281,9 @@ fn source_of(m: &MediaMetadata) -> SourcePlatform {
         "youtube" => SourcePlatform::Youtube,
         "soundcloud" => SourcePlatform::Soundcloud,
         "spotify" => SourcePlatform::Spotify,
+        "instagram" | "Instagram" => SourcePlatform::Instagram,
+        "tiktok" | "TikTok" => SourcePlatform::Tiktok,
+        "facebook" | "Facebook" => SourcePlatform::Facebook,
         _ => SourcePlatform::Generic,
     }
 }
@@ -286,12 +292,23 @@ fn source_of(m: &MediaMetadata) -> SourcePlatform {
 /// segment under it (in ink, not the accent: the accent is for Download).
 /// `locked(i)`: the choice needs Premium. It stays pressable, so choosing it
 /// can say what the plan adds; it carries a lock before its name.
-fn choices(items: &[&str], on: usize, tag: impl Fn(&str) -> bool, locked: impl Fn(usize) -> bool, p: &Pal) -> El {
+/// `key(i)`: a choice's own key (the format chips); `None` keys the group instead.
+fn choices(
+    items: &[&str],
+    on: usize,
+    tag: impl Fn(&str) -> bool,
+    locked: impl Fn(usize) -> bool,
+    key: impl Fn(usize) -> Option<String>,
+    p: &Pal,
+) -> El {
     let mut g = row().padding(4.0).gap(4.0).radius(8.0).fill(p.deep).border(1.0, p.line).role("radiogroup");
     for (i, name) in items.iter().enumerate() {
         let lit = i == on;
         let mut c =
             row().h(28.0).px(12.0).gap(8.0).center_y().radius(6.0).hover(p.hover).cursor(Cursor::Pointer).role("radio").checked(lit);
+        if let Some(k) = key(i) {
+            c = c.key(k);
+        }
         if locked(i) {
             c = c.pl(8.0).label(f::lock_chip_aria(name)).help(f::lock_chip_title(name)).child(lock(p));
         }
@@ -312,7 +329,11 @@ fn media(s: &State, m: &MediaMetadata, p: &Pal) -> (El, El, Option<El>) {
     let basic = s.plan == Plan::Basic;
     let video = s.choice.video;
     let (format_on, audio_on, video_on) = lit(s);
-    let eyebrow = f::single_eyebrow_fallback(format::source_name(source), !video);
+    let short = match &s.card {
+        Card::Short { label } => Some(label.as_str()),
+        Card::Single { .. } => None,
+    };
+    let eyebrow = short.map_or_else(|| f::single_eyebrow_fallback(format::source_name(source), !video), str::to_owned);
     let readout = if video {
         f::readout_video(f::VIDEO_QUALITIES[video_on])
     } else {
@@ -325,7 +346,7 @@ fn media(s: &State, m: &MediaMetadata, p: &Pal) -> (El, El, Option<El>) {
             .center_y()
             .child(lock(p))
             .child(label(if video { f::BASIC_VIDEO } else { f::BASIC_AUDIO }, sans(13.0, 400.0), p.text2))
-            .child(button(None, f::SEE_PLANS, p.text, p).h(28.0))
+            .child(see_plans(s, p).h(28.0))
     });
     let h = head_with(
         s,
@@ -345,14 +366,28 @@ fn media(s: &State, m: &MediaMetadata, p: &Pal) -> (El, El, Option<El>) {
         ));
     }
     facts = facts.child(label(readout.clone(), mono(12.0, 400.0), p.text2));
-    let info = col()
+    let mut info = col()
         .grow(1.0)
         .min_w(0.0)
         .gap(8.0)
         .child(label(m.title.clone(), sans(16.0, 500.0), p.text).wrap().max_lines(2))
         .child(label(m.uploader.clone(), sans(13.0, 400.0), p.text2).single_line().truncate())
         .child(facts.mt(4.0));
-    let top = row().w_full().gap(24.0).items_start().child(cover(source, 192.0, 108.0, p)).child(info);
+    if let Card::Single { matched: Some(name) } = &s.card {
+        // A Spotify track is matched by search: the name it will look for, said plainly.
+        info = info.child(
+            Line::new()
+                .add(f::MATCHED_LEAD, p.text2)
+                .fig(name, p.text)
+                .add(f::MATCHED_TRAIL, p.text2)
+                .wrap(sans(13.0, 400.0).lh(20.0))
+                .mt(4.0),
+        );
+    }
+    let top = match short {
+        Some(_) => poster(m, source, p),
+        None => row().w_full().gap(24.0).items_start().child(cover(source, 192.0, 108.0, p)).child(info),
+    };
 
     // The routing: Video or Audio, then the channels each one uses. The ones
     // the current choice does not use sit dark, one press away.
@@ -382,8 +417,8 @@ fn media(s: &State, m: &MediaMetadata, p: &Pal) -> (El, El, Option<El>) {
             .fill(p.deep)
             .border(1.0, p.line)
             .role("radiogroup")
-            .child(side(&icons::VIDEO, f::MEDIA_VIDEO, video))
-            .child(side(&icons::TRACK, f::MEDIA_AUDIO, !video))
+            .child(side(&icons::VIDEO, f::MEDIA_VIDEO, video).key(keys::CHOICE_VIDEO))
+            .child(side(&icons::TRACK, f::MEDIA_AUDIO, !video).key(keys::CHOICE_AUDIO))
     };
     let named = |name: &str, control: El, routed: bool| {
         let r = row().w_full().gap(16.0).center_y().child(label(name, sans(13.0, 400.0), p.text2).w(112.0)).child(control);
@@ -400,17 +435,26 @@ fn media(s: &State, m: &MediaMetadata, p: &Pal) -> (El, El, Option<El>) {
         .child(named("", capsule, true))
         .child(named(
             f::VIDEO_QUALITY_LABEL,
-            choices(&f::VIDEO_QUALITIES, video_on, |_| false, |i| basic && is_premium_video_quality(QUALITIES[i]), p),
+            choices(&f::VIDEO_QUALITIES, video_on, |_| false, |i| basic && is_premium_video_quality(QUALITIES[i]), |_| None, p)
+                .key(keys::CHOICE_VIDEO_QUALITY),
             video,
         ))
         .child(named(
             f::PLAYLIST_FORMAT,
-            choices(&f::AUDIO_FORMATS, format_on, lossless, |i| basic && is_premium_format(&f::AUDIO_FORMATS[i].to_lowercase()), p),
+            choices(
+                &f::AUDIO_FORMATS,
+                format_on,
+                lossless,
+                |i| basic && is_premium_format(&f::AUDIO_FORMATS[i].to_lowercase()),
+                |i| Some(keys::choice_format(&f::AUDIO_FORMATS[i].to_lowercase())),
+                p,
+            ),
             !video,
         ))
         .child(named(
             f::AUDIO_QUALITY_LABEL,
-            choices(&f::AUDIO_QUALITIES, audio_on, |_| false, |i| basic && i == f::AUDIO_QUALITIES.len() - 1, p),
+            choices(&f::AUDIO_QUALITIES, audio_on, |_| false, |i| basic && i == f::AUDIO_QUALITIES.len() - 1, |_| None, p)
+                .key(keys::CHOICE_AUDIO_QUALITY),
             !video,
         ));
     if basic {
@@ -419,7 +463,52 @@ fn media(s: &State, m: &MediaMetadata, p: &Pal) -> (El, El, Option<El>) {
     }
     let body = col().w_full().padding(24.0).gap(24.0).child(top).child(well);
     let out = Line::new().add(f::READOUT_LEAD, p.text2).fig(&readout, p.text).one(sans(13.0, 400.0));
-    (h, body, Some(strip(out, primary(f::SINGLE_DOWNLOAD, p), p)))
+    let go = if short.is_some() { f::SHORT_DOWNLOAD } else { f::SINGLE_DOWNLOAD };
+    (h, body, Some(strip(out, primary(go, p), p)))
+}
+
+/// A Reels, TikTok or Facebook clip: its own 9:16 shape as a poster, the facts beside it.
+fn poster(m: &MediaMetadata, source: SourcePlatform, p: &Pal) -> El {
+    let tint = source_color(p, source);
+    let length = format::duration(m.duration);
+    let mut frame = col()
+        .size(152.0, 270.0)
+        .radius(8.0)
+        .fill(tint.alpha(0.14))
+        .border(1.0, p.line)
+        .center()
+        .child(icon(super::parts::platform_icon(source), 28.0).color(tint));
+    if !length.is_empty() {
+        frame =
+            frame.child(el().h(20.0).px(6.0).center().radius(4.0).fill(p.media_scrim).pin(None, None, Some(8.0), Some(8.0)).child(label(
+                length.clone(),
+                mono(12.0, 500.0),
+                p.on_media,
+            )));
+    }
+    let mut facts = Line::new();
+    let size = match (m.width, m.height) {
+        (Some(w), Some(h)) if w > 0.0 && h > 0.0 => f::short_size(w as u32, h as u32),
+        _ => String::new(),
+    };
+    // TODO(shared): `format::count` (1.2K, 4.8M) for `f::short_views` / `f::short_likes`, and the short upload date.
+    for (i, part) in [length, size].into_iter().filter(|x| !x.is_empty()).enumerate() {
+        if i > 0 {
+            facts = facts.add(&copy::row_dot_part(""), p.muted);
+        }
+        facts = facts.fig(&part, p.text2);
+    }
+    let mut info = col()
+        .grow(1.0)
+        .min_w(0.0)
+        .gap(8.0)
+        .child(label(m.title.clone(), sans(20.0, 500.0).lh(26.0), p.text).wrap().max_lines(2))
+        .child(label(m.uploader.clone(), sans(13.0, 400.0), p.text2).single_line().truncate());
+    if let Some(caption) = m.description.as_ref().filter(|d| !d.trim().is_empty() && **d != m.title) {
+        info = info.child(label(caption.clone(), sans(13.0, 400.0).lh(20.0), p.text2).wrap().max_lines(3).mt(4.0));
+    }
+    let info = info.child(facts.one(mono(12.0, 400.0)).mt(4.0));
+    row().w_full().gap(24.0).items_start().child(frame).child(info)
 }
 
 // ── An album: a channel list ────────────────────────────────────────────────
@@ -514,21 +603,23 @@ fn album(s: &State, pl: &Playlist, matched: &[Matched], selected: &[bool], p: &P
         counter = counter.child(label(f::BASIC_COLLECTION, sans(12.0, 400.0), p.muted));
     }
     let all = picked.len() == tracks.len();
-    let selectors =
-        if fixed {
-            row()
-                .h(32.0)
-                .pl(12.0)
-                .gap(8.0)
-                .center_y()
-                .child(lock(p))
-                .child(label(f::LOCK_PICK_PLAYLIST, sans(13.0, 400.0), p.text2).single_line().truncate().min_w(0.0))
-        } else {
-            row()
-                .gap(4.0)
-                .child(ghost(Some(&icons::CHECK_SIGNAL), f::PLAYLIST_SELECT_ALL, if all { p.muted } else { p.text }, p))
-                .child(ghost(None, f::PLAYLIST_DESELECT_ALL, if picked.is_empty() { p.muted } else { p.text2 }, p))
-        };
+    let selectors = if fixed {
+        row()
+            .h(32.0)
+            .pl(12.0)
+            .gap(8.0)
+            .center_y()
+            .child(lock(p))
+            .child(label(f::LOCK_PICK_PLAYLIST, sans(13.0, 400.0), p.text2).single_line().truncate().min_w(0.0))
+    } else {
+        row()
+            .gap(4.0)
+            .child(
+                ghost(Some(&icons::CHECK_SIGNAL), f::PLAYLIST_SELECT_ALL, if all { p.muted } else { p.text }, p)
+                    .key(keys::FOUND_SELECT_ALL),
+            )
+            .child(ghost(None, f::PLAYLIST_DESELECT_ALL, if picked.is_empty() { p.muted } else { p.text2 }, p))
+    };
     let top = row()
         .w_full()
         .px(24.0)
@@ -595,6 +686,7 @@ fn album(s: &State, pl: &Playlist, matched: &[Matched], selected: &[bool], p: &P
             )),
             label(t.name.clone(), sans(13.0, if on { 500.0 } else { 400.0 }), ink).single_line().truncate(),
         )
+        .key(keys::track(i))
         .h(40.0)
         .border_sides([0.0, 0.0, 1.0, 0.0], p.line)
         .role("checkbox")
@@ -628,7 +720,7 @@ fn album(s: &State, pl: &Playlist, matched: &[Matched], selected: &[bool], p: &P
                 .border_sides([0.0, 0.0, 1.0, 0.0], p.line)
                 .child(lock(p))
                 .child(words.grow(1.0).min_w(0.0))
-                .child(see_plans(p)),
+                .child(see_plans(s, p)),
         );
     }
     let body = body.child(header).child(list);
@@ -677,6 +769,7 @@ fn album(s: &State, pl: &Playlist, matched: &[Matched], selected: &[bool], p: &P
                     .child(label(folder.clone(), mono(13.0, 400.0), p.text).single_line().truncate().min_w(0.0)),
                 208.0,
             )
+            .key(keys::CHOICE_FOLDER)
             .help(folder.clone()),
         )
         .child(label(readout, mono(12.0, 400.0), p.text2).single_line().truncate().min_w(0.0).shrink().pb(8.0));
@@ -702,10 +795,11 @@ fn search_head(s: &State, query: &str, bands: &[Band; 3], p: &Pal) -> El {
     head(s, glyph(&icons::SEARCH, p.muted), words, p).label(copy::search_region_aria(query))
 }
 
-fn search(bands: &[Band; 3], p: &Pal) -> El {
+fn search(s: &State, bands: &[Band; 3], p: &Pal) -> El {
     let mut strips = row().w_full().items_stretch();
     for (i, ((source, name), band)) in SOURCES.iter().zip(bands).enumerate() {
-        let mut c = col().grow(1.0).min_w(0.0).pb(8.0).child(band_head(*source, name, band, p)).child(band_body(*source, name, band, p));
+        let mut c =
+            col().grow(1.0).min_w(0.0).pb(8.0).child(band_head(*source, name, band, p)).child(band_body(s, i, *source, name, band, p));
         if i < 2 {
             c = c.border_sides([0.0, 1.0, 0.0, 0.0], p.line);
         }
@@ -732,7 +826,7 @@ fn band_head(source: SourcePlatform, name: &str, band: &Band, p: &Pal) -> El {
     r
 }
 
-fn band_body(source: SourcePlatform, name: &str, band: &Band, p: &Pal) -> El {
+fn band_body(s: &State, at: usize, source: SourcePlatform, name: &str, band: &Band, p: &Pal) -> El {
     let c = col().w_full().pt(4.0);
     match band {
         Band::Loading => {
@@ -761,14 +855,17 @@ fn band_body(source: SourcePlatform, name: &str, band: &Band, p: &Pal) -> El {
                 sans(13.0, 400.0),
                 p.text,
             )))
-            .child(row().ml(-12.0).child(ghost(Some(&icons::RETRY), copy::SEARCH_RETRY, p.text, p))),
+            .child(row().ml(-12.0).child(ghost(Some(&icons::RETRY), copy::SEARCH_RETRY, p.text, p).key(keys::band_retry(at)))),
         Band::Results(rs) => {
             let mut c = c;
-            for r in rs.iter().take(SHOWN) {
-                c = c.child(result_row(r, p));
+            let open = s.expanded.get(at).copied().unwrap_or(false);
+            for r in rs.iter().take(if open { rs.len() } else { SHOWN }) {
+                c = c.child(result_row(r, s.picked.contains(&r.id), p));
             }
-            if rs.len() > SHOWN {
-                c = c.child(row().px(4.0).child(ghost(Some(&icons::CARET_DOWN), &copy::search_show_more(rs.len() - SHOWN), p.text2, p)));
+            if rs.len() > SHOWN && !open {
+                c = c.child(row().px(4.0).child(
+                    ghost(Some(&icons::CARET_DOWN), &copy::search_show_more(rs.len() - SHOWN), p.text2, p).key(keys::band_more(at)),
+                ));
             }
             if source == SourcePlatform::Spotify {
                 c = c.child(label(copy::SEARCH_SPOTIFY_NOTE, mono(12.0, 400.0), p.muted).px(16.0).pt(8.0));
@@ -778,18 +875,41 @@ fn band_body(source: SourcePlatform, name: &str, band: &Band, p: &Pal) -> El {
     }
 }
 
+/// The ticked results: how many, the way to let go, and Download for all of them.
+fn picked_bar(s: &State, p: &Pal) -> Option<El> {
+    let n = s.picked.len();
+    if n == 0 {
+        return None;
+    }
+    // TODO(shared): a key for the results' Clear (`keys::RESULTS_CLEAR`).
+    let left = row().gap(12.0).center_y().child(label(f::results_selected(n), mono(13.0, 500.0), p.text)).child(ghost(
+        None,
+        f::RESULTS_CLEAR,
+        p.text2,
+        p,
+    ));
+    Some(strip(left, primary(&f::results_download_n(n), p), p))
+}
+
 /// YouTube's pictures are 16:9; SoundCloud's and Spotify's are square.
 fn art_w(source: SourcePlatform) -> f32 {
     if source == SourcePlatform::Youtube { 64.0 } else { 36.0 }
 }
 
-fn result_row(r: &SearchResult, p: &Pal) -> El {
+/// A result: its tick, its picture, its two lines. A ticked row sits on the raised surface.
+fn result_row(r: &SearchResult, on: bool, p: &Pal) -> El {
     let length = format::duration(r.duration);
     let mut sub = Line::new().add(&r.uploader, p.text2);
     if !length.is_empty() {
         sub = sub.add(" · ", p.muted).fig(&length, p.muted);
     }
+    // TODO(shared): a key of the result's tick (`keys::result_pick(id)`); the row's key stands for both.
+    let tick = el().size(16.0, 16.0).radius(4.0).center().role("checkbox").checked(on).label(f::results_pick_aria(&r.title));
+    let tick =
+        if on { tick.fill(p.text).child(icon(&icons::CHECK_SIGNAL, 12.0).color(p.surface)) } else { tick.border(1.0, p.line_strong) };
     row()
+        .key(keys::result(&r.id))
+        .fill(if on { p.raised } else { Color::TRANSPARENT })
         .w_full()
         .h(56.0)
         .px(16.0)
@@ -801,6 +921,8 @@ fn result_row(r: &SearchResult, p: &Pal) -> El {
         .focusable(true)
         .role("button")
         .label(copy::search_row_aria(&r.title, &r.uploader))
+        .pl(12.0)
+        .child(tick)
         .child(cover(r.source, art_w(r.source), 36.0, p))
         .child(
             col()

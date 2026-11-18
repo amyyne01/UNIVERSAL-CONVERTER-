@@ -12,7 +12,7 @@ pub(crate) mod icons;
 pub(crate) mod model;
 mod nav;
 pub(crate) mod parts;
-mod settings;
+pub(crate) mod settings;
 pub(crate) mod theme;
 
 use rune::{Color, Cx, El, col, el, icon, row, spacer};
