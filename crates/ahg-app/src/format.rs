@@ -79,10 +79,13 @@ pub fn month_name(year_month: &str) -> String {
 
 /// A count as a short figure: `999`, `1.2K`, `4.8M`, `1.5B`; a trailing `.0` is dropped; not a count, `0`.
 pub fn short_count(n: f64) -> String {
-    if n.is_nan() || n < 0.0 {
+    if !n.is_finite() || n < 0.0 {
         return "0".into();
     }
-    let (v, unit) = [(1e9, "B"), (1e6, "M"), (1e3, "K")].into_iter().find(|(at, _)| n >= *at).map_or((n, ""), |(at, u)| (n / at, u));
+    // A figure that rounds up to 1000 of its unit belongs to the next unit (999,950 is 1M, not 1000K).
+    let units = [(1e9, "B"), (1e6, "M"), (1e3, "K")];
+    let at = units.iter().position(|(at, _)| n >= at * 0.9995);
+    let (v, unit) = at.map_or((n, ""), |i| (n / units[i].0, units[i].1));
     let figure = if unit.is_empty() { format!("{}", v.round()) } else { format!("{v:.1}") };
     format!("{}{unit}", figure.strip_suffix(".0").unwrap_or(&figure))
 }
@@ -705,6 +708,10 @@ mod tests {
             (1_500_000_000.0, "1.5B"),
             (f64::NAN, "0"),
             (-5.0, "0"),
+            (f64::INFINITY, "0"),
+            (999_400.0, "999.4K"),
+            (999_950.0, "1M"),
+            (999_950_000.0, "1B"),
         ];
         assert!(!table.is_empty());
         for (n, want) in table {
