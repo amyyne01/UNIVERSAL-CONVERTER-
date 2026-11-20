@@ -2,7 +2,7 @@
 //! here rather than taken from Orbit's shell so every gap is on the 4 pt grid and every icon
 //! is one size.
 use ahg_engine::types::{DownloadStatus as St, DownloadTask, ErrorCode};
-use rune::{Color, Cursor, El, Icon, SurfaceFit, TextStyle, el, icon, row};
+use rune::{Color, Cursor, El, Icon, TextStyle, el, icon, row};
 
 use crate::copy;
 use crate::directions::orbit::look::{Pal, mix, txt};
@@ -115,8 +115,8 @@ pub fn cover(s: &State, p: &Pal, t: &DownloadTask, size: f32, round: bool) -> El
     } else {
         8.0
     };
-    match s.cover(&t.task_id) {
-        Some(img) => el().size(size, size).radius(r).fill(p.raised).pixels_fit(img.pixels(), SurfaceFit::Fill),
+    match s.cover(t) {
+        Some(img) => el().size(size, size).radius(r).fill(p.raised).child(crate::covers::art(s, img, r)),
         None => {
             let tint = mix(p.raised, model::source(p, t.source).1, 0.12);
             el().size(size, size)

@@ -1,13 +1,14 @@
 //! Nothing animates on the first frame: for every preset, theme and scene, frame 0 has no element
 //! that is moving, exiting, revealing or scrolling (a loop that is due is the one allowed motion).
+//! At rest the one motion allowed is the bones' shimmer, in the scenes that wait for something.
 use super::{name, runtime, steps};
 use crate::gate::{PRESETS, SCENES};
 
-/// What is in motion on this runtime's current frame, as `path: flags`.
-fn in_motion(rt: &rune::Runtime<crate::gate::State>, loops_ok: bool) -> Vec<String> {
+/// What is in motion on this runtime's current frame, as `path: flags`; `may_loop` names the loops allowed.
+fn in_motion(rt: &rune::Runtime<crate::gate::State>, may_loop: impl Fn(&rune::ElementInfo) -> bool) -> Vec<String> {
     rt.elements()
         .iter()
-        .filter(|e| (e.moving && (!loops_ok || e.loop_phase.is_none())) || e.exiting || e.revealing || e.scrolling)
+        .filter(|e| (e.moving && !(e.loop_phase.is_some() && may_loop(e))) || e.exiting || e.revealing || e.scrolling)
         .map(|e| {
             format!(
                 "{} (moving {}, exiting {}, revealing {}, scrolling {})",
@@ -20,6 +21,9 @@ fn in_motion(rt: &rune::Runtime<crate::gate::State>, loops_ok: bool) -> Vec<Stri
         })
         .collect()
 }
+
+/// The scenes with bones: their shimmer loops on (owner, 2026-11-20), every other scene rests.
+pub const LOADING: [&str; 3] = ["looking-up", "search-loading", "playlist"];
 
 /// Light theme runs every this-many scenes (a full light pass cost minutes; dark covers every scene).
 const LIGHT_EVERY: usize = 4;
@@ -43,14 +47,15 @@ fn frame_zero_is_still_in_every_preset_theme_and_scene() {
                             rt.frame(0.0);
                             cases += 1;
                             let theme = if dark { "dark" } else { "light" };
-                            let moving = in_motion(&rt, true);
+                            let moving = in_motion(&rt, |_| true);
                             if !moving.is_empty() {
                                 bad.push(format!("{} / {theme} / {scene} / frame 0: {}", name(p), moving.join("; ")));
                             }
                             // No input for half a second: a scene at rest has nothing moving either
                             // (a loop or tween started by the view itself would show here).
                             steps(&mut rt, 30);
-                            let moving = in_motion(&rt, false);
+                            let shimmers = LOADING.contains(scene);
+                            let moving = in_motion(&rt, |e| shimmers && e.key.as_deref() == Some(crate::timeline::SHEEN));
                             if !moving.is_empty() {
                                 bad.push(format!("{} / {theme} / {scene} / frame 31: {}", name(p), moving.join("; ")));
                             }

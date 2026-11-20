@@ -22,13 +22,13 @@ use ahg_engine::types::{ContentType, MediaMetadata, Playlist, SearchResult, Sour
 use ahg_runtime::core::{APP_UPDATE_DELAY, Core, CoreEvent, ENGINE_UPDATE_DELAY, Paths, PlanSource, TrackMatch, WARM_UP_DELAY};
 use ahg_runtime::unpack::tool_dirs;
 use ahg_runtime::ytdlp::{Tools, YtDlp};
-use rune::{Tx, Waker};
+use rune::{ImageCache, Tx, Waker};
 use serde_json::{Value, json};
 
 use crate::copy::{self, found as fc};
 use crate::gate::{Band, Card, Found, Loading, Matched, Nav, PRESETS, State, Tone};
 use crate::timeline::{self, Due};
-use crate::{actions, motion};
+use crate::{actions, covers, motion};
 
 /// The names the Electron app's data folder has had under `%APPDATA%`. The
 /// Rust app shares that folder, so `--live` refuses all of them.
@@ -59,6 +59,8 @@ pub struct Handle {
     saved: Option<(usize, bool, bool)>,
     /// The causes the jobs named since the last poll, for the cause table.
     causes: Vec<Change>,
+    /// Decodes the fetched covers, on the cover workers.
+    images: Arc<ImageCache>,
 }
 
 impl Drop for Handle {
@@ -170,6 +172,7 @@ pub fn attach(s: &mut State, folder: &Path, wake: Waker, make: impl FnOnce(Paths
     s.tasks.clear();
     s.stats = None;
     s.covers.clear();
+    s.thumbs = Default::default();
     s.speed.clear();
     s.selected.clear();
     s.picked.clear();
@@ -180,6 +183,7 @@ pub fn attach(s: &mut State, folder: &Path, wake: Waker, make: impl FnOnce(Paths
     s.settings = core.settings();
     s.engine = core.engine_status();
     s.update = core.update_status();
+    let images = Arc::new(ImageCache::new(wake.clone()));
     s.live = Some(Handle {
         core,
         inbox,
@@ -190,6 +194,7 @@ pub fn attach(s: &mut State, folder: &Path, wake: Waker, make: impl FnOnce(Paths
         generation: 0,
         saved: None,
         causes: Vec::new(),
+        images,
     });
     s.sync();
 }
@@ -332,6 +337,7 @@ fn drain(s: &mut State, clock: f64, tx: &mut Tx) -> (usize, bool, bool) {
     }
     if changed {
         s.sync();
+        covers::sync(s);
     }
     save_own(s);
     if let Some(live) = s.live.as_mut() {
@@ -386,6 +392,8 @@ pub enum Change {
     Notice,
     /// The month's statistics changed.
     Stats,
+    /// A fetched cover arrived: it fades in over its placeholder.
+    Cover,
 }
 
 /// The cause table: whether a change is committed with `tx.animated()`. Nothing animates while
@@ -393,7 +401,14 @@ pub enum Change {
 pub fn deserves_motion(change: Change, booting: bool, home: bool) -> bool {
     !booting
         && match change {
-            Change::Pass | Change::Chain | Change::Landed | Change::Answer | Change::Freed | Change::WaitLine | Change::Notice => true,
+            Change::Pass
+            | Change::Chain
+            | Change::Landed
+            | Change::Answer
+            | Change::Freed
+            | Change::WaitLine
+            | Change::Notice
+            | Change::Cover => true,
             Change::Stats => home,
             Change::Bones => false,
         }
@@ -440,6 +455,30 @@ pub fn spawn(s: &State, work: impl FnOnce(&Core) + Send + 'static) {
     if let Some(core) = s.live.as_ref().map(|l| l.core.clone()) {
         thread::spawn(move || work(&core));
     }
+}
+
+/// Fetches one cover through the core's strict client on a thread of its own and decodes it
+/// there; the answer goes to [`covers::arrived`]. The worker holds the core only while it fetches,
+/// and nothing lands once the handle is gone (its inbox goes with it).
+// ponytail: `Core::cancel_lookups` does not reach a cover fetch; one in flight runs to its own timeout.
+pub fn fetch_cover(s: &State, url: String) {
+    let Some(live) = &s.live else { return };
+    let (core, out, wake, images) = (Arc::downgrade(&live.core), live.outbox.clone(), live.wake.clone(), live.images.clone());
+    thread::spawn(move || {
+        let bytes = core.upgrade().and_then(|core| core.fetch_cover(&url).ok());
+        let image = bytes.and_then(|b| covers::decode(&images, b));
+        send(
+            &out,
+            &wake,
+            Box::new(move |s, _| {
+                let came = covers::arrived(s, url, image);
+                if came {
+                    mark(s, Change::Cover);
+                }
+                came
+            }),
+        );
+    });
 }
 
 /// A notice from a worker's answer.
@@ -708,6 +747,11 @@ mod tests {
 
     /// The real spec, headless, live on `dir` with the stand-ins: lookups play `json`, downloads `script`.
     fn live(dir: &Path, json: &str, script: &str) -> Runtime<State> {
+        live_with(dir, json, script, Outside::standin())
+    }
+
+    /// [`live`], with `outside` for the core's network.
+    fn live_with(dir: &Path, json: &str, script: &str, outside: Outside) -> Runtime<State> {
         fs::write(dir.join("json.txt"), json).unwrap();
         fs::write(dir.join("script.txt"), script).unwrap();
         let mut ytdlp = YtDlp::new(fake(), None);
@@ -717,9 +761,7 @@ mod tests {
         let ytdlp = Arc::new(ytdlp);
         let mut rt = App::new(crate::spec()).headless_runtime((1240.0, 820.0), Env { system_dark: true, scale: 1.0 });
         rt.frame(0.0);
-        attach(&mut rt.state, dir, Arc::new(|| {}), move |paths, plan, events| {
-            Core::start_with(paths, ytdlp, plan, events, Outside::standin())
-        });
+        attach(&mut rt.state, dir, Arc::new(|| {}), move |paths, plan, events| Core::start_with(paths, ytdlp, plan, events, outside));
         until(&mut rt, "the first read of the core", |s| s.loading == Loading::Ready);
         rt
     }
@@ -813,6 +855,77 @@ mod tests {
             rt.state.live = None;
         }
         assert!(failed.is_empty(), "{}", failed.join("\n"));
+    }
+
+    #[test]
+    fn a_found_cover_shows_its_placeholder_first_then_fades_in_in_every_preset() {
+        use ahg_runtime::engine_update::Fetched;
+        let dir = scratch("covers");
+        let png = crate::covers::tests::png(8, 6);
+        let asked = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let log = asked.clone();
+        // The real strict client, with only the wire a stand-in: an https answer of a tiny PNG.
+        let outside = Outside {
+            cover: Box::new(move |url: &str, _: Option<&str>, pinned: &[std::net::SocketAddr]| {
+                assert!(!pinned.is_empty(), "the host was resolved and pinned first");
+                log.lock().unwrap().push(url.to_owned());
+                Some(Fetched {
+                    status: 200,
+                    final_url: url.to_owned(),
+                    content_length: None,
+                    location: None,
+                    body: Box::new(std::io::Cursor::new(png.clone())),
+                })
+            }),
+            ..Outside::standin()
+        };
+        let mut rt = live_with(
+            &dir, "exit 0
+", "exit 0
+", outside,
+        );
+        let art = |rt: &Runtime<State>| {
+            rt.elements()
+                .iter()
+                .filter(|e| e.key.as_deref() == Some(crate::covers::ART) && !e.exiting)
+                .map(|e| e.opacity)
+                .collect::<Vec<_>>()
+        };
+        let urls: Vec<String> = (0..PRESETS.len()).map(|i| format!("https://img.example.com/cover-{i}.png")).collect();
+        for (i, (name, ..)) in PRESETS.iter().enumerate() {
+            rt.update(move |s, tx| actions::set_preset(s, i, tx));
+            for _ in 0..40 {
+                rt.frame(1.0 / 60.0);
+            }
+            // The found step arrives as a lookup's answer does: a job through the inbox.
+            let url = urls[i].clone();
+            let live = rt.state.live.as_ref().unwrap();
+            send(
+                &live.outbox.clone(),
+                &live.wake.clone(),
+                Box::new(move |s, _| {
+                    let mut m = crate::sample::media();
+                    m.thumbnail_url = url;
+                    s.found = Found::Media(m);
+                    s.card = Card::default();
+                    true
+                }),
+            );
+            rt.frame(1.0 / 60.0);
+            assert!(matches!(rt.state.found, Found::Media(_)), "{name}: the answer landed");
+            assert!(art(&rt).is_empty(), "{name}: a cover before it was fetched");
+            let url = urls[i].clone();
+            until(&mut rt, "the cover", move |s| crate::covers::get(s, &url).is_some());
+            let first = art(&rt);
+            assert_eq!(first.len(), 1, "{name}: the cover over its placeholder");
+            assert!(first[0] < 1.0, "{name}: the cover cut in at {}", first[0]);
+            for _ in 0..40 {
+                rt.frame(1.0 / 60.0);
+            }
+            assert!(art(&rt).iter().all(|o| (o - 1.0).abs() < 1e-3), "{name}: the cover never finished fading in: {:?}", art(&rt));
+        }
+        assert_eq!(*asked.lock().unwrap(), urls, "each cover asked once, through the strict client");
+        rt.state.live = None;
     }
 
     #[test]
@@ -1164,11 +1277,12 @@ mod tests {
             (C::WaitLine, true, true),
             (C::Notice, true, true),
             (C::Stats, true, false),
+            (C::Cover, true, true),
         ];
         assert!(!rows.is_empty());
         for (change, home, elsewhere) in rows {
             match change {
-                C::Pass | C::Chain | C::Landed | C::Answer | C::Freed | C::Bones | C::WaitLine | C::Notice | C::Stats => {}
+                C::Pass | C::Chain | C::Landed | C::Answer | C::Freed | C::Bones | C::WaitLine | C::Notice | C::Stats | C::Cover => {}
             }
             assert_eq!(deserves_motion(change, false, true), home, "{change:?} on Home");
             assert_eq!(deserves_motion(change, false, false), elsewhere, "{change:?} elsewhere");

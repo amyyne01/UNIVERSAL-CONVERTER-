@@ -6,7 +6,7 @@
 //! `preset_switch()`, `growth()` (M6/M8 and the presets), `timeline::show` (M2).
 
 use rune::tok::motion as t;
-use rune::{Beat, Curve, Easing, LoopSpec, Spring, SpringPair};
+use rune::{Beat, Curve, Easing, LoopSpec, Spring, SpringPair, Transition};
 
 // ---- Feedback ----
 
@@ -96,10 +96,24 @@ pub const RING_LOOPS_MAX: usize = 12;
 /// Seconds without a changed report before a downloading ring counts as stalled. Provisional.
 pub const STALL_AFTER: f64 = 8.0;
 
-// ---- Waiting. Bones stay still: there is no bone pulse. ----
+// ---- Waiting ----
 
 pub const LOADING_DELAY: f64 = 0.30;
 pub const LOADING_MIN: f64 = 0.40;
+/// Seconds a bone's shimmer takes to cross it (owner, 2026-11-20: "no shimmering when
+/// fetching" reverses DECISIONS Q8, "bones stay still").
+pub const SHIMMER_SWEEP: f64 = 0.8;
+/// The band sweeps from one width before the bone to three past it, linear, so half of each
+/// period crosses the bone and half rests off it (the pause). It first moves `LOADING_DELAY`
+/// after the bone shows. Under reduced motion Rune holds a slide at its midpoint, one width
+/// past the bone: off it, so the bones stand still.
+pub const SHIMMER: LoopSpec =
+    LoopSpec { delay: LOADING_DELAY, ..LoopSpec::slide(SHIMMER_SWEEP * 2.0, [-1.0, 0.0], [3.0, 0.0]).easing(Easing::LINEAR) };
+/// A fetched cover fading in over its placeholder, from the look's `cover_focus` blur.
+pub const COVER_IN: SpringPair = ROW;
+pub fn cover_in(s: &crate::gate::State) -> Transition {
+    Transition::blur(look(s).cover_focus).springs(COVER_IN)
+}
 pub const NAV_OPEN_DELAY: f64 = 0.12;
 pub const NAV_CLOSE_DELAY: f64 = 0.30;
 pub const COPIED_HOLD: f64 = 1.2;
@@ -263,6 +277,8 @@ pub const TOKENS: &[Token] = &[
     tok("RING_DONE", RING_DONE[RING_DONE.len() - 1].at, Some(Reduced::Fade)),
     tok("RECORD_TURN", RECORD_TURN.period, Some(Reduced::Still)),
     tok("STAMP", STAMP[STAMP.len() - 1].at, Some(Reduced::Fade)),
+    tok("SHIMMER", SHIMMER.period, Some(Reduced::Still)),
+    tok("COVER_IN", COVER_IN.enter.duration as f64, Some(Reduced::Fade)),
     tok("RING_HOLD", RING_HOLD, None),
     tok("STALL_AFTER", STALL_AFTER, None),
     tok("LOADING_DELAY", LOADING_DELAY, None),
@@ -325,6 +341,17 @@ mod tests {
             assert!(named(shorter) < named(longer), "{shorter} !< {longer}");
         }
         assert_eq!((NAV_OPEN_DELAY, NAV_CLOSE_DELAY, NOTICE, NOTICE_LONG), (0.12, 0.30, 6.0, 9.0));
+    }
+
+    #[test]
+    fn the_shimmer_crosses_in_its_sweep_then_rests_off_the_bone_and_holds_off_it_when_reduced() {
+        let rune::LoopKind::SlideEased { from, to, easing } = SHIMMER.kind else { panic!("{SHIMMER:?}") };
+        assert_eq!(easing, Easing::LINEAR);
+        // From -1 to +1 (one width each side of the bone) is the crossing: half the period.
+        assert_eq!(SHIMMER.period * 2.0 / (to[0] - from[0]) as f64, SHIMMER_SWEEP);
+        assert!(from[0] <= -1.0 && (from[0] + to[0]) / 2.0 >= 1.0, "the midpoint, reduced motion's pose, is off the bone");
+        assert_eq!(SHIMMER.delay, LOADING_DELAY);
+        assert!((0.15..=0.30).contains(&LOADING_DELAY) && (0.6..=1.0).contains(&SHIMMER_SWEEP));
     }
 
     #[test]
@@ -428,6 +455,7 @@ mod tests {
         ("directions/orbit.rs", "press_scale(", 2, "button 0.97 and icon 0.94 = Press::Button / Press::Icon"),
         ("directions/orbit/home.rs", "press_scale(", 1, "button 0.97 = Press::Button"),
         ("layouts/stage/parts.rs", "press_scale(", 2, "button 0.97 and icon 0.94 = Press::Button / Press::Icon"),
+        ("covers.rs", ".transition(", 1, "a fetched cover's fade-in, built by motion::cover_in"),
     ];
 
     fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {

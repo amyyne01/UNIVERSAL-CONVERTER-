@@ -1,7 +1,7 @@
 //! The small parts every Signal screen is built from: type, the segmented
 //! meter, keycaps, buttons, artwork.
 use ahg_engine::types::{DownloadTask, SourcePlatform};
-use rune::{Color, El, Icon, PopupMenu, Span, SurfaceFit, TextStyle, Tx, col, el, icon, rich, row, text};
+use rune::{Color, El, Icon, PopupMenu, Span, TextStyle, Tx, col, el, icon, rich, row, text};
 
 use super::theme::{Pal, source_color};
 use crate::actions;
@@ -190,8 +190,8 @@ pub fn art(s: &State, t: &DownloadTask, w: Option<f32>, h: f32, radius: f32, p: 
         Some(w) => base.w(w),
         None => base.w_full(),
     };
-    match s.cover(&t.task_id) {
-        Some(img) => base.fill(p.raised).pixels_fit(img.pixels(), SurfaceFit::Fill),
+    match s.cover(t) {
+        Some(img) => base.fill(p.raised).child(crate::covers::art(s, img, radius)),
         None => {
             let c = source_color(p, t.source);
             base.fill(c.alpha(0.14)).center().child(icon(platform_icon(t.source), (h * 0.42).min(28.0)).color(c))

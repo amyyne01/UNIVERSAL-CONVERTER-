@@ -101,7 +101,7 @@ pub(crate) fn body(s: &State, p: &Pal) -> Option<El> {
         Found::LookupFailed(why) => failed(p, &s.input, why),
         Found::Media(m) => media(p, m, s),
         Found::Playlist { playlist, matched, selected } => {
-            tracks(p, playlist, matched, selected, &s.choice, &folder(s), s.plan == Plan::Basic)
+            tracks(s, p, playlist, matched, selected, &s.choice, &folder(s), s.plan == Plan::Basic)
         }
         Found::Search { bands, .. } => search(s, p, bands),
     })
@@ -109,9 +109,17 @@ pub(crate) fn body(s: &State, p: &Pal) -> Option<El> {
 
 // ── Pieces ──────────────────────────────────────────────────────────────────
 
-/// A skeleton block: the shape of something still coming.
+/// A skeleton block: the shape of something still coming, a chart line sweeping it.
 fn bone(p: &Pal, w: f32, h: f32) -> El {
-    el().w(w).h(h).radius(4.0).fill(mix(p.raised, p.text, 0.04))
+    el().w(w).h(h).radius(4.0).fill(mix(p.raised, p.text, 0.04)).clip_rounded(4.0).child(sheen(p))
+}
+
+/// Orbit's shimmer: a faint glow with a thin line of the accent at its middle, a trace across a chart.
+fn sheen(p: &Pal) -> El {
+    let glow = p.text.alpha(if p.dark { 0.04 } else { 0.05 });
+    let line = p.accent.alpha(if p.dark { 0.28 } else { 0.25 });
+    let off = rune::Color::TRANSPARENT;
+    crate::timeline::sheen(&[(0.0, off), (0.3, glow), (0.48, glow), (0.5, line), (0.52, glow), (0.7, glow), (1.0, off)])
 }
 
 /// The ring at 16, waiting: something is being worked out.
@@ -119,13 +127,12 @@ fn waiting(p: &Pal) -> El {
     draw::waiting_ring(16.0, &draw::material(p, p.accent, p.card))
 }
 
-/// Artwork that has not arrived: a tile tinted by its source, its kind's glyph.
-fn art(p: &Pal, src: Src, w: f32, h: f32, glyph: &'static Icon) -> El {
-    el().size(w, h)
-        .radius(if w >= 160.0 { 12.0 } else { 8.0 })
-        .fill(mix(p.raised, model::source(p, src).1, 0.12))
-        .center()
-        .child(icon(glyph, 16.0).color(p.muted))
+/// `url`'s artwork, over a tile tinted by its source with its kind's glyph until it arrives.
+fn art(s: &State, url: &str, p: &Pal, src: Src, w: f32, h: f32, glyph: &'static Icon) -> El {
+    let r = if w >= 160.0 { 12.0 } else { 8.0 };
+    let tile =
+        el().size(w, h).radius(r).fill(mix(p.raised, model::source(p, src).1, 0.12)).center().child(icon(glyph, 16.0).color(p.muted));
+    crate::covers::over(s, tile, url, r)
 }
 
 /// The link the field holds, as a short mono line over the answer.
@@ -248,7 +255,7 @@ fn looking_up(p: &Pal, input: &str) -> El {
         .gap(20.0)
         .label(f::NOTE_READING)
         .child(row().w_full().gap(24.0).center_y().child(note).child(spacer()).child(subject(p, input)))
-        .child(row().w_full().gap(32.0).items_start().child(bone(p, 320.0, 180.0).radius(12.0)).child(words))
+        .child(row().w_full().gap(32.0).items_start().child(bone(p, 320.0, 180.0).radius(12.0).clip_rounded(12.0)).child(words))
 }
 
 // ── The lookup failed ───────────────────────────────────────────────────────
@@ -288,8 +295,8 @@ fn media(p: &Pal, m: &MediaMetadata, s: &State) -> El {
         Card::Single { .. } => None,
     };
     let mut cover = match short {
-        Some(_) => art(p, src, 152.0, 272.0, &icons::REELS),
-        None => art(p, src, 320.0, 180.0, &icons::VIDEO),
+        Some(_) => art(s, &m.thumbnail_url, p, src, 152.0, 272.0, &icons::REELS),
+        None => art(s, &m.thumbnail_url, p, src, 320.0, 180.0, &icons::VIDEO),
     };
     if !duration.is_empty() {
         cover = cover.child(row().h(20.0).px(4.0).center().radius(4.0).fill(p.deep).child(txt(duration.clone(), FIG, p.text)).pin(
@@ -475,10 +482,12 @@ fn match_cell(p: &Pal, m: Matched) -> El {
     if let Matched::BestGuess(c) = m {
         r = r.child(txt(format!("{}%", format::round_half_up(c * 100.0)), FIG, p.muted));
     }
-    r
+    // Still matching: the cell shimmers like a bone.
+    if m == Matched::Matching { r.clip_rounded(4.0).child(sheen(p)) } else { r }
 }
 
-fn tracks(p: &Pal, pl: &Playlist, matched: &[Matched], selected: &[bool], choice: &Choice, folder: &str, basic: bool) -> El {
+#[allow(clippy::too_many_arguments)]
+fn tracks(s: &State, p: &Pal, pl: &Playlist, matched: &[Matched], selected: &[bool], choice: &Choice, folder: &str, basic: bool) -> El {
     let (af, aq, _) = picks(choice, if basic { Plan::Basic } else { Plan::Premium });
     let n = pl.tracks.len();
     let spotify = pl.url.contains("spotify");
@@ -514,8 +523,12 @@ fn tracks(p: &Pal, pl: &Playlist, matched: &[Matched], selected: &[bool], choice
     if basic && picked_n <= cap {
         counter = counter.child(txt(f::BASIC_COLLECTION, SMALL, p.muted));
     }
-    let head =
-        row().w_full().gap(16.0).center_y().child(art(p, src, 64.0, 64.0, if spotify { &icons::MUSIC } else { &icons::VIDEO })).child(
+    let head = row()
+        .w_full()
+        .gap(16.0)
+        .center_y()
+        .child(art(s, &pl.thumbnail_url, p, src, 64.0, 64.0, if spotify { &icons::MUSIC } else { &icons::VIDEO }))
+        .child(
             col()
                 .grow(1.0)
                 .min_w(0.0)
@@ -749,12 +762,12 @@ fn band_view(s: &State, p: &Pal, i: usize, (name, glyph, color): (&str, &'static
         match band {
             Band::Loading => (0..2).fold(col().w_full(), |c, k| {
                 let w = if i == 0 { 64.0 } else { 40.0 };
-                c.child(row().w_full().h(56.0).px(8.0).gap(12.0).center_y().child(bone(p, w, 36.0).radius(8.0)).child(
+                c.child(row().w_full().h(56.0).px(8.0).gap(12.0).center_y().child(bone(p, w, 36.0).radius(8.0).clip_rounded(8.0)).child(
                     col().grow(1.0).min_w(0.0).gap(8.0).child(bone(p, [200.0, 160.0][k], 12.0)).child(bone(p, [112.0, 136.0][k], 12.0)),
                 ))
             }),
             Band::Results(r) => {
-                let mut c = r.iter().take(BAND_ROWS).fold(col().w_full(), |c, r| c.child(result_row(p, r, s.picked.contains(&r.id))));
+                let mut c = r.iter().take(BAND_ROWS).fold(col().w_full(), |c, r| c.child(result_row(s, p, r, s.picked.contains(&r.id))));
                 if r.len() > BAND_ROWS {
                     c = c.child(
                         row()
@@ -794,7 +807,7 @@ fn band_view(s: &State, p: &Pal, i: usize, (name, glyph, color): (&str, &'static
 }
 
 /// A result: its tick, its art and words, and the download mark. A ticked row is tinted in ink.
-fn result_row(p: &Pal, r: &SearchResult, on: bool) -> El {
+fn result_row(s: &State, p: &Pal, r: &SearchResult, on: bool) -> El {
     let (w, glyph) = if r.source == Src::Youtube { (64.0, &icons::VIDEO) } else { (36.0, &icons::MUSIC) };
     let duration = format::duration(r.duration);
     let subtitle = [r.uploader.as_str(), duration.as_str()].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" · ");
@@ -827,7 +840,7 @@ fn result_row(p: &Pal, r: &SearchResult, on: bool) -> El {
                 .on_press(move |s: &mut State| actions::toggle_result(s, &tick_id))
                 .label(f::results_pick_aria(&r.title)),
         )
-        .child(art(p, r.source, w, 36.0, glyph))
+        .child(art(s, &r.thumbnail_url, p, r.source, w, 36.0, glyph))
         .child(col().grow(1.0).min_w(0.0).gap(4.0).child(txt(r.title.clone(), SMALL_M, p.text).truncate()).child(second))
         .child(icon(&icons::DOWNLOAD, 16.0).color(p.text2).help(copy::SEARCH_ROW_DOWNLOAD))
 }

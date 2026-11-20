@@ -119,9 +119,16 @@ fn download(p: &Pal, words: &str) -> El {
     primary(p, keys::FOUND_DOWNLOAD, Some(&icons::DOWNLOAD), words).h(40.0).px(16.0).on_press(actions::download_found)
 }
 
-/// A skeleton block: the shape of something still coming.
+/// A skeleton block: the shape of something still coming, a paper sheen crossing it.
 fn bone(p: &Pal, w: f32, h: f32) -> El {
-    el().w(w).h(h).radius(4.0).fill(p.raised)
+    el().w(w).h(h).radius(4.0).fill(p.raised).clip_rounded(4.0).child(sheen(p))
+}
+
+/// Shelf's shimmer: a wide, soft band of warm paper light.
+fn sheen(p: &Pal) -> El {
+    let lit = if p.dark { p.text.alpha(0.06) } else { p.card.alpha(0.75) };
+    let off = Color::TRANSPARENT;
+    crate::timeline::sheen(&[(0.0, off), (0.5, lit), (1.0, off)])
 }
 
 /// A tick box. `can` false: the row cannot be picked (no match found).
@@ -136,10 +143,10 @@ fn tick(p: &Pal, on: bool, can: bool) -> El {
     }
 }
 
-/// A sleeve for something not yet downloaded: a blank in the source's tint, its spine
-/// printed with the format it will be.
-fn blank_sleeve(p: &Pal, source: Src, size: f32, format: &str) -> El {
-    parts::jacket(p, parts::blank_face(p, source, size), size, format)
+/// A sleeve for something not yet downloaded: `url`'s picture on its face, a blank in the
+/// source's tint until it is here, its spine printed with the format it will be.
+fn blank_sleeve(s: &State, url: &str, p: &Pal, source: Src, size: f32, format: &str) -> El {
+    parts::jacket(p, crate::covers::over(s, parts::blank_face(p, source, size), url, 0.0), size, format)
 }
 
 /// A figure on a sleeve's corner, as on the shelf at Home.
@@ -333,7 +340,8 @@ fn looking_up(s: &State, p: &Pal) -> El {
         .child(parts::record(p, source, d).absolute(x, y))
         .child(waiting.absolute(x, y))
         .child(parts::jacket(p, el().size(size, size).fill(p.raised), size, "").absolute(0.0, 0.0));
-    let chips = [56.0, 56.0, 56.0, 64.0, 64.0].into_iter().fold(row().gap(8.0), |r, w| r.child(bone(p, w, 32.0).radius(16.0)));
+    let chips =
+        [56.0, 56.0, 56.0, 64.0, 64.0].into_iter().fold(row().gap(8.0), |r, w| r.child(bone(p, w, 32.0).radius(16.0).clip_rounded(16.0)));
     let words = col()
         .grow(1.0)
         .min_w(0.0)
@@ -408,7 +416,7 @@ fn single(s: &State, p: &Pal, m: &MediaMetadata, matched: Option<&str>) -> (El, 
     let outcome = outcome(s, video);
     let size = 176.0;
     let length = format::duration(m.duration);
-    let mut art = el().size(size, size).child(blank_sleeve(p, source, size, &spine(s, video)));
+    let mut art = el().size(size, size).child(blank_sleeve(s, &m.thumbnail_url, p, source, size, &spine(s, video)));
     if !length.is_empty() {
         art = art.child(chip_on_art(length.clone()).pin(None, Some(8.0), Some(8.0), None));
     }
@@ -450,8 +458,9 @@ fn short(s: &State, p: &Pal, m: &MediaMetadata, label: &str) -> (El, El) {
     let tint = p.reels();
     let length = format::duration(m.duration);
     let (w, h) = (152.0, 272.0);
-    let mut poster =
+    let poster =
         el().size(w, h).radius(8.0).center().fill(p.card.mix(tint, 0.16)).border(1.0, p.line).child(icon(&icons::REELS, 24.0).color(tint));
+    let mut poster = crate::covers::over(s, poster, &m.thumbnail_url, 8.0);
     if !length.is_empty() {
         poster = poster.child(chip_on_art(length.clone()).pin(None, None, Some(8.0), Some(8.0)));
     }
@@ -505,7 +514,8 @@ fn match_cell(s: &State, p: &Pal, m: Matched) -> El {
     if let Matched::BestGuess(c) = m {
         r = r.child(text(format!("{}%", format::round_half_up(c * 100.0))).font(mono(12.0, 400.0)).color(p.muted));
     }
-    r
+    // Still matching: the cell shimmers like a bone.
+    if m == Matched::Matching { r.clip_rounded(4.0).child(sheen(p)) } else { r }
 }
 
 /// A tick Basic holds: on, in a quieter ink, with no hover.
@@ -569,7 +579,7 @@ fn album(s: &State, p: &Pal, pl: &Playlist, matched: &[Matched], selected: &[boo
         .gap(16.0)
         .center_y()
         .border_sides([0.0, 0.0, 1.0, 0.0], p.line_soft)
-        .child(blank_sleeve(p, source, 64.0, f::AUDIO_FORMATS[fi]))
+        .child(blank_sleeve(s, &pl.thumbnail_url, p, source, 64.0, f::AUDIO_FORMATS[fi]))
         .child(
             col()
                 .grow(1.0)
@@ -901,6 +911,7 @@ fn result_row(s: &State, p: &Pal, r: &SearchResult) -> El {
         .center()
         .fill(p.raised.mix(tint, 0.18))
         .child(el().size(8.0, 8.0).radius(4.0).fill(tint));
+    let art = crate::covers::over(s, art, &r.thumbnail_url, 4.0);
     let mut c = row()
         .key(keys::result(&r.id))
         .w_full()

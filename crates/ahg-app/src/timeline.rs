@@ -45,6 +45,21 @@ pub fn shows(s: &State, part: Part) -> Show {
     }
 }
 
+/// The key of a bone's shimmer band.
+pub const SHEEN: &str = "sheen";
+
+/// The shimmer of something still coming: a band of `stops` (left to right, a look's own
+/// highlight) as wide as its parent, sweeping across it on `motion::SHIMMER`. The parent clips it
+/// (`clip_rounded`), so it shows only on the bone; a look gives only the colours and their shape.
+pub fn sheen(stops: &[(f32, rune::Color)]) -> rune::El {
+    rune::el()
+        .key(SHEEN)
+        .pin(Some(0.0), Some(0.0), Some(0.0), Some(0.0))
+        .linear_gradient(std::f32::consts::FRAC_PI_2, stops)
+        .looping(crate::motion::SHIMMER)
+        .a11y_hidden()
+}
+
 /// Something a deadline wakes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Due {

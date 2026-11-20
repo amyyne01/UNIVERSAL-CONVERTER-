@@ -194,8 +194,8 @@ pub(super) fn icon_button(p: &Pal, key: String, label: &'static str, glyph: &'st
 /// A task's artwork. Round while it is on its orbit, a square tile once it has landed.
 pub(super) fn cover(s: &State, p: &Pal, t: &DownloadTask, size: f32, round: bool) -> El {
     let r = if round { size / 2.0 } else { (size * 0.2).round() };
-    match s.cover(&t.task_id) {
-        Some(img) => el().size(size, size).radius(r).fill(p.raised).pixels_fit(img.pixels(), SurfaceFit::Fill),
+    match s.cover(t) {
+        Some(img) => el().size(size, size).radius(r).fill(p.raised).child(crate::covers::art(s, img, r)),
         None => {
             let glyph = if t.is_audio_only { &crate::icons::MUSIC } else { &crate::icons::VIDEO };
             el().size(size, size).radius(r).fill(p.raised).center().child(icon(glyph, (size * 0.45).round()).color(p.muted))

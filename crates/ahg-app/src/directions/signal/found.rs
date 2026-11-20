@@ -112,13 +112,20 @@ fn head_with(_s: &State, lead: El, words: El, aside: Option<El>, p: &Pal) -> El 
         .child(icon_button(&icons::CLOSE, copy::NOTICE_DISMISS, p.text2, p).key(keys::FOUND_CLOSE).on_press(actions::dismiss_found))
 }
 
-/// A skeleton bone: the shape of something still coming.
+/// A skeleton bone: the shape of something still coming, a graphite sheen crossing it.
 fn bone(w: Option<f32>, h: f32, p: &Pal) -> El {
-    let b = el().h(h).radius(4.0).fill(p.raised);
+    let b = el().h(h).radius(4.0).fill(p.raised).clip_rounded(4.0).child(sheen(p));
     match w {
         Some(w) => b.w(w),
         None => b.w_full(),
     }
+}
+
+/// Signal's shimmer: a narrow lit segment, like a meter's, in graphite.
+fn sheen(p: &Pal) -> El {
+    let lit = if p.dark { p.text.alpha(0.07) } else { Color::WHITE.alpha(0.6) };
+    let off = Color::TRANSPARENT;
+    crate::timeline::sheen(&[(0.0, off), (0.35, off), (0.5, lit), (0.65, off), (1.0, off)])
 }
 
 /// The meter warming up: a run of lit segments, brightest at its head,
@@ -133,10 +140,12 @@ fn sweep(n: usize, from: usize, len: usize, p: &Pal) -> El {
     m
 }
 
-/// The look's placeholder for a missing picture: the source's tint and mark.
-fn cover(source: SourcePlatform, w: f32, h: f32, p: &Pal) -> El {
+/// `url`'s picture, over the look's placeholder (the source's tint and mark) until it is here.
+fn cover(s: &State, url: &str, source: SourcePlatform, w: f32, h: f32, p: &Pal) -> El {
     let c = source_color(p, source);
-    el().size(w, h).radius(4.0).fill(c.alpha(0.14)).center().child(icon(super::parts::platform_icon(source), 16.0).color(c))
+    let placeholder =
+        el().size(w, h).radius(4.0).fill(c.alpha(0.14)).center().child(icon(super::parts::platform_icon(source), 16.0).color(c));
+    crate::covers::over(s, placeholder, url, 4.0)
 }
 
 /// The one accent control on the surface.
@@ -376,8 +385,8 @@ fn media(s: &State, m: &MediaMetadata, p: &Pal) -> (El, El, Option<El>) {
         );
     }
     let top = match short {
-        Some(_) => poster(m, source, p),
-        None => row().w_full().gap(24.0).items_start().child(cover(source, 192.0, 108.0, p)).child(info),
+        Some(_) => poster(s, m, source, p),
+        None => row().w_full().gap(24.0).items_start().child(cover(s, &m.thumbnail_url, source, 192.0, 108.0, p)).child(info),
     };
 
     // The routing: Video or Audio, then the channels each one uses. The ones
@@ -477,16 +486,17 @@ fn media(s: &State, m: &MediaMetadata, p: &Pal) -> (El, El, Option<El>) {
 }
 
 /// A Reels, TikTok or Facebook clip: its own 9:16 shape as a poster, the facts beside it.
-fn poster(m: &MediaMetadata, source: SourcePlatform, p: &Pal) -> El {
+fn poster(s: &State, m: &MediaMetadata, source: SourcePlatform, p: &Pal) -> El {
     let tint = source_color(p, source);
     let length = format::duration(m.duration);
-    let mut frame = col()
+    let frame = col()
         .size(152.0, 270.0)
         .radius(8.0)
         .fill(tint.alpha(0.14))
         .border(1.0, p.line)
         .center()
         .child(icon(super::parts::platform_icon(source), 28.0).color(tint));
+    let mut frame = crate::covers::over(s, frame, &m.thumbnail_url, 8.0);
     if !length.is_empty() {
         frame =
             frame.child(el().h(20.0).px(6.0).center().radius(4.0).fill(p.media_scrim).pin(None, None, Some(8.0), Some(8.0)).child(label(
@@ -544,7 +554,8 @@ fn match_cell(m: Matched, p: &Pal) -> El {
     if let Some(x) = extra {
         r = r.child(label(x, mono(12.0, 400.0), p.muted));
     }
-    r
+    // Still matching: the cell shimmers like a bone.
+    if m == Matched::Matching { r.clip_rounded(4.0).child(sheen(p)) } else { r }
 }
 
 fn tick(on: bool, can: bool, p: &Pal) -> El {
@@ -638,7 +649,7 @@ fn album(s: &State, pl: &Playlist, matched: &[Matched], selected: &[bool], p: &P
         .gap(16.0)
         .center_y()
         .border_sides([0.0, 0.0, 1.0, 0.0], p.line)
-        .child(cover(source, 64.0, 64.0, p))
+        .child(cover(s, &pl.thumbnail_url, source, 64.0, 64.0, p))
         .child(
             col()
                 .grow(1.0)
@@ -878,7 +889,7 @@ fn band_body(s: &State, at: usize, source: SourcePlatform, name: &str, band: &Ba
             let mut c = c;
             let open = s.expanded.get(at).copied().unwrap_or(false);
             for r in rs.iter().take(if open { rs.len() } else { SHOWN }) {
-                c = c.child(result_row(r, s.picked.contains(&r.id), p));
+                c = c.child(result_row(s, r, s.picked.contains(&r.id), p));
             }
             if rs.len() > SHOWN && !open {
                 c = c.child(
@@ -918,7 +929,7 @@ fn art_w(source: SourcePlatform) -> f32 {
 }
 
 /// A result: its tick, its picture, its two lines. A ticked row sits on the raised surface.
-fn result_row(r: &SearchResult, on: bool, p: &Pal) -> El {
+fn result_row(s: &State, r: &SearchResult, on: bool, p: &Pal) -> El {
     let length = format::duration(r.duration);
     let mut sub = Line::new().add(&r.uploader, p.text2);
     if !length.is_empty() {
@@ -952,7 +963,7 @@ fn result_row(r: &SearchResult, on: bool, p: &Pal) -> El {
         .on_press(move |s: &mut State| actions::toggle_result(s, &id))
         .pl(12.0)
         .child(tick)
-        .child(cover(r.source, art_w(r.source), 36.0, p))
+        .child(cover(s, &r.thumbnail_url, r.source, art_w(r.source), 36.0, p))
         .child(
             col()
                 .grow(1.0)

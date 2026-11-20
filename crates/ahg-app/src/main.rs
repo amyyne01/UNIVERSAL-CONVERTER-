@@ -16,6 +16,7 @@ mod directions;
 mod actions;
 #[cfg(test)]
 mod behaviour_tests;
+mod covers;
 #[allow(dead_code)]
 mod format;
 mod gate;

@@ -404,7 +404,7 @@ fn recent(s: &State, p: &Pal, done: &[&DownloadTask]) -> El {
 
 /// A cover that fills its tile, or the source's colour as a flat tint when there is none.
 fn cover_fill(s: &State, p: &Pal, t: &DownloadTask) -> El {
-    match s.cover(&t.task_id) {
+    match s.cover(t) {
         Some(_) => cover(s, p, t, 0.0, false).w_full().h_full().radius(0.0),
         None => el().w_full().h_full().fill(mix(model::source(p, t.source).1, p.card, 0.6)),
     }

@@ -2,7 +2,7 @@
 //! the small pieces drawn the same way everywhere: the sleeve with its spine
 //! label, keycaps, buttons and rich text runs.
 use ahg_engine::types::{DownloadStatus as St, DownloadTask, ErrorCode, SourcePlatform};
-use rune::{Color, El, Icon, Span, SurfaceFit, el, icon, rich, row, text};
+use rune::{Color, El, Icon, Span, el, icon, rich, row, text};
 use serde_json::Value;
 
 use super::theme::{self, Pal, mono, sans};
@@ -347,8 +347,8 @@ pub fn sleeve(s: &State, p: &Pal, t: &DownloadTask, size: f32, disc: Disc, faded
         Disc::Out(_) => holder = holder.child(record(p, t.source, size * 0.94).absolute(size * 0.03, size * 0.03)),
         Disc::None => {}
     }
-    let face = match s.cover(&t.task_id) {
-        Some(img) => el().size(size, size).pixels_fit(img.pixels(), SurfaceFit::Fill),
+    let face = match s.cover(t) {
+        Some(img) => el().size(size, size).child(crate::covers::art(s, img, 0.0)),
         None => blank_face(p, t.source, size),
     };
     let mut cover = jacket(p, face, size, &t.format).absolute(0.0, 0.0);

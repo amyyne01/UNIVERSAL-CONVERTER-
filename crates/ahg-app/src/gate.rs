@@ -269,6 +269,8 @@ pub struct State {
     pub stats: Option<DownloadStats>,
     /// Cover art by task id. A task without one gets the direction's own placeholder.
     pub covers: HashMap<String, Image>,
+    /// Cover art fetched in live mode, by URL (`covers`).
+    pub thumbs: crate::covers::Covers,
     /// The planet logo (256 px), for a direction to draw at any size.
     pub logo: Option<Image>,
     /// What is typed into the paste box on Home: a copy of `field`, written
@@ -344,9 +346,9 @@ pub struct State {
 }
 
 impl State {
-    /// The cover of a task, once it is decoded.
-    pub fn cover(&self, task_id: &str) -> Option<&Image> {
-        self.covers.get(task_id).filter(|image| image.is_ready())
+    /// The cover of a task, once it is decoded: a sample's by its id, else the one fetched for its thumbnail.
+    pub fn cover(&self, t: &DownloadTask) -> Option<&Image> {
+        self.covers.get(&t.task_id).filter(|image| image.is_ready()).or_else(|| crate::covers::get(self, &t.thumbnail_url))
     }
 
     /// Light, Dark or System, from `settings["theme"]`.
@@ -396,6 +398,7 @@ impl State {
             tasks: sample::everything(),
             stats: Some(sample::stats()),
             covers: HashMap::new(),
+            thumbs: Default::default(),
             logo: None,
             input: String::new(),
             choice: Choice::from_settings(&settings),

@@ -42,7 +42,7 @@ mod reach;
 mod stream;
 
 use ahg_engine::types::{DownloadStatus as St, DownloadTask, SourcePlatform};
-use rune::{Color, Cursor, Cx, El, SurfaceFit, col, el, icon, row, spacer, text_input};
+use rune::{Color, Cursor, Cx, El, col, el, icon, row, spacer, text_input};
 
 use crate::actions;
 use crate::copy;
@@ -307,8 +307,8 @@ pub(crate) fn keycap(key: &str, p: &Pal) -> El {
 /// A task's cover, or a flat tint of its source with its mark at the one icon size.
 pub(crate) fn cover(s: &State, t: &DownloadTask, size: f32, p: &Pal) -> El {
     let base = el().size(size, size).radius(4.0);
-    match s.cover(&t.task_id) {
-        Some(img) => base.fill(p.raised).pixels_fit(img.pixels(), SurfaceFit::Fill),
+    match s.cover(t) {
+        Some(img) => base.fill(p.raised).child(crate::covers::art(s, img, 4.0)),
         None => {
             let c = source_color(p, t.source);
             base.fill(c.alpha(0.14)).center().child(icon(platform_icon(t.source), 16.0).color(c))
