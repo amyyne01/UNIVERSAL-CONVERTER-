@@ -19,8 +19,9 @@ const IN_FLIGHT: usize = 3;
 const KEPT: usize = 64;
 /// Decoded bytes kept (pixels, 4 bytes each); pictures on show are never evicted for it.
 const KEPT_BYTES: u64 = 192 * 1024 * 1024;
-/// The largest side taken (LESSONS 24e: the byte cap bounds the file, not its pixels).
-const MAX_SIDE: u32 = 4096;
+/// The largest side taken (LESSONS 24e: the byte cap bounds the file, not its pixels). A thumbnail
+/// needs far less; 64 kept at 1024 x 1024 x 4 bytes bounds even the pictures on show to 256 MB.
+const MAX_SIDE: u32 = 1024;
 
 /// What is fetched, kept and refused, by URL.
 #[derive(Default)]
@@ -129,15 +130,25 @@ fn evict(c: &mut Covers) {
 }
 
 /// Decodes fetched bytes on the calling (worker) thread: `None` for a format other than PNG,
-/// JPEG, GIF or WebP, a side above [`MAX_SIDE`], or a decode that fails.
+/// JPEG or WebP (a GIF or any animation is refused), a side above [`MAX_SIDE`], or a decode that fails.
 pub fn decode(cache: &ImageCache, bytes: Vec<u8>) -> Option<Image> {
     let (w, h) = size(&bytes)?;
     if w == 0 || h == 0 || w > MAX_SIDE || h > MAX_SIDE {
         return None;
     }
+    if animated(&bytes) {
+        return None;
+    }
     let image = cache.load(bytes);
     image.wait().ok()?;
     Some(image)
+}
+
+/// A GIF, an animated WebP (`ANIM`) or an APNG (`acTL`): every frame is decoded and kept, so the
+/// pixel budget would be under-counted. Covers are stills; these are refused.
+fn animated(b: &[u8]) -> bool {
+    let has = |tag: &[u8; 4]| b.windows(4).any(|w| w == tag);
+    b.starts_with(b"GIF8") || (b.starts_with(b"RIFF") && has(b"ANIM")) || (b.starts_with(b"\x89PNG") && has(b"acTL"))
 }
 
 /// Width and height from a PNG, GIF, WebP or JPEG header; `None` for anything else.
@@ -258,6 +269,10 @@ pub mod tests {
         assert_eq!(size(&jpeg[..10]), None, "a cut header");
         let cache = ImageCache::new(std::sync::Arc::new(|| {}));
         assert!(decode(&cache, png(MAX_SIDE + 1, 1)).is_none(), "too wide");
+        assert!(decode(&cache, gif.clone()).is_none(), "a GIF is animated");
+        assert!(animated(&[b"RIFF\0\0\0\0WEBPVP8X\0\0\0\0\0\0\0\0ANIM".as_slice()].concat()), "animated WebP");
+        assert!(animated(&[png(2, 2), b"acTL".to_vec()].concat()), "APNG");
+        assert!(!animated(&png(2, 2)), "a still PNG");
         assert!(decode(&cache, b"\x89PNG\r\n\x1a\nbroken".to_vec()).is_none(), "undecodable");
         let ok = decode(&cache, png(4, 4)).expect("a small PNG decodes");
         assert_eq!(ok.size(), Some([4, 4]));
