@@ -139,7 +139,7 @@ fn field(p: &Pal, edit: &TextEdit, open: bool) -> El {
 
 /// Home once something was looked up: the field opens downward into what it found, one
 /// piece, so the answer reads as the field's own. A track list takes the height left and
-/// scrolls inside; a notice rises at the bottom right.
+/// scrolls inside.
 fn found_page(s: &State, p: &Pal, in_flight: usize, body: El) -> El {
     let fills = found::fills(s);
     let mut inner = col().w_full().padding(24.0).border_sides([1.0, 0.0, 0.0, 0.0], p.line).child(body);
@@ -154,11 +154,7 @@ fn found_page(s: &State, p: &Pal, in_flight: usize, body: El) -> El {
     if !fills {
         page = page.child(headline(p, in_flight));
     }
-    page = page.child(unit.child(inner));
-    if let Some(n) = found::notice(s, p) {
-        page = page.child(n.pin(None, None, Some(40.0), Some(24.0)));
-    }
-    page
+    page.child(unit.child(inner))
 }
 
 fn status(s: &State, p: &Pal) -> El {

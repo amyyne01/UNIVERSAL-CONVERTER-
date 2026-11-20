@@ -250,8 +250,6 @@ pub struct State {
     /// Basic or Premium. Premium unless `--plan basic` is given: on Basic the
     /// presets draw the locks, limits and upgrade prompts (`ahg_engine::tier`).
     pub plan: Plan,
-    /// A one-line notice on show, such as a Basic limit that was just hit.
-    pub notice: Option<String>,
     /// What the field found; `Found::Nothing` in every scene but `search`, `playlist` and `media`.
     pub found: Found,
     /// The sidebar is pinned open (the presets that have one).
@@ -317,7 +315,7 @@ pub struct State {
     pub overlay: Overlay,
     /// The two-step confirm that is armed.
     pub confirm: Option<Confirm>,
-    /// The notice on show. Derived from `notice` while that exists.
+    /// The notice on show, drawn once by the shared toast (`overlays.rs`).
     pub notices: Vec<Notice>,
     pub engine: EngineStatus,
     pub update: UpdateStatus,
@@ -362,7 +360,7 @@ impl State {
     }
 
     /// Brings the new fields in line with the old ones the presets still
-    /// write (`nav_pinned`, `picker`, `notice`, `palette`). The old field
+    /// write (`nav_pinned`, `picker`, `palette`). The old field
     /// wins. Idempotent; called at the end of `on_key` and of every action.
     pub fn sync(&mut self) {
         let _ = self.rings.sync(&self.tasks, self.now);
@@ -373,11 +371,6 @@ impl State {
             self.overlay = Overlay::Picker;
         } else if self.overlay == Overlay::Picker {
             self.overlay = Overlay::None;
-        }
-        match &self.notice {
-            None => self.notices.clear(),
-            Some(text) if self.notices.last().map(|n| &n.text) != Some(text) => self.notices = vec![Notice::info(text.clone())],
-            Some(_) => {}
         }
     }
 
@@ -394,7 +387,6 @@ impl State {
             nav_open: false,
             ring: false,
             plan: Plan::Premium,
-            notice: None,
             found: Found::Nothing,
             nav_pinned: false,
             picker: false,
@@ -605,12 +597,6 @@ pub struct Notice {
     pub action: Option<Act>,
     /// When it goes by itself, in `Tx::clock` seconds; set by the motion step.
     pub until: Option<f64>,
-}
-
-impl Notice {
-    pub fn info(text: String) -> Notice {
-        Notice { tone: Tone::Info, text, action: None, until: None }
-    }
 }
 
 /// The download engine's state, as Settings shows it.
@@ -851,8 +837,8 @@ pub const SCENES: &[(&str, fn(&mut State))] = &[
         s.plan = Plan::Basic;
         s.set_field(sample::QUERY);
         s.found = Found::Search { query: sample::QUERY.into(), bands: sample::search().map(Band::Results) };
-        s.notice = Some(crate::copy::found::LIMIT_BATCH.into());
-        s.sync();
+        actions::pick_all_results(s);
+        actions::download_found(s);
     }),
     ("media", |s| {
         s.set_field("https://www.youtube.com/watch?v=example");

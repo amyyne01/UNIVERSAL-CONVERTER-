@@ -657,12 +657,7 @@ fn found_sheet(s: &State, p: &Pal, fit: Fit, under: El, answer: El) -> El {
     } else {
         sheet.child(answer).pin(Some(side), None, Some(side), Some(0.0))
     };
-    let mut c = col().w_full().grow(1.0).min_h(0.0).child(under.opacity(0.24).inert()).child(sheet);
-    // A notice rises above the bar's right end, over the sheet.
-    if let Some(n) = found::notice(s, p) {
-        c = c.child(n.pin(None, None, Some(side + 16.0), Some(16.0)));
-    }
-    c
+    col().w_full().grow(1.0).min_h(0.0).child(under.opacity(0.24).inert()).child(sheet)
 }
 
 // ── The transport ──────────────────────────────────────────────────────────

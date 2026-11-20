@@ -62,9 +62,6 @@ pub(crate) fn view(s: &State, p: &Pal) -> Option<El> {
         .clip_rounded(12.0)
         .role("region")
         .child(head);
-    if let Some(words) = &s.notice {
-        c = c.child(notice(p, words));
-    }
     c = c.child(body.shrink().min_h(0.0).scroll(ScrollSpec { stick_bottom: false }));
     if let Some(foot) = foot {
         c = c.child(foot);
@@ -120,26 +117,6 @@ fn foot(p: &Pal, left: El, right: El) -> El {
 
 fn download(p: &Pal, words: &str) -> El {
     primary(p, keys::FOUND_DOWNLOAD, Some(&icons::DOWNLOAD), words).h(40.0).px(16.0).on_press(actions::download_found)
-}
-
-/// A Basic limit just met, under the header, with the way to lift it. Raised, not red.
-fn notice(p: &Pal, words: &str) -> El {
-    row()
-        .key(keys::NOTICE)
-        .w_full()
-        .min_h(48.0)
-        .pl(20.0)
-        .pr(12.0)
-        .py(8.0)
-        .gap(12.0)
-        .center_y()
-        .fill(p.raised)
-        .border_sides([0.0, 0.0, 1.0, 0.0], p.line_soft)
-        .role("status")
-        .child(lock(p.text2))
-        .child(text(words).font(sans(13.0, 400.0)).color(p.text).wrap().grow(1.0).min_w(0.0))
-        .child(ghost(p, keys::NOTICE_ACTION, None, f::SEE_PLANS, p.text).on_press_tx(actions::notice_action))
-        .child(icon_button(p, keys::NOTICE_DISMISS.into(), &icons::CLOSE, copy::NOTICE_DISMISS, p.text2).on_press(actions::dismiss_notice))
 }
 
 /// A skeleton block: the shape of something still coming.

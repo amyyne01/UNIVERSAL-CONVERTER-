@@ -109,6 +109,8 @@ fn the_found_step_chooses_and_downloads() {
         let before = rt.state.tasks.len();
         click(rt, look, keys::FOUND_DOWNLOAD);
         assert_eq!(rt.state.tasks.len(), before + 1, "{look}: `{}` queued the choice", keys::FOUND_DOWNLOAD);
+        assert!(matches!(rt.state.found, Found::Nothing), "{look}: an added download closes the step");
+        scene(rt, "media");
         click(rt, look, keys::FOUND_CLOSE);
         assert!(matches!(rt.state.found, Found::Nothing), "{look}: `{}`", keys::FOUND_CLOSE);
     });

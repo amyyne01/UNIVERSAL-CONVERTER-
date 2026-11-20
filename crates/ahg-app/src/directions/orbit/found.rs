@@ -201,34 +201,6 @@ fn basic_line(p: &Pal, words: &str) -> El {
         .child(txt(f::SEE_PLANS, SMALL_M, p.text).key(keys::FOUND_SEE_PLANS).role("button").focusable(true).cursor(rune::Cursor::Pointer))
 }
 
-/// A one-line notice (a Basic limit just hit): the lock, the sentence, See plans and Dismiss.
-/// Each preset places it; it is drawn on the page's deepest ink so it sits above the surface.
-pub(crate) fn notice(s: &State, p: &Pal) -> Option<El> {
-    let words = s.notice.as_ref()?;
-    Some(
-        row()
-            .key(keys::NOTICE)
-            .w(600.0)
-            .min_h(48.0)
-            .pl(16.0)
-            .pr(8.0)
-            .py(8.0)
-            .gap(12.0)
-            .center_y()
-            .radius(12.0)
-            .fill(p.deep)
-            .border(1.0, p.track)
-            .shadow(8.0, 24.0, rune::Color::BLACK.alpha(if p.dark { 0.4 } else { 0.1 }))
-            .role("status")
-            .child(icon(&icons::LOCK_ORBIT, 16.0).color(p.text2))
-            .child(txt(words.clone(), SMALL, p.text).wrap().grow(1.0).min_w(0.0))
-            .child(button(p, keys::NOTICE_ACTION, f::SEE_PLANS, None, Tone::Ghost).on_press_tx(actions::notice_action))
-            .child(
-                icon_button(p, keys::NOTICE_DISMISS.into(), f::CLIPBOARD_DISMISS, &icons::CLOSE, p.text2).on_press(actions::dismiss_notice),
-            ),
-    )
-}
-
 /// A drop-down showing its value, its name over it.
 fn select(p: &Pal, label: &str, value: &str, glyph: Option<&'static Icon>, at: impl FnOnce(El) -> El) -> El {
     let mut b = row()

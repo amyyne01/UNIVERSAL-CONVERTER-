@@ -109,3 +109,82 @@ fn walk_fails_on_a_missing_key() {
     assert!(!PRESETS.is_empty());
     click(&mut runtime(0, true), PRESETS[0].0, "no-such-key");
 }
+
+// ── Notices after the found step's Download
+
+/// The scene's set-up, by name.
+fn scene(name: &str) -> fn(&mut State) {
+    crate::gate::SCENES.iter().find(|(n, _)| *n == name).unwrap_or_else(|| panic!("no scene {name}")).1
+}
+
+/// `text` drawn once, and the only notice button the shared toast's, labelled `label`.
+fn one_notice(rt: &Runtime<State>, at: &str, text: &str, label: &str) {
+    let shown: Vec<_> = rt.elements().into_iter().filter(|e| !e.exiting).collect();
+    let texts = shown.iter().filter(|e| e.text.as_deref() == Some(text)).count();
+    assert_eq!(texts, 1, "{at}: `{text}` is drawn {texts} times");
+    let buttons: Vec<Option<String>> =
+        shown.iter().filter(|e| e.key.as_deref().is_some_and(|k| k.starts_with(keys::NOTICE_ACTION))).map(|e| e.label.clone()).collect();
+    assert_eq!(buttons, vec![Some(label.to_owned())], "{at}: the notice's buttons");
+}
+
+/// Runs `check` on every preset, dark and light, each palette, and reports every failure together.
+fn every_look(check: impl Fn(&mut Runtime<State>, &str)) {
+    assert!(!PRESETS.is_empty());
+    let palettes = ahg_engine::config::PALETTE_IDS.len();
+    let mut failed = Vec::new();
+    for (i, (name, ..)) in PRESETS.iter().enumerate() {
+        for dark in [true, false] {
+            let mut rt = runtime(i, dark);
+            for palette in 0..=palettes {
+                let at = format!("preset {name}, {}, palette {palette}", if dark { "dark" } else { "light" });
+                rt.update(move |s, tx| actions::set_palette(s, palette, tx));
+                settle(&mut rt);
+                if let Err(e) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| check(&mut rt, &at))) {
+                    failed.push(e.downcast_ref::<String>().cloned().unwrap_or_else(|| format!("{at}: panicked")));
+                }
+                rt.update(|s, _| actions::dismiss_found(s));
+                settle(&mut rt);
+            }
+        }
+    }
+    assert!(failed.is_empty(), "{} failures:\n{}", failed.len(), failed.join("\n"));
+}
+
+#[test]
+fn a_download_says_added_once_in_the_shared_toast_and_closes_the_step_in_every_preset() {
+    every_look(|rt, at| {
+        rt.update(|s, _| {
+            scene("media")(s);
+            s.sync();
+        });
+        settle(rt);
+        click(rt, at, keys::FOUND_DOWNLOAD);
+        one_notice(rt, at, crate::copy::found::TOAST_ADDED, crate::gate::Act::ViewDownloads.label());
+        assert!(matches!(rt.state.found, crate::gate::Found::Nothing), "{at}: the found step closes");
+        assert!(rt.find(keys::FOUND).is_none(), "{at}: the found card is gone");
+        assert_eq!(rt.state.field.text, "", "{at}: the field is empty");
+    });
+}
+
+#[test]
+fn a_basic_limit_keeps_its_tone_and_see_plans_once_in_every_preset() {
+    every_look(|rt, at| {
+        // Every result ticked on Basic, then Download.
+        rt.update(|s, _| {
+            scene("search-limit")(s);
+            actions::dismiss_notice(s);
+            actions::pick_all_results(s);
+        });
+        settle(rt);
+        assert!(rt.state.picked.len() > 5, "{at}: more than five ticked");
+        click(rt, at, keys::FOUND_DOWNLOAD);
+        let last = rt.state.notices.last().cloned();
+        assert_eq!(
+            last.map(|n| (n.tone, n.action)),
+            Some((crate::gate::Tone::Premium, Some(crate::gate::Act::SeePlans))),
+            "{at}: the limit is a premium notice"
+        );
+        one_notice(rt, at, crate::copy::found::LIMIT_BATCH, crate::gate::Act::SeePlans.label());
+        assert!(matches!(rt.state.found, crate::gate::Found::Search { .. }), "{at}: a refused add keeps the step");
+    });
+}

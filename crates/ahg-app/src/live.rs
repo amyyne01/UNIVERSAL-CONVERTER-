@@ -14,6 +14,7 @@ use std::thread;
 use std::time::Instant;
 
 use ahg_engine::api::{build_request, retry_request};
+use ahg_engine::config::PALETTE_IDS;
 use ahg_engine::queue::{TaskInit, create_task};
 use ahg_engine::text::js_len;
 use ahg_engine::tier::Plan;
@@ -54,8 +55,8 @@ pub struct Handle {
     stop: Option<Sender<()>>,
     /// Bumped by every cancel; a lookup answer from before it is dropped (LESSONS 17b).
     generation: u64,
-    /// The preset and the pin as last saved; `None` until `settings-rust.json` was read.
-    saved: Option<(usize, bool)>,
+    /// The preset, the pin and the own-palette choice as last saved; `None` until `settings-rust.json` was read.
+    saved: Option<(usize, bool, bool)>,
     /// The causes the jobs named since the last poll, for the cause table.
     causes: Vec<Change>,
 }
@@ -173,7 +174,7 @@ pub fn attach(s: &mut State, folder: &Path, wake: Waker, make: impl FnOnce(Paths
     s.selected.clear();
     s.picked.clear();
     s.found = Found::Nothing;
-    s.notice = None;
+    s.notices.clear();
     s.plan = PLAN;
     s.loading = Loading::Booting;
     s.settings = core.settings();
@@ -286,15 +287,19 @@ fn put<T: PartialEq>(slot: &mut T, value: T) -> bool {
 fn own(core: &Core) -> Job {
     let preset = core.own_setting("preset").and_then(|v| v.as_u64()).map(|p| p as usize).filter(|p| *p < PRESETS.len());
     let pinned = core.own_setting("navPinned").and_then(|v| v.as_bool());
+    let own_palette = core.own_setting("ownPalette").and_then(|v| v.as_bool()).unwrap_or(false);
     let hold = core.hold_unconfirmed();
     Box::new(move |s, tx| {
         if let Some(preset) = preset {
             actions::set_preset(s, preset, tx);
         }
         s.nav_pinned = pinned.unwrap_or(s.nav_pinned);
+        // Electron's `palette` names 1 to 7; the look's own mood (0) is only in `settings-rust.json`.
+        let saved = s.settings.get("palette").and_then(Value::as_str);
+        s.palette = if own_palette { 0 } else { PALETTE_IDS.iter().position(|id| Some(*id) == saved).map_or(0, |at| at + 1) };
         s.own.hold_unconfirmed = hold;
         s.sync();
-        let now = (s.own.preset, s.own.nav_pinned);
+        let now = (s.own.preset, s.own.nav_pinned, s.own.own_palette);
         if let Some(live) = s.live.as_mut() {
             live.saved = Some(now);
         }
@@ -401,14 +406,15 @@ fn mark(s: &mut State, change: Change) {
     }
 }
 
-/// K52: the preset and the pin, written to `settings-rust.json` when they change.
+/// K52: the preset, the pin and the own-palette choice, written to `settings-rust.json` when they change.
 fn save_own(s: &mut State) {
-    let now = (s.own.preset, s.own.nav_pinned);
+    let now = (s.own.preset, s.own.nav_pinned, s.own.own_palette);
     let Some(live) = s.live.as_mut().filter(|l| l.saved.is_some_and(|saved| saved != now)) else { return };
     live.saved = Some(now);
     command(s, move |core| {
         core.set_own_setting("preset", json!(now.0));
         core.set_own_setting("navPinned", json!(now.1));
+        core.set_own_setting("ownPalette", json!(now.2));
         None
     });
 }
@@ -750,6 +756,65 @@ mod tests {
         rt.state.live = None;
     }
 
+    /// Whether `words` is drawn somewhere.
+    fn drawn(rt: &Runtime<State>, words: &str) -> bool {
+        rt.elements().iter().any(|e| !e.exiting && e.text.as_deref().is_some_and(|t| t.contains(words)))
+    }
+
+    /// The owner's report (2026-11-18): after Download the new download shows on Home (its
+    /// row's `Starting`, or the classic looks' `1 in flight`, CONTENT.md 2.1) and its row says
+    /// `Starting` on Downloads, before yt-dlp's first percent, in every preset.
+    #[test]
+    fn a_new_download_shows_its_row_starting_before_the_first_percent_in_every_preset() {
+        let mut failed = Vec::new();
+        for (i, (name, ..)) in crate::gate::PRESETS.iter().enumerate() {
+            let dir = scratch(&format!("start-{i}"));
+            let media = dir.join("Downloads").join("a.mp3");
+            fs::write(&media, vec![0u8; 2048]).unwrap();
+            // A wide FetchingInfo window, so a busy machine (the whole suite in parallel) still sees it.
+            let script = format!("sleep 4000\n{P25}\nsleep 300\nout [FILEPATH]{}\nexit 0\n", media.display());
+            let mut rt = live(&dir, &format!("out {RECORD}\nexit 0\n"), &script);
+            rt.update(move |s, tx| actions::set_preset(s, i, tx));
+            rt.update(|s, tx| {
+                s.set_field(LINK);
+                actions::submit(s, tx);
+            });
+            until(&mut rt, "the lookup's answer", |s| matches!(&s.found, Found::Media(_)));
+            let pressed = Instant::now();
+            rt.update(|s, _| actions::download_found(s));
+            until(&mut rt, "the new row", |s| !s.tasks.is_empty());
+            let row = pressed.elapsed().as_secs_f64();
+            until(&mut rt, "the row starting", |s| s.tasks[0].progress.status == St::FetchingInfo);
+            let starting = pressed.elapsed().as_secs_f64();
+            for _ in 0..20 {
+                rt.frame(1.0 / 60.0);
+            }
+            let id = rt.state.tasks[0].task_id.clone();
+            let still = rt.state.tasks[0].progress.status == St::FetchingInfo;
+            let ring = rt.state.rings.pass(&id);
+            let home = drawn(&rt, copy::STATE_STARTING) || drawn(&rt, copy::HOME_IN_FLIGHT_SUFFIX.trim());
+            rt.update(|s, _| actions::go(s, crate::gate::Nav::Downloads));
+            for _ in 0..20 {
+                rt.frame(1.0 / 60.0);
+            }
+            let downloads = drawn(&rt, copy::STATE_STARTING);
+            until(&mut rt, "the first percent", |s| s.tasks[0].progress.percent > 0.0);
+            let percent = pressed.elapsed().as_secs_f64();
+            eprintln!(
+                "preset {name}: row {:.0} ms, FetchingInfo {:.0} ms, first percent {:.0} ms after Download",
+                row * 1e3,
+                starting * 1e3,
+                percent * 1e3
+            );
+            if !(still && ring == Some(Pass::OnThePad) && home && downloads) {
+                failed
+                    .push(format!("preset {name}: still starting {still}, ring {ring:?}, shown on Home {home}, on Downloads {downloads}"));
+            }
+            rt.state.live = None;
+        }
+        assert!(failed.is_empty(), "{}", failed.join("\n"));
+    }
+
     #[test]
     fn poll_is_true_only_when_state_changed() {
         // Sample mode: nothing to drain.
@@ -833,8 +898,46 @@ mod tests {
         rt.update(|s, _| actions::toggle_pin(s));
         let file = dir.join("settings-rust.json");
         let read = || serde_json::from_str::<Value>(&fs::read_to_string(&file).unwrap_or_default()).unwrap_or_default();
-        until(&mut rt, "the pin written back", |_| read()["navPinned"] == json!(false));
-        assert_eq!(read(), json!({ "preset": 4, "navPinned": false, "holdUnconfirmed": true }), "other keys are kept");
+        // The three keys are written one after the other: wait for the last.
+        until(&mut rt, "the pin written back", |_| read()["navPinned"] == json!(false) && read().get("ownPalette").is_some());
+        assert_eq!(read(), json!({ "preset": 4, "navPinned": false, "ownPalette": false, "holdUnconfirmed": true }), "other keys are kept");
+        rt.state.live = None;
+    }
+
+    /// The owner's report (2026-11-20): after a restart every preset showed palette 0 while
+    /// Settings named the saved palette. Launch restores it, or the look's own mood when that was chosen.
+    #[test]
+    fn the_saved_palette_comes_back_at_launch_in_every_preset() {
+        let ids = ahg_engine::config::PALETTE_IDS;
+        let mut failed = Vec::new();
+        for (i, (name, ..)) in PRESETS.iter().enumerate() {
+            let at = (i + 2) % ids.len();
+            for own_palette in [false, true] {
+                let dir = scratch(&format!("palette-{i}-{own_palette}"));
+                fs::write(dir.join("config.json"), json!({ "palette": ids[at] }).to_string()).unwrap();
+                fs::write(dir.join("settings-rust.json"), json!({ "preset": i, "ownPalette": own_palette }).to_string()).unwrap();
+                let mut rt = live(&dir, "exit 0\n", "exit 0\n");
+                until(&mut rt, "the saved preset", |s| crate::gate::preset(s) == i);
+                let want = if own_palette { 0 } else { at + 1 };
+                if rt.state.palette != want {
+                    failed.push(format!("preset {name}, ownPalette {own_palette}: palette {} (want {want})", rt.state.palette));
+                }
+                rt.state.live = None;
+            }
+        }
+        assert!(failed.is_empty(), "{}", failed.join("\n"));
+    }
+
+    #[test]
+    fn choosing_the_look_s_own_palette_is_kept_in_settings_rust_json() {
+        let dir = scratch("own-palette");
+        let mut rt = live(&dir, "exit 0\n", "exit 0\n");
+        let file = dir.join("settings-rust.json");
+        let read = || serde_json::from_str::<Value>(&fs::read_to_string(&file).unwrap_or_default()).unwrap_or_default();
+        rt.update(|s, tx| actions::set_palette(s, 0, tx));
+        until(&mut rt, "ownPalette written", |_| read()["ownPalette"] == json!(true));
+        rt.update(|s, tx| actions::set_palette(s, 3, tx));
+        until(&mut rt, "ownPalette cleared", |_| read()["ownPalette"] == json!(false));
         rt.state.live = None;
     }
 

@@ -427,7 +427,7 @@ pub fn dismiss_found(s: &mut State) {
     s.found = Found::Nothing;
     live::cancel_lookups(s);
     s.set_field("");
-    s.notice = None;
+    s.notices.clear();
     s.sync();
 }
 
@@ -571,15 +571,22 @@ pub fn pick_all_results(s: &mut State) {
     s.sync();
 }
 
-/// The found step's Download.
+/// The found step's Download. Once something is added the step closes and the field empties,
+/// so the new row shows where the user looks (owner, 2026-11-18; Electron keeps the card).
 pub fn download_found(s: &mut State) {
     let mut found = std::mem::replace(&mut s.found, Found::Nothing);
-    download(s, &mut found);
-    s.found = found;
+    if download(s, &mut found) {
+        let added = std::mem::take(&mut s.notices);
+        dismiss_found(s);
+        s.notices = added;
+    } else {
+        s.found = found;
+    }
     s.sync();
 }
 
-fn download(s: &mut State, found: &mut Found) {
+/// Queues what is chosen in `found`; true when it said "Added to downloads".
+fn download(s: &mut State, found: &mut Found) -> bool {
     let audio_or = |s: &State, source| AUDIO_ONLY_SOURCES.contains(&source) || !s.choice.video;
     match found {
         Found::Media(m) => {
@@ -595,6 +602,7 @@ fn download(s: &mut State, found: &mut Found) {
             };
             queue(s, init);
             notify(s, Tone::Info, fc::TOAST_ADDED.into(), Some(Act::ViewDownloads));
+            true
         }
         Found::Search { bands, .. } => {
             let rows: Vec<_> = bands
@@ -605,7 +613,8 @@ fn download(s: &mut State, found: &mut Found) {
                 .collect();
             if s.plan == Plan::Basic && rows.len() > BASIC_LIMITS.max_batch_links as usize {
                 // The ticks stay so the user can trim and send again.
-                return premium(s, fc::LIMIT_BATCH);
+                premium(s, fc::LIMIT_BATCH);
+                return false;
             }
             for r in &rows {
                 let init = TaskInit {
@@ -628,6 +637,7 @@ fn download(s: &mut State, found: &mut Found) {
                     Some(Act::ViewDownloads),
                 );
             }
+            !rows.is_empty()
         }
         Found::Playlist { playlist, selected, .. } => {
             let ticked: Vec<usize> = selected.iter().enumerate().filter(|(_, t)| **t).map(|(i, _)| i).collect();
@@ -669,8 +679,9 @@ fn download(s: &mut State, found: &mut Found) {
                 queue(s, init);
             }
             selected.iter_mut().for_each(|t| *t = false);
+            false
         }
-        _ => {}
+        _ => false,
     }
 }
 
@@ -891,13 +902,12 @@ pub fn notice_action(s: &mut State, tx: &mut Tx) {
 }
 
 pub fn dismiss_notice(s: &mut State) {
-    s.notice = None;
+    s.notices.clear();
     s.sync();
 }
 
-/// Shows one notice, the old `notice` field and the new list together.
+/// Shows one notice, in place of any on show.
 pub(crate) fn notify(s: &mut State, tone: Tone, text: String, action: Option<Act>) {
-    s.notice = Some(text.clone());
     s.notices = vec![Notice { tone, text, action, until: None }];
 }
 
@@ -1420,20 +1430,16 @@ mod tests {
         let mut s = state();
         s.picker = true;
         s.nav_pinned = true;
-        s.notice = Some("old".into());
         s.sync();
         assert_eq!(s.overlay, Overlay::Picker);
         assert!(s.own.nav_pinned);
-        assert_eq!(notice(&s).text, "old");
         s.picker = false;
-        s.notice = None;
         s.sync();
         assert_eq!(s.overlay, Overlay::None);
-        assert!(s.notices.is_empty());
-        // A notice with an action survives sync while `notice` holds its text.
-        cancel(&mut s, &mut Tx::default(), "get-lucky");
+        // A notice keeps its tone and action through sync.
+        premium(&mut s, fc::LIMIT_BATCH);
         s.sync();
-        assert_eq!(notice(&s).action, Some(Act::Undo(vec!["get-lucky".into()])));
+        assert_eq!((notice(&s).tone, notice(&s).action.clone()), (Tone::Premium, Some(Act::SeePlans)));
     }
 
     // ── on_key, in the order of CONTENT.md 1.3
@@ -1530,7 +1536,7 @@ mod tests {
     fn escape_closes_an_overlay_then_disarms_then_clears_what_was_found() {
         let mut s = state();
         searching(&mut s);
-        s.notice = Some("note".into());
+        notify(&mut s, Tone::Info, "note".into(), None);
         arm(&mut s, Confirm::Clear);
         open(&mut s, Overlay::Picker);
         assert!(press(&mut s, esc()));
@@ -1541,7 +1547,7 @@ mod tests {
         assert!(matches!(s.found, Found::Search { .. }));
         assert!(press(&mut s, esc()));
         assert!(matches!(s.found, Found::Nothing));
-        assert_eq!((s.input.as_str(), s.field.text.as_str(), s.notice.as_deref()), ("", "", None));
+        assert_eq!((s.input.as_str(), s.field.text.as_str(), s.notices.is_empty()), ("", "", true));
         assert!(!press(&mut s, esc()), "nothing left to close");
     }
 
@@ -1810,10 +1816,10 @@ mod tests {
     fn dismiss_found_clears_found_field_and_notice() {
         let mut s = state();
         searching(&mut s);
-        s.notice = Some("x".into());
+        notify(&mut s, Tone::Info, "x".into(), None);
         dismiss_found(&mut s);
         assert!(matches!(s.found, Found::Nothing));
-        assert_eq!((s.input.as_str(), s.field.text.as_str(), s.notice.as_deref()), ("", "", None));
+        assert_eq!((s.input.as_str(), s.field.text.as_str(), s.notices.is_empty()), ("", "", true));
     }
 
     // ── The found step
@@ -1911,7 +1917,8 @@ mod tests {
         assert_eq!(t.title, sample::media().title);
         assert_eq!(notice(&s).text, fc::TOAST_ADDED);
         assert_eq!(notice(&s).action, Some(Act::ViewDownloads));
-        assert!(matches!(s.found, Found::Media(_)), "the card stays");
+        assert!(matches!(s.found, Found::Nothing), "the card closes");
+        s.found = Found::Media(sample::media());
         s.choice.video = false;
         download_found(&mut s);
         assert_eq!((s.tasks[0].is_audio_only, s.tasks[0].format.as_str()), (true, "mp3"));
@@ -1929,6 +1936,8 @@ mod tests {
         assert_eq!(s.tasks.len(), before + 2);
         assert!(s.picked.is_empty());
         assert_eq!(notice(&s).text, fc::toast_added_many(2));
+        assert!(matches!(s.found, Found::Nothing), "the results close");
+        searching(&mut s);
         s.plan = Plan::Basic;
         for id in ["yt-1", "yt-2", "yt-3", "yt-4", "yt-5", "yt-6"] {
             toggle_result(&mut s, id);
@@ -1937,6 +1946,7 @@ mod tests {
         assert_eq!(s.tasks.len(), before + 2, "over the limit: nothing queued");
         assert_eq!(s.picked.len(), 6, "the ticks stay");
         assert_eq!(notice(&s).tone, Tone::Premium);
+        assert!(matches!(s.found, Found::Search { .. }), "a refusal keeps the results");
     }
 
     #[test]
@@ -2039,7 +2049,7 @@ mod tests {
         assert_eq!((notice(&s).text.as_str(), notice(&s).tone), (copy::TOAST_CANCELED_ONE, Tone::Info));
         notice_action(&mut s, &mut Tx::default());
         assert_eq!(status(&s, "get-lucky"), St::Queued);
-        assert!(s.notices.is_empty() && s.notice.is_none(), "running the action dismisses");
+        assert!(s.notices.is_empty(), "running the action dismisses");
         cancel(&mut s, &mut Tx::default(), "dreams");
         assert_eq!(status(&s, "dreams"), St::Done, "a finished row cannot be canceled");
     }
@@ -2139,7 +2149,7 @@ mod tests {
         let mut s = state();
         cancel(&mut s, &mut Tx::default(), "get-lucky");
         dismiss_notice(&mut s);
-        assert!(s.notices.is_empty() && s.notice.is_none());
+        assert!(s.notices.is_empty());
     }
 
     // ── Many downloads
@@ -2426,6 +2436,8 @@ mod tests {
         assert_eq!(scene("palette").overlay, Overlay::Palette);
         assert_eq!(scene("shortcuts").overlay, Overlay::Shortcuts);
         assert_eq!(scene("notice").notices.len(), 1);
+        let limit = scene("search-limit").notices.last().map(|n| (n.tone, n.action.clone()));
+        assert_eq!(limit, Some((Tone::Premium, Some(Act::SeePlans))), "the limit scene is the real refusal");
         assert_eq!(scene("picker").overlay, Overlay::Picker);
     }
 
