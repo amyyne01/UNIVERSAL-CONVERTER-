@@ -465,8 +465,13 @@ pub fn fetch_cover(s: &State, url: String) {
     let Some(live) = &s.live else { return };
     let (core, out, wake, images) = (Arc::downgrade(&live.core), live.outbox.clone(), live.wake.clone(), live.images.clone());
     thread::spawn(move || {
-        let bytes = core.upgrade().and_then(|core| core.fetch_cover(&url).ok());
-        let image = bytes.and_then(|b| covers::decode(&images, b));
+        let bytes = core.upgrade().and_then(|core| core.fetch_cover(&url).inspect_err(|e| debug_note(e)).ok());
+        let image = bytes.and_then(|b| {
+            covers::decode(&images, b).or_else(|| {
+                debug_note("cover refused: format or size");
+                None
+            })
+        });
         send(
             &out,
             &wake,
@@ -479,6 +484,13 @@ pub fn fetch_cover(s: &State, url: String) {
             }),
         );
     });
+}
+
+/// Says why a cover did not come, in a debug build's console only (the error carries no address).
+fn debug_note(why: &str) {
+    if cfg!(debug_assertions) {
+        eprintln!("rune: {why}");
+    }
 }
 
 /// A notice from a worker's answer.

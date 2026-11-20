@@ -16,12 +16,15 @@ pub const ART: &str = "cover-art";
 const IN_FLIGHT: usize = 3;
 /// Pictures kept, and wanted at once: the found step's first, then the newest tasks'.
 // ponytail: rows past the 64th keep their placeholder; a scroll-aware want lifts that.
-const KEPT: usize = 64;
+const KEPT: usize = 32;
 /// Decoded bytes kept (pixels, 4 bytes each); pictures on show are never evicted for it.
 const KEPT_BYTES: u64 = 192 * 1024 * 1024;
 /// The largest side taken (LESSONS 24e: the byte cap bounds the file, not its pixels). A thumbnail
 /// needs far less; 64 kept at 1024 x 1024 x 4 bytes bounds even the pictures on show to 256 MB.
-const MAX_SIDE: u32 = 1024;
+const MAX_SIDE: u32 = 4096;
+/// And the most pixels: a 1920 x 1080 picture (YouTube's best thumbnail is 1280 x 720 or this) fits,
+/// a 1024 side cap did not. 32 kept at this size bound even the pictures on show to about 265 MB.
+const MAX_PIXELS: u64 = 1920 * 1080;
 
 /// What is fetched, kept and refused, by URL.
 #[derive(Default)]
@@ -133,7 +136,7 @@ fn evict(c: &mut Covers) {
 /// JPEG or WebP (a GIF or any animation is refused), a side above [`MAX_SIDE`], or a decode that fails.
 pub fn decode(cache: &ImageCache, bytes: Vec<u8>) -> Option<Image> {
     let (w, h) = size(&bytes)?;
-    if w == 0 || h == 0 || w > MAX_SIDE || h > MAX_SIDE {
+    if !fits(w, h) {
         return None;
     }
     if animated(&bytes) {
@@ -142,6 +145,11 @@ pub fn decode(cache: &ImageCache, bytes: Vec<u8>) -> Option<Image> {
     let image = cache.load(bytes);
     image.wait().ok()?;
     Some(image)
+}
+
+/// Whether a picture of this size is taken: no empty side, none past [`MAX_SIDE`], at most [`MAX_PIXELS`].
+fn fits(w: u32, h: u32) -> bool {
+    w != 0 && h != 0 && w <= MAX_SIDE && h <= MAX_SIDE && u64::from(w) * u64::from(h) <= MAX_PIXELS
 }
 
 /// A GIF, an animated WebP (`ANIM`) or an APNG (`acTL`): every frame is decoded and kept, so the
@@ -269,6 +277,8 @@ pub mod tests {
         assert_eq!(size(&jpeg[..10]), None, "a cut header");
         let cache = ImageCache::new(std::sync::Arc::new(|| {}));
         assert!(decode(&cache, png(MAX_SIDE + 1, 1)).is_none(), "too wide");
+        assert!(fits(1280, 720) && fits(1920, 1080) && fits(640, 640), "real thumbnails fit");
+        assert!(!fits(2000, 2000) && !fits(4096, 4096) && !fits(0, 5), "a huge or empty picture does not");
         assert!(decode(&cache, gif.clone()).is_none(), "a GIF is animated");
         assert!(animated(&[b"RIFF\0\0\0\0WEBPVP8X\0\0\0\0\0\0\0\0ANIM".as_slice()].concat()), "animated WebP");
         assert!(animated(&[png(2, 2), b"acTL".to_vec()].concat()), "APNG");
