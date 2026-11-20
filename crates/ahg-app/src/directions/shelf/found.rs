@@ -126,7 +126,7 @@ fn bone(p: &Pal, w: f32, h: f32) -> El {
 
 /// Shelf's shimmer: a wide, soft band of warm paper light.
 fn sheen(p: &Pal) -> El {
-    let lit = if p.dark { p.text.alpha(0.06) } else { p.card.alpha(0.75) };
+    let lit = if p.dark { p.text.alpha(0.09) } else { p.card.alpha(0.75) };
     let off = Color::TRANSPARENT;
     crate::timeline::sheen(&[(0.0, off), (0.5, lit), (1.0, off)])
 }

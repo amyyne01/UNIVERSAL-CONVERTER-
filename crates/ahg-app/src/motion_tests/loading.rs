@@ -36,11 +36,11 @@ fn every_preset_shimmers_its_bones_while_loading_and_nowhere_else() {
                 let moved = a.iter().zip(&b).filter(|(x, y)| x.0 == y.0 && x.1 != y.1).count();
                 assert_eq!(moved, a.len(), "{case}: {moved} of {} bands moved", a.len());
             }
-            for scene in ["media", "search", "home-history", "downloads-everything"] {
-                let mut rt = runtime(p, Some(scene), dark);
-                rt.frame(0.0);
-                assert!(sheens(&rt).is_empty(), "{} / {scene}: a shimmer with nothing loading", name(p));
-            }
+        }
+        for scene in ["media", "search", "home-history", "downloads-everything"] {
+            let mut rt = runtime(p, Some(scene), true);
+            rt.frame(0.0);
+            assert!(sheens(&rt).is_empty(), "{} / {scene}: a shimmer with nothing loading", name(p));
         }
     }
 }

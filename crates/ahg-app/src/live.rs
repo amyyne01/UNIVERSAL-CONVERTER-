@@ -498,7 +498,16 @@ fn lookup(s: &State, work: impl FnOnce(&Core, &dyn Fn(Job)) + Send + 'static) {
     let Some(live) = &s.live else { return };
     let (core, out, wake, generation) = (live.core.clone(), live.outbox.clone(), live.wake.clone(), live.generation);
     thread::spawn(move || {
+        let began = Instant::now();
         let answer = |job: Job| {
+            // Bones that went up stay `LOADING_MIN` (MOTION-SYSTEM 5.4): an answer inside that
+            // window waits out the rest here, so the shimmer never flashes.
+            // ponytail: held on the worker; the timeline's waits (`actions::begin_wait`) take over when the found views ask `timeline::shows`.
+            let (shown, gone) = (motion::LOADING_DELAY, motion::LOADING_DELAY + motion::LOADING_MIN);
+            let at = began.elapsed().as_secs_f64();
+            if (shown..gone).contains(&at) {
+                thread::sleep(std::time::Duration::from_secs_f64(gone - at));
+            }
             let current: Job = Box::new(move |s, tx| {
                 let shown = s.live.as_ref().is_some_and(|l| l.generation == generation) && job(s, tx);
                 if shown {
@@ -879,11 +888,7 @@ mod tests {
             }),
             ..Outside::standin()
         };
-        let mut rt = live_with(
-            &dir, "exit 0
-", "exit 0
-", outside,
-        );
+        let mut rt = live_with(&dir, "exit 0\n", "exit 0\n", outside);
         let art = |rt: &Runtime<State>| {
             rt.elements()
                 .iter()
@@ -891,40 +896,106 @@ mod tests {
                 .map(|e| e.opacity)
                 .collect::<Vec<_>>()
         };
-        let urls: Vec<String> = (0..PRESETS.len()).map(|i| format!("https://img.example.com/cover-{i}.png")).collect();
+        // What the field finds, three ways: one video, a search row, a collection's cover.
+        let found = |kind: usize, url: String| -> Found {
+            match kind {
+                0 => Found::Media(MediaMetadata { thumbnail_url: url, ..crate::sample::media() }),
+                1 => {
+                    let [mut rows, _, _] = crate::sample::search();
+                    rows.truncate(1);
+                    rows[0].thumbnail_url = url;
+                    Found::Search { query: "q".into(), bands: [Band::Results(rows), Band::Empty, Band::Empty] }
+                }
+                _ => playlist_found(Playlist { thumbnail_url: url, ..crate::sample::playlist() }, false),
+            }
+        };
+        let mut urls = Vec::new();
         for (i, (name, ..)) in PRESETS.iter().enumerate() {
             rt.update(move |s, tx| actions::set_preset(s, i, tx));
-            for _ in 0..40 {
+            for kind in 0..3 {
+                let case = format!("{name} / {}", ["media", "search row", "playlist"][kind]);
+                let url = format!("https://img.example.com/cover-{i}-{kind}.png");
+                urls.push(url.clone());
+                // Out of the last case, then the answer arrives as a lookup's does: a job through the inbox.
+                rt.update(|s, _| s.found = Found::Nothing);
+                for _ in 0..40 {
+                    rt.frame(1.0 / 60.0);
+                }
+                let answer = found(kind, url.clone());
+                let live = rt.state.live.as_ref().unwrap();
+                send(
+                    &live.outbox.clone(),
+                    &live.wake.clone(),
+                    Box::new(move |s, _| {
+                        s.found = answer;
+                        s.card = Card::default();
+                        true
+                    }),
+                );
                 rt.frame(1.0 / 60.0);
+                assert!(!matches!(rt.state.found, Found::Nothing), "{case}: the answer landed");
+                assert!(art(&rt).is_empty(), "{case}: a cover before it was fetched");
+                until(&mut rt, "the cover", move |s| crate::covers::get(s, &url).is_some());
+                let first = art(&rt);
+                assert_eq!(first.len(), 1, "{case}: the cover over its placeholder");
+                assert!(first[0] < 1.0, "{case}: the cover cut in at {}", first[0]);
+                for _ in 0..40 {
+                    rt.frame(1.0 / 60.0);
+                }
+                assert!(art(&rt).iter().all(|o| (o - 1.0).abs() < 1e-3), "{case}: the cover never finished fading in: {:?}", art(&rt));
             }
-            // The found step arrives as a lookup's answer does: a job through the inbox.
-            let url = urls[i].clone();
-            let live = rt.state.live.as_ref().unwrap();
-            send(
-                &live.outbox.clone(),
-                &live.wake.clone(),
-                Box::new(move |s, _| {
-                    let mut m = crate::sample::media();
-                    m.thumbnail_url = url;
-                    s.found = Found::Media(m);
-                    s.card = Card::default();
-                    true
-                }),
-            );
-            rt.frame(1.0 / 60.0);
-            assert!(matches!(rt.state.found, Found::Media(_)), "{name}: the answer landed");
-            assert!(art(&rt).is_empty(), "{name}: a cover before it was fetched");
-            let url = urls[i].clone();
-            until(&mut rt, "the cover", move |s| crate::covers::get(s, &url).is_some());
-            let first = art(&rt);
-            assert_eq!(first.len(), 1, "{name}: the cover over its placeholder");
-            assert!(first[0] < 1.0, "{name}: the cover cut in at {}", first[0]);
-            for _ in 0..40 {
-                rt.frame(1.0 / 60.0);
-            }
-            assert!(art(&rt).iter().all(|o| (o - 1.0).abs() < 1e-3), "{name}: the cover never finished fading in: {:?}", art(&rt));
         }
         assert_eq!(*asked.lock().unwrap(), urls, "each cover asked once, through the strict client");
+        rt.state.live = None;
+    }
+
+    #[test]
+    fn a_downloaded_task_shows_the_cover_its_lookup_named() {
+        use ahg_runtime::engine_update::Fetched;
+        let dir = scratch("task-cover");
+        let media = dir.join("Downloads").join("a.mp3");
+        fs::write(&media, vec![0u8; 2048]).unwrap();
+        let png = crate::covers::tests::png(4, 4);
+        let outside = Outside {
+            cover: Box::new(move |url: &str, _: Option<&str>, _: &[std::net::SocketAddr]| {
+                Some(Fetched {
+                    status: 200,
+                    final_url: url.to_owned(),
+                    content_length: None,
+                    location: None,
+                    body: Box::new(std::io::Cursor::new(png.clone())),
+                })
+            }),
+            ..Outside::standin()
+        };
+        let record = RECORD.replace(r#""duration":212"#, r#""duration":212,"thumbnail":"https://i.example.com/a.jpg""#);
+        let script = format!("out [FILEPATH]{}\nexit 0\n", media.display());
+        let mut rt = live_with(&dir, &format!("out {record}\nexit 0\n"), &script, outside);
+        submit(&mut rt);
+        until(&mut rt, "the task's cover", |s| s.tasks.first().is_some_and(|t| s.cover(t).is_some()));
+        assert_eq!(rt.state.tasks[0].thumbnail_url, "https://i.example.com/a.jpg", "yt-dlp's thumbnail reached the task");
+        rt.update(|s, _| actions::go(s, Nav::Downloads));
+        for _ in 0..40 {
+            rt.frame(1.0 / 60.0);
+        }
+        assert!(rt.elements().iter().any(|e| e.key.as_deref() == Some(crate::covers::ART)), "the row draws the task's cover");
+        rt.state.live = None;
+    }
+
+    #[test]
+    fn an_answer_after_the_bones_went_up_waits_out_their_minimum() {
+        use crate::motion::{LOADING_DELAY, LOADING_MIN};
+        let dir = scratch("hold");
+        // The stand-in answers just after the bones would show.
+        let mut rt = live(&dir, &format!("sleep {}\nout {RECORD}\nexit 0\n", (LOADING_DELAY * 1000.0) as u64 + 50), "exit 0\n");
+        let began = Instant::now();
+        rt.update(|s, tx| {
+            s.set_field(LINK);
+            actions::submit(s, tx);
+        });
+        until(&mut rt, "the lookup's answer", |s| matches!(&s.found, Found::Media(_)));
+        let took = began.elapsed().as_secs_f64();
+        assert!(took >= LOADING_DELAY + LOADING_MIN - 0.02, "the bones went after {took:.3} s");
         rt.state.live = None;
     }
 

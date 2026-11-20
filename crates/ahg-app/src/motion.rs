@@ -456,6 +456,8 @@ mod tests {
         ("directions/orbit/home.rs", "press_scale(", 1, "button 0.97 = Press::Button"),
         ("layouts/stage/parts.rs", "press_scale(", 2, "button 0.97 and icon 0.94 = Press::Button / Press::Icon"),
         ("covers.rs", ".transition(", 1, "a fetched cover's fade-in, built by motion::cover_in"),
+        ("live.rs", "Duration::", 1, "a lookup's answer waits out LOADING_DELAY + LOADING_MIN on its worker thread"),
+        ("live.rs", "from_secs", 1, "same line"),
     ];
 
     fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
