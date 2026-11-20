@@ -80,18 +80,18 @@ fn view(s: &State, cx: &mut Cx<State>) -> El {
 // when the presets are next touched.
 fn backdrop(s: &State, cx: &Cx<State>) -> rune::Color {
     #[allow(unused_variables)]
-    let (system, chosen) = (cx.system_dark(), s.dark(cx));
+    let chosen = s.dark(cx);
     match (s.layout, s.direction) {
         #[cfg(feature = "bar")]
         (Some(gate::Layout::Bar), _) => directions::signal::theme::pal(s.palette, chosen).bg,
         #[cfg(feature = "collection")]
-        (Some(gate::Layout::Collection), _) => directions::shelf::theme::Pal::new(s.palette, system).bg,
+        (Some(gate::Layout::Collection), _) => directions::shelf::theme::Pal::new(s.palette, chosen).bg,
         #[cfg(feature = "stage")]
         (Some(gate::Layout::Stage), _) => directions::orbit::look::Pal::new(s.palette, chosen).bg,
         #[cfg(feature = "shelf")]
-        (None, Direction::Shelf) => directions::shelf::theme::Pal::new(s.palette, system).sunk,
+        (None, Direction::Shelf) => directions::shelf::theme::Pal::new(s.palette, chosen).sunk,
         #[cfg(feature = "signal")]
-        (None, Direction::Signal) => directions::signal::theme::pal(s.palette, system).bg,
+        (None, Direction::Signal) => directions::signal::theme::pal(s.palette, chosen).bg,
         #[cfg(feature = "orbit")]
         (None, Direction::Orbit) => directions::orbit::look::Pal::new(s.palette, chosen).bg,
         #[allow(unreachable_patterns)]

@@ -26,7 +26,7 @@ use parts::{keycap, label, mono, sans};
 use theme::Pal;
 
 pub fn view(s: &State, cx: &mut Cx<State>) -> El {
-    let p = theme::pal(s.palette, cx.system_dark());
+    let p = theme::pal(s.palette, s.dark(cx));
     cx.caption_color(if p.dark { Color::WHITE } else { Color::BLACK });
     let insets = cx.chrome_insets();
     let content = match s.nav {

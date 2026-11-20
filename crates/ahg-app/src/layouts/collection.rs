@@ -50,7 +50,7 @@ const PAD: f32 = 32.0;
 const OPEN: &str = "get-lucky";
 
 pub fn view(s: &State, cx: &mut Cx<State>) -> El {
-    let p = Pal::new(s.palette, cx.system_dark());
+    let p = Pal::new(s.palette, s.dark(cx));
     cx.caption_color(p.text);
     let insets = cx.chrome_insets();
     let place = match s.nav {

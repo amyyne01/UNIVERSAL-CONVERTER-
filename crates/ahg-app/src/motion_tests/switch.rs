@@ -371,13 +371,87 @@ fn theme_springs_its_colours_and_moves_nothing() {
         let theme = rt.state.settings.get("theme").and_then(|v| v.as_str());
         assert_eq!(theme, Some("light"), "{}: the row did not switch to light", name(p));
         assert_eq!(layout_of(&before, p), layout_of(&after, p), "{}: a theme change re-keyed or moved something", name(p));
-        // Shelf, Signal and The collection still read the system's appearance, not the setting.
-        if ground(&after, p) != start {
-            assert!(early != start && early != ground(&after, p), "{}: the ground cut ({start:?} -> {early:?})", name(p));
-            checked += 1;
+        assert_ne!(ground(&after, p), start, "{}: the ground ignored the theme setting", name(p));
+        assert!(early != start && early != ground(&after, p), "{}: the ground cut ({start:?} -> {early:?})", name(p));
+        checked += 1;
+    }
+    assert_eq!(checked, PRESETS.len() - 1);
+}
+
+/// `preset` on Settings in a window tall enough for every row, the theme setting and the
+/// palette given before the first frame, the system `system_dark`, settled.
+fn settled(preset: usize, system_dark: bool, theme: Option<&'static str>, palette: usize) -> Runtime<State> {
+    let mut rt = rune::App::new(crate::spec())
+        .init(move || {
+            let mut s = State::sample(preset);
+            s.nav = Nav::Settings;
+            s.palette = palette;
+            if let Some(t) = theme {
+                s.settings.insert("theme".into(), t.into());
+            }
+            s.sync();
+            s
+        })
+        .headless_runtime((1240.0, 3600.0), rune::Env { system_dark, scale: 1.0 });
+    rt.frame(0.0);
+    steps(&mut rt, 40);
+    rt
+}
+
+/// The backdrop under the preset and the preset root's own fill, which must agree.
+fn grounds(rt: &Runtime<State>, p: usize) -> (Option<rune::Color>, Option<rune::Color>) {
+    let els = rt.elements();
+    let root = shown(&els, p).map(|(i, _)| i);
+    (ground(&els, p), root.and_then(|r| els.iter().find(|e| e.parent == Some(r))).map(|e| e.fill))
+}
+
+/// Light, Dark or System is the setting's, not the system's, in every preset: with the setting
+/// against the system, the window reads as it does with the system agreeing.
+#[test]
+fn the_theme_setting_not_the_system_drives_every_preset() {
+    let mut checked = 0;
+    for p in 0..PRESETS.len() {
+        for (system, setting, dark) in [(true, "light", false), (false, "dark", true)] {
+            for palette in [0, 3] {
+                let case = format!("{} system dark {system}, setting {setting}, palette {palette}", name(p));
+                let set = grounds(&settled(p, system, Some(setting), palette), p);
+                let want = grounds(&settled(p, dark, None, palette), p);
+                assert_eq!(set.0, set.1, "{case}: the backdrop is not the preset's ground");
+                assert_eq!(set, want, "{case}: the preset read the system's appearance");
+                checked += 1;
+            }
         }
     }
-    assert!(checked >= 2, "only {checked} presets follow the theme setting");
+    assert_eq!(checked, PRESETS.len() * 4);
+}
+
+/// Every swatch in every preset's Settings, pressed in turn (1 to 7, then the look's own 0),
+/// light and dark: the palette is set, nothing is re-keyed, and the window settles on exactly
+/// the colours a launch on that palette draws.
+#[test]
+fn every_swatch_recolours_every_preset() {
+    let mut checked = 0;
+    for p in 0..PRESETS.len() {
+        for dark in [true, false] {
+            let mut rt = settled(p, dark, None, 0);
+            let keyed = layout_of(&rt.elements(), p).into_iter().map(|e| e.0).collect::<Vec<_>>();
+            for i in (1..=7).chain([0]) {
+                let case = format!("{} dark {dark} swatch {i}", name(p));
+                let key = keys::palette(i);
+                let k = key.clone();
+                rt.update(move |_, tx| tx.scroll_into_view(k));
+                steps(&mut rt, 2);
+                press(&mut rt, &key);
+                steps(&mut rt, 60);
+                assert_eq!(rt.state.palette, i, "{case}: the swatch did not set the palette");
+                assert_eq!(grounds(&rt, p), grounds(&settled(p, dark, None, i), p), "{case}: not the palette's colours");
+                checked += 1;
+            }
+            let after = layout_of(&rt.elements(), p).into_iter().map(|e| e.0).collect::<Vec<_>>();
+            assert_eq!(after, keyed, "{} dark {dark}: a palette change re-keyed something", name(p));
+        }
+    }
+    assert_eq!(checked, PRESETS.len() * 2 * 8);
 }
 
 /// A palette lands in place: nothing is re-keyed, nothing moves. (No swatch calls

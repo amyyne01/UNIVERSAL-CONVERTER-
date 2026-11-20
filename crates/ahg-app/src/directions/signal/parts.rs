@@ -107,7 +107,8 @@ pub const RING: f32 = 28.0;
 /// Signal's ring material (`ring::signal`), its unlit segments in the look's own ink and a
 /// step stronger than the meter's, so a dark ring still reads at row size.
 pub fn ring_material(s: &State, p: &Pal, tint: Color) -> ring::Material {
-    ring::Material { track: p.text.alpha(if p.dark { 0.16 } else { 0.18 }), ..ring::signal(s.palette, p.dark, tint) }
+    // `under` from the look's own ground: ring.rs stands Aurora in for palette 0.
+    ring::Material { track: p.text.alpha(if p.dark { 0.16 } else { 0.18 }), under: p.bg, ..ring::signal(s.palette, p.dark, tint) }
 }
 
 /// A task's ring, tinted by its platform.

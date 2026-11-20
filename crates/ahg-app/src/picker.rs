@@ -61,7 +61,7 @@ fn tile(s: &State, index: usize, dark: bool) -> El {
 
 /// The picker, drawn over the whole window.
 pub fn view(s: &State, cx: &mut Cx<State>) -> El {
-    let dark = cx.system_dark();
+    let dark = s.dark(cx);
     let (panel, ink, muted, edge) = if dark {
         (c("#1b1b1f"), c("#f2f2f4"), c("#9a9aa3"), c("#34343b"))
     } else {
