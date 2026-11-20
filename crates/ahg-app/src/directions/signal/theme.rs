@@ -6,6 +6,7 @@
 use ahg_engine::types::SourcePlatform;
 use rune::{Color, oklch};
 
+use crate::overlays::{Mark, Skin};
 use crate::palette;
 
 /// Every colour a Signal view paints with.
@@ -134,6 +135,28 @@ pub fn pal(palette: usize, dark: bool) -> Pal {
         warning_soft: palette::mix(r.warning, 0.10),
         media_scrim: r.media_scrim,
         on_media: r.on_media,
+    }
+}
+
+/// The overlays on the desk: a card-grey panel, hard 8 pt corners, the command line in mono,
+/// the highlighted row a well with one lit segment. Words on the accent in the desk's deepest
+/// grey, as on its own buttons.
+pub fn skin(palette: usize, dark: bool) -> Skin {
+    let p = pal(palette, dark);
+    Skin {
+        dark,
+        bg: p.surface,
+        raised: p.raised,
+        text: p.text,
+        text2: p.text2,
+        line: p.line_strong,
+        accent: p.accent_ink,
+        on_accent: p.deep,
+        error: p.error,
+        radius: 8.0,
+        mark: Mark::Segment(p.accent),
+        mono: true,
+        serif: false,
     }
 }
 

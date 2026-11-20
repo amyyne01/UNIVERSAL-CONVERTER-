@@ -13,11 +13,14 @@ pub const NOTICE_LIFE: f64 = 6.0;
 // TODO(motion): as above.
 pub const NOTICE_LIFE_ERROR: f64 = 9.0;
 
-/// The overlays' colours. The shared look builds it from the active palette; a preset may
-/// later pass its own.
-#[derive(Debug, Clone, Copy)]
+/// The overlays' look: the active preset's colours in its palette and theme, and the few
+/// shapes that tell the looks apart. Each look builds its own (`skin` beside its `Pal`).
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Skin {
+    pub dark: bool,
+    /// The panel.
     pub bg: Color,
+    /// Keycaps, hover, a progress track.
     pub raised: Color,
     pub text: Color,
     pub text2: Color,
@@ -27,13 +30,35 @@ pub struct Skin {
     pub on_accent: Color,
     /// The error tone's icon.
     pub error: Color,
+    /// The panel's corner; rows take half of it.
+    pub radius: f32,
+    /// How the highlighted command row is marked.
+    pub mark: Mark,
+    /// The command line and its group headings in mono, the headings after `// ` (the desk).
+    pub mono: bool,
+    /// Titles in the look's display serif (Shelf).
+    pub serif: bool,
+}
+
+/// The highlighted row, per look.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Mark {
+    /// Signal: a raised well with one lit meter segment at its edge, in this colour.
+    Segment(Color),
+    /// Shelf: a paper well with the words inked in the accent.
+    Ink,
+    /// Orbit: a hairline ring in this colour with the accent as a body on it; no fill.
+    Hairline(Color),
 }
 
 impl Skin {
-    /// From `palette::roles`. Palette 0 (the look's own mood) is not in that table: Aurora stands in.
-    pub fn shared(s: &State, dark: bool) -> Skin {
-        let r = crate::palette::roles(s.palette.saturating_sub(1), dark);
+    /// With no look to ask (a build without the active look's feature): Electron's roles,
+    /// Aurora standing in for palette 0.
+    #[allow(dead_code)]
+    fn shared(palette: usize, dark: bool) -> Skin {
+        let r = crate::palette::roles(palette.saturating_sub(1), dark);
         Skin {
+            dark,
             bg: r.bg_primary,
             raised: r.bg_tertiary,
             text: r.text_primary,
@@ -42,14 +67,38 @@ impl Skin {
             accent: r.accent,
             on_accent: r.on_accent,
             error: r.error,
+            radius: 12.0,
+            mark: Mark::Segment(r.accent),
+            mono: false,
+            serif: false,
         }
+    }
+
+    /// The highlighted row's words.
+    fn lit_text(&self) -> Color {
+        if self.mark == Mark::Ink { self.accent } else { self.text }
+    }
+}
+
+/// The skin of the preset that is on: its look's, in the active palette and theme.
+pub fn skin_for(s: &State, dark: bool) -> Skin {
+    use crate::gate::Direction;
+    match s.direction {
+        #[cfg(feature = "signal")]
+        Direction::Signal => crate::directions::signal::theme::skin(s.palette, dark),
+        #[cfg(feature = "shelf")]
+        Direction::Shelf => crate::directions::shelf::theme::skin(s.palette, dark),
+        #[cfg(feature = "orbit")]
+        Direction::Orbit => crate::directions::orbit::look::skin(s.palette, dark),
+        #[allow(unreachable_patterns)]
+        _ => Skin::shared(s.palette, dark),
     }
 }
 
 /// Every overlay on show, in paint order: the open sheet, then the notices above it. Empty
 /// when nothing is open.
 pub fn view(s: &State, cx: &mut Cx<State>) -> Vec<El> {
-    let k = Skin::shared(s, s.dark(cx));
+    let k = skin_for(s, s.dark(cx));
     let mut out = Vec::new();
     if s.picker {
         out.push(picker::view(s, cx));
@@ -61,7 +110,7 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> Vec<El> {
             Overlay::Update => update(s, &k),
             _ => None,
         };
-        out.extend(sheet.map(scrim));
+        out.extend(sheet.map(|p| scrim(&k, p)));
     }
     if !s.notices.is_empty() {
         let stack = col().key(keys::NOTICE).pin(None, None, Some(24.0), Some(24.0)).gap(8.0).items_end();
@@ -74,6 +123,16 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> Vec<El> {
 
 fn style(size: f32, weight: f32) -> TextStyle {
     TextStyle::new(size, weight)
+}
+
+/// The command line's words: mono on the desk, the look's face elsewhere.
+fn line_style(k: &Skin) -> TextStyle {
+    if k.mono { style(14.0, 400.0).mono() } else { style(15.0, 400.0) }
+}
+
+/// A sheet's title: the look's display serif on Shelf.
+fn title_style(k: &Skin, size: f32) -> TextStyle {
+    if k.serif { TextStyle::new(size + 6.0, 400.0).family(rune::tok::Family::Named(crate::gate::SERIF)) } else { style(size, 600.0) }
 }
 
 fn keycap(k: &Skin, label: &str) -> El {
@@ -117,23 +176,23 @@ fn button(k: &Skin, key: &'static str, label: &str, primary: bool) -> El {
     }
 }
 
-/// A sheet over the whole window, centred under a dim; a press on the dim closes it.
-fn scrim(panel: El) -> El {
+/// A sheet over the whole window, centred under a dim (lighter by day); a press on the dim closes it.
+fn scrim(k: &Skin, panel: El) -> El {
     // TODO(motion): the sheet's entry and exit (opacity and a small rise) come with the motion step.
     col()
         .pin(Some(0.0), Some(0.0), Some(0.0), Some(0.0))
         .items_center()
         .pt(crate::TITLEBAR + 72.0)
-        .fill(Color::BLACK.alpha(0.45))
+        .fill(Color::BLACK.alpha(if k.dark { 0.45 } else { 0.25 }))
         .on_press(actions::close)
         .child(panel.on_press(|_: &mut State| {}).modal(true, actions::close))
 }
 
 fn panel(k: &Skin, key: &'static str, aria: &'static str, w: f32) -> El {
-    col().key(key).w(w).role("dialog").label(aria).fill(k.bg).radius(12.0).clip_rounded(12.0).border(1.0, k.line).shadow(
+    col().key(key).w(w).role("dialog").label(aria).fill(k.bg).radius(k.radius).clip_rounded(k.radius).border(1.0, k.line).shadow(
         24.0,
         64.0,
-        Color::BLACK.alpha(0.35),
+        Color::BLACK.alpha(if k.dark { 0.35 } else { 0.12 }),
     )
 }
 
@@ -173,9 +232,9 @@ fn palette(s: &State, k: &Skin) -> El {
     let found = actions::palette_filter(s);
     let caret = el().size(1.5, 18.0).fill(k.accent);
     let words = if typed.is_empty() {
-        row().center_y().child(caret).child(text(copy::PALETTE_PLACEHOLDER).font(style(14.0, 400.0).mono()).color(k.text2))
+        row().center_y().child(caret).child(text(copy::PALETTE_PLACEHOLDER).font(line_style(k)).color(k.text2))
     } else {
-        row().center_y().child(text(typed.clone()).font(style(14.0, 400.0).mono()).color(k.text)).child(caret)
+        row().center_y().child(text(typed.clone()).font(line_style(k)).color(k.text)).child(caret)
     };
     let mut search = row()
         .key(keys::PALETTE_SEARCH)
@@ -205,7 +264,9 @@ fn palette(s: &State, k: &Skin) -> El {
     for (i, c) in found.iter().enumerate() {
         if c.group() != group {
             group = c.group();
-            let label = text(format!("// {group}")).font(style(11.0, 500.0).mono()).color(k.text2);
+            let label =
+                if k.mono { text(format!("// {group}")).font(style(11.0, 500.0).mono()) } else { text(group).font(style(12.0, 500.0)) };
+            let label = label.color(k.text2);
             list = list.child(el().px(12.0).pt(if i == 0 { 4.0 } else { 12.0 }).pb(4.0).child(label));
         }
         list = list.child(command_row(s, k, *c, i == at));
@@ -234,7 +295,7 @@ fn command_row(s: &State, k: &Skin, c: Command, on: bool) -> El {
         .px(12.0)
         .gap(12.0)
         .center_y()
-        .radius(8.0)
+        .radius(k.radius / 2.0)
         .role("option")
         .label(c.label(s))
         .checked(on)
@@ -242,9 +303,14 @@ fn command_row(s: &State, k: &Skin, c: Command, on: bool) -> El {
         .hover(k.raised)
         .on_press_tx(move |s: &mut State, tx: &mut Tx| actions::run(s, tx, c));
     if on {
-        r = r.fill(k.raised).child(el().size(2.0, 16.0).radius(1.0).fill(k.accent).absolute(0.0, 10.0));
+        r = match k.mark {
+            Mark::Segment(lit) => r.fill(k.raised).child(el().size(3.0, 16.0).radius(1.0).fill(lit).absolute(0.0, 10.0)),
+            Mark::Ink => r.fill(k.raised),
+            Mark::Hairline(ring) => r.border(1.0, ring).child(el().size(6.0, 6.0).radius(3.0).fill(k.accent).absolute(-3.0, 15.0)),
+        };
     }
-    r = r.child(text(c.label(s)).font(style(13.0, if on { 500.0 } else { 400.0 })).color(k.text)).child(spacer());
+    let words = text(c.label(s)).font(style(13.0, if on { 500.0 } else { 400.0 }));
+    r = r.child(words.color(if on { k.lit_text() } else { k.text })).child(spacer());
     match c.hint() {
         Some(hint) => r.child(keycaps(k, hint.split('+').collect::<Vec<_>>())),
         None => r,
@@ -276,7 +342,7 @@ fn shortcuts(s: &State, k: &Skin) -> El {
         .pl(20.0)
         .pr(14.0)
         .center_y()
-        .child(text(copy::SHORTCUTS_TITLE).font(style(15.0, 600.0)).color(k.text))
+        .child(text(copy::SHORTCUTS_TITLE).font(title_style(k, 15.0)).color(k.text))
         .child(spacer())
         .child(icon_button(k, keys::SHORTCUTS_CLOSE, &icons::CLOSE, copy::WINDOW_CLOSE).on_press(actions::close));
     let list = col().px(20.0).pb(12.0).children(rows.into_iter().map(|(label, caps)| {
@@ -324,7 +390,7 @@ fn update(s: &State, k: &Skin) -> Option<El> {
     let mut p = panel(k, keys::UPDATE_PROMPT, title, 440.0)
         .padding(24.0)
         .gap(12.0)
-        .child(text(title).font(style(16.0, 600.0)).color(k.text))
+        .child(text(title).font(title_style(k, 16.0)).color(k.text))
         .child(body);
     if u.phase == "downloading" {
         let done = u.percent.as_ref().and_then(|p| p.as_f64()).unwrap_or(0.0).clamp(0.0, 100.0) as f32 / 100.0;
@@ -467,6 +533,83 @@ mod tests {
         assert!(rt.elements().iter().any(|e| e.text.as_deref() == Some(copy::PALETTE_NO_MATCH)));
         press(&mut rt, Key::Backspace, Mods::default());
         assert!(rows(&rt).is_empty(), "zzz still matches nothing");
+    }
+
+    /// WCAG contrast of `fg` (composited over `bg`) on `bg`; both linear, `bg` opaque.
+    fn contrast(fg: Color, bg: Color) -> f32 {
+        let fg = fg.mix(bg.alpha(fg.a), 1.0 - fg.a).alpha(1.0);
+        let (a, b) = (fg.luminance() + 0.05, bg.luminance() + 0.05);
+        a.max(b) / a.min(b)
+    }
+
+    /// Every preset x theme x palette 0..7: the overlays wear the active look (never the
+    /// no-look fallback, and the three looks never the same), and every pair of words and
+    /// ground they draw reads at 4.5:1 or better.
+    #[test]
+    fn every_preset_wears_its_looks_skin_and_reads() {
+        let mut cases = 0;
+        let mut low = Vec::new();
+        for palette in 0..=7 {
+            for dark in [true, false] {
+                let mut looks = Vec::new();
+                for preset in 0..crate::gate::PRESETS.len() {
+                    let mut s = State::sample(preset);
+                    s.palette = palette;
+                    let k = skin_for(&s, dark);
+                    let case = format!("{} dark {dark} palette {palette}", crate::gate::PRESETS[preset].0);
+                    assert_ne!(k, Skin::shared(palette, dark), "{case}: the no-look fallback");
+                    let lit_on = if matches!(k.mark, Mark::Hairline(_)) { k.bg } else { k.raised };
+                    for (what, fg, bg) in [
+                        ("text on panel", k.text, k.bg),
+                        ("text2 on panel", k.text2, k.bg),
+                        ("text on raised", k.text, k.raised),
+                        ("text2 on keycap", k.text2, k.raised),
+                        ("highlighted row", k.lit_text(), lit_on),
+                        ("accent words on panel", k.accent, k.bg),
+                        ("words on accent", k.on_accent, k.accent),
+                    ] {
+                        let r = contrast(fg, bg);
+                        if r < 4.5 {
+                            low.push(format!("{case}: {what} {r:.2}"));
+                        }
+                    }
+                    if !looks.contains(&(s.direction, k)) {
+                        looks.push((s.direction, k));
+                    }
+                    cases += 1;
+                }
+                assert_eq!(looks.len(), 3, "palette {palette} dark {dark}: one skin per look, three looks");
+            }
+        }
+        assert_eq!(cases, 8 * 2 * 6);
+        assert!(low.is_empty(), "below 4.5:1:\n{}", low.join("\n"));
+    }
+
+    /// The palette, the shortcuts sheet and a notice are drawn in the skin `skin_for` gives,
+    /// in every preset that draws them (One bar keeps its own command panel).
+    #[test]
+    fn the_drawn_overlays_wear_the_skin() {
+        for preset in 0..crate::gate::PRESETS.len() {
+            for palette in [0, 7] {
+                let mut rt = runtime(preset);
+                rt.update(move |s, tx| actions::set_palette(s, palette, tx));
+                settle(&mut rt);
+                let k = skin_for(&rt.state, true);
+                let fill = |rt: &Runtime<State>, key: &str| {
+                    rt.elements()
+                        .into_iter()
+                        .find(|e| !e.exiting && e.key.as_deref() == Some(key) && !e.path.contains("preset-"))
+                        .map(|e| e.fill)
+                };
+                if preset != 0 {
+                    ctrl_k(&mut rt);
+                    assert_eq!(fill(&rt, keys::PALETTE), Some(k.bg), "preset {preset} palette {palette}: the command palette");
+                    press(&mut rt, Key::Escape, Mods::default());
+                }
+                press(&mut rt, Key::Command('/'), Mods { cmd: true, ctrl: true, ..Mods::default() });
+                assert_eq!(fill(&rt, keys::SHORTCUTS), Some(k.bg), "preset {preset} palette {palette}: the shortcuts sheet");
+            }
+        }
     }
 
     #[test]

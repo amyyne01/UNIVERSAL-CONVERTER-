@@ -6,6 +6,7 @@
 use ahg_engine::types::SourcePlatform;
 use rune::{Color, TextStyle, oklch, oklcha, tok::Family};
 
+use crate::overlays::{Mark, Skin};
 use crate::{gate, palette};
 
 /// Every colour the direction draws with. Nothing in the views holds a literal.
@@ -77,6 +78,28 @@ impl Pal {
     /// A soft wash of a colour over the page, for tinted rows and the banner.
     pub fn soft(&self, c: Color) -> Color {
         c.alpha(if self.dark { 0.10 } else { 0.08 })
+    }
+}
+
+/// The overlays on the shelf: a liner-note card with soft 16 pt corners, titles in the serif,
+/// the highlighted row a paper well with its words inked in the accent. Words on the accent in
+/// the shelf's deepest paper, as on its own badges.
+pub fn skin(palette: usize, dark: bool) -> Skin {
+    let p = Pal::new(palette, dark);
+    Skin {
+        dark,
+        bg: p.card,
+        raised: p.raised,
+        text: p.text,
+        text2: p.text2,
+        line: p.line,
+        accent: p.accent,
+        on_accent: p.sunk,
+        error: p.error,
+        radius: 16.0,
+        mark: Mark::Ink,
+        mono: false,
+        serif: true,
     }
 }
 

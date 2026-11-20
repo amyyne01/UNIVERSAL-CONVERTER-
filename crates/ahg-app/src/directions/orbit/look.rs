@@ -298,6 +298,27 @@ impl Pal {
     }
 }
 
+/// The overlays on the chart: a card panel, 12 pt corners, the highlighted row a hairline
+/// ring in the track's ink with the accent as a body on it, no fill.
+pub fn skin(palette: usize, dark: bool) -> crate::overlays::Skin {
+    let p = Pal::new(palette, dark);
+    crate::overlays::Skin {
+        dark,
+        bg: p.card,
+        raised: p.hover,
+        text: p.text,
+        text2: p.text2,
+        line: p.line,
+        accent: p.accent,
+        on_accent: p.on_accent,
+        error: p.error,
+        radius: 12.0,
+        mark: crate::overlays::Mark::Hairline(p.track),
+        mono: false,
+        serif: false,
+    }
+}
+
 // Type: Space Grotesk for the interface (400 and 500), Space Mono for every figure (its one
 // weight, tabular by design). One scale: 12, 14, 16, 20, 32, 40; line heights on the 4 pt grid.
 pub const DISPLAY: TextStyle = TextStyle::new(40.0, 500.0).lh(48.0).tracking(-0.8);
