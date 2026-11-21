@@ -51,6 +51,26 @@ fn one_line_pasted_stays_in_the_field_in_every_preset() {
 }
 
 #[test]
+fn the_same_link_twice_in_one_paste_is_queued_once_in_every_preset() {
+    every_preset(|i, name| {
+        let mut rt = runtime(i, true);
+        let rows = rt.state.tasks.len();
+        let link = "https://www.youtube.com/watch?v=bbbbbbbbbbb";
+        paste_into_field(&mut rt, name, &format!("{link}\n{link}\nhttps://vimeo.com/123456"));
+        assert_eq!(rt.state.tasks.len(), rows + 2, "preset {name}: two distinct links, two downloads");
+        // Typed on one line with Enter, the same.
+        let rows = rt.state.tasks.len();
+        rt.update(|s, tx| {
+            crate::actions::go(s, Nav::Home);
+            s.set_field(&format!("{link} {link}"));
+            crate::actions::submit(s, tx);
+        });
+        settle(&mut rt);
+        assert_eq!(rt.state.tasks.len(), rows + 1, "preset {name}: one link twice on one line, one download");
+    });
+}
+
+#[test]
 fn typing_in_the_command_palette_and_enter_runs_the_match_in_every_preset() {
     every_preset(|i, name| {
         let mut rt = runtime(i, true);

@@ -383,10 +383,15 @@ fn batch(s: &mut State, urls: &[&str]) {
         return premium(s, copy::BASIC_LIMIT_BATCH);
     }
     let mut started = 0;
+    let mut seen = std::collections::HashSet::new();
     for url in urls {
         let det = detect_url(url);
         // live: a Spotify link is read first (`spotify.fetchTrack`); a collection reads as nothing.
         if det.platform == SourcePlatform::Unknown || (det.platform == SourcePlatform::Spotify && det.content_type != ContentType::Track) {
+            continue;
+        }
+        // The same link twice in one batch is queued once (step U0a; Electron queued it twice).
+        if !seen.insert(det.url.clone()) {
             continue;
         }
         let audio = AUDIO_ONLY_SOURCES.contains(&det.platform);
