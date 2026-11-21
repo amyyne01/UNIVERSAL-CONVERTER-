@@ -285,6 +285,8 @@ fn toggle(p: &Pal, key: String, label: &str, on: bool) -> El {
         // in the second ink so it reads at 3:1 (C-1).
         .fill(if on { p.accent } else { p.raised })
         .border(1.0, if on { p.accent } else { p.track })
+        // Under the pointer the track's own colour lifts toward the ink.
+        .hover(mix(if on { p.accent } else { p.raised }, p.text, 0.12))
         .focusable(true)
         .role("switch")
         .label(label.to_string())
@@ -336,7 +338,7 @@ fn theme(p: &Pal, r: &Row) -> El {
             .checked(on)
             .focusable(true)
             .cursor(rune::Cursor::Pointer);
-        seg = if on { seg.fill(p.raised) } else { seg.hover(p.hover) };
+        seg = if on { seg.fill(p.raised).hover(p.lift()) } else { seg.hover(p.hover) };
         group = group.child(seg.child(txt(name, if on { SMALL_M } else { SMALL }, if on { p.text } else { p.text2 })));
     }
     group
@@ -356,6 +358,8 @@ fn swatches(s: &State, p: &Pal) -> El {
                 .radius(14.0)
                 .center()
                 .border(1.0, if on { p.text } else { Color::TRANSPARENT })
+                // The orbit around the swatch fills in under the pointer: a halo.
+                .hover(p.hover)
                 .role("radio")
                 .checked(on)
                 .label(name.to_string())
@@ -400,6 +404,7 @@ fn days(p: &Pal, r: &Row, live: bool) -> El {
                 .center()
                 .fill(if on { p.raised } else { Color::TRANSPARENT })
                 .border(1.0, if on { p.track } else { p.line })
+                .hover(if on { p.lift() } else { p.hover })
                 .focusable(true)
                 .role("checkbox")
                 .checked(on)

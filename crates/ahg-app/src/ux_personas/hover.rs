@@ -37,14 +37,14 @@ fn holds(a: &str, b: &str) -> bool {
 
 /// The control, what it holds, or a tight holder (at most four times its area) shows hover:
 /// a big hover group (a sidebar) does not count for every control inside it.
-fn lit(els: &[ElementInfo], path: &str) -> bool {
+pub(super) fn lit(els: &[ElementInfo], path: &str) -> bool {
     let area = |r: [f32; 4]| r[2] * r[3];
     let own = els.iter().find(|e| e.path == path).map_or(0.0, |e| area(e.rect));
     els.iter().any(|e| e.hover > 0.01 && (holds(path, &e.path) || (holds(&e.path, path) && area(e.rect) <= own * 4.0)))
 }
 
 /// What the control's own line paints: fills, ink, opacity and scale, by path.
-fn paint(els: &[ElementInfo], path: &str) -> Vec<String> {
+pub(super) fn paint(els: &[ElementInfo], path: &str) -> Vec<String> {
     els.iter()
         .filter(|e| !e.exiting && (holds(&e.path, path) || holds(path, &e.path)))
         .map(|e| format!("{}{:?}{:?}{:.2}{:.3}", e.path, e.fill, e.text_color, e.opacity, e.scale))
@@ -64,8 +64,16 @@ pub fn sweep(ux: &mut Ux, screen: &str) {
     let mut stuck = Vec::new();
     for c in all.iter().take(40) {
         leave(ux, away);
+        // Where the control is now: a hover sidebar listed opened is closed again, and what only
+        // shows opened (its pin) is reached as a user does, through the strip at the window's edge.
+        let at = ux.rt.find(&c.2).or_else(|| {
+            ux.rt.pointer_move(8.0, c.1.1);
+            ux.settle();
+            ux.rt.find(&c.2)
+        });
+        let at = at.unwrap_or(c.1);
         let before = ux.rt.elements();
-        ux.rt.pointer_move(c.1.0, c.1.1);
+        ux.rt.pointer_move(at.0, at.1);
         ux.rt.frame(1.0 / 60.0);
         let first = ux.rt.elements();
         ux.settle();

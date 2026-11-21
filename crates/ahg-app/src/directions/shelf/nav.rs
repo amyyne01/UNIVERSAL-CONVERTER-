@@ -109,7 +109,7 @@ fn item(s: &State, p: &Pal, nav: Nav, glyph: &'static Icon, label: &str, n: usiz
         .help(copy::nav_tooltip(label, n))
         .on_press(move |s: &mut State| actions::go(s, nav))
         .child(mark);
-    r = if on { r.fill(p.raised) } else { r.hover(p.raised.alpha(0.6)) };
+    r = if on { r.fill(p.raised).hover(p.pressed_in()) } else { r.hover(p.raised.alpha(0.6)) };
     if open {
         r = r
             .pr(12.0)

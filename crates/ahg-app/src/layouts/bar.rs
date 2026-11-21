@@ -64,6 +64,8 @@ const DECK_H: f32 = 56.0;
 pub fn view(s: &State, cx: &mut Cx<State>) -> El {
     let p = theme::pal(s.palette, s.dark(cx));
     cx.caption_color(if p.dark { Color::WHITE } else { Color::BLACK });
+    // Keyboard focus: a hairline of ink held well clear of the control, the bar's thin rule.
+    cx.focus_ring(1.0, 3.0, p.text);
     let trailing = cx.chrome_insets().trailing;
     let body = match s.nav {
         // A first paste, a search or Ctrl+K drop from the bar as they do with history.

@@ -81,7 +81,8 @@ fn item(s: &State, p: &Pal, nav: Nav, glyph: &'static Icon, name: &str, n: usize
         .help(copy::nav_tooltip(name, n))
         .on_press(move |s: &mut State| actions::go(s, nav))
         .child(mark);
-    r = if on { r.fill(p.raised) } else { r.hover(p.hover).press(p.press) };
+    // Hover lights the place you are in too: a wash over its raised key.
+    r = if on { r.fill(p.raised) } else { r }.hover(p.hover).press(p.press);
     if on {
         // The tally: the one lit segment, on the strip's edge.
         r = r.child(el().size(4.0, 16.0).radius(1.0).fill(p.accent).absolute(-8.0, 12.0));

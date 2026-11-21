@@ -28,6 +28,8 @@ use theme::Pal;
 pub fn view(s: &State, cx: &mut Cx<State>) -> El {
     let p = theme::pal(s.palette, s.dark(cx));
     cx.caption_color(if p.dark { Color::WHITE } else { Color::BLACK });
+    // Keyboard focus: the desk's lit segment, a 2 pt accent edge just off the key.
+    cx.focus_ring(2.0, 2.0, p.accent);
     let insets = cx.chrome_insets();
     let content = match s.nav {
         Nav::Home => home::view(s, &p),

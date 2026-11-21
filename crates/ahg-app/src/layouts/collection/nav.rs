@@ -104,7 +104,12 @@ fn item(s: &State, p: &Pal, nav: Nav, glyph: &'static Icon, label: &str, n: usiz
         .help(copy::nav_tooltip(label, n))
         .on_press(move |s: &mut State| actions::go(s, nav))
         .child(mark);
-    r = if on { r.fill(theme::label_paper()).border(1.0, theme::label_ink().alpha(0.18)) } else { r.hover(p.raised) };
+    r = if on {
+        // The divider card you are on darkens a shade under the pointer, in its own ink.
+        r.fill(theme::label_paper()).border(1.0, theme::label_ink().alpha(0.18)).hover(theme::label_ink().alpha(0.06))
+    } else {
+        r.hover(p.raised)
+    };
     if open {
         r = r
             .pr(12.0)

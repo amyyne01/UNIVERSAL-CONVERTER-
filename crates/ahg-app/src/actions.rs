@@ -588,6 +588,11 @@ pub fn pick_all_results(s: &mut State) {
     s.sync();
 }
 
+/// A playlist's Download can be used: something is ticked (Electron disables it otherwise).
+pub fn can_download_playlist(selected: &[bool]) -> bool {
+    selected.contains(&true)
+}
+
 /// The found step's Download. Once something is added the step closes and the field empties,
 /// so the new row shows where the user looks (owner, 2026-11-18; Electron keeps the card).
 pub fn download_found(s: &mut State) {

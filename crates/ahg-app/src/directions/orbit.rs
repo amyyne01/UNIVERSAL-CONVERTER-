@@ -34,6 +34,8 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> El {
     let p = Pal::new(s.palette, s.dark(cx));
     cx.titlebar_height(crate::TITLEBAR);
     cx.caption_color(p.text2);
+    // Keyboard focus: an accent orbit around the control, with air between.
+    cx.focus_ring(2.0, 3.0, p.accent);
     let insets = cx.chrome_insets();
     let content = match s.nav {
         Nav::Home => home::view(s, &p),

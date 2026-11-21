@@ -154,8 +154,25 @@ fn cover(s: &State, url: &str, source: SourcePlatform, w: f32, h: f32, p: &Pal) 
     crate::covers::over(s, placeholder, url, 4.0)
 }
 
-/// The one accent control on the surface.
-fn primary(words: &str, p: &Pal) -> El {
+/// The one accent control on the surface; `on` false, an unlit key that takes no press.
+fn primary(words: &str, on: bool, p: &Pal) -> El {
+    if !on {
+        return row()
+            .h(40.0)
+            .pl(16.0)
+            .pr(16.0)
+            .gap(8.0)
+            .center_y()
+            .radius(8.0)
+            .fill(p.unlit)
+            .border(1.0, p.line)
+            .role("button")
+            .disabled(true)
+            .inert()
+            .child(icon(&icons::DOWNLOAD, 16.0).color(p.muted))
+            .child(label(words, sans(14.0, 500.0), p.muted))
+            .key(keys::FOUND_DOWNLOAD);
+    }
     row()
         .h(40.0)
         .pl(16.0)
@@ -500,7 +517,7 @@ fn media(s: &State, m: &MediaMetadata, p: &Pal) -> (El, El, Option<El>) {
     let body = col().w_full().padding(24.0).gap(24.0).child(top).child(well);
     let out = Line::new().add(f::READOUT_LEAD, p.text2).fig(&readout, p.text).one(sans(13.0, 400.0));
     let go = if short.is_some() { f::SHORT_DOWNLOAD } else { f::SINGLE_DOWNLOAD };
-    (h, body, Some(strip(out, primary(go, p), p)))
+    (h, body, Some(strip(out, primary(go, true, p), p)))
 }
 
 /// A Reels, TikTok or Facebook clip: its own 9:16 shape as a poster, the facts beside it.
@@ -815,7 +832,8 @@ fn album(s: &State, pl: &Playlist, matched: &[Matched], selected: &[bool], p: &P
             .help(folder.clone()),
         )
         .child(label(readout, mono(12.0, 400.0), p.text2).single_line().truncate().min_w(0.0).shrink().pb(8.0));
-    (h, body, Some(strip(left, primary(&f::playlist_download_label(matched_n, queued), p), p)))
+    let go = primary(&f::playlist_download_label(matched_n, queued), actions::can_download_playlist(selected), p);
+    (h, body, Some(strip(left, go, p)))
 }
 
 // ── A search: three source strips side by side ─────────────────────────────
@@ -942,7 +960,7 @@ fn picked_bar(s: &State, p: &Pal) -> Option<El> {
         .center_y()
         .child(label(f::results_selected(n), mono(13.0, 500.0), p.text))
         .child(ghost(None, f::RESULTS_CLEAR, p.text2, p).key(keys::RESULTS_CLEAR).on_press(|s: &mut State| s.picked.clear()));
-    Some(strip(left, primary(&f::results_download_n(n), p), p))
+    Some(strip(left, primary(&f::results_download_n(n), true, p), p))
 }
 
 /// YouTube's pictures are 16:9; SoundCloud's and Spotify's are square.

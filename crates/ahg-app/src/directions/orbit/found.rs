@@ -696,10 +696,15 @@ fn tracks(s: &State, p: &Pal, pl: &Playlist, matched: &[Matched], selected: &[bo
         .child(select(p, f::PLAYLIST_FOLDER, folder, Some(&icons::FOLDER), |b| b.key(keys::CHOICE_FOLDER)).help(folder))
         .child(spacer())
         .child(txt(sum, FIG, p.text2).mb(8.0))
-        .child(
-            button(p, keys::FOUND_DOWNLOAD, &f::playlist_download_label(picked_n, queued), Some(&icons::DOWNLOAD), Tone::Primary)
-                .on_press(actions::download_found),
-        );
+        .child({
+            let go = button(p, keys::FOUND_DOWNLOAD, &f::playlist_download_label(picked_n, queued), Some(&icons::DOWNLOAD), Tone::Primary);
+            // Nothing ticked: dimmed and deaf, as Orbit's other controls that can't be used now.
+            if actions::can_download_playlist(selected) {
+                go.on_press(actions::download_found)
+            } else {
+                go.disabled(true).inert().opacity(super::downloads::DISABLED)
+            }
+        });
 
     let mut c = col().w_full().grow(1.0).min_h(0.0).gap(16.0).child(head);
     if basic && picked_n > cap {

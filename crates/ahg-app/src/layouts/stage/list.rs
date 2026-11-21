@@ -141,7 +141,7 @@ fn strip(s: &State, p: &Pal, make: Make) -> El {
             .on_press(move |s: &mut State| acts::set_filter(s, Filter::ALL[i]))
             .child(txt(*label, SMALL_M, if on { p.text } else { p.text2 }))
             .child(txt(n.to_string(), FIG, p.muted));
-        seg = seg.child(if on { cell.fill(p.raised) } else { cell.hover(p.hover) });
+        seg = seg.child(if on { cell.fill(p.raised).hover(p.lift()) } else { cell.hover(p.hover) });
     }
 
     let paused = tasks.iter().any(|t| t.progress.status == St::Paused);

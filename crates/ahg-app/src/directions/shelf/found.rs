@@ -782,7 +782,10 @@ fn album(s: &State, p: &Pal, pl: &Playlist, matched: &[Matched], selected: &[boo
         .child(quality_pick)
         .child(folder_pick)
         .child(text(sum).font(mono(12.0, 400.0)).color(p.text2).single_line().truncate().min_w(0.0).shrink().pb(8.0));
-    (body, foot(p, left, download(p, &f::playlist_download_label(matched_n, queued))))
+    let go = download(p, &f::playlist_download_label(matched_n, queued));
+    // Nothing ticked: faded and deaf, as Shelf's other buttons that can't be used now.
+    let go = if actions::can_download_playlist(selected) { go } else { go.disabled(true).inert().opacity(0.4) };
+    (body, foot(p, left, go))
 }
 
 // ── A search: one band per source ───────────────────────────────────────────

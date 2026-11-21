@@ -22,7 +22,7 @@ use crate::ring;
 const ROW_H: f32 = 64.0;
 const RING: f32 = 52.0;
 /// What a control that cannot act right now is drawn at.
-const DISABLED: f32 = 0.48;
+pub(super) const DISABLED: f32 = 0.48;
 
 /// A button in a preset's own style: key, word, glyph, tone.
 pub(crate) type Make<'a> = &'a dyn Fn(&str, &str, Option<&'static Icon>, Tone) -> El;
@@ -279,7 +279,7 @@ fn strip(s: &State, p: &Pal, make: Make) -> El {
             .on_press(move |s: &mut State| actions::set_filter(s, Filter::ALL[i]))
             .child(txt(*label, SMALL_M, if on { p.text } else { p.text2 }))
             .child(txt(n.to_string(), FIG, p.muted));
-        seg = if on { seg.fill(p.raised) } else { seg.hover(p.hover) };
+        seg = if on { seg.fill(p.raised).hover(p.lift()) } else { seg.hover(p.hover) };
         seg
     });
     // While anything is ticked the selection's actions take the bulk actions' place.

@@ -174,6 +174,12 @@ fn status(s: &State, p: &Pal) -> El {
                 .child(
                     txt(copy::REST_CHANGE, SMALL_M, p.text2)
                         .key(keys::CHANGE_FOLDER)
+                        // A round pill of the hover face behind the word, and a Tab stop.
+                        .px(8.0)
+                        .radius(12.0)
+                        .hover(p.hover)
+                        .focusable(true)
+                        .role("button")
                         .label(copy::REST_CHANGE_ARIA)
                         .cursor(rune::Cursor::Pointer)
                         .on_press_tx(actions::choose_folder),

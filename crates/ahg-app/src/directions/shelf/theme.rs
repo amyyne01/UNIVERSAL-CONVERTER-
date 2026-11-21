@@ -38,6 +38,12 @@ pub struct Pal {
 }
 
 impl Pal {
+    /// Shelf's hover on what is already raised (the chosen chip, the place you are in): the
+    /// card pressed a shade into the ink, where the others lift to the raised paper.
+    pub fn pressed_in(&self) -> Color {
+        self.raised.mix(self.text, 0.06)
+    }
+
     pub fn new(palette: usize, dark: bool) -> Pal {
         if palette == 0 { own(dark) } else { existing(palette, dark) }
     }

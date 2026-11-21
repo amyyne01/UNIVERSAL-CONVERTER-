@@ -158,7 +158,11 @@ fn status_line(s: &State, p: &Pal) -> El {
                     .key(keys::CHANGE_FOLDER)
                     .font(sans(13.0, 500.0))
                     .color(p.accent)
-                    .ml(8.0)
+                    // The word sits where it did; under the pointer a paper tab lifts behind it.
+                    .ml(4.0)
+                    .px(4.0)
+                    .radius(4.0)
+                    .hover(p.raised)
                     .focusable(true)
                     .role("button")
                     .label(copy::REST_CHANGE_ARIA)

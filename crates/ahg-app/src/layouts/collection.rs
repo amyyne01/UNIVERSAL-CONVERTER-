@@ -52,6 +52,8 @@ const OPEN: &str = "get-lucky";
 pub fn view(s: &State, cx: &mut Cx<State>) -> El {
     let p = Pal::new(s.palette, s.dark(cx));
     cx.caption_color(p.text);
+    // Keyboard focus: a soft wash of the accent hugging the control, like a sleeve's highlighter.
+    cx.focus_ring(3.0, 0.0, p.accent.alpha(0.45));
     let insets = cx.chrome_insets();
     let place = match s.nav {
         Nav::Home => wall(s, &p),
@@ -326,9 +328,12 @@ fn tab(p: &Pal, key: &str, label: &str, count: Option<usize>, dot: Option<Color>
         .gap(8.0)
         .center_y()
         .border_sides([0.0, 0.0, 2.0, 0.0], if on { p.text } else { Color::TRANSPARENT })
+        .hover_group()
         .focusable(true)
         .role("tab")
-        .label(label.to_string());
+        .label(label.to_string())
+        // Under the pointer a pencil line draws under the tab; on the chosen one it turns the accent.
+        .child(el().h(2.0).fill(if on { p.accent } else { p.text2 }).pin(Some(0.0), None, Some(0.0), Some(-2.0)).group_opacity(0.0, 1.0));
     if n > 0 {
         t = t.help(copy::nav_tooltip(label, n));
     }

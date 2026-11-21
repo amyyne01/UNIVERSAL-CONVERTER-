@@ -28,6 +28,8 @@ use theme::{Pal, sans};
 pub fn view(s: &State, cx: &mut Cx<State>) -> El {
     let p = Pal::new(s.palette, s.dark(cx));
     cx.caption_color(p.text);
+    // Keyboard focus: a pencil line of ink drawn close round the control.
+    cx.focus_ring(2.0, 1.0, p.text);
     let insets = cx.chrome_insets();
     let active = s.tasks.iter().filter(|t| is_active(t.progress.status)).count();
     let place = match s.nav {

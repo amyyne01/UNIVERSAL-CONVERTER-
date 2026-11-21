@@ -110,9 +110,7 @@ fn item(s: &State, p: &Pal, nav: Nav, glyph: &'static Icon, label: &str, n: usiz
         .cursor(rune::Cursor::Pointer)
         .on_press(move |s: &mut State| actions::go(s, nav))
         .child(body);
-    if !on {
-        r = r.hover(p.hover);
-    }
+    r = r.hover(if on { p.lift() } else { p.hover });
     if open {
         r = r
             .pr(16.0)

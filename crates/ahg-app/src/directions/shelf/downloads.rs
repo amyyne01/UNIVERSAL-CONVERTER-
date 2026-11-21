@@ -257,7 +257,7 @@ fn strip(s: &State, p: &Pal) -> El {
             .on_press(move |s: &mut State| actions::set_filter(s, filter))
             .child(text(label).font(sans(13.0, if on { 500.0 } else { 400.0 })).color(if on { p.text } else { p.text2 }))
             .child(text(count.to_string()).font(mono(12.0, 400.0)).color(p.muted));
-        seg = if on { seg.fill(p.raised).border(1.0, p.line_soft) } else { seg.hover(p.raised.alpha(0.6)) };
+        seg = if on { seg.fill(p.raised).border(1.0, p.line_soft).hover(p.pressed_in()) } else { seg.hover(p.raised.alpha(0.6)) };
         group = group.child(seg);
     }
     let search = row()

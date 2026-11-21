@@ -98,6 +98,8 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> El {
     let p = Pal::new(s.palette, s.dark(cx));
     cx.titlebar_height(crate::TITLEBAR);
     cx.caption_color(p.text2);
+    // Keyboard focus: a wide, thin orbit in the second ink, the stage's quiet ring.
+    cx.focus_ring(1.5, 4.0, p.text2);
     let insets = cx.chrome_insets();
     let (wide, tall, roomy) =
         cx.layout_with("stage-root", |r| (r[2] >= 1100.0, r[3] >= 760.0, r[2] >= 1500.0)).unwrap_or((true, true, true));
@@ -820,9 +822,7 @@ fn dock(s: &State, p: &Pal, active: usize) -> El {
             .on_press(move |s: &mut State| actions::go(s, nav))
             .child(el().h(8.0).center().child(body))
             .child(label);
-        if !on {
-            item = item.hover(p.hover);
-        }
+        item = item.hover(if on { p.lift() } else { p.hover });
         items = items.child(item);
     }
     // The orbit line runs through the three bodies, behind them.

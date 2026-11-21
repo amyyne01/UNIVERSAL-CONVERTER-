@@ -409,14 +409,22 @@ fn owned_row(s: &State, t: &DownloadTask, p: &Pal) -> El {
         .help(pr.filename.clone());
     let word = if skipped { copy::STATE_SKIPPED } else { copy::STATE_DONE };
     let id = &t.task_id;
-    let mut a = row().w(ACTIONS + 32.0).gap(4.0).justify_end().center_y();
+    // Remove, hidden until the row is hovered, leads: the last spot is where every section's
+    // last action (Cancel, Retry) sits, and a row that slides under a resting pointer is not
+    // hovered yet, so a repeated press there must not land on a hidden Remove (U0a: 50 rows became 48).
+    let mut a = row().w(ACTIONS + 32.0).gap(4.0).justify_end().center_y().child(row_act(
+        icon_button(&icons::REMOVE, copy::ACT_REMOVE, p.muted, p).group_opacity(0.0, 1.0),
+        RowAct::Remove,
+        id,
+    ));
     if skipped {
         a = a.child(row_act(icon_button(&icons::DOWNLOAD, copy::ACT_DOWNLOAD_AGAIN, p.text2, p), RowAct::DownloadAgain, id));
     }
-    a = a
-        .child(row_act(icon_button(&icons::EXTERNAL, copy::ACT_OPEN_FILE, p.text2, p), RowAct::OpenFile, id))
-        .child(row_act(icon_button(&icons::FOLDER, copy::ACT_SHOW_IN_FOLDER, p.text2, p), RowAct::ShowInFolder, id))
-        .child(row_act(icon_button(&icons::REMOVE, copy::ACT_REMOVE, p.muted, p).group_opacity(0.0, 1.0), RowAct::Remove, id));
+    a = a.child(row_act(icon_button(&icons::EXTERNAL, copy::ACT_OPEN_FILE, p.text2, p), RowAct::OpenFile, id)).child(row_act(
+        icon_button(&icons::FOLDER, copy::ACT_SHOW_IN_FOLDER, p.text2, p),
+        RowAct::ShowInFolder,
+        id,
+    ));
     row()
         .key(keys::row(&t.task_id))
         .on_press_tx(pick_with_mods(&t.task_id))

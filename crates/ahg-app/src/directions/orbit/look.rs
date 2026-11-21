@@ -256,6 +256,12 @@ pub struct Pal {
 }
 
 impl Pal {
+    /// Orbit's hover on what is already lit (the chosen segment, the place you are in): its own
+    /// raised face lifted a step toward the ink, where the others take the hover face.
+    pub fn lift(&self) -> Color {
+        mix(self.raised, self.text, 0.07)
+    }
+
     pub fn new(palette: usize, dark: bool) -> Pal {
         // Palette 0 is Orbit's own table; 1 to 7 are the app's, from the one colour source.
         let own = |i: usize| {
