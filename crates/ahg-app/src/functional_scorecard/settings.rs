@@ -80,7 +80,8 @@ fn other(c: &Ctx, key: &str, kind: &Kind) -> Option<Value> {
     match kind {
         Kind::Toggle => Some(json!(!now.as_bool().unwrap_or(false))),
         Kind::Select(opts) => {
-            let pick = opts.iter().find(|o| o.lock.is_none() && now.as_str() != Some(o.value.as_str()) && o.value != now.to_string())?;
+            let same = |v: &str| now.as_str() == Some(v) || now.as_u64().is_some_and(|n| v.parse() == Ok(n));
+            let pick = opts.iter().find(|o| o.lock.is_none() && !same(&o.value))?;
             let number = ahg_engine::config::default_config().get(key).is_some_and(Value::is_number);
             Some(if number { pick.value.parse::<u64>().map(Value::from).unwrap_or(json!(pick.value)) } else { json!(pick.value) })
         }

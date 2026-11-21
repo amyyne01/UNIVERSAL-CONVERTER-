@@ -153,7 +153,11 @@ fn selected(c: &Ctx) -> Vec<bool> {
 
 fn playlist_download(c: &mut Ctx) -> Res {
     c.click(keys::FOUND_DOWNLOAD)?;
-    c.until("the playlist's one job", |s| s.tasks.iter().any(|t| t.is_playlist && t.url == PLAYLIST))?;
+    c.until("the playlist's one job", |s| s.tasks.iter().any(|t| t.is_playlist && t.url == PLAYLIST)).map_err(|e| {
+        let at = c.rt.find(keys::FOUND_DOWNLOAD).and_then(|(x, y)| c.rt.element_at(x, y)).and_then(|p| p.key().map(str::to_owned));
+        let notices: Vec<String> = c.rt.state.notices.iter().map(|n| n.text.clone()).collect();
+        format!("{e} (found {}, the press hit {at:?}, notices {notices:?})", found_kind(&c.rt.state))
+    })?;
     let jobs = c.rt.state.tasks.iter().filter(|t| t.url == PLAYLIST).count();
     expect(jobs == 1, || format!("{jobs} jobs for one playlist"))
 }

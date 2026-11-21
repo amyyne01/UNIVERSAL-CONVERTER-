@@ -94,6 +94,7 @@ fn retry(c: &mut Ctx) -> Res {
 }
 
 fn filters(c: &mut Ctx) -> Res {
+    c.go(Nav::Downloads)?;
     // One finished row for Done, one canceled for Failed.
     let done = c.media("done.mp3");
     c.script(&format!("out [FILEPATH]{}\nexit 0\n", done.display()));
@@ -158,6 +159,15 @@ fn retry_all_failed(c: &mut Ctx) -> Res {
 
 fn clear_finished(c: &mut Ctx) -> Res {
     expect(c.rt.state.tasks.iter().any(|t| t.progress.status == St::Done), || "no finished row".into())?;
+    // Where Home also offers it, its confirm must show there too.
+    c.go(Nav::Home)?;
+    if c.has(keys::arm(Confirm::Clear)) {
+        c.click(keys::arm(Confirm::Clear))?;
+        let shown = c.has(keys::CONFIRM_YES);
+        c.rt.update(|s, _| actions::disarm(s));
+        expect(shown, || "Home's `clear-completed` arms a confirm that Home does not draw".into())?;
+    }
+    c.go(Nav::Downloads)?;
     c.click(keys::arm(Confirm::Clear))?;
     expect(c.rt.state.confirm == Some(Confirm::Clear), || "`clear-completed` armed nothing".into())?;
     c.click(keys::CONFIRM_YES)?;

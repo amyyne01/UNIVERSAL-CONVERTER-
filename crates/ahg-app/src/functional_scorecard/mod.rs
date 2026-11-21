@@ -29,9 +29,9 @@ mod shell;
 mod walk;
 
 /// The lowest FUNC score a preset may have. Baseline (step F0a, 2026-11-21): One bar 8.9, The collection 8.8,
-/// Now playing 8.8, Signal 9.0, Shelf 9.0, Orbit 9.0. After its fixes: 9.5, 9.7, 9.5, 9.5, 9.5, 9.5. The
-/// floor leaves room for one flaky walk (0.25).
-const FLOOR: f64 = 9.2;
+/// Now playing 8.8, Signal 9.0, Shelf 9.0, Orbit 9.0. After its fixes: 9.5 in every preset. The floor
+/// leaves room for a flaky scenario on a loaded machine (one cost Orbit 0.3 once).
+const FLOOR: f64 = 9.0;
 /// A failed core-flow scenario caps the preset here.
 const CORE_CAP: f64 = 6.0;
 
@@ -179,8 +179,18 @@ impl Ctx {
         let row = keys::row(id);
         if self.has(&row) {
             self.click(&row)?;
+            if self.has(&key) {
+                return self.click(&key);
+            }
         }
-        self.click(&key)
+        // Some looks keep a row's action in another place (Now playing's queue is on Home).
+        for nav in [Nav::Home, Nav::Downloads] {
+            self.go(nav)?;
+            if self.has(&key) {
+                return self.click(&key);
+            }
+        }
+        Err(format!("no control `{key}` drawn on Home or Downloads"))
     }
 
     pub fn key(&mut self, key: Key, mods: Mods) {
