@@ -742,7 +742,7 @@ pub fn start_download(s: &State, init: &TaskInit) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::fs;
     use std::time::{Duration, Instant};
 
@@ -754,10 +754,10 @@ mod tests {
     use crate::motion::{RING_HOLD, STALL_AFTER};
     use crate::ring::Pass;
 
-    const LINK: &str = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
-    const RECORD: &str = r#"{"id":"dQw4w9WgXcQ","title":"A Song","uploader":"Someone","duration":212,"webpage_url":"https://www.youtube.com/watch?v=dQw4w9WgXcQ"}"#;
+    pub(crate) const LINK: &str = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
+    pub(crate) const RECORD: &str = r#"{"id":"dQw4w9WgXcQ","title":"A Song","uploader":"Someone","duration":212,"webpage_url":"https://www.youtube.com/watch?v=dQw4w9WgXcQ"}"#;
 
-    fn scratch(name: &str) -> PathBuf {
+    pub(crate) fn scratch(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("ahg-app-live-{}-{name}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(dir.join("Downloads")).unwrap();
@@ -773,7 +773,7 @@ mod tests {
     }
 
     /// The real spec, headless, live on `dir` with the stand-ins: lookups play `json`, downloads `script`.
-    fn live(dir: &Path, json: &str, script: &str) -> Runtime<State> {
+    pub(crate) fn live(dir: &Path, json: &str, script: &str) -> Runtime<State> {
         live_with(dir, json, script, Outside::standin())
     }
 
@@ -793,7 +793,7 @@ mod tests {
         rt
     }
 
-    fn until(rt: &mut Runtime<State>, what: &str, done: impl Fn(&State) -> bool) {
+    pub(crate) fn until(rt: &mut Runtime<State>, what: &str, done: impl Fn(&State) -> bool) {
         let deadline = Instant::now() + Duration::from_secs(20);
         while Instant::now() < deadline {
             rt.frame(1.0 / 60.0);
@@ -1148,7 +1148,7 @@ mod tests {
     // called by hand from the clock reached; never Rune's frames again after that.
 
     /// A quarter and a half of the file, as yt-dlp's progress template reports them.
-    const P25: &str = "err [PROGRESS]1048576|4194304|NA|524288|6";
+    pub(crate) const P25: &str = "err [PROGRESS]1048576|4194304|NA|524288|6";
     const P50: &str = "err [PROGRESS]2097152|4194304|NA|524288|4";
 
     /// The pass's name, without its value.

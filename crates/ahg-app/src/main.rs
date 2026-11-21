@@ -52,6 +52,8 @@ mod spark;
 mod timeline;
 #[cfg(test)]
 mod uilib_golden;
+#[cfg(test)]
+mod ux_personas;
 
 use gate::{Direction, State};
 use rune::{App, AppSpec, Cx, El, Titlebar, Transition, Tx, el};

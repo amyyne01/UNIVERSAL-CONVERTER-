@@ -478,6 +478,9 @@ mod tests {
         ("functional_scorecard/shell.rs", "Duration::", 2, "test: how long a quit may take to end yt-dlp"),
         ("functional_scorecard/shell.rs", "from_secs", 1, "same"),
         ("functional_scorecard/shell.rs", "from_millis", 1, "same: the poll"),
+        ("ux_personas/mod.rs", "Duration::", 2, "test only: the UX personas' real-time wait for the stand-in yt-dlp and its 10 ms poll"),
+        ("ux_personas/mod.rs", "from_secs", 1, "same wait's deadline"),
+        ("ux_personas/mod.rs", "from_millis", 1, "same wait's poll"),
     ];
 
     fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
