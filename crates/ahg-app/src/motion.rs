@@ -536,6 +536,9 @@ mod tests {
         ("splash.rs", ".transition(", 1, "the splash's exit, built by motion::splash_out"),
         ("live.rs", "Duration::", 1, "a lookup's answer waits out LOADING_DELAY + LOADING_MIN on its worker thread"),
         ("live.rs", "from_secs", 1, "same line"),
+        ("shell/clipboard.rs", "Duration::", 1, "not animation: the clipboard watcher's poll cadence (engine POLL_MS, 1.5 s)"),
+        ("shell/clipboard.rs", "from_millis", 1, "same line"),
+        ("shell/clipboard.rs", "tx.wake_after(", 2, "keeps that poll running while the window is hidden"),
         // The functionality scorecard is test code (`#[cfg(test)] mod`): a wait's deadline, not app timing.
         ("functional_scorecard/mod.rs", "Duration::", 2, "test: the patience of a wait on the core, and its poll"),
         ("functional_scorecard/mod.rs", "from_secs", 1, "same: PATIENCE"),

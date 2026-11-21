@@ -53,9 +53,9 @@ impl Shell {
             Box::new(taskbar::Taskbar),
             Box::new(toast::Toast),
             Box::new(tray::Tray::default()),
-            Box::new(clipboard::Clipboard),
+            Box::new(clipboard::Clipboard::default()),
             Box::new(presence::Presence),
-            Box::new(hotkey::Hotkey),
+            Box::new(hotkey::Hotkey::default()),
         ])
     }
 

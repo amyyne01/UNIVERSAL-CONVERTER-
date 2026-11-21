@@ -10,7 +10,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use ahg_engine::stats::DownloadStats;
 use ahg_engine::tier::Plan;
-use ahg_engine::types::{DownloadStatus, DownloadTask, MediaMetadata, Playlist, SearchResult, SourcePlatform, VideoQuality};
+use ahg_engine::types::{DownloadStatus, DownloadTask, MediaMetadata, Playlist, SearchResult, SourcePlatform, UrlDetection, VideoQuality};
 use ahg_engine::updater::UpdateState;
 use ahg_engine::ytdlp_updater::YtdlpStatus;
 use rune::{Cx, Image, ImageCache, Key, KeyEvent, TextEdit, Tx, Waker};
@@ -271,6 +271,8 @@ pub struct State {
     pub plan: Plan,
     /// What the field found; `Found::Nothing` in every scene but `search`, `playlist` and `media`.
     pub found: Found,
+    /// A link the clipboard watcher saw (K41): the offer surface (step 68) shows it with Download and dismiss. The watcher never downloads.
+    pub clipboard_offer: Option<UrlDetection>,
     /// The sidebar is pinned open (the presets that have one).
     pub nav_pinned: bool,
     /// The preset picker is open.
@@ -414,6 +416,7 @@ impl State {
             ring: false,
             plan: Plan::Premium,
             found: Found::Nothing,
+            clipboard_offer: None,
             nav_pinned: false,
             picker: false,
             previews: Vec::new(),
