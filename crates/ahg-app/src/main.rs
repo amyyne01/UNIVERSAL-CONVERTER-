@@ -41,6 +41,7 @@ mod ring;
 mod sample;
 #[allow(dead_code)]
 mod settings_spec;
+mod shell;
 #[allow(dead_code)]
 mod spark;
 #[allow(dead_code)]
@@ -49,7 +50,7 @@ mod timeline;
 mod uilib_golden;
 
 use gate::{Direction, State};
-use rune::{App, AppSpec, Cx, El, Titlebar, Transition, el};
+use rune::{App, AppSpec, Cx, El, Titlebar, Transition, Tx, el};
 
 /// The window's title band, in points. Rune draws the three caption buttons over its trailing end.
 pub const TITLEBAR: f32 = 44.0;
@@ -156,7 +157,7 @@ pub(crate) fn spec() -> AppSpec<State> {
         // The interface family and the one for figures, per direction (owner, 2026-11-15).
         families: gate::direction_from_args().families(),
         setup: Some(setup),
-        poll: Some(live::poll),
+        poll: Some(poll),
         on_key: Some(gate::on_key),
         ..AppSpec::new("AHG Universal Converter", (1240.0, 820.0), gate::init, view)
     }
@@ -170,7 +171,24 @@ fn setup(s: &mut State, waker: rune::Waker) {
     }
 }
 
+fn poll(s: &mut State, clock: f64, tx: &mut Tx) -> bool {
+    let changed = live::poll(s, clock, tx);
+    shell::poll(s, tx) | changed
+}
+
+/// Closing the window quits, as in Electron (`window-all-closed`): no `keep_running`.
+fn on_close(s: &mut State, _: &mut Tx) {
+    shell::quit(s);
+}
+
+fn on_quit(s: &mut State, _: &mut Tx) {
+    shell::quit(s);
+}
+
 fn main() {
+    if !shell::opens_window(rune::is_headless(), || rune::single_instance("AHG-Converter")) {
+        return;
+    }
     let args: Vec<String> = std::env::args().collect();
     match live::folder_from(&args) {
         Some(Ok(folder)) => drop(live::FOLDER.set(folder)),
@@ -180,6 +198,13 @@ fn main() {
         }
         None => {}
     }
-    // Quitting stops the core: its lookups first, then the downloads, then the save.
-    App::new(spec()).titlebar(Titlebar::new(TITLEBAR)).on_quit(|s, _| s.live = None).run();
+    let app = App::new(spec())
+        .titlebar(Titlebar::new(TITLEBAR))
+        .on_close(on_close)
+        .on_quit(on_quit)
+        // A launch carrying a `scheme://` argument comes here instead of reopening; it is
+        // ignored and only the window comes forward (ahg:// links removed, owner 2026-11-21).
+        .on_open_url(|_, _, _| shell::show_window());
+    shell::install(&app.handle());
+    app.run();
 }

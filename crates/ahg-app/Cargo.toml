@@ -15,6 +15,14 @@ serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }
 # is repeated in the workspace's [patch.crates-io].
 rune = { git = "https://github.com/anomalyco/rune", rev = "feac7b155c5f5873ad611e8aa420ad217db5ef16", features = ["native-file-dialog"] }
 
+# The shell's own Windows calls (step 60 adds them once; later steps only use them).
+[target.'cfg(windows)'.dependencies]
+# Toasts, silent (Q2, D40): same repository and rev as Rune.
+rune-notify = { git = "https://github.com/anomalyco/rune", rev = "feac7b155c5f5873ad611e8aa420ad217db5ef16" }
+# Our own `ITaskbarList3` percent bar (Q1), at the version Rune and rune-notify already
+# build, with features they already turn on, so it adds no code to the build.
+windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_System_Com", "Win32_UI_Shell"] }
+
 # The three directions of the design gate. Each can be built alone
 # (`--no-default-features --features shelf`), so one direction's unfinished
 # code never stops the other two from building.

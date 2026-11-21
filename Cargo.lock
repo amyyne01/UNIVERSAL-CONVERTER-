@@ -105,7 +105,9 @@ dependencies = [
  "ahg-engine",
  "ahg-runtime",
  "rune",
+ "rune-notify",
  "serde_json",
+ "windows",
 ]
 
 [[package]]
@@ -3002,6 +3004,18 @@ version = "0.1.0"
 source = "git+https://github.com/anomalyco/rune?rev=feac7b155c5f5873ad611e8aa420ad217db5ef16#feac7b155c5f5873ad611e8aa420ad217db5ef16"
 
 [[package]]
+name = "rune-notify"
+version = "0.0.1"
+source = "git+https://github.com/anomalyco/rune?rev=feac7b155c5f5873ad611e8aa420ad217db5ef16#feac7b155c5f5873ad611e8aa420ad217db5ef16"
+dependencies = [
+ "block2 0.5.1",
+ "objc2 0.5.3",
+ "windows",
+ "windows-core",
+ "windows-registry",
+]
+
+[[package]]
 name = "rune-staging"
 version = "0.0.1"
 source = "git+https://github.com/anomalyco/rune?rev=feac7b155c5f5873ad611e8aa420ad217db5ef16#feac7b155c5f5873ad611e8aa420ad217db5ef16"
@@ -4372,6 +4386,17 @@ checksum = "6e2e40844ac143cdb44aead537bbf727de9b044e107a0f1220392177d15b0f26"
 dependencies = [
  "windows-core",
  "windows-link",
+]
+
+[[package]]
+name = "windows-registry"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "02752bf7fbdcce7f2a27a742f798510f3e5ad88dbe84871e5168e2120c3d5720"
+dependencies = [
+ "windows-link",
+ "windows-result",
+ "windows-strings",
 ]
 
 [[package]]
