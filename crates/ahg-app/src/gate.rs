@@ -124,6 +124,9 @@ pub fn on_key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
     if s.splash.is_some() {
         return true;
     }
+    if s.onboarding.is_some() {
+        return crate::onboarding::on_key(s, ev);
+    }
     let used = key(s, ev, tx);
     s.sync();
     used
@@ -368,6 +371,8 @@ pub struct State {
     pub live: Option<crate::live::Handle>,
     /// The launch splash and its loading stages; `None` once it is gone (and in every scene but its own).
     pub splash: Option<crate::splash::Splash>,
+    /// The first-launch setup, shown once the splash is gone; `None` once it is done.
+    pub onboarding: Option<crate::onboarding::Onboarding>,
     cache: Option<ImageCache>,
 }
 
@@ -464,6 +469,7 @@ impl State {
             rings: crate::ring::Rings::default(),
             live: None,
             splash: None,
+            onboarding: None,
             cache: None,
         };
         s.sync();
@@ -967,6 +973,25 @@ pub const SCENES: &[(&str, fn(&mut State))] = &[
         let mut splash = crate::splash::Splash::new(crate::splash::STAGES);
         splash.floor = Some(crate::motion::SPLASH_FLOOR);
         s.splash = Some(splash);
+    }),
+    // The first-launch setup's three steps, over a first launch.
+    ("onboarding", |s| {
+        s.tasks.clear();
+        s.stats = None;
+        crate::onboarding::open(s);
+    }),
+    ("onboarding-look", |s| {
+        s.tasks.clear();
+        s.stats = None;
+        crate::onboarding::open(s);
+        crate::onboarding::next(s);
+    }),
+    ("onboarding-essentials", |s| {
+        s.tasks.clear();
+        s.stats = None;
+        crate::onboarding::open(s);
+        crate::onboarding::next(s);
+        crate::onboarding::next(s);
     }),
     ("splash-warm", |s| {
         let mut splash = crate::splash::Splash::new(crate::splash::STAGES);

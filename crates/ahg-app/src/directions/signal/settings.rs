@@ -167,6 +167,7 @@ fn button_of(words: &str) -> (Option<&'static str>, Option<&'static Icon>, Optio
         w::SHOW_SHORTCUTS => (Some(keys::SHOW_SHORTCUTS), None, Some(|s, _| actions::show_shortcuts(s))),
         w::GET_SUPPORT => (Some(keys::GET_SUPPORT), Some(&icons::EXTERNAL), Some(actions::get_support)),
         w::LAYOUT_CHOOSE => (Some(keys::LAYOUT_CHOOSE), None, Some(|s, _| actions::open(s, Overlay::Picker))),
+        copy::onboarding::RUN_AGAIN_BUTTON => (Some(keys::RUN_SETUP), None, Some(|s, _| crate::onboarding::open(s))),
         // TODO(shared): `actions::see_plans(s)`; the plans sheet has no action yet.
         w::SEE_PLANS => (Some(keys::SEE_PLANS), None, None),
         _ => (None, None, None),

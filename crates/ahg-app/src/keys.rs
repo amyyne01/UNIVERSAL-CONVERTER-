@@ -21,6 +21,35 @@ pub const NOTICE_ACTION: &str = "notice-action";
 pub const NOTICE_DISMISS: &str = "notice-dismiss";
 /// The launch splash (the planet logo), drawn until the first stages are done.
 pub const SPLASH: &str = "splash";
+/// The first-launch setup over the whole window, and its controls (`onboarding.rs`). Its own
+/// keys, so the Settings page under it (Run setup again) never answers for one of them.
+pub const ONBOARDING: &str = "onboarding";
+pub const ONBOARD_NEXT: &str = "onboard-next";
+pub const ONBOARD_BACK: &str = "onboard-back";
+pub const ONBOARD_SKIP: &str = "onboard-skip";
+pub const ONBOARD_SKIP_YES: &str = "onboard-skip-yes";
+pub const ONBOARD_SKIP_NO: &str = "onboard-skip-no";
+pub const ONBOARD_FOLDER: &str = "onboard-folder";
+/// Settings' row that opens the setup again.
+pub const RUN_SETUP: &str = "run-setup";
+
+/// A theme choice in the setup (Light, Dark, System).
+pub fn onboard_theme(index: usize) -> String {
+    format!("onboard-theme-{index}")
+}
+
+/// A palette swatch in the setup, 1 to 7.
+pub fn onboard_palette(index: usize) -> String {
+    format!("onboard-palette-{index}")
+}
+
+/// A setting's control in the setup; a select's choice adds its value.
+pub fn onboard_setting(key: &str, value: Option<&str>) -> String {
+    match value {
+        Some(v) => format!("onboard-set-{key}-{v}"),
+        None => format!("onboard-set-{key}"),
+    }
+}
 
 /// The place's own button in the preset's navigation.
 pub fn nav(place: Nav) -> &'static str {

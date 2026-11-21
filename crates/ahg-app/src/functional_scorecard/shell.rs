@@ -163,7 +163,74 @@ pub const STARTUP: &[Scenario] = &[
     ("the first frame shows the splash", splash_first),
     ("main does no heavy work before the window runs", main_is_light),
     ("the splash goes only when every stage is done", splash_waits),
+    ("a first launch shows the setup once the splash is gone", setup_first),
+    ("choosing a layout in the setup switches the app live", setup_layout),
+    ("a setup choice persists to the real config, and the next launch skips the setup", setup_persists),
+    ("Skip setup leaves the defaults", setup_skip),
+    ("Settings' Run setup again reopens it", setup_again),
 ];
+
+/// A first launch on a fresh folder: no `onboarded` flag yet (a seen splash, for its short floor).
+fn first_launch(c: &Ctx, tag: &str) -> Ctx {
+    Ctx::launch(c.preset, c.dark, tag, r#"{"splashSeen":true}"#)
+}
+
+fn setup_first(c: &mut Ctx) -> Res {
+    let f = first_launch(c, "setup-first");
+    expect(f.rt.state.onboarding.is_some() && f.rt.find(keys::ONBOARDING).is_some(), || {
+        "no setup after the splash on a first launch".into()
+    })
+}
+
+fn setup_layout(c: &mut Ctx) -> Res {
+    let mut f = first_launch(c, "setup-layout");
+    f.click(&keys::preset(c.preset))?;
+    let now = crate::gate::preset(&f.rt.state);
+    expect(now == c.preset, || format!("the card of {} left preset {now} on", crate::gate::PRESETS[c.preset].0))?;
+    let under = format!("preset-{}", c.preset);
+    expect(f.rt.elements().iter().any(|e| !e.exiting && e.key.as_deref() == Some(under.as_str())), || {
+        "the chosen preset is not drawn behind the setup".into()
+    })?;
+    expect(f.rt.state.onboarding.is_some(), || "choosing a layout closed the setup".into())
+}
+
+fn setup_persists(c: &mut Ctx) -> Res {
+    let mut f = first_launch(c, "setup-persists");
+    f.click(&keys::preset(c.preset))?;
+    f.click(keys::ONBOARD_NEXT)?;
+    f.click(&keys::onboard_palette(4))?;
+    f.click(keys::ONBOARD_NEXT)?;
+    f.click(&keys::onboard_setting("defaultFormat", Some("opus")))?;
+    f.click(keys::ONBOARD_NEXT)?;
+    expect(f.rt.state.onboarding.is_none() && f.rt.state.nav == Nav::Home, || "Finish did not leave the setup for Home".into())?;
+    let palette = ahg_engine::config::PALETTE_IDS[3];
+    f.file_holds("config.json", |v| v["defaultFormat"] == "opus" && v["palette"] == palette)?;
+    f.file_holds("settings-rust.json", |v| v["onboarded"] == true && v["preset"] == c.preset)?;
+    f.restart()?;
+    let s = &f.rt.state;
+    expect(s.onboarding.is_none(), || "the setup came back on the next launch".into())?;
+    expect(s.settings.get("defaultFormat").and_then(|v| v.as_str()) == Some("opus") && s.palette == 4, || {
+        format!("after a restart: format {:?}, palette {}", s.settings.get("defaultFormat"), s.palette)
+    })?;
+    expect(crate::gate::preset(s) == c.preset, || format!("after a restart the preset is {}", crate::gate::preset(s)))
+}
+
+fn setup_skip(c: &mut Ctx) -> Res {
+    let mut f = first_launch(c, "setup-skip");
+    let before = f.rt.state.settings.clone();
+    f.click(keys::ONBOARD_SKIP)?;
+    expect(f.rt.state.onboarding.is_none(), || "Skip setup left it open".into())?;
+    expect(f.rt.state.settings == before, || "Skip setup changed a setting".into())?;
+    f.file_holds("settings-rust.json", |v| v["onboarded"] == true)
+}
+
+fn setup_again(c: &mut Ctx) -> Res {
+    c.go(Nav::Settings)?;
+    c.click(keys::RUN_SETUP)?;
+    expect(c.rt.state.onboarding.is_some() && c.rt.find(keys::ONBOARDING).is_some(), || "Run setup again opened nothing".into())?;
+    c.click(keys::ONBOARD_SKIP)?;
+    expect(c.rt.state.onboarding.is_none(), || "Skip setup did not close the reopened setup".into())
+}
 
 fn splash_first(_: &mut Ctx) -> Res {
     let mut rt = rune::App::new(crate::spec()).headless_runtime((1240.0, 820.0), rune::Env { system_dark: true, scale: 1.0 });

@@ -341,10 +341,12 @@ fn status(p: &Pal, r: &Row) -> El {
             w::ENGINE_CHECK => (keys::CHECK_ENGINE, Some(&icons::REFRESH)),
             w::SHOW_SHORTCUTS => (keys::SHOW_SHORTCUTS, None),
             w::GET_SUPPORT => (keys::GET_SUPPORT, Some(&icons::EXTERNAL)),
+            crate::copy::onboarding::RUN_AGAIN_BUTTON => (keys::RUN_SETUP, None),
             _ => (keys::SEE_PLANS, None),
         };
         let button = ghost(p, key, glyph, b, p.text);
         c = c.child(match key {
+            keys::RUN_SETUP => button.on_press(crate::onboarding::open),
             keys::IMPORT_COOKIES => button.on_press_tx(actions::import_cookies),
             keys::CHECK_UPDATE => button.on_press(actions::check_update),
             keys::CHECK_ENGINE => button.on_press(actions::check_engine),

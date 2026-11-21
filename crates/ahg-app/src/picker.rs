@@ -34,7 +34,7 @@ fn c(code: &str) -> Color {
     hex(code).unwrap_or(Color::BLACK)
 }
 
-fn tile(s: &State, index: usize, dark: bool) -> El {
+pub(crate) fn tile(s: &State, index: usize, dark: bool) -> El {
     let (name, _, layout) = gate::PRESETS[index];
     let on = gate::preset(s) == index;
     let (ink, muted, edge) = if dark { (c("#f2f2f4"), c("#9a9aa3"), c("#34343b")) } else { (c("#17171a"), c("#6b6b74"), c("#d4d4da")) };

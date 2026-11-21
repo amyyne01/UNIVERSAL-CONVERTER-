@@ -192,6 +192,17 @@ pub fn splash_char(el: rune::El, i: usize, len: usize) -> rune::El {
 pub const SPLASH_STALL: f64 = 12.0;
 /// Past this the splash goes anyway and a notice names what never finished: never an endless splash.
 pub const SPLASH_GIVE_UP: f64 = 45.0;
+/// The first-launch setup: whole on its first frame (it takes over from the splash on the same
+/// ground, so nothing of the preset shows through), and it leaves as the splash does, into Home.
+pub const ONBOARD_OUT: SpringPair = OVERLAY;
+pub fn onboarding(el: rune::El) -> rune::El {
+    el.transition(Transition::asymmetric(Transition::identity(), Transition::opacity()).springs(ONBOARD_OUT))
+}
+/// One step of the setup swapping for the next: a short rise in, a fade out, on the sheet's pair.
+pub const ONBOARD_STEP: SpringPair = SHEET;
+pub fn onboarding_step(el: rune::El) -> rune::El {
+    el.transition(Transition::asymmetric(Transition::offset(0.0, 8.0).combined(Transition::opacity()), Transition::opacity()).springs(ONBOARD_STEP))
+}
 /// While the splash is up its poll runs every frame (stages, bar, scramble).
 pub fn splash_frame(tx: &mut rune::Tx) {
     tx.wake_after(std::time::Duration::ZERO);

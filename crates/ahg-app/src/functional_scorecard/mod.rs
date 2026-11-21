@@ -83,11 +83,19 @@ impl Drop for Ctx {
 
 impl Ctx {
     pub fn new(preset: usize, dark: bool, tag: &str) -> Ctx {
+        // A later launch (its splash's 1 s floor, the setup done); the startup group covers a first one.
+        let mut ctx = Ctx::launch(preset, dark, tag, r#"{"splashSeen":true,"onboarded":true}"#);
+        ctx.rt.update(move |s, tx| actions::set_preset(s, preset, tx));
+        ctx.frames(SETTLE);
+        ctx
+    }
+
+    /// A launch whose `settings-rust.json` holds `own`, on the preset it starts with (no switch).
+    pub fn launch(preset: usize, dark: bool, tag: &str, own: &str) -> Ctx {
         let dir = std::env::temp_dir().join(format!("ahg-func-{}-{preset}-{}-{tag}", std::process::id(), if dark { "d" } else { "l" }));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(dir.join("Downloads")).unwrap();
-        // A later launch (its splash's 1 s floor); the startup group covers a first one.
-        fs::write(dir.join("settings-rust.json"), r#"{"splashSeen":true}"#).unwrap();
+        fs::write(dir.join("settings-rust.json"), own).unwrap();
         let mut rt = App::new(crate::spec()).headless_runtime((1240.0, 820.0), Env { system_dark: dark, scale: 1.0 });
         rt.frame(0.0);
         let mut ctx = Ctx { rt, dir, preset, dark };
@@ -96,9 +104,16 @@ impl Ctx {
         ctx.attach();
         ctx.until("the first read of the core and the splash gone", |s| s.loading == Loading::Ready && s.splash.is_none())
             .expect("the core never answered");
-        ctx.rt.update(move |s, tx| actions::set_preset(s, preset, tx));
         ctx.frames(SETTLE);
         ctx
+    }
+
+    /// Waits until `file` in the folder reads as JSON that `done` accepts (the core writes on its own thread).
+    pub fn file_holds(&mut self, file: &str, done: impl Fn(&serde_json::Value) -> bool) -> Res {
+        let path = self.dir.join(file);
+        let read = |p: &Path| fs::read_to_string(p).ok().and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok());
+        self.until(file, |_| read(&path).as_ref().is_some_and(&done))
+            .map_err(|_| format!("{file} never held what was chosen: {}", fs::read_to_string(&path).unwrap_or_default()))
     }
 
     /// The core on this folder, with the stand-ins.

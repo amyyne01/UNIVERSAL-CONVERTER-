@@ -328,9 +328,16 @@ fn own(core: &Core) -> Job {
     if !seen {
         core.set_own_setting("splashSeen", json!(true));
     }
+    // The first-launch setup until it is finished or skipped (set by `onboarding::finish`).
+    let onboarded = core.own_setting("onboarded") == Some(json!(true));
     Box::new(move |s, tx| {
         if let Some(splash) = s.splash.as_mut() {
             splash.floor = Some(if seen { motion::SPLASH_FLOOR_WARM } else { motion::SPLASH_FLOOR });
+        }
+        if !onboarded && s.onboarding.is_none() {
+            crate::onboarding::open(s);
+            // Its layout cards decode behind the splash.
+            crate::gate::load_previews(s);
         }
         if let Some(preset) = preset {
             actions::set_preset(s, preset, tx);
@@ -817,6 +824,11 @@ pub(crate) mod tests {
         ytdlp.env("FAKE_YTDLP_SCRIPT", dir.join("script.txt").to_str().unwrap());
         ytdlp.env("FAKE_YTDLP_ARGS", dir.join("args.txt").to_str().unwrap());
         let ytdlp = Arc::new(ytdlp);
+        // Past the first-launch setup (its own tests are in onboarding/tests.rs); a file the test wrote is kept.
+        let own = dir.join("settings-rust.json");
+        let mut saved: Value = fs::read_to_string(&own).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_else(|| json!({}));
+        saved["onboarded"] = json!(true);
+        fs::write(&own, saved.to_string()).unwrap();
         let mut rt = App::new(crate::spec()).headless_runtime((1240.0, 820.0), Env { system_dark: true, scale: 1.0 });
         rt.frame(0.0);
         attach(&mut rt.state, dir, Arc::new(|| {}), move |paths, plan, events| Core::start_with(paths, ytdlp, plan, events, outside));
@@ -1136,7 +1148,7 @@ pub(crate) mod tests {
         until(&mut rt, "the pin written back", |_| read()["navPinned"] == json!(false) && read().get("ownPalette").is_some());
         assert_eq!(
             read(),
-            json!({ "preset": 4, "navPinned": false, "ownPalette": false, "holdUnconfirmed": true, "splashSeen": true }),
+            json!({ "preset": 4, "navPinned": false, "ownPalette": false, "holdUnconfirmed": true, "splashSeen": true, "onboarded": true }),
             "other keys are kept"
         );
         rt.state.live = None;

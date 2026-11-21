@@ -593,17 +593,20 @@ pub mod settings;
 pub mod found;
 // ── The launch splash.
 pub mod splash;
+// ── The first-launch setup.
+pub mod onboarding;
 
 /// Every `pub const` of the three copy files with the string literals it holds, read from
 /// the sources (so a new constant is checked without being listed). A name with several
 /// literals (a tuple, an array) appears once per literal.
 #[cfg(test)]
 mod tests {
-    const FILES: [(&str, &str); 4] = [
+    const FILES: [(&str, &str); 5] = [
         ("copy", include_str!("copy.rs")),
         ("found", include_str!("copy/found.rs")),
         ("settings", include_str!("copy/settings.rs")),
         ("splash", include_str!("copy/splash.rs")),
+        ("onboarding", include_str!("copy/onboarding.rs")),
     ];
 
     /// The same sentence under two names on purpose: (the alias, what it points at).

@@ -48,6 +48,7 @@ mod settings_spec;
 mod shell;
 #[allow(dead_code)]
 mod spark;
+mod onboarding;
 mod splash;
 #[allow(dead_code)]
 mod timeline;
@@ -106,8 +107,9 @@ fn view(s: &State, cx: &mut Cx<State>) -> El {
     // The window is filled with the shown preset's own ground, so the dissolve never shows
     // Rune's black clear colour; it springs to the new ground with the switch.
     let window = window.child(shown);
-    // Empty when nothing is open over the preset.
-    window.children(overlays::view(s, cx)).children(splash::view(s, cx))
+    // Empty when nothing is open over the preset. The first-launch setup sits under the
+    // notices, so a Basic lock's notice shows over it.
+    window.children(onboarding::view(s, cx)).children(overlays::view(s, cx)).children(splash::view(s, cx))
 }
 
 /// The fill of the shown preset's root, with the same palette and the same light or dark

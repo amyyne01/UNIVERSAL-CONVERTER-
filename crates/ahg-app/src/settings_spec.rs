@@ -193,6 +193,8 @@ pub fn sections(s: &State) -> Vec<Section> {
 
     let mut layout = row(Some("layout"), c::LAYOUT, Kind::Layout, json!(PRESETS[s.own.preset % PRESETS.len()].0));
     layout.button = Some(c::LAYOUT_CHOOSE);
+    let mut setup = row(None, crate::copy::onboarding::RUN_AGAIN, Kind::Status, Value::Null);
+    setup.button = Some(crate::copy::onboarding::RUN_AGAIN_BUTTON);
     let appearance = vec![
         row(Some("theme"), c::THEME, Kind::Theme, get("theme")),
         row(Some("palette"), c::PALETTE, Kind::Palette, get("palette")),
@@ -200,6 +202,7 @@ pub fn sections(s: &State) -> Vec<Section> {
         toggle("showNotifications", c::NOTIFICATIONS),
         toggle("discordRichPresence", c::DISCORD),
         layout,
+        setup,
     ];
 
     // Scheduled downloads: the master toggle reads off on Basic whatever the file says.

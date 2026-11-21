@@ -171,6 +171,7 @@ fn wire(b: El, key: &str) -> El {
         keys::CHECK_ENGINE => b.on_press(actions::check_engine),
         keys::SHOW_SHORTCUTS => b.on_press(actions::show_shortcuts),
         keys::GET_SUPPORT => b.on_press_tx(actions::get_support),
+        keys::RUN_SETUP => b.on_press(crate::onboarding::open),
         _ => b,
     }
 }
@@ -185,6 +186,7 @@ fn action(word: &'static str) -> (&'static str, Option<&'static Icon>) {
         w::SHOW_SHORTCUTS => (keys::SHOW_SHORTCUTS, None),
         w::GET_SUPPORT => (keys::GET_SUPPORT, Some(&icons::EXTERNAL)),
         w::LAYOUT_CHOOSE => (keys::LAYOUT_CHOOSE, None),
+        crate::copy::onboarding::RUN_AGAIN_BUTTON => (keys::RUN_SETUP, None),
         _ => (keys::SEE_PLANS, None),
     }
 }
