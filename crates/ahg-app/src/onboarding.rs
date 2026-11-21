@@ -272,7 +272,7 @@ fn look(s: &State, r: &palette::Roles, dark: bool) -> El {
                 })),
         );
     }
-    col().gap(10.0).child(caption(c::THEME, r)).child(themes.mb(20.0)).child(caption(c::PALETTE, r)).child(swatches)
+    col().gap(10.0).child(caption(c::THEME, r)).child(themes.self_start().mb(20.0)).child(caption(c::PALETTE, r)).child(swatches)
 }
 
 fn caption((label, desc): (&str, &str), r: &palette::Roles) -> El {
@@ -336,7 +336,7 @@ fn setting(sr: Row, r: &palette::Roles) -> El {
         }
         Kind::Select(options) => {
             let now = text_of(&sr.value);
-            let mut chips = row().gap(4.0).flex_wrap().justify_end().max_w(520.0).role("radiogroup").label(sr.label);
+            let mut chips = row().gap(4.0).flex_wrap().justify_end().max_w(640.0).role("radiogroup").label(sr.label);
             for o in options {
                 let on = o.value == now;
                 let value = o.value.clone();
