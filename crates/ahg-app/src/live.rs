@@ -1449,12 +1449,18 @@ mod tests {
             appdata.clone(),
             appdata.parent().unwrap().to_owned(),
         ] {
-            assert!(refused(ok(&p)), "{} was accepted", p.display());
+            assert!(refused(ok(&p)), "{} was accepted: {:?}", p.display(), ok(&p));
         }
-        // A relative path, from the working folder.
-        let up = cwd.components().count() - 1;
-        let relative: PathBuf = std::iter::repeat_n("..", up).collect::<PathBuf>().join(real.components().skip(1).collect::<PathBuf>());
-        assert!(refused(ok(&relative)), "{} was accepted", relative.display());
+        // A relative path, from the working folder: it exists only on the working folder's own drive
+        // (CI keeps the workspace on D: and the temp folder on C:, where there is none).
+        if cwd.components().next() == real.components().next() {
+            let up = cwd.components().count() - 1;
+            // After the drive and the root: `..` up to the root, then down to the real folder.
+            let below: PathBuf = real.components().skip(2).collect();
+            let relative: PathBuf = std::iter::repeat_n("..", up).collect::<PathBuf>().join(below);
+            let answer = ok(&relative);
+            assert!(refused(answer.clone()), "{} was accepted: {answer:?}", relative.display());
+        }
         // A junction to the real folder, and a real folder that is itself a junction.
         let link = root.join("link");
         let made = std::process::Command::new("cmd").args(["/C", "mklink", "/J"]).arg(&link).arg(&real).output().unwrap();
