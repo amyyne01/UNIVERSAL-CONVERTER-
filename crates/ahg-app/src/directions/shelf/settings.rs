@@ -152,12 +152,9 @@ fn control(s: &State, p: &Pal, r: &Row) -> El {
         Kind::Toggle => {
             let on = r.value.as_bool().unwrap_or(false);
             let switch = toggle(p, r.label, on);
-            // TODO(shared): a locked row's tap should say what Premium adds, and `holdUnconfirmed` is not a config key
-            // (`Core::set_hold_unconfirmed`); no action takes either, so those two rows stay unwired.
+            // TODO(shared): a locked row's tap should say what Premium adds; no action takes it, so it stays unwired.
             match r.key {
-                Some(key) if r.lock.is_none() && key != "holdUnconfirmed" => {
-                    switch.on_press(move |s: &mut State| _ = actions::set_setting(s, key, Value::Bool(!on)))
-                }
+                Some(key) if r.lock.is_none() => switch.on_press(move |s: &mut State| _ = actions::set_setting(s, key, Value::Bool(!on))),
                 _ => switch,
             }
         }

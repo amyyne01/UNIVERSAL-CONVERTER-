@@ -798,12 +798,16 @@ pub fn download_again(s: &mut State, _tx: &mut Tx, id: &str) {
 
 /// "Do this next": to the front of the queue.
 pub fn promote(s: &mut State, _tx: &mut Tx, id: &str) {
-    move_queued(s, id, 0);
-    // The list snaps back to the core's if it refuses.
+    // Live, the list is the history's order, not the run order: `move_queued` would send it to
+    // the core as the run order and swap the other waiting rows. The core's promote moves only this one.
+    if s.live.is_none() {
+        move_queued(s, id, 0);
+    }
     let id = id.to_owned();
     live::tell(s, move |core| {
         core.promote(&id);
     });
+    s.sync();
 }
 
 /// Removes a finished, failed or canceled row from the list and the history.
@@ -1159,6 +1163,21 @@ pub fn move_queued(s: &mut State, id: &str, to: usize) {
 // checks the key and the JSON type against the defaults only (plus the
 // palette ids); live mode goes through the core, which checks in full.
 pub fn set_setting(s: &mut State, key: &str, value: Value) -> bool {
+    // "Needs review" is Rust-only (D34): `State.own` and `settings-rust.json`, never Electron's config.
+    if key == "holdUnconfirmed" {
+        let Some(hold) = value.as_bool() else {
+            s.invalid.insert(key.into());
+            s.sync();
+            return false;
+        };
+        s.own.hold_unconfirmed = hold;
+        s.invalid.remove(key);
+        live::tell(s, move |core| {
+            core.set_hold_unconfirmed(hold);
+        });
+        s.sync();
+        return true;
+    }
     let defaults = ahg_engine::config::default_config();
     let same_type = |a: &Value, b: &Value| std::mem::discriminant(a) == std::mem::discriminant(b);
     let ok = match (defaults.get(key), &value) {
