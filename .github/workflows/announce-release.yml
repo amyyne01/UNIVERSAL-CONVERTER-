@@ -11,8 +11,6 @@ on:
 
 jobs:
   announce:
-    # v1.6.2 is a silent release: no announcement. Removed again right after the tag.
-    if: github.event_name != 'release' || github.event.release.tag_name != 'v1.6.2'
     runs-on: ubuntu-latest
     env:
       # ── Discord channels and roles this announcement points at ─────────────
