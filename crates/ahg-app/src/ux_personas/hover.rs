@@ -16,6 +16,16 @@ pub fn controls(ux: &Ux) -> Vec<(Option<String>, (f32, f32), String)> {
         .collect()
 }
 
+/// The pointer travels to `away` (two moves, as a real one sends; a single jump leaves a
+/// control whose holder re-laid out under it lit until the next move), then the hover exits,
+/// tweens that settle_all does not land, are waited out: 0.4 s is longer than any of them.
+fn leave(ux: &mut Ux, away: (f32, f32)) {
+    ux.rt.pointer_move(away.0 - 1.0, away.1 - 1.0);
+    ux.rt.frame(1.0 / 60.0);
+    ux.rt.pointer_move(away.0, away.1);
+    ux.frames(24);
+}
+
 fn inside(r: [f32; 4], x: f32, y: f32) -> bool {
     x >= r[0] && x <= r[0] + r[2] && y >= r[1] && y <= r[1] + r[3]
 }
@@ -53,9 +63,7 @@ pub fn sweep(ux: &mut Ux, screen: &str) {
         .unwrap_or((1236.0, 816.0));
     let mut stuck = Vec::new();
     for c in all.iter().take(40) {
-        // Hover exits are tweens settle_all does not land: 0.4 s is longer than any of them.
-        ux.rt.pointer_move(away.0, away.1);
-        ux.frames(24);
+        leave(ux, away);
         let before = ux.rt.elements();
         ux.rt.pointer_move(c.1.0, c.1.1);
         ux.rt.frame(1.0 / 60.0);
@@ -88,9 +96,7 @@ pub fn sweep(ux: &mut Ux, screen: &str) {
             }
         }
         // The pointer leaves for the empty spot: the control's hover goes.
-        // Hover exits are tweens settle_all does not land: 0.4 s is longer than any of them.
-        ux.rt.pointer_move(away.0, away.1);
-        ux.frames(24);
+        leave(ux, away);
         let left = ux.rt.elements();
         if lit(&left, &c.2) && !left.iter().any(|e| e.focused && (holds(&e.path, &c.2) || holds(&c.2, &e.path))) {
             stuck.push(name(c));

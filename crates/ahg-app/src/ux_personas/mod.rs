@@ -24,8 +24,9 @@ use crate::gate::{Found, Overlay, PRESETS, State};
 use crate::live::tests as lt;
 use crate::{actions, keys};
 
-/// The lowest UX score a preset may have. Starts at the measured baseline; the loop raises it to 9.0.
-const THRESHOLD: f64 = 0.0;
+/// The lowest UX score a preset may have: the measured baseline (9.30 to 9.42 over two runs,
+/// 2026-11-21) less 0.1 for the real-time waits on a busy machine. It only goes up.
+const THRESHOLD: f64 = 9.2;
 
 /// Steps from launch to the first download a lazy user takes: paste, then one press.
 const STEP_BUDGET: u32 = 2;
@@ -401,12 +402,12 @@ fn ux_scorecard_for_every_preset() {
     assert!(!PRESETS.is_empty());
     let began = Instant::now();
     let mut runs: Vec<(usize, bool, Persona, Run)> = Vec::new();
-    for i in 0..PRESETS.len() {
+    for (i, (name, ..)) in PRESETS.iter().enumerate() {
         for dark in [true, false] {
             for p in Persona::ALL {
                 let t = Instant::now();
                 let run = play(i, dark, p);
-                eprintln!("ux: {} {} {}: {:.1} s", PRESETS[i].0, if dark { "dark" } else { "light" }, p.name(), t.elapsed().as_secs_f64());
+                eprintln!("ux: {name} {} {}: {:.1} s", if dark { "dark" } else { "light" }, p.name(), t.elapsed().as_secs_f64());
                 runs.push((i, dark, p, run));
             }
         }
