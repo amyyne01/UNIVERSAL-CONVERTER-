@@ -13,6 +13,7 @@ const LOOKS: [(usize, &str); 2] = [(1, "The collection"), (4, "Shelf")];
 
 fn runtime(preset: usize) -> Runtime<State> {
     let mut rt = App::new(crate::spec()).headless_runtime((1240.0, 3600.0), Env { system_dark: true, scale: 1.0 });
+    crate::splash::skip(&mut rt.state); // the launch splash has its own tests (splash/tests.rs)
     rt.frame(0.0);
     rt.update(move |s, tx| actions::set_preset(s, preset, tx));
     settle(&mut rt);

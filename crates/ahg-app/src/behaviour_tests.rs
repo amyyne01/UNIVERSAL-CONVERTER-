@@ -9,6 +9,7 @@ use crate::{actions, keys};
 /// The one headless set-up: the real spec, one preset, dark or light.
 pub(crate) fn runtime(preset: usize, dark: bool) -> Runtime<State> {
     let mut rt = App::new(crate::spec()).headless_runtime((1240.0, 820.0), Env { system_dark: dark, scale: 1.0 });
+    crate::splash::skip(&mut rt.state); // the launch splash has its own tests (splash/tests.rs)
     rt.frame(0.0);
     rt.update(move |s, tx| actions::set_preset(s, preset, tx));
     settle(&mut rt);

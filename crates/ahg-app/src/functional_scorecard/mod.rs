@@ -86,13 +86,16 @@ impl Ctx {
         let dir = std::env::temp_dir().join(format!("ahg-func-{}-{preset}-{}-{tag}", std::process::id(), if dark { "d" } else { "l" }));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(dir.join("Downloads")).unwrap();
+        // A later launch (its splash's 1 s floor); the startup group covers a first one.
+        fs::write(dir.join("settings-rust.json"), r#"{"splashSeen":true}"#).unwrap();
         let mut rt = App::new(crate::spec()).headless_runtime((1240.0, 820.0), Env { system_dark: dark, scale: 1.0 });
         rt.frame(0.0);
         let mut ctx = Ctx { rt, dir, preset, dark };
         ctx.json("exit 0\n");
         ctx.script("exit 0\n");
         ctx.attach();
-        ctx.until("the first read of the core", |s| s.loading == Loading::Ready).expect("the core never answered");
+        ctx.until("the first read of the core and the splash gone", |s| s.loading == Loading::Ready && s.splash.is_none())
+            .expect("the core never answered");
         ctx.rt.update(move |s, tx| actions::set_preset(s, preset, tx));
         ctx.frames(SETTLE);
         ctx
@@ -114,7 +117,7 @@ impl Ctx {
     pub fn restart(&mut self) -> Res {
         self.rt.state.live = None;
         self.attach();
-        self.until("the restarted core's first read", |s| s.loading == Loading::Ready)?;
+        self.until("the restarted core's first read and its splash gone", |s| s.loading == Loading::Ready && s.splash.is_none())?;
         self.frames(SETTLE);
         Ok(())
     }

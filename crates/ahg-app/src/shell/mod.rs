@@ -29,7 +29,7 @@ pub trait Part {
     /// What the tests know it by.
     #[cfg_attr(not(test), allow(dead_code))]
     fn name(&self) -> &'static str;
-    /// Once, before the window opens.
+    /// Once, from the launch splash's shell stage (`splash::STAGES`), after the window shows.
     fn start(&mut self, _app: &AppHandle<State>) {}
     /// Each time `poll` runs, also while the window is hidden; true when it changed what the view reads.
     fn poll(&mut self, _s: &mut State, _tx: &mut Tx) -> bool {
@@ -193,6 +193,7 @@ mod tests {
     /// Close and quit both run `quit`; the second call stops nothing again.
     fn runtime() -> rune::Runtime<State> {
         let mut rt = rune::App::new(crate::spec()).headless_runtime((1240.0, 820.0), rune::Env { system_dark: false, scale: 1.0 });
+        crate::splash::skip(&mut rt.state); // the launch splash has its own tests (splash/tests.rs)
         rt.frame(0.0);
         rt
     }

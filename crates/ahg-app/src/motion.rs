@@ -149,6 +149,54 @@ pub const RECORD_TURN: LoopSpec = LoopSpec::rotation(1.8);
 /// SHF-CTL-01 (delight tier): the plan stamp landing.
 pub const STAMP: &[Beat] = &[Beat::new(0.0).opacity(0.0).scale(1.08), Beat::new(0.3)];
 
+// ---- The launch splash (Electron's "Carrier Lock": index.html, splash-boot.js, lib/splash.ts) ----
+
+/// The least time the splash is up on a first launch (`MIN_VISIBLE_MS`); it never delays loading.
+pub const SPLASH_FLOOR: f64 = 3.4;
+/// Every later launch (`WARM_VISIBLE_MS`), and a launch whose seen flag cannot be read.
+pub const SPLASH_FLOOR_WARM: f64 = 1.0;
+/// The bar's speed toward the loaded share: a whole track in this (`COMPLETE_MS`, the closing sweep).
+pub const SPLASH_COMPLETE: f64 = 0.42;
+/// A full bar reads this long before the splash goes (`COMPLETE_HOLD_MS`).
+pub const SPLASH_HOLD: f64 = 0.2;
+/// The splash leaves as an overlay does (Electron: a 260 ms fade).
+pub const SPLASH_OUT: SpringPair = OVERLAY;
+pub fn splash_out() -> Transition {
+    Transition::opacity().springs(SPLASH_OUT)
+}
+/// The raw signal drifting into the scan head: one period of a two-period strip (`sp-drift`, 7 s).
+pub const SPLASH_DRIFT: LoopSpec = LoopSpec::slide(7.0, [0.0, 0.0], [-0.5, 0.0]).easing(Easing::LINEAR);
+/// The scan head breathing (`sp-lock`, 1.3 s, 0.45 to 1).
+pub const SPLASH_HEAD: LoopSpec = LoopSpec::opacity(1.3, 0.0, 0.45, 1.0);
+/// The wordmark's scramble: each character settles this long after its start (`SCRAMBLE_CHAR_MS`),
+pub const SPLASH_SCRAMBLE: f64 = 0.42;
+/// starts this long after the one before (`SCRAMBLE_STAGGER`),
+pub const SPLASH_SCRAMBLE_STAGGER: f64 = 0.08;
+/// and churns a new glyph this often (`GLYPH_SWAP_MS`).
+pub const SPLASH_GLYPH_SWAP: f64 = 0.06;
+/// A status line reads this long (`HOLD_MS`) before the next flips in,
+pub const SPLASH_LINE_HOLD: f64 = 1.5;
+/// one character's flip on the control pair (Electron's `FLIP_MS` is 320 ms),
+pub const SPLASH_FLIP_SPRING: SpringPair = CONTROL;
+/// and the whole line's stagger, at most (`420 / len`, `FLIP_STAGGER` 22 ms a character).
+pub const SPLASH_FLIP_SPREAD: f64 = 0.42;
+pub const SPLASH_FLIP_STAGGER: f64 = 0.022;
+/// One character of a new status line: up from below, its stagger after the one before.
+pub fn splash_char(el: rune::El, i: usize, len: usize) -> rune::El {
+    let stagger = SPLASH_FLIP_STAGGER.min(SPLASH_FLIP_SPREAD / len.max(1) as f64);
+    el.transition(Transition::asymmetric(Transition::offset(0.0, 6.0), Transition::offset(0.0, -6.0)).springs(SPLASH_FLIP_SPRING))
+        .enter_delay((i as f64 * stagger) as f32)
+}
+/// Past this the status line names what is still loading (Electron's watchdog was 5 s; this
+/// app's stages are real, so it waits longer before it says so).
+pub const SPLASH_STALL: f64 = 12.0;
+/// Past this the splash goes anyway and a notice names what never finished: never an endless splash.
+pub const SPLASH_GIVE_UP: f64 = 45.0;
+/// While the splash is up its poll runs every frame (stages, bar, scramble).
+pub fn splash_frame(tx: &mut rune::Tx) {
+    tx.wake_after(std::time::Duration::ZERO);
+}
+
 // ---- Per-look personality ----
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -305,6 +353,22 @@ pub const TOKENS: &[Token] = &[
     tok("STAGGER", STAGGER as f64, None),
     tok("SEGMENT_GAP", SEGMENT_GAP as f64, None),
     tok("MODULE_BEAT", MODULE_BEAT as f64, None),
+    tok("SPLASH_FLOOR", SPLASH_FLOOR, None),
+    tok("SPLASH_FLOOR_WARM", SPLASH_FLOOR_WARM, None),
+    tok("SPLASH_COMPLETE", SPLASH_COMPLETE, Some(Reduced::Snap)),
+    tok("SPLASH_HOLD", SPLASH_HOLD, None),
+    tok("SPLASH_OUT", SPLASH_OUT.exit.duration as f64, Some(Reduced::Fade)),
+    tok("SPLASH_DRIFT", SPLASH_DRIFT.period, Some(Reduced::Still)),
+    tok("SPLASH_HEAD", SPLASH_HEAD.period, Some(Reduced::Still)),
+    tok("SPLASH_SCRAMBLE", SPLASH_SCRAMBLE, Some(Reduced::Snap)),
+    tok("SPLASH_SCRAMBLE_STAGGER", SPLASH_SCRAMBLE_STAGGER, None),
+    tok("SPLASH_GLYPH_SWAP", SPLASH_GLYPH_SWAP, None),
+    tok("SPLASH_LINE_HOLD", SPLASH_LINE_HOLD, None),
+    tok("SPLASH_FLIP", SPLASH_FLIP_SPRING.enter.duration as f64, Some(Reduced::Fade)),
+    tok("SPLASH_FLIP_SPREAD", SPLASH_FLIP_SPREAD, None),
+    tok("SPLASH_FLIP_STAGGER", SPLASH_FLIP_STAGGER, None),
+    tok("SPLASH_STALL", SPLASH_STALL, None),
+    tok("SPLASH_GIVE_UP", SPLASH_GIVE_UP, None),
 ];
 
 #[cfg(test)]
@@ -469,6 +533,7 @@ mod tests {
         ("directions/orbit/home.rs", "press_scale(", 1, "button 0.97 = Press::Button"),
         ("layouts/stage/parts.rs", "press_scale(", 2, "button 0.97 and icon 0.94 = Press::Button / Press::Icon"),
         ("covers.rs", ".transition(", 1, "a fetched cover's fade-in, built by motion::cover_in"),
+        ("splash.rs", ".transition(", 1, "the splash's exit, built by motion::splash_out"),
         ("live.rs", "Duration::", 1, "a lookup's answer waits out LOADING_DELAY + LOADING_MIN on its worker thread"),
         ("live.rs", "from_secs", 1, "same line"),
         // The functionality scorecard is test code (`#[cfg(test)] mod`): a wait's deadline, not app timing.

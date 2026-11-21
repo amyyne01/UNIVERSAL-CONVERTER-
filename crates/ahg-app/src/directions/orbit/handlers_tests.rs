@@ -13,6 +13,7 @@ const LANE: [&str; 2] = ["Orbit", "Now playing"];
 fn runtime(preset: &str) -> Runtime<State> {
     let index = PRESETS.iter().position(|p| p.0 == preset).unwrap_or_else(|| panic!("no preset named {preset}"));
     let mut rt = App::new(crate::spec()).headless_runtime((1240.0, 820.0), Env { system_dark: true, scale: 1.0 });
+    crate::splash::skip(&mut rt.state); // the launch splash has its own tests (splash/tests.rs)
     rt.frame(0.0);
     rt.update(move |s, tx| actions::set_preset(s, index, tx));
     settle(&mut rt);

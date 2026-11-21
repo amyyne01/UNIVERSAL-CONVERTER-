@@ -120,6 +120,10 @@ pub const SCOPES: [SourcePlatform; 4] =
 /// look up, on Home), Ctrl+A (every search result), and Esc, which closes the
 /// first of: an overlay, an armed confirm, what the field found.
 pub fn on_key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
+    // Nothing under the splash answers a key until it is gone.
+    if s.splash.is_some() {
+        return true;
+    }
     let used = key(s, ev, tx);
     s.sync();
     used
@@ -360,6 +364,8 @@ pub struct State {
     pub rings: crate::ring::Rings,
     /// The running core; `None` in sample mode.
     pub live: Option<crate::live::Handle>,
+    /// The launch splash and its loading stages; `None` once it is gone (and in every scene but its own).
+    pub splash: Option<crate::splash::Splash>,
     cache: Option<ImageCache>,
 }
 
@@ -454,6 +460,7 @@ impl State {
             waits: HashMap::new(),
             rings: crate::ring::Rings::default(),
             live: None,
+            splash: None,
             cache: None,
         };
         s.sync();
@@ -734,28 +741,49 @@ pub fn init() -> State {
     if arg("--plan") == Some("basic") {
         s.plan = Plan::Basic;
     }
+    s.splash = crate::splash::arm();
+    if let Some(folder) = crate::live::FOLDER.get() {
+        let (theme, palette) = crate::live::peek_look(folder);
+        s.settings.extend(theme.map(|t| ("theme".to_owned(), t)));
+        s.palette = palette;
+    }
     s.sync();
     s
 }
 
-/// Loads the sample covers. It waits for each to decode, so a headless
-/// picture taken on the first frame already shows them.
+/// Loads the logo and the sample covers. A scene waits for each to decode, so a headless
+/// picture taken on the first frame already shows them; under the splash they decode behind it
+/// (its art stage) and the picker's previews wait until it is gone.
 pub fn setup(s: &mut State, waker: Waker) {
+    let wait = s.splash.is_none();
+    if let Some(splash) = s.splash.as_mut() {
+        splash.waker = Some(waker.clone());
+    }
     let cache = s.cache.insert(ImageCache::new(waker));
     let logo = cache.load(&include_bytes!("../../../assets/icon-256.png")[..]);
-    let _ = logo.wait();
+    let mut images = vec![logo.clone()];
     s.logo = Some(logo);
-    s.previews = crate::picker::PREVIEWS.iter().map(|bytes| cache.load(*bytes)).collect();
-    for preview in &s.previews {
-        let _ = preview.wait();
-    }
     for (task_id, bytes) in sample::covers() {
         let image = cache.load(&bytes[..]);
-        let _ = image.wait();
+        images.push(image.clone());
         s.covers.insert(task_id, image);
+    }
+    if wait {
+        load_previews(s);
+        images.extend(s.previews.iter().cloned());
+        for image in &images {
+            let _ = image.wait();
+        }
     }
     // Rune applies a `--scene` after `init` and before this: bring the rings to the scene's tasks.
     s.sync();
+}
+
+/// The picker's six previews, once (only the picker draws them).
+pub fn load_previews(s: &mut State) {
+    if let Some(cache) = s.cache.as_ref().filter(|_| s.previews.is_empty()) {
+        s.previews = crate::picker::PREVIEWS.iter().map(|bytes| cache.load(*bytes)).collect();
+    }
 }
 
 /// The states the comparison page shows, for `--scene`.
@@ -931,4 +959,15 @@ pub const SCENES: &[(&str, fn(&mut State))] = &[
     ("home-confirm", |s| actions::arm(s, Confirm::Clear)),
     // throwaway, removed at step 80 (K54): the ring in three materials (`ring::gallery`).
     ("ring", |s| s.ring = true),
+    // The launch splash on a first launch, and on a later one (its shorter floor).
+    ("splash", |s| {
+        let mut splash = crate::splash::Splash::new(crate::splash::STAGES);
+        splash.floor = Some(crate::motion::SPLASH_FLOOR);
+        s.splash = Some(splash);
+    }),
+    ("splash-warm", |s| {
+        let mut splash = crate::splash::Splash::new(crate::splash::STAGES);
+        splash.floor = Some(crate::motion::SPLASH_FLOOR_WARM);
+        s.splash = Some(splash);
+    }),
 ];

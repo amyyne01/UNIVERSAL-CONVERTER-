@@ -63,6 +63,13 @@ pub struct Handle {
     images: Arc<ImageCache>,
 }
 
+impl Handle {
+    /// `settings-rust.json` was read and applied (the splash's settings stage).
+    pub fn own_read(&self) -> bool {
+        self.saved.is_some()
+    }
+}
+
 impl Drop for Handle {
     /// Stop, then let go: a lookup thread may still hold the core, so it is shut
     /// down here rather than by whichever thread drops it last (LESSONS 17a).
@@ -180,6 +187,10 @@ pub fn attach(s: &mut State, folder: &Path, wake: Waker, make: impl FnOnce(Paths
     s.notices.clear();
     s.plan = PLAN;
     s.loading = Loading::Booting;
+    // A core starting with no splash up (a restart) loads behind a splash of its own.
+    if s.splash.is_none() {
+        s.splash = Some(crate::splash::Splash::new(crate::splash::STAGES));
+    }
     s.settings = core.settings();
     s.engine = core.engine_status();
     s.update = core.update_status();
@@ -296,13 +307,31 @@ fn put<T: PartialEq>(slot: &mut T, value: T) -> bool {
     changed
 }
 
+/// The theme and palette the folder was left in, as `State` holds them, read before the first
+/// frame so the splash paints in them (Electron's `theme-init.js`): two small files, no core.
+pub fn peek_look(folder: &Path) -> (Option<Value>, usize) {
+    let read = |name: &str| std::fs::read_to_string(folder.join(name)).ok().and_then(|t| serde_json::from_str::<Value>(&t).ok());
+    let (config, own) = (read("config.json").unwrap_or_default(), read("settings-rust.json").unwrap_or_default());
+    let saved = config.get("palette").and_then(Value::as_str);
+    let palette = if own["ownPalette"] == true { 0 } else { PALETTE_IDS.iter().position(|id| Some(*id) == saved).map_or(0, |at| at + 1) };
+    (config.get("theme").cloned(), palette)
+}
+
 /// The Rust-only choices (K52), read once at start.
 fn own(core: &Core) -> Job {
     let preset = core.own_setting("preset").and_then(|v| v.as_u64()).map(|p| p as usize).filter(|p| *p < PRESETS.len());
     let pinned = core.own_setting("navPinned").and_then(|v| v.as_bool());
     let own_palette = core.own_setting("ownPalette").and_then(|v| v.as_bool()).unwrap_or(false);
     let hold = core.hold_unconfirmed();
+    // Electron's `pickFloor`: the full floor once, the flag set as it is picked.
+    let seen = core.own_setting("splashSeen") == Some(json!(true));
+    if !seen {
+        core.set_own_setting("splashSeen", json!(true));
+    }
     Box::new(move |s, tx| {
+        if let Some(splash) = s.splash.as_mut() {
+            splash.floor = Some(if seen { motion::SPLASH_FLOOR_WARM } else { motion::SPLASH_FLOOR });
+        }
         if let Some(preset) = preset {
             actions::set_preset(s, preset, tx);
         }
@@ -791,6 +820,7 @@ pub(crate) mod tests {
         let mut rt = App::new(crate::spec()).headless_runtime((1240.0, 820.0), Env { system_dark: true, scale: 1.0 });
         rt.frame(0.0);
         attach(&mut rt.state, dir, Arc::new(|| {}), move |paths, plan, events| Core::start_with(paths, ytdlp, plan, events, outside));
+        crate::splash::skip(&mut rt.state); // the launch splash has its own tests (splash/tests.rs)
         until(&mut rt, "the first read of the core", |s| s.loading == Loading::Ready);
         rt
     }
@@ -1104,7 +1134,11 @@ pub(crate) mod tests {
         let read = || serde_json::from_str::<Value>(&fs::read_to_string(&file).unwrap_or_default()).unwrap_or_default();
         // The three keys are written one after the other: wait for the last.
         until(&mut rt, "the pin written back", |_| read()["navPinned"] == json!(false) && read().get("ownPalette").is_some());
-        assert_eq!(read(), json!({ "preset": 4, "navPinned": false, "ownPalette": false, "holdUnconfirmed": true }), "other keys are kept");
+        assert_eq!(
+            read(),
+            json!({ "preset": 4, "navPinned": false, "ownPalette": false, "holdUnconfirmed": true, "splashSeen": true }),
+            "other keys are kept"
+        );
         rt.state.live = None;
     }
 

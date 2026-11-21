@@ -55,7 +55,12 @@ fn frame_zero_is_still_in_every_preset_theme_and_scene() {
                             // (a loop or tween started by the view itself would show here).
                             steps(&mut rt, 30);
                             let shimmers = LOADING.contains(scene);
-                            let moving = in_motion(&rt, |e| shimmers && e.key.as_deref() == Some(crate::timeline::SHEEN));
+                            // The launch splash is loading too: its signal drifts and its scan head breathes.
+                            let splash = scene.starts_with("splash");
+                            let moving = in_motion(&rt, |e| {
+                                (shimmers && e.key.as_deref() == Some(crate::timeline::SHEEN))
+                                    || (splash && e.path.contains(crate::keys::SPLASH))
+                            });
                             if !moving.is_empty() {
                                 bad.push(format!("{} / {theme} / {scene} / frame 31: {}", name(p), moving.join("; ")));
                             }

@@ -48,6 +48,7 @@ mod settings_spec;
 mod shell;
 #[allow(dead_code)]
 mod spark;
+mod splash;
 #[allow(dead_code)]
 mod timeline;
 #[cfg(test)]
@@ -55,8 +56,10 @@ mod uilib_golden;
 #[cfg(test)]
 mod ux_personas;
 
+use std::cell::RefCell;
+
 use gate::{Direction, State};
-use rune::{App, AppSpec, Cx, El, Titlebar, Transition, Tx, el};
+use rune::{App, AppHandle, AppSpec, Cx, El, Titlebar, Transition, Tx, el};
 
 /// The window's title band, in points. Rune draws the three caption buttons over its trailing end.
 pub const TITLEBAR: f32 = 44.0;
@@ -66,24 +69,45 @@ pub const TITLEBAR: f32 = 44.0;
 /// (`docs/design-gate/MOTION-SYSTEM.md` 4.2): a fade with `motion::DISSOLVE`'s blur, no scale.
 /// Under reduced motion Rune makes it its plain short fade without the blur.
 fn view(s: &State, cx: &mut Cx<State>) -> El {
+    // The first frames build the splash alone; the preset joins it under the splash's layout stage.
+    let window = el().w_full().h_full().fill(backdrop(s, cx));
+    if !splash::preset_shown(s) {
+        return window.children(splash::view(s, cx));
+    }
     const KEYS: [&str; 6] = ["preset-0", "preset-1", "preset-2", "preset-3", "preset-4", "preset-5"];
     let blur = match motion::DISSOLVE {
         motion::Dissolve::FadeBlur(blur) => blur,
         motion::Dissolve::Fade => 0.0,
     };
-    let shown = el()
-        .key(KEYS[gate::preset(s)])
-        .pin(Some(0.0), Some(0.0), Some(0.0), Some(0.0))
-        // Below the overlays even while leaving: Rune lists a leaving element after its
-        // siblings, which would paint the old preset over the picker the user just pressed.
-        .paint_order(-1)
-        .transition(Transition::blur(blur).springs(motion::DISSOLVE_SPRING))
-        .child(preset_view(s, cx));
+    let build = |cx: &mut Cx<State>| {
+        el().key(KEYS[gate::preset(s)])
+            .pin(Some(0.0), Some(0.0), Some(0.0), Some(0.0))
+            // Below the overlays even while leaving: Rune lists a leaving element after its
+            // siblings, which would paint the old preset over the picker the user just pressed.
+            .paint_order(-1)
+            .transition(Transition::blur(blur).springs(motion::DISSOLVE_SPRING))
+            .child(preset_view(s, cx))
+    };
+    // Under the splash its own commits (bar, scramble, line) do not build the preset again:
+    // only what the preset is built from at hand-over does.
+    let shown = match &s.splash {
+        Some(_) => {
+            let version = (
+                gate::preset(s),
+                s.palette,
+                s.settings.get("theme").map(|t| t.to_string()),
+                s.tasks.len(),
+                s.loading == gate::Loading::Ready,
+            );
+            rune::memo(KEYS[gate::preset(s)], version, || build(cx))
+        }
+        None => build(cx),
+    };
     // The window is filled with the shown preset's own ground, so the dissolve never shows
     // Rune's black clear colour; it springs to the new ground with the switch.
-    let window = el().w_full().h_full().fill(backdrop(s, cx)).child(shown);
+    let window = window.child(shown);
     // Empty when nothing is open over the preset.
-    window.children(overlays::view(s, cx))
+    window.children(overlays::view(s, cx)).children(splash::view(s, cx))
 }
 
 /// The fill of the shown preset's root, with the same palette and the same light or dark
@@ -169,17 +193,31 @@ pub(crate) fn spec() -> AppSpec<State> {
     }
 }
 
-/// The sample covers, then live mode when `--live` named a folder.
+/// The sample covers; live mode (`--live`) starts behind the splash, in its engine stage.
+/// A run with no splash (a `--scene`) starts it here.
 fn setup(s: &mut State, waker: rune::Waker) {
     gate::setup(s, waker.clone());
-    if let Some(folder) = live::FOLDER.get() {
+    if let Some(folder) = live::FOLDER.get().filter(|_| s.splash.is_none()) {
         live::start(s, folder, waker);
     }
 }
 
 fn poll(s: &mut State, clock: f64, tx: &mut Tx) -> bool {
-    let changed = live::poll(s, clock, tx);
+    let changed = live::poll(s, clock, tx) | splash::poll(s, clock, tx);
     shell::poll(s, tx) | changed
+}
+
+thread_local! {
+    /// The app's handle from `main`, for the splash's shell stage to start the shell with.
+    static HANDLE: RefCell<Option<AppHandle<State>>> = const { RefCell::new(None) };
+}
+
+/// Starts the shell (tray, hotkey, clipboard watcher ...) once, from the splash's shell stage.
+/// Nothing in a test, which has no handle.
+pub(crate) fn start_shell() {
+    if let Some(app) = HANDLE.take() {
+        shell::install(&app);
+    }
 }
 
 /// Closing the window quits, as in Electron (`window-all-closed`): no `keep_running`.
@@ -211,6 +249,10 @@ fn main() {
         // A launch carrying a `scheme://` argument comes here instead of reopening; it is
         // ignored and only the window comes forward (ahg:// links removed, owner 2026-11-21).
         .on_open_url(|_, _, _| shell::show_window());
-    shell::install(&app.handle());
+    // The shell starts behind the splash (`start_shell`); a run with none starts it now.
+    HANDLE.set(Some(app.handle()));
+    if std::env::args().any(|a| a == "--scene") {
+        start_shell();
+    }
     app.run();
 }
