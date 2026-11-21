@@ -347,6 +347,8 @@ fn stupid(ux: &mut Ux) {
     for nav in [Nav::Downloads, Nav::Settings, Nav::Home] {
         ux.rt.update(move |s, _| actions::go(s, nav));
         ux.settle();
+        // Nothing focused: a key on a focused button is that button's, not a stray one.
+        ux.rt.update(|_, tx| tx.blur());
         ux.wait(0.5, |_| false);
         let mut changed = Vec::new();
         for key in [Key::Enter, Key::Text(" ".into()), Key::Delete, Key::Backspace, Key::Text("q".into()), Key::PageDown, Key::Up] {

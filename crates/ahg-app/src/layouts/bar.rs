@@ -261,6 +261,7 @@ fn bar(s: &State, p: &Pal, command: bool, listening: bool, lower: El) -> El {
             .on_input_change(|s: &mut State, _| s.input = s.field.text.clone())
             .on_submit(actions::submit)
             .on_input_key(crate::gate::on_field_escape)
+            .on_input_paste(actions::field_paste)
             .grow(1.0)
             .min_w(0.0)
     };
@@ -289,7 +290,18 @@ fn bar(s: &State, p: &Pal, command: bool, listening: bool, lower: El) -> El {
         )
     };
     let input = row().w_full().h(INPUT_H).px(12.0).gap(12.0).center_y().child(jack).child(typed).child(end);
-    let input = if command { input.role("textbox").label(copy::FIELD_ARIA).key(keys::PALETTE_SEARCH) } else { input };
+    // In command mode the bar takes the palette's keys: typing filters, Up and Down move, Enter runs.
+    let input = if command {
+        input
+            .role("textbox")
+            .label(copy::FIELD_ARIA)
+            .key(keys::PALETTE_SEARCH)
+            .focusable(true)
+            .no_focus_ring()
+            .on_key(crate::overlays::palette_key)
+    } else {
+        input
+    };
     col()
         .w_full()
         .radius(12.0)

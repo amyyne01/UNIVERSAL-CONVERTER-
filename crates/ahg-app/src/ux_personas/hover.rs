@@ -53,8 +53,9 @@ pub fn sweep(ux: &mut Ux, screen: &str) {
         .unwrap_or((1236.0, 816.0));
     let mut stuck = Vec::new();
     for c in all.iter().take(40) {
+        // Hover exits are tweens settle_all does not land: 0.4 s is longer than any of them.
         ux.rt.pointer_move(away.0, away.1);
-        ux.settle();
+        ux.frames(24);
         let before = ux.rt.elements();
         ux.rt.pointer_move(c.1.0, c.1.1);
         ux.rt.frame(1.0 / 60.0);
@@ -87,8 +88,9 @@ pub fn sweep(ux: &mut Ux, screen: &str) {
             }
         }
         // The pointer leaves for the empty spot: the control's hover goes.
+        // Hover exits are tweens settle_all does not land: 0.4 s is longer than any of them.
         ux.rt.pointer_move(away.0, away.1);
-        ux.settle();
+        ux.frames(24);
         let left = ux.rt.elements();
         if lit(&left, &c.2) && !left.iter().any(|e| e.focused && (holds(&e.path, &c.2) || holds(&c.2, &e.path))) {
             stuck.push(name(c));

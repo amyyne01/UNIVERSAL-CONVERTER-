@@ -417,6 +417,18 @@ pub fn paste_text(s: &mut State, tx: &mut Tx, text: &str) {
     submit(s, tx);
 }
 
+/// A paste into the field (PlatformTab's `handlePaste`): several lines that are all links are
+/// a batch, queued at once, instead of being run together on the field's one line.
+pub fn field_paste(s: &mut State, content: &rune::ClipboardContent, _tx: &mut Tx) -> bool {
+    let lines: Vec<&str> = content.text().split('\n').map(js_trim).filter(|l| !l.is_empty()).collect();
+    if lines.len() < 2 || !lines.iter().all(|l| looks_like_url(l)) {
+        return false;
+    }
+    s.found = Found::Nothing;
+    batch(s, &lines);
+    true
+}
+
 pub fn set_scope(s: &mut State, scope: Option<SourcePlatform>) {
     s.scope = scope;
     s.sync();

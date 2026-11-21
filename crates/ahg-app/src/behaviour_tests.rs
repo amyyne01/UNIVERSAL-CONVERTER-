@@ -5,7 +5,7 @@ use crate::gate::{Filter, Nav, Overlay, PRESETS, State};
 use crate::{actions, keys};
 
 /// The one headless set-up: the real spec, one preset, dark or light.
-fn runtime(preset: usize, dark: bool) -> Runtime<State> {
+pub(crate) fn runtime(preset: usize, dark: bool) -> Runtime<State> {
     let mut rt = App::new(crate::spec()).headless_runtime((1240.0, 820.0), Env { system_dark: dark, scale: 1.0 });
     rt.frame(0.0);
     rt.update(move |s, tx| actions::set_preset(s, preset, tx));
@@ -13,14 +13,14 @@ fn runtime(preset: usize, dark: bool) -> Runtime<State> {
     rt
 }
 
-fn settle(rt: &mut Runtime<State>) {
+pub(crate) fn settle(rt: &mut Runtime<State>) {
     for _ in 0..30 {
         rt.frame(1.0 / 60.0);
     }
 }
 
 /// Press the control with this key. A missing key is a panic naming the preset and the key.
-fn click(rt: &mut Runtime<State>, preset: &str, key: &str) {
+pub(crate) fn click(rt: &mut Runtime<State>, preset: &str, key: &str) {
     let k = key.to_owned();
     rt.update(move |_, tx| tx.scroll_into_view(k));
     settle(rt);

@@ -30,8 +30,8 @@ pub fn view(s: &State, p: &Pal) -> El {
         .key("dividers")
         .w(if pinned { OPEN } else { STRIP })
         .h_full()
-        .on_hover_change(|s: &mut State, over: bool, _| s.nav_open = over)
-        .child(panel(s, p, active, s.nav_open || pinned, floating));
+        // On the panel, not the strip-wide slot: the opened dividers stay open under the pointer.
+        .child(panel(s, p, active, s.nav_open || pinned, floating).on_hover_change(|s: &mut State, over: bool, _| s.nav_open = over));
     if floating {
         slot = slot.raise();
     }

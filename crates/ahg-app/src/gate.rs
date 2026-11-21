@@ -131,7 +131,9 @@ fn key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
         if s.overlay == Overlay::Palette {
             actions::close(s)
         } else {
-            actions::open(s, Overlay::Palette)
+            actions::open(s, Overlay::Palette);
+            // The search line takes the keys, the overlay's or One bar's own command line alike.
+            tx.focus_when_shown(keys::PALETTE_SEARCH, false);
         }
         return true;
     }

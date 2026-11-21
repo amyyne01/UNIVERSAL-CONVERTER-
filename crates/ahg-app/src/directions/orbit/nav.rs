@@ -30,8 +30,8 @@ pub fn view(s: &State, p: &Pal) -> El {
         .key("sidebar")
         .w(if s.nav_pinned { OPEN } else { STRIP })
         .h_full()
-        .on_hover_change(|s: &mut State, over: bool, _| s.nav_open = over)
-        .child(panel(s, p, open));
+        // On the panel, not the strip-wide slot: the opened sidebar stays open under the pointer.
+        .child(panel(s, p, open).on_hover_change(|s: &mut State, over: bool, _| s.nav_open = over));
     if open && !s.nav_pinned {
         slot = slot.raise();
     }

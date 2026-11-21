@@ -9,6 +9,7 @@
 //! Needs the stand-in first: `cargo build -p ahg-runtime --bin fake_ytdlp`.
 mod hover;
 mod personas;
+mod regressions;
 
 use std::fmt::Write as _;
 use std::fs;
@@ -98,14 +99,19 @@ impl Run {
 /// A preset's score from its persona runs (both themes): 10 x the weighted pass fraction minus
 /// the friction penalties, at most [`HARD_CAP`] after a fault, never below 0.
 fn score(runs: &[(Persona, &Run)]) -> f64 {
+    let s = uncapped(runs);
+    if runs.iter().any(|(_, r)| !r.faults.is_empty()) { s.min(HARD_CAP) } else { s }
+}
+
+/// [`score`] before the fault cap, so the loop sees progress under it.
+fn uncapped(runs: &[(Persona, &Run)]) -> f64 {
     let mean = |p: Persona, f: &dyn Fn(&Run) -> f64| {
         let of: Vec<f64> = runs.iter().filter(|(q, _)| *q == p).map(|(_, r)| f(r)).collect();
         if of.is_empty() { 0.0 } else { of.iter().sum::<f64>() / of.len() as f64 }
     };
     let passed: f64 = Persona::ALL.iter().map(|&p| p.weight() * mean(p, &Run::fraction)).sum();
     let penalty: f64 = Persona::ALL.iter().map(|&p| mean(p, &Run::penalty)).sum();
-    let s = (10.0 * passed - penalty).clamp(0.0, 10.0);
-    if runs.iter().any(|(_, r)| !r.faults.is_empty()) { s.min(HARD_CAP) } else { s }
+    (10.0 * passed - penalty).clamp(0.0, 10.0)
 }
 
 // ── The harness
@@ -432,7 +438,7 @@ fn ux_scorecard_for_every_preset() {
             r.faults.len()
         );
     }
-    out.push_str("\n| preset | UX score | dead clicks | steps to first download | unclear messages | dead ends | faults |\n|---|---|---|---|---|---|---|\n");
+    out.push_str("\n| preset | UX score | before the cap | dead clicks | steps to first download | unclear messages | dead ends | faults |\n|---|---|---|---|---|---|---|---|\n");
     let mut scores = Vec::new();
     for (i, (name, ..)) in PRESETS.iter().enumerate() {
         let mine: Vec<(Persona, &Run)> = runs.iter().filter(|r| r.0 == i).map(|r| (r.2, &r.3)).collect();
@@ -442,7 +448,8 @@ fn ux_scorecard_for_every_preset() {
         let s = score(&mine);
         let _ = writeln!(
             out,
-            "| {name} | {s:.2} | {} | {} | {} | {} | {faults} |",
+            "| {name} | {s:.2} | {:.2} | {} | {} | {} | {} | {faults} |",
+            uncapped(&mine),
             total(&|r| r.dead_clicks),
             steps.join(", "),
             total(&|r| r.unclear),
