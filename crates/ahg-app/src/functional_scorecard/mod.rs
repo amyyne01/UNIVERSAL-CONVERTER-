@@ -29,8 +29,9 @@ mod shell;
 mod walk;
 
 /// The lowest FUNC score a preset may have. Baseline (step F0a, 2026-11-21): One bar 8.9, The collection 8.8,
-/// Now playing 8.8, Signal 9.0, Shelf 9.0, Orbit 9.0; the floor leaves room for one flaky walk.
-const FLOOR: f64 = 8.5;
+/// Now playing 8.8, Signal 9.0, Shelf 9.0, Orbit 9.0. After its fixes: 9.5, 9.7, 9.5, 9.5, 9.5, 9.5. The
+/// floor leaves room for one flaky walk (0.25).
+const FLOOR: f64 = 9.2;
 /// A failed core-flow scenario caps the preset here.
 const CORE_CAP: f64 = 6.0;
 
