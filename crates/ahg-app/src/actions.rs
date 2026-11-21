@@ -987,6 +987,12 @@ pub fn pause_or_resume_all(s: &mut State) {
     s.sync();
 }
 
+/// The tray's Pause all / Resume all: one direction, never the toggle.
+pub fn set_all_paused(s: &mut State, paused: bool) {
+    set_all(s, if paused { St::Paused } else { St::Queued });
+    s.sync();
+}
+
 /// `pauseAll` / `resumeAll`.
 fn set_all(s: &mut State, to: St) {
     // ponytail: the core's pause_all / resume_all cannot refuse, so TOAST_LIST_UNREACHABLE has no live cause yet.

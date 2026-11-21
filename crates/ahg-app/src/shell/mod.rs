@@ -52,7 +52,7 @@ impl Shell {
             Box::new(power::Power),
             Box::new(taskbar::Taskbar),
             Box::new(toast::Toast),
-            Box::new(tray::Tray),
+            Box::new(tray::Tray::default()),
             Box::new(clipboard::Clipboard),
             Box::new(presence::Presence),
             Box::new(hotkey::Hotkey),
