@@ -19,6 +19,8 @@ mod behaviour_tests;
 mod covers;
 #[allow(dead_code)]
 mod format;
+#[cfg(test)]
+mod functional_scorecard;
 mod gate;
 #[allow(dead_code)]
 mod icons;

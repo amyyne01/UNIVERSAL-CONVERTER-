@@ -471,6 +471,13 @@ mod tests {
         ("covers.rs", ".transition(", 1, "a fetched cover's fade-in, built by motion::cover_in"),
         ("live.rs", "Duration::", 1, "a lookup's answer waits out LOADING_DELAY + LOADING_MIN on its worker thread"),
         ("live.rs", "from_secs", 1, "same line"),
+        // The functionality scorecard is test code (`#[cfg(test)] mod`): a wait's deadline, not app timing.
+        ("functional_scorecard/mod.rs", "Duration::", 2, "test: the patience of a wait on the core, and its poll"),
+        ("functional_scorecard/mod.rs", "from_secs", 1, "same: PATIENCE"),
+        ("functional_scorecard/mod.rs", "from_millis", 1, "same: the poll between frames"),
+        ("functional_scorecard/shell.rs", "Duration::", 2, "test: how long a quit may take to end yt-dlp"),
+        ("functional_scorecard/shell.rs", "from_secs", 1, "same"),
+        ("functional_scorecard/shell.rs", "from_millis", 1, "same: the poll"),
     ];
 
     fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {

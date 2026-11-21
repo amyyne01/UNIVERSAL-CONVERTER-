@@ -19,6 +19,8 @@ pub const UPDATE_LATER: &str = "update-later";
 pub const NOTICE: &str = "notice";
 pub const NOTICE_ACTION: &str = "notice-action";
 pub const NOTICE_DISMISS: &str = "notice-dismiss";
+/// The launch splash (the planet logo), drawn until the first stages are done.
+pub const SPLASH: &str = "splash";
 
 /// The place's own button in the preset's navigation.
 pub fn nav(place: Nav) -> &'static str {
