@@ -23,10 +23,7 @@ const MAX_URL = 2048; // classic URL length ceiling — mirrors ipc.ts's own MAX
 
 /** The exact untrusted-input guard ipc.ts applies to a pasted URL before it
  *  reaches detectUrl or anything that spawns (§15): a bounded string that
- *  can't open with "-" and be read as a spawned flag. Shared here so the
- *  ahg:// protocol handler (electron/protocol.ts) validates an OS-delivered
- *  link exactly as strictly as a renderer-pasted one, instead of growing a
- *  second copy of the same check. */
+ *  can't open with "-" and be read as a spawned flag. */
 export function urlArg(value: unknown, maxLen = MAX_URL): string {
   if (typeof value !== 'string' || value.length > maxLen) {
     throw new Error('Invalid input: expected a string within length limits');

@@ -101,7 +101,4 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onUpdateError: (callback) => on('update:error', callback),
   onYtdlpStatus: (callback) => on('ytdlp:status', callback),
   onClipboardDetected: (callback) => on('clipboard:detected', callback),
-  // §14 shell integration: an ahg:// link opened via the OS (cold start or
-  // forwarded from a second launch) — resolved and validated in main first.
-  onProtocolLink: (callback) => on('protocol:link', callback),
 });

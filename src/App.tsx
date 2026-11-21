@@ -3,7 +3,6 @@ import { MotionConfig, motion, useReducedMotion } from 'framer-motion';
 import { useAppStore } from '@/store';
 import { initTheme } from '@/lib/theme';
 import { dismissSplash } from '@/lib/splash';
-import { buildDownloadRequest } from '@/lib/download';
 import { openFile } from '@/lib/reveal';
 import { NAV, PLATFORMS, TAB_ORDER, type NavItem, type TabKey } from '@/constants';
 import { IconContext } from '@/components/ui/icons';
@@ -16,7 +15,7 @@ import { UpdateModal } from '@/components/UpdateModal';
 import { Notice } from '@/components/Notice';
 import { ClipboardOffer } from '@/components/ClipboardOffer';
 import { PlaylistPreview } from '@/components/PlaylistPreview';
-import { Dashboard, platformToTab } from '@/components/tabs/Dashboard';
+import { Dashboard } from '@/components/tabs/Dashboard';
 import { PlatformTab } from '@/components/tabs/PlatformTab';
 import { DownloadsTab } from '@/components/tabs/DownloadsTab';
 import { SettingsTab } from '@/components/tabs/SettingsTab';
@@ -105,35 +104,6 @@ function Shell() {
       window.electronAPI.onWindowMaximized(setWindowMaximized),
       window.electronAPI.onLicenseStateChanged((d) => get().setLicense(d)),
       window.electronAPI.onClipboardDetected((detection) => get().setClipboardOffer(detection)),
-      // §14 shell integration: an ahg:// link opened via the OS — already
-      // resolved/validated in main. Same "hand it to the tab" path as a
-      // Dashboard paste (setPendingInput), so it lands as a confirmed fetch,
-      // not a silent download.
-      window.electronAPI.onProtocolLink((detection) => {
-        const tab = platformToTab(detection.platform);
-        if (tab) {
-          get().setCurrentPlaylist(null);
-          get().setPendingInput(detection.url);
-          get().setActiveTab(tab);
-          return;
-        }
-        // 'generic' (any other site the engine supports) and 'direct' have no
-        // tab to hand off to, and returning early made a validated ahg:// link
-        // do nothing AT ALL — no download, no error, no visible response. Queue
-        // it, same as accepting a clipboard offer.
-        if (detection.platform === 'unknown') return;
-        void window.electronAPI.download
-          .start(buildDownloadRequest(get().config, {
-            url: detection.url,
-            source: detection.platform,
-            isPlaylist: detection.isCollection,
-          }))
-          .then((task) => {
-            get().addDownload(task);
-            get().setActiveTab('queue');
-          })
-          .catch(() => {});
-      }),
     ];
 
     // Hydrate persisted download history, merging live events on top (last wins).

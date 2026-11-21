@@ -132,7 +132,7 @@ export function buildDownloadTask(config: ConfigManager, license: LicenseManager
   const plan = license.getPlan();
   const basic = plan === 'basic';
   const source = enumOf(taskData.source, SOURCE_PLATFORMS, 'source');
-  // No audio/video choice (clipboard offer, hotkey, ahg:// link): take the platform's
+  // No audio/video choice (clipboard offer, hotkey): take the platform's
   // normal one, as a link pasted into its tab does — music sources are audio, the rest
   // mp4 video. An explicit choice from the renderer is never overridden.
   const byPlatform = taskData.isAudioOnly === undefined && source !== undefined;

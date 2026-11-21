@@ -1,3 +1,11 @@
+# AHG Universal Converter 1.6.2
+
+**A small clean-up: the `ahg://` link feature is gone.**
+
+## What's changed
+
+- **`ahg://` links no longer open the app.** Pasting a link, the "link copied" offer and the global hotkey work exactly as before. If an older version had registered itself for these links, it removes that on first start.
+
 # AHG Universal Converter 1.6.1
 
 **A small fix-up release: quick downloads behave like the rest of the app, and quitting really stops everything.**

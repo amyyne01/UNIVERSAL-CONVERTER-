@@ -167,7 +167,6 @@ const mockElectronAPI = {
   onUpdateError: vi.fn().mockReturnValue(vi.fn()),
   onYtdlpStatus: vi.fn().mockReturnValue(vi.fn()),
   onClipboardDetected: vi.fn().mockReturnValue(vi.fn()),
-  onProtocolLink: vi.fn().mockReturnValue(vi.fn()),
 };
 
 Object.defineProperty(window, 'electronAPI', {

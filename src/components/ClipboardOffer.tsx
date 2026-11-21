@@ -26,7 +26,7 @@ export function ClipboardOffer() {
     void (async () => {
       // Spotify needs its scraped track to drive the ytsearch bridge. A playlist
       // or album has none, and a track may fail to load: those are handed to the
-      // Spotify tab with the link filled in, as an ahg:// link is.
+      // Spotify tab with the link filled in.
       let track;
       if (offer.platform === 'spotify') {
         if (!offer.isCollection) track = (await window.electronAPI.spotify.fetchTrack(offer.url).catch(() => null)) ?? undefined;

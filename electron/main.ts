@@ -24,7 +24,6 @@ import { Scheduler } from './scheduler.js';
 import { Updater } from './updater.js';
 import { YtdlpUpdater } from './ytdlp-updater.js';
 import { installContentSecurityPolicy } from './security.js';
-import { registerProtocolHandler, extractProtocolUrl, resolveProtocolLink } from './protocol.js';
 import { initLog, logLine, errText } from './log.js';
 import type { DownloadStatus } from '../shared/types.js';
 
@@ -228,11 +227,10 @@ function syncServices(secrets: Secrets): void {
   }
 }
 
-// §14 shell integration: an ahg:// link opened while we're already running must
-// land in THIS window, not spawn a second copy of the app. requestSingleInstanceLock
-// makes every later launch fail the lock and quit immediately (process.exit forces
-// that — app.quit() alone races app.whenReady() in the losing instance); the
-// 'second-instance' event is that failed launch's argv, forwarded to us.
+// A second launch must land in THIS window, not spawn a second copy of the app.
+// requestSingleInstanceLock makes every later launch fail the lock and quit immediately
+// (process.exit forces that — app.quit() alone races app.whenReady() in the losing
+// instance); the 'second-instance' event is that failed launch, forwarded to us.
 if (!app.requestSingleInstanceLock()) {
   initLog(app.getPath('userData')); // whenReady never runs in this losing instance
   logLine('info', 'second instance: quitting');
@@ -240,21 +238,10 @@ if (!app.requestSingleInstanceLock()) {
   process.exit(0);
 }
 
-/** Untrusted OS input, resolved and handed to the renderer as though the user
- *  had pasted it — same shape as onClipboardDetected (§14). Silently does
- *  nothing for a payload that doesn't resolve to a real, supported link. */
-function forwardProtocolLink(raw: string): void {
-  const detection = resolveProtocolLink(raw);
-  if (!detection) return;
-  getMainWindow()?.webContents.send('protocol:link', detection);
-}
-
-registerProtocolHandler();
-app.on('second-instance', (_event, argv) => {
-  showWindow();
-  const link = extractProtocolUrl(argv);
-  if (link) forwardProtocolLink(link);
-});
+// The ahg:// link scheme was removed in 1.6.2. Drop the registration an older version
+// made, so the OS stops offering this app for those links (a no-op when there is none).
+app.removeAsDefaultProtocolClient('ahg');
+app.on('second-instance', () => showWindow());
 
 // Last-resort diagnostics: log, don't crash-loop. Registered before ready so a boot fault is caught too.
 process.on('uncaughtException', (e) => logLine('error', `uncaughtException: ${errText(e)}`));
@@ -314,12 +301,6 @@ app.whenReady().then(() => {
 
   const win = createWindow(effectiveTheme());
   loadApp(win);
-  // Cold start with an ahg:// link already in argv (the OS launched us FOR this
-  // link, rather than an already-running instance receiving 'second-instance').
-  // Deferred to did-finish-load: the renderer's listener isn't subscribed yet
-  // on the very first tick, and sending earlier would drop the event.
-  const coldLink = extractProtocolUrl(process.argv);
-  if (coldLink) win.webContents.once('did-finish-load', () => forwardProtocolLink(coldLink));
   // Nothing below is needed to paint the first frame, and some of it is slow
   // (tray icon I/O, a global shortcut, a Discord socket, a scheduler catch-up
   // that can start downloads). Deferring it to after the renderer has loaded

@@ -120,9 +120,6 @@ export interface ElectronAPI {
   /** Opt-in clipboard watcher (electron/clipboard-watch.ts) — fired when the
    *  clipboard changes to a recognised link, so the UI can offer to download it. */
   onClipboardDetected: (cb: (detection: UrlDetection) => void) => () => void;
-  /** §14 shell integration: an ahg:// link opened via the OS, already resolved
-   *  and validated in main — cold start or forwarded from a second launch. */
-  onProtocolLink: (cb: (detection: UrlDetection) => void) => () => void;
 }
 
 declare global {

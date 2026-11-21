@@ -287,8 +287,8 @@ describe('registerIpcHandlers', () => {
     expect(task.taskId).toBe('mock-task');
   });
 
-  // D1: a link that arrives without an audio/video choice (clipboard offer, hotkey,
-  // ahg:// link) takes the platform's normal one, like a link pasted into its tab.
+  // D1: a link that arrives without an audio/video choice (clipboard offer, hotkey)
+  // takes the platform's normal one, like a link pasted into its tab.
   it('download:start with no audio/video choice: video links become mp4 video, music links stay audio', async () => {
     const { createTask } = await import('./queue.js');
     const start = handlers.get('download:start')!;

@@ -122,8 +122,7 @@ describe('rateLimit', () => {
   });
 });
 
-// The exact untrusted-URL guard ipc.ts applies to a pasted link — reused by
-// electron/protocol.ts so an ahg:// link from the OS is checked the same way.
+// The exact untrusted-URL guard ipc.ts applies to a pasted link.
 describe('urlArg', () => {
   it('accepts an ordinary http(s) URL', () => {
     expect(urlArg('https://youtube.com/watch?v=abc12345678')).toBe('https://youtube.com/watch?v=abc12345678');
