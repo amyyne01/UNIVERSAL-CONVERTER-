@@ -86,7 +86,7 @@ pub fn short_count(n: f64) -> String {
     let units = [(1e9, "B"), (1e6, "M"), (1e3, "K")];
     let at = units.iter().position(|(at, _)| n >= at * 0.9995);
     let (v, unit) = at.map_or((n, ""), |i| (n / units[i].0, units[i].1));
-    let figure = if unit.is_empty() { format!("{}", v.round()) } else { format!("{v:.1}") };
+    let figure = if unit.is_empty() { format!("{}", v.round() + 0.0) } else { format!("{v:.1}") };
     format!("{}{unit}", figure.strip_suffix(".0").unwrap_or(&figure))
 }
 
@@ -135,6 +135,9 @@ pub fn engine_line(e: &YtdlpStatus) -> String {
 /// `v` parameter if it is not empty, else host and path without trailing slashes; not a URL, unchanged.
 // ponytail: no percent-decoding of `v` and no IDNA; add if a real link needs it.
 pub fn link_label(url: &str) -> String {
+    if let Some(label) = opaque_label(url) {
+        return label;
+    }
     let Some((scheme, rest)) = url.trim().split_once("://") else { return url.to_string() };
     if !scheme.starts_with(|c: char| c.is_ascii_alphabetic()) || !scheme.chars().all(|c| c.is_ascii_alphanumeric() || "+-.".contains(c)) {
         return url.to_string();
@@ -154,6 +157,29 @@ pub fn link_label(url: &str) -> String {
     }
     let label = format!("{host}{}", path.trim_end_matches('/'));
     if label.chars().count() > 48 { format!("{}…", label.chars().take(47).collect::<String>()) } else { label }
+}
+
+/// A link with a scheme and no `//` (`spotify:track:abc`): `new URL()` keeps what follows the
+/// colon as an opaque path, without its query or fragment, non-ASCII percent-encoded, and the label is that path.
+/// `None` for a web scheme or anything that is not `scheme:rest`.
+fn opaque_label(url: &str) -> Option<String> {
+    let (scheme, rest) = url.trim_matches(|c: char| c <= ' ').split_once(':')?;
+    let scheme_ok =
+        scheme.starts_with(|c: char| c.is_ascii_alphabetic()) && scheme.chars().all(|c| c.is_ascii_alphanumeric() || "+-.".contains(c));
+    if !scheme_ok || rest.starts_with("//") || ["http", "https", "ftp", "ws", "wss", "file"].contains(&scheme.to_ascii_lowercase().as_str())
+    {
+        return None;
+    }
+    let rest = rest.split('#').next().unwrap_or(rest);
+    let (path, query) = rest.split_once('?').unwrap_or((rest, ""));
+    let v = query.split('&').map(|pair| pair.split_once('=').unwrap_or((pair, ""))).find(|(name, _)| *name == "v").map_or("", |(_, v)| v);
+    if !v.is_empty() {
+        return Some(format!(" · {v}"));
+    }
+    let path: String =
+        path.bytes().map(|b| if (0x20..0x7f).contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") }).collect();
+    let label = path.trim_end_matches('/');
+    Some(if label.chars().count() > 48 { format!("{}…", label.chars().take(47).collect::<String>()) } else { label.to_string() })
 }
 
 /// The last part of a Windows or POSIX path.

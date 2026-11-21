@@ -42,7 +42,11 @@ mod sample;
 #[allow(dead_code)]
 mod settings_spec;
 #[allow(dead_code)]
+mod spark;
+#[allow(dead_code)]
 mod timeline;
+#[cfg(test)]
+mod uilib_golden;
 
 use gate::{Direction, State};
 use rune::{App, AppSpec, Cx, El, Titlebar, Transition, el};
