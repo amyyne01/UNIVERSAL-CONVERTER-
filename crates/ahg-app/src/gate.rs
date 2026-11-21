@@ -141,7 +141,9 @@ fn key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
         } else if ev.is_command('v') {
             actions::run(s, tx, actions::Command::PasteAndDownload);
         } else {
-            return false;
+            // The search line's keys when it does not hold the focus: One bar types its
+            // command into the bar itself, which is no focusable line.
+            return crate::overlays::palette_key(s, ev, tx);
         }
         return true;
     }
@@ -171,6 +173,17 @@ fn key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
         return false;
     }
     true
+}
+
+/// Esc in Home's field while it found something starts over in one press (Electron's
+/// PlatformTab), before Rune takes the Esc to let go of the field. Every preset's field
+/// sets it as its `on_input_key`.
+pub fn on_field_escape(s: &mut State, ev: &KeyEvent, _: &mut Tx) -> bool {
+    let start_over = ev.key == Key::Escape && s.overlay == Overlay::None && !s.picker && !matches!(s.found, Found::Nothing);
+    if start_over {
+        actions::dismiss_found(s);
+    }
+    start_over
 }
 
 /// The display serif, for Shelf's one headline per screen and nothing else.

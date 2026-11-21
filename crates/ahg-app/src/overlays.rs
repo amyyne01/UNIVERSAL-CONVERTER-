@@ -203,7 +203,7 @@ const PALETTE_MAX_H: f32 = 500.0;
 
 /// The search line's keys: typing filters, Up and Down move, Enter runs (all `actions`').
 /// Esc, Ctrl+K and Ctrl+V fall through to `gate::on_key`.
-fn palette_key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
+pub(crate) fn palette_key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
     use rune::Key;
     match &ev.key {
         Key::Text(t) if !ev.mods.cmd && !ev.mods.ctrl => actions::palette_type(s, t),

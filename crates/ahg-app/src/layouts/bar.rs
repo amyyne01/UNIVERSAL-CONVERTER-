@@ -260,6 +260,7 @@ fn bar(s: &State, p: &Pal, command: bool, listening: bool, lower: El) -> El {
             .on_edit(|s: &mut State| &mut s.field)
             .on_input_change(|s: &mut State, _| s.input = s.field.text.clone())
             .on_submit(actions::submit)
+            .on_input_key(crate::gate::on_field_escape)
             .grow(1.0)
             .min_w(0.0)
     };

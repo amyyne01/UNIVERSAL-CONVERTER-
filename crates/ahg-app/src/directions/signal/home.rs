@@ -134,7 +134,8 @@ fn field(s: &State, p: &Pal) -> El {
         .label(copy::FIELD_ARIA)
         .on_edit(|s: &mut State| &mut s.field)
         .on_input_change(|s: &mut State, _| s.input = s.field.text.clone())
-        .on_submit(actions::submit);
+        .on_submit(actions::submit)
+        .on_input_key(crate::gate::on_field_escape);
     let line = row().w_full().h(64.0).pl(12.0).pr(12.0).gap(12.0).center_y().child(jack).child(typed.grow(1.0).min_w(0.0)).child(go);
     let level = el().w_full().h(16.0).px(12.0).pb(8.0).child(meter(lit, 120, None, 8.0, 2.0, level_color, p.unlit));
     col().w_full().radius(12.0).fill(p.surface).border(1.0, p.line_strong).child(line).child(level)

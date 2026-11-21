@@ -701,7 +701,8 @@ fn transport(s: &State, p: &Pal, fit: Fit) -> El {
                     .min_w(0.0)
                     .on_edit(|s: &mut State| &mut s.field)
                     .on_input_change(|s: &mut State, _| s.input = s.field.text.clone())
-                    .on_submit(actions::submit),
+                    .on_submit(actions::submit)
+                    .on_input_key(crate::gate::on_field_escape),
             ),
         )
         // While an answer is open its Download is the lit control, so Look up steps down.

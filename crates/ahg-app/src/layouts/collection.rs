@@ -103,7 +103,8 @@ fn titlebar(s: &State, p: &Pal, leading: f32, trailing: f32) -> El {
                 .min_w(0.0)
                 .on_edit(|s: &mut State| &mut s.field)
                 .on_input_change(|s: &mut State, _| s.input = s.field.text.clone())
-                .on_submit(actions::submit),
+                .on_submit(actions::submit)
+                .on_input_key(crate::gate::on_field_escape),
         )
         .child(keys(p, &[copy::KEY_CTRL, copy::REST_KEY_V]));
     let palette = row()
