@@ -567,6 +567,11 @@ impl Core {
         self.engine().tasks()
     }
 
+    /// The waiting tasks' ids in run order.
+    pub fn waiting_ids(&self) -> Vec<String> {
+        self.engine().waiting_ids()
+    }
+
     pub fn has_unfinished_work(&self) -> bool {
         self.engine().has_unfinished_work()
     }

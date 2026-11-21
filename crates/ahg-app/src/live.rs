@@ -261,6 +261,7 @@ fn startup(core: Weak<Core>, stop: Receiver<()>) {
 fn fresh(core: &Core) -> Job {
     let mut tasks = core.tasks();
     tasks.reverse();
+    let waiting = core.waiting_ids();
     let stats = Some(core.stats()).filter(|st| st.current.files > 0.0 || st.previous.is_some());
     let (settings, engine, update) = (core.settings(), core.engine_status(), core.update_status());
     Box::new(move |s, _| {
@@ -277,6 +278,7 @@ fn fresh(core: &Core) -> Job {
         let changed = [
             new_stats,
             new_tasks,
+            put(&mut s.waiting, waiting),
             put(&mut s.settings, settings),
             put(&mut s.engine, engine),
             put(&mut s.update, update),

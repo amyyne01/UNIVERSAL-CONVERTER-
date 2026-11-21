@@ -65,9 +65,9 @@ use crate::directions::orbit::draw::{self, Pass, planet};
 use crate::directions::orbit::found;
 use crate::directions::orbit::look::{Pal, mix, txt};
 use crate::directions::orbit::model;
-use crate::directions::orbit::on_row;
+use crate::directions::orbit::{Tone, downloads, on_row};
 use crate::format::{self, Bucket, is_active};
-use crate::gate::{Confirm, Found, Nav, Overlay, State};
+use crate::gate::{Found, Nav, Overlay, State};
 use crate::icons;
 use crate::keys;
 use parts::{BODY, BODY_M, FIG, FIG_L, FIG_XL, HERO, SMALL, SMALL_M, button, cover, glyph, icon_button, keys, state_word, text_button};
@@ -567,10 +567,11 @@ fn shelf(s: &State, p: &Pal, landed: &[&DownloadTask], fit: Fit) -> El {
         .child(txt(copy::GROUP_COMPLETED, BODY_M, p.text2))
         .child(txt(landed.len().to_string(), FIG, p.muted))
         .child(spacer())
-        .child(
-            text_button(p, keys::arm(Confirm::Clear).into(), copy::DL_CLEAR_COMPLETED)
-                .on_press(|s: &mut State| actions::arm(s, Confirm::Clear)),
-        );
+        // Downloads' two steps (`Clear {n}?`, Cancel, the red Confirm), in the shelf's quiet text buttons.
+        .child(downloads::clear(s, p, &|k: &str, l: &str, _: Option<&'static Icon>, t: Tone| match t {
+            Tone::Danger => parts::tinted(p, k.into(), l, None, Some((p.error, p.bg))),
+            _ => text_button(p, k.into(), l),
+        }));
     let mut tiles = row().w_full().gap(16.0);
     for t in landed.iter().take(7) {
         let size = format::bytes(t.progress.downloaded);

@@ -813,6 +813,17 @@ pub fn download_again(s: &mut State, _tx: &mut Tx, id: &str) {
     s.sync();
 }
 
+/// Whether a row offers "Do this next": it waits and is not already the one that runs next, as
+/// Electron hides it on the first row of the queued tail. The run order is the core's
+/// (`State.waiting`), not the list's, which live is the history's, newest first.
+pub fn can_promote(s: &State, t: &DownloadTask) -> bool {
+    let next = match s.waiting.first() {
+        Some(id) => Some(id.as_str()),
+        None => s.tasks.iter().find(|t| t.progress.status == St::Queued).map(|t| t.task_id.as_str()),
+    };
+    t.progress.status == St::Queued && next != Some(t.task_id.as_str())
+}
+
 /// "Do this next": to the front of the queue.
 pub fn promote(s: &mut State, _tx: &mut Tx, id: &str) {
     // Live, the list is the history's order, not the run order: `move_queued` would send it to

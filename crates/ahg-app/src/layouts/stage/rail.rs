@@ -89,32 +89,34 @@ fn up_next(s: &State, p: &Pal, queued: &[&DownloadTask]) -> El {
             .min_w(0.0)
             .child(txt(copy::STATE_QUEUED, SMALL_M, p.muted))
             .child(txt(format::specs(t), FIG, p.muted).truncate().shrink());
-        c = c.child(
-            row()
-                .key(format!("next-{}", t.task_id))
-                .w_full()
-                .h(48.0)
-                .gap(12.0)
-                .center_y()
-                .hover_group()
-                .child(on_orbit(s, p, t, 48.0, 8.0))
-                .child(col().grow(1.0).min_w(0.0).gap(4.0).child(txt(format::label(t), BODY_M, p.text).truncate()).child(line))
-                .child(
-                    on_row(
-                        icon_button(p, keys::row_action(RowAct::Promote, &t.task_id), copy::ACT_DO_THIS_NEXT, &icons::FORWARD, p.text2),
-                        RowAct::Promote,
-                        &t.task_id,
-                    )
-                    .group_opacity(0.0, 1.0),
+        let mut r = row()
+            .key(format!("next-{}", t.task_id))
+            .w_full()
+            .h(48.0)
+            .gap(12.0)
+            .center_y()
+            .hover_group()
+            .child(on_orbit(s, p, t, 48.0, 8.0))
+            .child(col().grow(1.0).min_w(0.0).gap(4.0).child(txt(format::label(t), BODY_M, p.text).truncate()).child(line));
+        if actions::can_promote(s, t) {
+            r = r.child(
+                on_row(
+                    icon_button(p, keys::row_action(RowAct::Promote, &t.task_id), copy::ACT_DO_THIS_NEXT, &icons::FORWARD, p.text2),
+                    RowAct::Promote,
+                    &t.task_id,
                 )
-                .child(
-                    on_row(
-                        icon_button(p, keys::row_action(RowAct::Cancel, &t.task_id), copy::ACT_CANCEL, &icons::CANCEL, p.text2),
-                        RowAct::Cancel,
-                        &t.task_id,
-                    )
-                    .group_opacity(0.0, 1.0),
-                ),
+                .group_opacity(0.0, 1.0),
+            );
+        }
+        c = c.child(
+            r.child(
+                on_row(
+                    icon_button(p, keys::row_action(RowAct::Cancel, &t.task_id), copy::ACT_CANCEL, &icons::CANCEL, p.text2),
+                    RowAct::Cancel,
+                    &t.task_id,
+                )
+                .group_opacity(0.0, 1.0),
+            ),
         );
     }
     c

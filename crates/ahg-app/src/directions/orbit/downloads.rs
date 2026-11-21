@@ -589,7 +589,7 @@ fn task_row(s: &State, p: &Pal, t: &DownloadTask, rule: bool, grip: bool) -> El 
         .child(art)
         .child(col().grow(1.0).min_w(0.0).gap(4.0).child(line1).child(line2))
         .child(state)
-        .child(actions(p, t))
+        .child(actions(p, t, actions::can_promote(s, t)))
 }
 
 fn grip_cell(p: &Pal, grip: bool, label: &str) -> El {
@@ -602,13 +602,17 @@ fn grip_cell(p: &Pal, grip: bool, label: &str) -> El {
 }
 
 /// The row's buttons, in Electron's order; `Remove` waits for hover.
-fn actions(p: &Pal, t: &DownloadTask) -> El {
+fn actions(p: &Pal, t: &DownloadTask, promote: bool) -> El {
     let st = t.progress.status;
     let id = &t.task_id;
     let mut a = row().min_w(100.0).gap(4.0).justify_end().center_y();
     let b = |act: RowAct, label: &'static str, glyph: &'static Icon, ink: Color| {
         on_row(icon_button(p, keys::row_action(act, id), label, glyph, ink), act, id)
     };
+    // Orbit keeps the queue quiet: "Do this next" comes up with the row's hover, as on Now playing's rail.
+    if promote {
+        a = a.child(b(RowAct::Promote, copy::ACT_DO_THIS_NEXT, &icons::FORWARD, p.text2).group_opacity(0.0, 1.0));
+    }
     if matches!(st, St::Queued | St::FetchingInfo | St::Downloading) {
         a = a.child(b(RowAct::Pause, copy::ACT_PAUSE, &icons::PAUSE, p.text2));
     }

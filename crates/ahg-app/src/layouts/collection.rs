@@ -432,17 +432,15 @@ fn completed(s: &State, p: &Pal, tasks: &[&DownloadTask], size: f32) -> El {
     for t in tasks {
         wall = wall.child(item(s, p, t, size, size + 8.0, size.max(200.0)));
     }
-    col()
-        .w_full()
-        .child(shelf_header(
-            p,
-            copy::GROUP_COMPLETED,
-            tasks.len(),
-            None,
-            quiet(p, keys::arm(Confirm::Clear), Some(&icons::REMOVE), copy::DL_CLEAR_COMPLETED, p.text2)
-                .on_press(|s: &mut State| actions::arm(s, Confirm::Clear)),
-        ))
-        .child(wall)
+    // The same two steps as Downloads: armed, the header asks `Clear {n}?` with Cancel and Confirm.
+    let clear = if s.confirm == Some(Confirm::Clear) {
+        let done = s.tasks.iter().filter(|t| t.progress.status == St::Done).count();
+        shelf::downloads::armed(p, copy::DL_CLEAR_CONFIRM_ARIA, &copy::clear_confirm(done))
+    } else {
+        quiet(p, keys::arm(Confirm::Clear), Some(&icons::REMOVE), copy::DL_CLEAR_COMPLETED, p.text2)
+            .on_press(|s: &mut State| actions::arm(s, Confirm::Clear))
+    };
+    col().w_full().child(shelf_header(p, copy::GROUP_COMPLETED, tasks.len(), None, clear)).child(wall)
 }
 
 // ── A sleeve on the wall ────────────────────────────────────────────────────

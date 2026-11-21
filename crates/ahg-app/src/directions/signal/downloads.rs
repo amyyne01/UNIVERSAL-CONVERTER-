@@ -384,7 +384,7 @@ fn task_row(s: &State, t: &DownloadTask, rule_above: bool, p: &Pal) -> El {
     if let Some(slot) = instrument(s, t, p) {
         r = r.child(slot);
     }
-    r.child(state_col(t, p)).child(actions(t, p))
+    r.child(state_col(t, p)).child(actions(t, actions::can_promote(s, t), p))
 }
 
 fn title_block(t: &DownloadTask, p: &Pal) -> El {
@@ -496,12 +496,15 @@ fn state_col(t: &DownloadTask, p: &Pal) -> El {
     c.child(row().gap(8.0).center_y().child(icon(i, 16.0).color(tone)).child(label(word, sans(13.0, 500.0), tone)))
 }
 
-fn actions(t: &DownloadTask, p: &Pal) -> El {
+fn actions(t: &DownloadTask, promote: bool, p: &Pal) -> El {
     use ahg_engine::types::ErrorCode as E;
     let st = t.progress.status;
     let id = &t.task_id;
     let act = |i: &'static rune::Icon, words: &str, ink: Color, which: RowAct| row_act(icon_button(i, words, ink, p), which, id);
     let mut a = row().w(ACTIONS).gap(4.0).justify_end().center_y();
+    if promote {
+        a = a.child(act(&icons::TO_FRONT, copy::ACT_DO_THIS_NEXT, p.text2, RowAct::Promote));
+    }
     if matches!(st, St::Queued | St::FetchingInfo | St::Downloading) {
         a = a.child(act(&icons::PAUSE, copy::ACT_PAUSE, p.text2, RowAct::Pause));
     }

@@ -417,6 +417,11 @@ impl Queue {
         self.history.values().map(|k| self.task(*k)).collect()
     }
 
+    /// The waiting (queued) tasks' ids in the order they will run.
+    pub fn waiting_ids(&self) -> Vec<String> {
+        self.queue.iter().filter(|&&k| self.status(k) == DownloadStatus::Queued).map(|&k| self.task(k).task_id.clone()).collect()
+    }
+
     /// Drop tasks from history and from the waiting queue. Running jobs are skipped.
     pub fn remove_tasks(&mut self, ids: &[String], now: u64) -> Vec<Effect> {
         self.begin(now);

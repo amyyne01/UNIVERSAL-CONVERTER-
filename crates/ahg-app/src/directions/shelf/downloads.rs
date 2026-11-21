@@ -371,8 +371,8 @@ fn list(s: &State, p: &Pal, tasks: &[&DownloadTask]) -> El {
             );
         }
         let reorderable = queued.len() >= 2;
-        for (i, t) in queued.iter().enumerate() {
-            out = add(out, task_row(s, p, t, reorderable, reorderable && i > 0));
+        for t in &queued {
+            out = add(out, task_row(s, p, t, reorderable, actions::can_promote(s, t)));
         }
     }
     if !attention.is_empty() {

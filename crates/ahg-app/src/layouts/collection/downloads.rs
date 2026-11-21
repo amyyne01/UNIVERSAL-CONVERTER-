@@ -286,7 +286,7 @@ fn task_row(s: &State, p: &Pal, t: &DownloadTask) -> El {
         col().w(160.0).items_end().child(r)
     };
     let mut acts = row().w(124.0).gap(4.0).justify_end();
-    for (act, glyph, name) in actions(t) {
+    for (act, glyph, name) in actions(t).into_iter().filter(|(a, ..)| *a != RowAct::Promote || actions::can_promote(s, t)) {
         acts = acts.child(
             icon_button(p, keys::row_action(act, &t.task_id), glyph, name, if act == RowAct::Retry { p.error } else { p.text2 })
                 .on_press_tx(handlers::row_act(act, &t.task_id)),

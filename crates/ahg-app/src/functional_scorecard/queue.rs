@@ -64,8 +64,14 @@ fn reorder(c: &mut Ctx) -> Res {
     let id = |c: &Ctx, l: &str| c.task(|t| t.url == l).unwrap();
     let [w, x, _, z] = [0, 1, 2, 3].map(|i| id(c, &links[i]));
     c.until("W running, three waiting", |s| s.tasks.iter().any(|t| t.task_id == w && running(t)))?;
+    // The row that runs next has no "Do this next"; the others have one (by run order, not list place).
+    let offered = |c: &mut Ctx, id: &str| c.has(&keys::row_action(RowAct::Promote, id));
+    c.go(Nav::Downloads)?;
+    expect(!offered(c, &x) && offered(c, &z), || "before: `Do this next` not on the waiting rows but the next (X)".into())?;
     c.row_act(RowAct::Promote, &z)?;
     c.frames(30);
+    c.go(Nav::Downloads)?;
+    expect(!offered(c, &z) && offered(c, &x), || "after Z's promote: `Do this next` still on Z, or not back on X".into())?;
     let next = |c: &mut Ctx, stop: &str, want: &str, what: &str| -> Res {
         let stop = stop.to_owned();
         c.rt.update(move |s, tx| actions::cancel(s, tx, &stop));

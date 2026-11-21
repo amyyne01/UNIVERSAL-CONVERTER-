@@ -127,6 +127,11 @@ impl Engine {
         self.ask(|q, _| (q.all_tasks().into_iter().cloned().collect(), Vec::new())).unwrap_or_default()
     }
 
+    /// The waiting tasks' ids in run order.
+    pub fn waiting_ids(&self) -> Vec<String> {
+        self.ask(|q, _| (q.waiting_ids(), Vec::new())).unwrap_or_default()
+    }
+
     /// One task in history.
     pub fn task(&self, id: &str) -> Option<DownloadTask> {
         let id = id.to_owned();

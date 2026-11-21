@@ -280,6 +280,9 @@ pub struct State {
     pub palette: usize,
     /// The downloads on show, newest first. Empty on a first launch.
     pub tasks: Vec<DownloadTask>,
+    /// Live: the waiting rows' ids in the core's run order (the list above is the history's).
+    /// Empty without a core, where the list's own order of queued rows is the run order.
+    pub waiting: Vec<String>,
     /// This month and the last active one; `None` before anything was downloaded.
     pub stats: Option<DownloadStats>,
     /// Cover art by task id. A task without one gets the direction's own placeholder.
@@ -411,6 +414,7 @@ impl State {
             screen: Screen::Home,
             palette: 0,
             tasks: sample::everything(),
+            waiting: Vec::new(),
             stats: Some(sample::stats()),
             covers: HashMap::new(),
             thumbs: Default::default(),
@@ -916,6 +920,15 @@ pub const SCENES: &[(&str, fn(&mut State))] = &[
     ("palette", |s| actions::open(s, Overlay::Palette)),
     ("shortcuts", |s| actions::show_shortcuts(s)),
     ("notice", |s| actions::cancel(s, &mut Tx::default(), "big-buck-bunny")),
+    // Three waiting rows: "Do this next" on all but the one that runs next.
+    ("queue", |s| {
+        actions::go(s, Nav::Downloads);
+        for id in ["dreams", "humble"] {
+            s.tasks.iter_mut().find(|t| t.task_id == id).unwrap().progress = Default::default();
+        }
+    }),
+    // Home's Clear completed, armed (The collection and Now playing draw it on Home).
+    ("home-confirm", |s| actions::arm(s, Confirm::Clear)),
     // throwaway, removed at step 80 (K54): the ring in three materials (`ring::gallery`).
     ("ring", |s| s.ring = true),
 ];

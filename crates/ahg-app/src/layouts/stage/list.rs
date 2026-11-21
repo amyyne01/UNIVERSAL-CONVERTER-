@@ -256,6 +256,10 @@ fn task_row(s: &State, p: &Pal, t: &DownloadTask) -> El {
         row().w(160.0).justify_end().child(motion_line(p, t))
     };
     let mut acts = row().w(136.0).justify_end().gap(0.0);
+    if acts::can_promote(s, t) {
+        let next = icon_button(p, keys::row_action(RowAct::Promote, &t.task_id), copy::ACT_DO_THIS_NEXT, &icons::FORWARD, p.text2);
+        acts = acts.child(on_row(next.group_opacity(0.0, 1.0), RowAct::Promote, &t.task_id));
+    }
     for (label, i) in actions(t) {
         let ink = if label == copy::ACT_RETRY || label == copy::ACT_RESUME { p.text } else { p.text2 };
         acts = acts.child(on_row(icon_button(p, keys::row_action(act(label), &t.task_id), label, i, ink), act(label), &t.task_id));

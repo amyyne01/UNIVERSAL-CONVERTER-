@@ -243,7 +243,7 @@ fn live_row(s: &State, t: &DownloadTask, p: &Pal) -> El {
         .child(counter)
         .child(el().w(RING_SLOT).center_y().child(task_ring(s, t, p)))
         .child(reading(t, p))
-        .child(live_actions(t, p))
+        .child(live_actions(t, actions::can_promote(s, t), p))
 }
 
 /// A press on a row with Ctrl or Shift held picks it, or lets it go.
@@ -309,10 +309,14 @@ fn reading(t: &DownloadTask, p: &Pal) -> El {
     c.child(state_word(i, word, tone))
 }
 
-fn live_actions(t: &DownloadTask, p: &Pal) -> El {
+fn live_actions(t: &DownloadTask, promote: bool, p: &Pal) -> El {
     let st = t.progress.status;
-    let mut a = row().w(ACTIONS).gap(4.0).justify_end().center_y();
+    // As wide as the other sections' actions, so a waiting row has room for "Do this next".
+    let mut a = row().w(ACTIONS + 32.0).gap(4.0).justify_end().center_y();
     let id = &t.task_id;
+    if promote {
+        a = a.child(row_act(icon_button(&icons::TO_FRONT, copy::ACT_DO_THIS_NEXT, p.text2, p), RowAct::Promote, id));
+    }
     if matches!(st, St::Queued | St::FetchingInfo | St::Downloading) {
         a = a.child(row_act(icon_button(&icons::PAUSE, copy::ACT_PAUSE, p.text2, p), RowAct::Pause, id));
     }
