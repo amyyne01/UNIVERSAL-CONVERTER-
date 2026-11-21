@@ -268,9 +268,15 @@ fn fresh(core: &Core) -> Job {
         if new_stats {
             mark(s, Change::Stats);
         }
+        let new_tasks = put(&mut s.tasks, tasks);
+        if new_tasks {
+            // A row the core let go of (a retry's old row, a removal) is no longer ticked.
+            let ids: std::collections::HashSet<&str> = s.tasks.iter().map(|t| t.task_id.as_str()).collect();
+            s.selected.retain(|id| ids.contains(id.as_str()));
+        }
         let changed = [
             new_stats,
-            put(&mut s.tasks, tasks),
+            new_tasks,
             put(&mut s.settings, settings),
             put(&mut s.engine, engine),
             put(&mut s.update, update),
