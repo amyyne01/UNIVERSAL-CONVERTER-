@@ -71,6 +71,8 @@ pub const KEYCAP_ENTER: &str = "Enter";
 pub const KEYCAP_ARROWS: [&str; 2] = ["↑", "↓"];
 pub const KEYCAP_SPACE: &str = "Space";
 pub const KEYCAP_A: &str = "A";
+/// The one spelling of Escape, in every keycap (jury K-1, 2026-11-21: Electron's palette also
+/// showed "ESC" in its field and "esc" in its footer; one view had all three).
 pub const KEYCAP_ESC: &str = "Esc";
 pub const KEYCAP_SLASH: &str = "/";
 
@@ -83,7 +85,6 @@ pub fn keycap_tab_range(tab_count: usize) -> String {
 pub const PALETTE_ARIA: &str = "Command palette";
 pub const PALETTE_PLACEHOLDER: &str = "Command or link";
 pub const PALETTE_SEARCH_ARIA: &str = "Command palette search";
-pub const PALETTE_ESC_CAP: &str = "ESC";
 pub const PALETTE_GROUP_NAVIGATE: &str = "Navigate";
 pub const PALETTE_GROUP_ACTIONS: &str = "Actions";
 pub const PALETTE_NO_MATCH: &str = "No commands match";
@@ -91,7 +92,6 @@ pub const PALETTE_FOOTER_NAVIGATE_CAP: &str = "↑↓";
 pub const PALETTE_FOOTER_NAVIGATE: &str = " navigate";
 pub const PALETTE_FOOTER_SELECT_CAP: &str = "↵";
 pub const PALETTE_FOOTER_SELECT: &str = " select";
-pub const PALETTE_FOOTER_CLOSE_CAP: &str = "esc";
 pub const PALETTE_FOOTER_CLOSE: &str = " close";
 pub const PALETTE_PASTE_AND_DOWNLOAD: &str = "Paste link & download";
 pub const PALETTE_SWITCH_TO_DARK: &str = "Switch to dark mode";

@@ -36,7 +36,11 @@ pub(crate) fn view(s: &State, p: &Pal) -> Option<El> {
     let link = || head(p, glyph(&icons::LINK, p.muted), link_words(p, &s.input));
     let (head, body, foot) = match &s.found {
         Found::Nothing => return None,
-        Found::LookingUp => (link(), looking_up(s, p), Some(foot(p, row().child(bone(p, 200.0, 12.0)), bone(p, 128.0, 40.0)))),
+        Found::LookingUp => (
+            link(),
+            looking_up(s, p),
+            Some(foot(p, row().child(bone(p, 24.0, 200.0, 12.0)), bone(p, body_w() - 24.0 - 128.0, 128.0, 40.0))),
+        ),
         Found::LookupFailed(why) => (head(p, glyph(&icons::ALERT, p.error), link_words(p, &s.input)), failed(p, why, &s.input), None),
         Found::Media(m) => {
             let (body, foot) = match &s.card {
@@ -119,16 +123,21 @@ fn download(p: &Pal, words: &str) -> El {
     primary(p, keys::FOUND_DOWNLOAD, Some(&icons::DOWNLOAD), words).h(40.0).px(16.0).on_press(actions::download_found)
 }
 
-/// A skeleton block: the shape of something still coming, a paper sheen crossing it.
-fn bone(p: &Pal, w: f32, h: f32) -> El {
-    el().w(w).h(h).radius(4.0).fill(p.raised).clip_rounded(4.0).child(sheen(p))
+/// A skeleton block `at` points from the body's left edge: the shape of something still
+/// coming, a paper sheen crossing it.
+fn bone(p: &Pal, at: f32, w: f32, h: f32) -> El {
+    el().w(w).h(h).radius(4.0).fill(p.raised).clip_rounded(4.0).child(sheen(p, at))
 }
 
-/// Shelf's shimmer: a wide, soft band of warm paper light.
-fn sheen(p: &Pal) -> El {
+/// Shelf's shimmer: a wide, soft wash of warm paper light.
+fn sheen(p: &Pal, at: f32) -> El {
     let lit = if p.dark { p.text.alpha(0.09) } else { p.card.alpha(0.75) };
-    let off = Color::TRANSPARENT;
-    crate::timeline::sheen(&[(0.0, off), (0.5, lit), (1.0, off)])
+    crate::timeline::sheen(at, lit, 0.5)
+}
+
+/// The body's width last frame (the card less its border), for a bone set against its right edge.
+fn body_w() -> f32 {
+    crate::timeline::found_w() - 2.0
 }
 
 /// A tick box. `can` false: the row cannot be picked (no match found).
@@ -324,35 +333,51 @@ fn options(s: &State, p: &Pal, source: Src) -> El {
 
 // ── A link is being read ────────────────────────────────────────────────────
 
-/// A blank sleeve, its record standing beside it with the waiting ring on the rim, over the
-/// shape of the notes still to come.
+/// The final card's own shape, still blank: the same sleeve (its face a bone, the waiting ring
+/// where the picture will land, the spine already printed), the notes' lines at the same place
+/// and the controls that kind of link will get (jury L-1: no record beside the sleeve, no chips
+/// a video never shows).
 fn looking_up(s: &State, p: &Pal) -> El {
     let source = detect_url(&s.input).platform;
-    let size = 160.0;
-    let travel = (size * parts::DISC_TRAVEL).round();
-    // The record's place beside a sleeve, as `parts::sleeve` stands it out.
-    let d = (travel - size * 0.04).round();
-    let (x, y) = (size + size * 0.02, ((size - d) / 2.0).round());
+    let audio_only = AUDIO_ONLY_SOURCES.contains(&source);
+    let video = s.choice.video && !audio_only;
+    // As `single` lays it out: the padding, the sleeve, the gap, then the notes.
+    let (pad, size, gap) = (24.0, 176.0, 32.0);
+    let at = pad + size + gap;
     // TODO(motion): `reduced` comes from the motion context at step 52.
-    let waiting = ring::waiting(keys::RING_WAITING, d, &ring::shelf(s.palette, p.dark, p.source(source)), false, 0);
-    let sleeve = el()
-        .size(size + travel, size)
-        .child(parts::record(p, source, d).absolute(x, y))
-        .child(waiting.absolute(x, y))
-        .child(parts::jacket(p, el().size(size, size).fill(p.raised), size, "").absolute(0.0, 0.0));
-    let chips =
-        [56.0, 56.0, 56.0, 64.0, 64.0].into_iter().fold(row().gap(8.0), |r, w| r.child(bone(p, w, 32.0).radius(16.0).clip_rounded(16.0)));
+    let waiting = ring::waiting(keys::RING_WAITING, 40.0, &ring::shelf(s.palette, p.dark, p.source(source)), false, 0);
+    let face = el().size(size, size).fill(p.raised).clip_rounded(0.0).center().child(sheen(p, pad)).child(waiting);
+    let art = el().key(keys::FOUND_COVER).size(size, size).child(parts::jacket(p, face, size, &spine(s, video)));
     let words = col()
-        .grow(1.0)
-        .min_w(0.0)
-        .gap(12.0)
+        .w_full()
+        .gap(4.0)
         .child(text(f::NOTE_READING).font(mono(12.0, 400.0)).color(p.text2))
-        .child(bone(p, 360.0, 20.0).mt(4.0))
-        .child(bone(p, 240.0, 20.0))
-        .child(bone(p, 160.0, 12.0))
-        .child(row().gap(16.0).mt(16.0).child(bone(p, 168.0, 32.0)).child(bone(p, 144.0, 32.0)))
-        .child(chips);
-    row().w_full().padding(24.0).gap(32.0).items_start().role("status").label(f::NOTE_READING).child(sleeve).child(words)
+        .child(bone(p, at, 360.0, 20.0).my(4.0))
+        .child(bone(p, at, 200.0, 14.0).mt(2.0))
+        .child(bone(p, at, 160.0, 12.0).mt(10.0));
+    let mut top = row().w_full().gap(16.0).items_end().flex_wrap();
+    let mut x = at;
+    if !audio_only {
+        top = top.child(bone(p, x, 168.0, 32.0).radius(8.0).clip_rounded(8.0));
+        x += 168.0 + 16.0;
+    }
+    let pick_w = if video { 176.0 } else { 144.0 };
+    top = top.child(col().gap(4.0).child(bone(p, x, 88.0, 12.0)).child(bone(p, x, pick_w, 32.0).radius(8.0).clip_rounded(8.0)));
+    let mut options = col().w_full().gap(16.0).child(top);
+    if !video {
+        let mut chips = row().w_full().gap(8.0).flex_wrap();
+        let mut x = at;
+        for w in [56.0, 56.0, 56.0, 56.0, 60.0, 104.0, 100.0, 104.0] {
+            chips = chips.child(bone(p, x, w, 32.0).radius(16.0).clip_rounded(16.0));
+            x += w + 8.0;
+        }
+        options = options.child(col().w_full().gap(8.0).child(bone(p, at, 96.0, 12.0)).child(chips));
+    }
+    if s.plan == Plan::Basic {
+        options = options.child(bone(p, at, 280.0, 16.0));
+    }
+    let notes = col().grow(1.0).min_w(0.0).gap(24.0).child(words).child(options);
+    row().w_full().padding(pad).gap(gap).items_start().role("status").label(f::NOTE_READING).child(art).child(notes)
 }
 
 // ── The look-up failed ──────────────────────────────────────────────────────
@@ -416,7 +441,7 @@ fn single(s: &State, p: &Pal, m: &MediaMetadata, matched: Option<&str>) -> (El, 
     let outcome = outcome(s, video);
     let size = 176.0;
     let length = format::duration(m.duration);
-    let mut art = el().size(size, size).child(blank_sleeve(s, &m.thumbnail_url, p, source, size, &spine(s, video)));
+    let mut art = el().key(keys::FOUND_COVER).size(size, size).child(blank_sleeve(s, &m.thumbnail_url, p, source, size, &spine(s, video)));
     if !length.is_empty() {
         art = art.child(chip_on_art(length.clone()).pin(None, Some(8.0), Some(8.0), None));
     }
@@ -515,7 +540,8 @@ fn match_cell(s: &State, p: &Pal, m: Matched) -> El {
         r = r.child(text(format!("{}%", format::round_half_up(c * 100.0))).font(mono(12.0, 400.0)).color(p.muted));
     }
     // Still matching: the cell shimmers like a bone.
-    if m == Matched::Matching { r.clip_rounded(4.0).child(sheen(p)) } else { r }
+    // Its column: the row's inset, the length cell and the gap before it, from the right.
+    if m == Matched::Matching { r.clip_rounded(4.0).child(sheen(p, body_w() - 24.0 - 48.0 - 16.0 - 176.0)) } else { r }
 }
 
 /// A tick Basic holds: on, in a quieter ink, with no hover.
@@ -795,7 +821,12 @@ fn search(s: &State, p: &Pal, query: &str, bands: &[Band; 3]) -> (El, El, Option
             .child(text(copy::search_nothing_matched(query)).font(sans(14.0, 500.0)).color(p.text).wrap())
             .child(text(copy::SEARCH_NOTHING_HINT).font(sans(13.0, 400.0)).color(p.text2).wrap())
     } else {
-        shown.iter().fold(row().w_full().px(24.0).pt(8.0).pb(16.0).gap(24.0).items_start(), |r, i| r.child(band(s, p, *i, &bands[*i])))
+        // Where each band starts, for its bones' shimmer: equal shares of the body after its insets.
+        let n = shown.len() as f32;
+        let share = (body_w() - 48.0 - 24.0 * (n - 1.0)) / n;
+        shown.iter().enumerate().fold(row().w_full().px(24.0).pt(8.0).pb(16.0).gap(24.0).items_start(), |r, (j, i)| {
+            r.child(band(s, p, *i, &bands[*i], 24.0 + j as f32 * (share + 24.0)))
+        })
     };
 
     // The picked results, sent together.
@@ -818,7 +849,7 @@ fn search(s: &State, p: &Pal, query: &str, bands: &[Band; 3]) -> (El, El, Option
     (head, body, foot)
 }
 
-fn band(s: &State, p: &Pal, i: usize, band: &Band) -> El {
+fn band(s: &State, p: &Pal, i: usize, band: &Band, x0: f32) -> El {
     let (source, name) = SOURCES[i];
     let tint = p.source(source);
     let mut head = row()
@@ -840,15 +871,9 @@ fn band(s: &State, p: &Pal, i: usize, band: &Band) -> El {
     let c = col().w_full().pt(4.0);
     let body = match band {
         Band::Loading => [[168.0, 104.0], [136.0, 88.0], [152.0, 96.0]].into_iter().fold(c.role("status"), |c, w| {
-            c.child(
-                row()
-                    .w_full()
-                    .h(56.0)
-                    .gap(12.0)
-                    .center_y()
-                    .child(bone(p, art_w(source), 36.0))
-                    .child(col().gap(8.0).child(bone(p, w[0], 12.0)).child(bone(p, w[1], 8.0))),
-            )
+            c.child(row().w_full().h(56.0).gap(12.0).center_y().child(bone(p, x0, art_w(source), 36.0)).child(
+                col().gap(8.0).child(bone(p, x0 + art_w(source) + 12.0, w[0], 12.0)).child(bone(p, x0 + art_w(source) + 12.0, w[1], 8.0)),
+            ))
         }),
         Band::Empty => c.pt(12.0).child(text(copy::search_no_matches(name)).font(sans(13.0, 400.0)).color(p.text2).wrap()),
         Band::Failed => c

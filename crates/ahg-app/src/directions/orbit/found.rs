@@ -109,17 +109,22 @@ pub(crate) fn body(s: &State, p: &Pal) -> Option<El> {
 
 // ── Pieces ──────────────────────────────────────────────────────────────────
 
-/// A skeleton block: the shape of something still coming, a chart line sweeping it.
-fn bone(p: &Pal, w: f32, h: f32) -> El {
-    el().w(w).h(h).radius(4.0).fill(mix(p.raised, p.text, 0.04)).clip_rounded(4.0).child(sheen(p))
+/// A skeleton block `at` points from the body's left edge: the shape of something still
+/// coming, a trace of the accent sweeping it.
+fn bone(p: &Pal, at: f32, w: f32, h: f32) -> El {
+    el().w(w).h(h).radius(4.0).fill(mix(p.raised, p.text, 0.04)).clip_rounded(4.0).child(sheen(p, at))
 }
 
-/// Orbit's shimmer: a faint glow with a thin line of the accent at its middle, a trace across a chart.
-fn sheen(p: &Pal) -> El {
-    let glow = p.text.alpha(if p.dark { 0.04 } else { 0.05 });
-    let line = p.accent.alpha(if p.dark { 0.28 } else { 0.25 });
-    let off = rune::Color::TRANSPARENT;
-    crate::timeline::sheen(&[(0.0, off), (0.3, glow), (0.48, glow), (0.5, line), (0.52, glow), (0.7, glow), (1.0, off)])
+/// Orbit's shimmer: a cool glow of the accent, a trace crossing a chart (soft: no line at its
+/// middle any more, jury L-4).
+fn sheen(p: &Pal, at: f32) -> El {
+    crate::timeline::sheen(at, p.accent.alpha(if p.dark { 0.16 } else { 0.14 }), 0.36)
+}
+
+/// The body's width last frame: the found surface less its border and its 24-point insets
+/// (Orbit's Home card and Now playing's sheet both inset the body so).
+fn body_w() -> f32 {
+    crate::timeline::found_w() - 50.0
 }
 
 /// The ring at 16, waiting: something is being worked out.
@@ -237,25 +242,42 @@ fn readout(p: &Pal, outcome: String) -> El {
 
 /// The skeleton of a single item (the common case), under the note and the link.
 fn looking_up(p: &Pal, input: &str) -> El {
-    let chips = (0..6).fold(row().gap(8.0), |r, i| r.child(bone(p, [48.0, 48.0, 64.0, 104.0, 80.0, 104.0][i], 28.0)));
+    // The cover's box, the gap, then the words' column: as `media` lays them out.
+    let (cover_w, at) = (320.0, 320.0 + 32.0);
+    let mut chips = row().gap(8.0);
+    let mut x = at;
+    for w in [48.0, 48.0, 64.0, 104.0, 80.0, 104.0] {
+        chips = chips.child(bone(p, x, w, 28.0));
+        x += w + 8.0;
+    }
+    // What is happening stands where the eyebrow will, so the cover keeps its place at the top.
+    let note = row()
+        .w_full()
+        .gap(8.0)
+        .center_y()
+        .child(waiting(p))
+        .child(txt(f::NOTE_READING, FIG, p.text2))
+        .child(spacer())
+        .child(subject(p, input).shrink().min_w(0.0));
     let words = col()
         .grow(1.0)
         .min_w(0.0)
         .gap(12.0)
-        .child(bone(p, 112.0, 12.0))
-        .child(bone(p, 440.0, 20.0))
-        .child(bone(p, 280.0, 20.0))
-        .child(bone(p, 160.0, 12.0))
-        .child(bone(p, 168.0, 32.0).mt(12.0))
+        .child(note)
+        .child(bone(p, at, 440.0, 20.0))
+        .child(bone(p, at, 280.0, 20.0))
+        .child(bone(p, at, 160.0, 12.0))
+        .child(bone(p, at, 168.0, 32.0).mt(12.0))
         .child(chips)
-        .child(row().w_full().mt(12.0).child(bone(p, 200.0, 16.0)).child(spacer()).child(bone(p, 120.0, 32.0)));
-    let note = row().gap(8.0).center_y().child(waiting(p)).child(txt(f::NOTE_READING, FIG, p.text2));
-    col()
-        .w_full()
-        .gap(20.0)
-        .label(f::NOTE_READING)
-        .child(row().w_full().gap(24.0).center_y().child(note).child(spacer()).child(subject(p, input)))
-        .child(row().w_full().gap(32.0).items_start().child(bone(p, 320.0, 180.0).radius(12.0).clip_rounded(12.0)).child(words))
+        .child(row().w_full().mt(12.0).child(bone(p, at, 200.0, 16.0)).child(spacer()).child(bone(p, body_w() - 120.0, 120.0, 32.0)));
+    col().w_full().gap(20.0).label(f::NOTE_READING).child(
+        row()
+            .w_full()
+            .gap(32.0)
+            .items_start()
+            .child(bone(p, 0.0, cover_w, 180.0).key(keys::FOUND_COVER).radius(12.0).clip_rounded(12.0))
+            .child(words),
+    )
 }
 
 // ── The lookup failed ───────────────────────────────────────────────────────
@@ -296,7 +318,7 @@ fn media(p: &Pal, m: &MediaMetadata, s: &State) -> El {
     };
     let mut cover = match short {
         Some(_) => art(s, &m.thumbnail_url, p, src, 152.0, 272.0, &icons::REELS),
-        None => art(s, &m.thumbnail_url, p, src, 320.0, 180.0, &icons::VIDEO),
+        None => art(s, &m.thumbnail_url, p, src, 320.0, 180.0, &icons::VIDEO).key(keys::FOUND_COVER),
     };
     if !duration.is_empty() {
         cover = cover.child(row().h(20.0).px(4.0).center().radius(4.0).fill(p.deep).child(txt(duration.clone(), FIG, p.text)).pin(
@@ -483,7 +505,8 @@ fn match_cell(p: &Pal, m: Matched) -> El {
         r = r.child(txt(format!("{}%", format::round_half_up(c * 100.0)), FIG, p.muted));
     }
     // Still matching: the cell shimmers like a bone.
-    if m == Matched::Matching { r.clip_rounded(4.0).child(sheen(p)) } else { r }
+    // Its column: the row's inset, the length cell and the gap before it, from the right.
+    if m == Matched::Matching { r.clip_rounded(4.0).child(sheen(p, body_w() - 12.0 - 48.0 - 16.0 - 176.0)) } else { r }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -758,51 +781,57 @@ fn band_view(s: &State, p: &Pal, i: usize, (name, glyph, color): (&str, &'static
     if i == 2 {
         head = head.child(spacer()).child(txt(copy::SEARCH_SPOTIFY_NOTE, FIG, p.muted).truncate().shrink());
     }
-    let body =
-        match band {
-            Band::Loading => (0..2).fold(col().w_full(), |c, k| {
-                let w = if i == 0 { 64.0 } else { 40.0 };
-                c.child(row().w_full().h(56.0).px(8.0).gap(12.0).center_y().child(bone(p, w, 36.0).radius(8.0).clip_rounded(8.0)).child(
-                    col().grow(1.0).min_w(0.0).gap(8.0).child(bone(p, [200.0, 160.0][k], 12.0)).child(bone(p, [112.0, 136.0][k], 12.0)),
-                ))
-            }),
-            Band::Results(r) => {
-                let mut c = r.iter().take(BAND_ROWS).fold(col().w_full(), |c, r| c.child(result_row(s, p, r, s.picked.contains(&r.id))));
-                if r.len() > BAND_ROWS {
-                    c = c.child(
-                        row()
-                            .key(keys::band_more(i))
-                            .on_press(move |s: &mut State| actions::show_more(s, i))
-                            .h(32.0)
-                            .px(8.0)
-                            .gap(8.0)
-                            .center_y()
-                            .radius(8.0)
-                            .hover(p.hover)
-                            .role("button")
-                            .focusable(true)
-                            .cursor(rune::Cursor::Pointer)
-                            .child(icon(&icons::CARET_DOWN, 16.0).color(p.text2))
-                            .child(txt(copy::search_show_more(r.len() - BAND_ROWS), SMALL_M, p.text2)),
-                    );
-                }
-                c
+    let body = match band {
+        Band::Loading => (0..2).fold(col().w_full(), |c, k| {
+            let w = if i == 0 { 64.0 } else { 40.0 };
+            // The three bands share the body in thirds, 24 apart.
+            let x0 = i as f32 * ((body_w() - 48.0) / 3.0 + 24.0) + 8.0;
+            c.child(row().w_full().h(56.0).px(8.0).gap(12.0).center_y().child(bone(p, x0, w, 36.0).radius(8.0).clip_rounded(8.0)).child(
+                col().grow(1.0).min_w(0.0).gap(8.0).child(bone(p, x0 + w + 12.0, [200.0, 160.0][k], 12.0)).child(bone(
+                    p,
+                    x0 + w + 12.0,
+                    [112.0, 136.0][k],
+                    12.0,
+                )),
+            ))
+        }),
+        Band::Results(r) => {
+            let mut c = r.iter().take(BAND_ROWS).fold(col().w_full(), |c, r| c.child(result_row(s, p, r, s.picked.contains(&r.id))));
+            if r.len() > BAND_ROWS {
+                c = c.child(
+                    row()
+                        .key(keys::band_more(i))
+                        .on_press(move |s: &mut State| actions::show_more(s, i))
+                        .h(32.0)
+                        .px(8.0)
+                        .gap(8.0)
+                        .center_y()
+                        .radius(8.0)
+                        .hover(p.hover)
+                        .role("button")
+                        .focusable(true)
+                        .cursor(rune::Cursor::Pointer)
+                        .child(icon(&icons::CARET_DOWN, 16.0).color(p.text2))
+                        .child(txt(copy::search_show_more(r.len() - BAND_ROWS), SMALL_M, p.text2)),
+                );
             }
-            Band::Empty => col().w_full().py(16.0).px(8.0).child(txt(copy::search_no_matches(name), SMALL, p.text2).wrap()),
-            Band::Failed => row()
-                .w_full()
-                .py(12.0)
-                .px(8.0)
-                .gap(8.0)
-                .center_y()
-                .role("alert")
-                .child(icon(&icons::ALERT, 16.0).color(p.error))
-                .child(txt(copy::search_source_failed(name), SMALL, p.text).grow(1.0).min_w(0.0).truncate())
-                .child(
-                    button(p, &keys::band_retry(i), copy::SEARCH_RETRY, Some(&icons::RETRY), Tone::Ghost)
-                        .on_press(move |s: &mut State| actions::retry_band(s, i)),
-                ),
-        };
+            c
+        }
+        Band::Empty => col().w_full().py(16.0).px(8.0).child(txt(copy::search_no_matches(name), SMALL, p.text2).wrap()),
+        Band::Failed => row()
+            .w_full()
+            .py(12.0)
+            .px(8.0)
+            .gap(8.0)
+            .center_y()
+            .role("alert")
+            .child(icon(&icons::ALERT, 16.0).color(p.error))
+            .child(txt(copy::search_source_failed(name), SMALL, p.text).grow(1.0).min_w(0.0).truncate())
+            .child(
+                button(p, &keys::band_retry(i), copy::SEARCH_RETRY, Some(&icons::RETRY), Tone::Ghost)
+                    .on_press(move |s: &mut State| actions::retry_band(s, i)),
+            ),
+    };
     col().grow(1.0).min_w(0.0).gap(8.0).child(head.pb(8.0).border_sides([0.0, 0.0, 1.0, 0.0], p.line)).child(body)
 }
 

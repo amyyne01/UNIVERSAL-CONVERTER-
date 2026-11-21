@@ -48,16 +48,44 @@ pub fn shows(s: &State, part: Part) -> Show {
 /// The key of a bone's shimmer band.
 pub const SHEEN: &str = "sheen";
 
-/// The shimmer of something still coming: a band of `stops` (left to right, a look's own
-/// highlight) as wide as its parent, sweeping across it on `motion::SHIMMER`. The parent clips it
-/// (`clip_rounded`), so it shows only on the bone; a look gives only the colours and their shape.
-pub fn sheen(stops: &[(f32, rune::Color)]) -> rune::El {
+/// The shimmer of something still coming, on a bone that stands `at` points from its card's
+/// left edge: one soft band `motion::SHIMMER_BAND` wide, placed so that every bone of a card
+/// shows the same band at the same moment, sweeping on `motion::SHIMMER`. The bone clips it
+/// (`clip_rounded`). A look gives its band's character only: `peak`, the light at its middle,
+/// and `spread`, how much of the band glows (0.25 a narrow meter segment, 0.5 a wide wash).
+/// The ramps are eased and at least a quarter band wide, so no look can draw a hard line.
+pub fn sheen(at: f32, peak: rune::Color, spread: f32) -> rune::El {
+    use crate::motion::SHIMMER_BAND;
     rune::el()
         .key(SHEEN)
-        .pin(Some(0.0), Some(0.0), Some(0.0), Some(0.0))
-        .linear_gradient(std::f32::consts::FRAC_PI_2, stops)
+        .pin(Some(-at - SHIMMER_BAND), Some(0.0), None, Some(0.0))
+        .w(SHIMMER_BAND)
+        .linear_gradient(std::f32::consts::FRAC_PI_2, sheen_stops(peak, spread))
         .looping(crate::motion::SHIMMER)
         .a11y_hidden()
+}
+
+/// The found surface's width as last laid out (0 before its first layout): where a bone set
+/// against the body's right edge stands, for its `sheen`.
+pub fn found_w() -> f32 {
+    rune::memo::layout_size(crate::keys::FOUND).map_or(0.0, |s| s[0])
+}
+
+/// The band's stops: clear at both ends, `peak` at the middle, eased through a third of it.
+pub fn sheen_stops(peak: rune::Color, spread: f32) -> Vec<(f32, rune::Color)> {
+    let s = spread.clamp(0.25, 0.5);
+    let clear = peak.alpha(0.0);
+    let soft = peak.alpha(peak.a * 0.35);
+    let mut stops = vec![(0.0, clear)];
+    if s < 0.5 {
+        stops.push((0.5 - s, clear));
+    }
+    stops.extend([(0.5 - 0.4 * s, soft), (0.5, peak), (0.5 + 0.4 * s, soft)]);
+    if s < 0.5 {
+        stops.push((0.5 + s, clear));
+    }
+    stops.push((1.0, clear));
+    stops
 }
 
 /// Something a deadline wakes.

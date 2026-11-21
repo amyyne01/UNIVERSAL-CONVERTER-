@@ -154,6 +154,10 @@ fn home(s: &State, p: &Pal) -> El {
     if command || found.is_some() {
         stream = stream.opacity(0.4);
     }
+    // The found card drops over the stream: what it covers does not answer (jury F-1).
+    if found.is_some() {
+        stream = stream.inert();
+    }
     let mut column = col().w_full().max_w(MEASURE).h_full().min_h(0.0).pt(32.0).child(top).child(caption(s, p).mt(12.0)).child(stream);
     if let Some(found) = found {
         // The drop runs to the window's foot; a press beside it puts it away.
@@ -261,7 +265,7 @@ fn bar(s: &State, p: &Pal, command: bool, listening: bool, lower: El) -> El {
     };
     let go = if !input.is_empty() && !input.contains("://") { copy::FIELD_BUTTON_SEARCH } else { copy::FIELD_BUTTON_LOOK_UP };
     let end = if command {
-        keycap(copy::PALETTE_ESC_CAP, p)
+        keycap(copy::KEYCAP_ESC, p)
     } else {
         row().gap(12.0).center_y().child(row().gap(4.0).child(keycap(copy::KEY_CTRL, p)).child(keycap(copy::KEY_K, p))).child(
             row()

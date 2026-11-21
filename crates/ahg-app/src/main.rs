@@ -22,6 +22,8 @@ mod format;
 mod gate;
 #[allow(dead_code)]
 mod icons;
+#[cfg(test)]
+mod jury_tests;
 #[allow(dead_code)]
 mod keys;
 mod layouts;

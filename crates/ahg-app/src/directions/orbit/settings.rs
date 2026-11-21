@@ -15,7 +15,7 @@ use crate::format;
 use crate::gate::{self, Confirm, Overlay, State};
 use crate::icons;
 use crate::keys;
-use crate::settings_spec::{self, Kind, Row};
+use crate::settings_spec::{self, Kind, Row, Section};
 
 /// The left margin that carries each section's name.
 const MARGIN: f32 = 216.0;
@@ -36,7 +36,7 @@ pub fn view(s: &State, p: &Pal) -> El {
             destination = sec.rows.first().map(|r| reading(s, p, r));
             continue;
         }
-        let mut lines: Vec<El> = sec.rows.iter().map(|r| line(s, p, r)).collect();
+        let mut lines = section_lines(s, p, sec, BODY_M, |r| line(s, p, r));
         if sec.title == w::PLAN {
             lines.push(machine(s, p));
         }
@@ -70,17 +70,55 @@ fn line(s: &State, p: &Pal, r: &Row) -> El {
     if r.dimmed { l.opacity(DIM) } else { l }
 }
 
+/// A row's name, then its figure (a version, the plan) and, when some of its choices need
+/// Premium, the lock. The figure drops under the name when the row is too narrow for both
+/// (Now playing's columns).
+fn name_line(s: &State, p: &Pal, r: &Row, name: TextStyle, ink: Color) -> El {
+    let mut l = row().w_full().gap(8.0).center_y().flex_wrap().child(txt(r.label, name, ink));
+    if let Some(figure) = status_figure(s, r) {
+        l = l.child(txt(figure, FIG, p.text2));
+    }
+    if r.lock.is_none() && r.gated() {
+        l = l.child(
+            el().size(16.0, 16.0)
+                .key(keys::setting_lock(r.key.unwrap_or_default()))
+                .help(f::LOCK_SELECT_TITLE)
+                .child(icon(&icons::LOCK_ORBIT, 16.0).color(p.muted)),
+        );
+    }
+    l
+}
+
+/// The three download defaults on one ruled line, each name above its select (jury ST-2:
+/// Signal, Shelf and their layouts already set them side by side).
+pub(crate) fn trio(s: &State, p: &Pal, rows: &[Row], name: TextStyle) -> El {
+    let mut t = row().w_full().py(12.0).gap(16.0).items_start();
+    for r in rows {
+        let cell = col().grow(1.0).min_w(0.0).gap(8.0).child(name_line(s, p, r, name, p.text)).child(control(s, p, r).w_full().min_w(0.0));
+        t = t.child(if r.dimmed { cell.opacity(DIM) } else { cell });
+    }
+    t
+}
+
+/// The rows of a section as ruled lines, Download defaults' first three as one `trio`.
+pub(crate) fn section_lines(s: &State, p: &Pal, sec: &Section, name: TextStyle, each: impl Fn(&Row) -> El) -> Vec<El> {
+    let mut rows = sec.rows.as_slice();
+    let mut out = Vec::new();
+    if sec.title == w::DEFAULTS && rows.len() >= 3 {
+        out.push(trio(s, p, &rows[..3], name));
+        rows = &rows[3..];
+    }
+    out.extend(rows.iter().map(each));
+    out
+}
+
 /// A row's name, its description (the armed sentence once a danger row is armed) and, on
 /// Basic, the lock sentence. `name` is the preset's label size.
 pub(crate) fn words(s: &State, p: &Pal, r: &Row, name: TextStyle) -> El {
     let danger = r.kind == Kind::Danger;
     let armed = danger && s.confirm == Some(confirm_of(r));
     let ink = if danger { p.error } else { p.text };
-    let mut c = col().grow(1.0).min_w(0.0).gap(4.0);
-    c = match status_figure(s, r) {
-        Some(figure) => c.child(row().gap(8.0).center_y().child(txt(r.label, name, ink)).child(txt(figure, FIG, p.text2))),
-        None => c.child(txt(r.label, name, ink)),
-    };
+    let mut c = col().grow(1.0).min_w(0.0).gap(4.0).child(name_line(s, p, r, name, ink));
     let desc = match r.armed {
         Some((sentence, _)) if armed => sentence.to_string(),
         _ => r.desc.clone(),
@@ -195,10 +233,10 @@ pub(crate) fn control(s: &State, p: &Pal, r: &Row) -> El {
             }
         }
         Kind::Select(options) => {
-            let locks = options.iter().any(|o| o.lock.is_some());
+            // Its lock, when some choices need Premium, stands after the name (`name`).
             let mut f = field(p, key.clone(), r.label, &shown(r), true, false);
-            if locks {
-                f = f.help(f::LOCK_SELECT_TITLE).child(icon(&icons::LOCK_ORBIT, 16.0).color(p.muted));
+            if r.gated() {
+                f = f.help(f::LOCK_SELECT_TITLE);
             }
             let now = saved(r);
             // A locked choice cannot be picked here: it waits for the action that says what Premium adds.
@@ -243,14 +281,16 @@ fn toggle(p: &Pal, key: String, label: &str, on: bool) -> El {
     el().key(key)
         .size(36.0, 20.0)
         .radius(10.0)
-        .fill(if on { p.text } else { p.raised })
-        .border(1.0, if on { p.text } else { p.track })
+        // On wears the one accent, as the other looks' switches do (jury C-2); off, the thumb is
+        // in the second ink so it reads at 3:1 (C-1).
+        .fill(if on { p.accent } else { p.raised })
+        .border(1.0, if on { p.accent } else { p.track })
         .focusable(true)
         .role("switch")
         .label(label.to_string())
         .checked(on)
         .cursor(rune::Cursor::Pointer)
-        .child(el().size(12.0, 12.0).radius(6.0).fill(if on { p.deep } else { p.muted }).absolute(if on { 19.0 } else { 3.0 }, 3.0))
+        .child(el().size(12.0, 12.0).radius(6.0).fill(if on { p.deep } else { p.text2 }).absolute(if on { 19.0 } else { 3.0 }, 3.0))
 }
 
 /// A field showing its value: a select (sans, with a caret) or a typed value (mono).

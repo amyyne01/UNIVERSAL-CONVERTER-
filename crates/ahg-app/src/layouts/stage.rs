@@ -73,6 +73,8 @@ use crate::keys;
 use parts::{BODY, BODY_M, FIG, FIG_L, FIG_XL, HERO, SMALL, SMALL_M, button, cover, glyph, icon_button, keys, state_word, text_button};
 
 const TRANSPORT_H: f32 = 72.0;
+/// How wide a long link fades out before the dock's Look up.
+const FIELD_FADE: f32 = 24.0;
 
 /// A saved text setting, empty when it is missing.
 fn setting<'a>(s: &'a State, key: &str) -> &'a str {
@@ -88,6 +90,8 @@ pub(crate) struct Fit {
     pad: f32,
     tall: bool,
     wide: bool,
+    /// Room for Settings' three columns; narrower windows get two (jury ST-1).
+    roomy: bool,
 }
 
 pub fn view(s: &State, cx: &mut Cx<State>) -> El {
@@ -95,7 +99,8 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> El {
     cx.titlebar_height(crate::TITLEBAR);
     cx.caption_color(p.text2);
     let insets = cx.chrome_insets();
-    let (wide, tall) = cx.layout_with("stage-root", |r| (r[2] >= 1100.0, r[3] >= 760.0)).unwrap_or((true, true));
+    let (wide, tall, roomy) =
+        cx.layout_with("stage-root", |r| (r[2] >= 1100.0, r[3] >= 760.0, r[2] >= 1500.0)).unwrap_or((true, true, true));
     let fit = Fit {
         ring: if tall { 296.0 } else { 192.0 },
         rail: if wide { 400.0 } else { 320.0 },
@@ -103,6 +108,7 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> El {
         pad: if tall { 24.0 } else { 16.0 },
         tall,
         wide,
+        roomy,
     };
     let first = s.tasks.is_empty() && s.stats.is_none();
     let home = |s: &State| if first { first_launch(s, &p).grow(1.0).min_h(0.0) } else { player(s, &p, fit) };
@@ -610,11 +616,11 @@ fn first_launch(s: &State, p: &Pal) -> El {
     let hotkey = setting(s, "globalHotkey");
     if !hotkey.is_empty() {
         caption = caption.child(txt(copy::REST_HOTKEY_LEAD, SMALL, p.text2));
-        for (i, part) in hotkey.split('+').enumerate() {
+        for (i, part) in crate::format::hotkey_keys(hotkey).into_iter().enumerate() {
             if i > 0 {
                 caption = caption.child(txt("+", SMALL, p.muted).mx(4.0));
             }
-            caption = caption.child(keys(p, &[if part == "CommandOrControl" { copy::KEY_CTRL } else { part }]));
+            caption = caption.child(keys(p, &[part]));
         }
         caption = caption.child(txt(copy::REST_HOTKEY_TRAIL, SMALL, p.text2));
     }
@@ -681,19 +687,22 @@ fn transport(s: &State, p: &Pal, fit: Fit) -> El {
         .border(1.0, p.track)
         .label(copy::FIELD_ARIA)
         .child(glyph(&icons::LINK, p.muted))
+        // A long link fades out before Look up instead of being cut mid-glyph (jury D-1).
         .child(
-            text_input(&s.field, BODY)
-                .key(keys::FIELD)
-                .label(copy::FIELD_ARIA)
-                .single_line()
-                .color(p.text)
-                .caret(p.text, p.accent.alpha(0.3))
-                .placeholder(copy::FIELD_PLACEHOLDER, p.muted)
-                .grow(1.0)
-                .min_w(0.0)
-                .on_edit(|s: &mut State| &mut s.field)
-                .on_input_change(|s: &mut State, _| s.input = s.field.text.clone())
-                .on_submit(actions::submit),
+            row().key(keys::FIELD_FADE).grow(1.0).min_w(0.0).clip_fade(0.0, 0.0, FIELD_FADE, 0.0).child(
+                text_input(&s.field, BODY)
+                    .key(keys::FIELD)
+                    .label(copy::FIELD_ARIA)
+                    .single_line()
+                    .color(p.text)
+                    .caret(p.text, p.accent.alpha(0.3))
+                    .placeholder(copy::FIELD_PLACEHOLDER, p.muted)
+                    .grow(1.0)
+                    .min_w(0.0)
+                    .on_edit(|s: &mut State| &mut s.field)
+                    .on_input_change(|s: &mut State, _| s.input = s.field.text.clone())
+                    .on_submit(actions::submit),
+            ),
         )
         // While an answer is open its Download is the lit control, so Look up steps down.
         .child(

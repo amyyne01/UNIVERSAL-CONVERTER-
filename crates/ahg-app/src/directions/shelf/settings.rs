@@ -120,7 +120,7 @@ fn words(s: &State, p: &Pal, r: &Row) -> El {
     }
     if r.lock.is_none() && r.gated() {
         // Some of its choices need Premium: the drop-down's title says what that means.
-        name = name.child(lock(p.muted).help(found::LOCK_SELECT_TITLE));
+        name = name.child(lock(p.muted).help(found::LOCK_SELECT_TITLE).key(keys::setting_lock(r.key.unwrap_or_default())));
     }
     let mut c = col().grow(1.0).min_w(0.0).gap(4.0).child(name);
     if !r.desc.is_empty() {
@@ -191,7 +191,13 @@ fn toggle(p: &Pal, label: &str, on: bool) -> El {
         .role("switch")
         .label(label)
         .checked(on)
-        .child(el().size(12.0, 12.0).radius(6.0).fill(if on { p.bg } else { p.card }).absolute(if on { 20.0 } else { 4.0 }, 4.0))
+        // Off, an ink thumb on the paper track, so it reads at 3:1 (jury C-1).
+        .child(
+            el().size(12.0, 12.0)
+                .radius(6.0)
+                .fill(if on { p.bg } else { p.text2.mix(p.text, 0.5) })
+                .absolute(if on { 20.0 } else { 4.0 }, 4.0),
+        )
 }
 
 /// The label of the chosen option.
@@ -378,7 +384,7 @@ fn trio(p: &Pal, rows: &[Row]) -> El {
     for r in rows {
         let mut name = row().gap(8.0).center_y().child(text(r.label).font(sans(12.0, 400.0)).color(p.text2));
         if r.gated() {
-            name = name.child(lock(p.muted).help(found::LOCK_SELECT_TITLE));
+            name = name.child(lock(p.muted).help(found::LOCK_SELECT_TITLE).key(keys::setting_lock(r.key.unwrap_or_default())));
         }
         let value = match &r.kind {
             Kind::Select(options) => chosen(options, &r.value),

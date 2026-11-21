@@ -224,11 +224,12 @@ pub fn sections(s: &State) -> Vec<Section> {
     engine.button = Some(c::ENGINE_CHECK);
     let software = vec![app, engine, toggle("autoUpdateEngine", c::AUTO_UPDATE_ENGINE)];
 
-    let advanced = vec![
-        input("rateLimit", c::RATE_LIMIT, c::RATE_LIMIT_PLACEHOLDER),
-        input("proxy", c::PROXY, c::PROXY_PLACEHOLDER),
-        input("globalHotkey", c::GLOBAL_HOTKEY, c::GLOBAL_HOTKEY_PLACEHOLDER),
-    ];
+    let advanced = vec![input("rateLimit", c::RATE_LIMIT, c::RATE_LIMIT_PLACEHOLDER), input("proxy", c::PROXY, c::PROXY_PLACEHOLDER), {
+        // Shown as it reads on a keyboard (`CommandOrControl` is Ctrl), like the keycaps on Home.
+        let mut r = input("globalHotkey", c::GLOBAL_HOTKEY, c::GLOBAL_HOTKEY_PLACEHOLDER);
+        r.value = json!(crate::format::hotkey(&text("globalHotkey")));
+        r
+    }];
 
     // Plan & license: the two danger rows exist only with a licence, which is Premium.
     let mut licence = vec![if basic {

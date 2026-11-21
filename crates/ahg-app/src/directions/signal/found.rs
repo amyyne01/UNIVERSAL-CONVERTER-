@@ -112,9 +112,10 @@ fn head_with(_s: &State, lead: El, words: El, aside: Option<El>, p: &Pal) -> El 
         .child(icon_button(&icons::CLOSE, copy::NOTICE_DISMISS, p.text2, p).key(keys::FOUND_CLOSE).on_press(actions::dismiss_found))
 }
 
-/// A skeleton bone: the shape of something still coming, a graphite sheen crossing it.
-fn bone(w: Option<f32>, h: f32, p: &Pal) -> El {
-    let b = el().h(h).radius(4.0).fill(p.raised).clip_rounded(4.0).child(sheen(p));
+/// A skeleton bone `at` points from the body's left edge: the shape of something still coming,
+/// a graphite sheen crossing it.
+fn bone(at: f32, w: Option<f32>, h: f32, p: &Pal) -> El {
+    let b = el().h(h).radius(4.0).fill(p.raised).clip_rounded(4.0).child(sheen(at, p));
     match w {
         Some(w) => b.w(w),
         None => b.w_full(),
@@ -122,10 +123,15 @@ fn bone(w: Option<f32>, h: f32, p: &Pal) -> El {
 }
 
 /// Signal's shimmer: a narrow lit segment, like a meter's, in graphite.
-fn sheen(p: &Pal) -> El {
-    let lit = if p.dark { p.text.alpha(0.07) } else { Color::WHITE.alpha(0.6) };
-    let off = Color::TRANSPARENT;
-    crate::timeline::sheen(&[(0.0, off), (0.35, off), (0.5, lit), (0.65, off), (1.0, off)])
+fn sheen(at: f32, p: &Pal) -> El {
+    let lit = if p.dark { p.text.alpha(0.08) } else { Color::WHITE.alpha(0.6) };
+    crate::timeline::sheen(at, lit, 0.28)
+}
+
+/// The body's width last frame (the found surface less its border), for a bone set against
+/// its right edge.
+fn body_w() -> f32 {
+    crate::timeline::found_w() - 2.0
 }
 
 /// The meter warming up: a run of lit segments, brightest at its head,
@@ -188,38 +194,45 @@ fn strip(left: El, right: El, p: &Pal) -> El {
 
 fn looking_up(s: &State, p: &Pal) -> El {
     // TODO(motion): the real reduced-motion flag (step 52).
+    // The waiting ring sits in the cover's box, where the picture will land (jury L-2).
     let waiting = ring::waiting("ring-waiting", RING, &ring_material(s, p, p.accent), false, 0);
-    let warming = row().w_full().gap(16.0).center_y().child(label(f::NOTE_READING, mono(12.0, 400.0), p.text2).w(160.0)).child(waiting);
-    let card = row().w_full().gap(24.0).child(bone(Some(192.0), 108.0, p)).child(
+    let (pad, cover_w, gap) = (24.0, 192.0, 24.0);
+    let info = pad + cover_w + gap;
+    let cover = bone(pad, Some(cover_w), 108.0, p).key(keys::FOUND_COVER).center().child(waiting);
+    let card = row().w_full().gap(gap).child(cover).child(
         col()
             .grow(1.0)
             .min_w(0.0)
             .gap(12.0)
             .pt(4.0)
-            .child(bone(Some(96.0), 12.0, p))
-            .child(bone(Some(440.0), 16.0, p))
-            .child(bone(Some(320.0), 16.0, p))
-            .child(bone(Some(160.0), 12.0, p))
-            .child(bone(Some(120.0), 12.0, p).mt(8.0)),
+            // What is happening stands where the title will, not on a line of its own above.
+            .child(label(f::NOTE_READING, mono(12.0, 400.0), p.text2))
+            .child(bone(info, Some(440.0), 16.0, p))
+            .child(bone(info, Some(320.0), 16.0, p))
+            .child(bone(info, Some(160.0), 12.0, p))
+            .child(bone(info, Some(120.0), 12.0, p).mt(8.0)),
     );
-    let mut well = col().w_full().padding(16.0).gap(16.0).radius(8.0).fill(p.deep).border(1.0, p.line).child(bone(Some(176.0), 28.0, p));
+    // The well's own edge and padding: 1 + 16.
+    let inner = pad + 17.0;
+    let mut well =
+        col().w_full().padding(16.0).gap(16.0).radius(8.0).fill(p.deep).border(1.0, p.line).child(bone(inner, Some(176.0), 28.0, p));
     for widths in [[56.0, 56.0, 56.0, 56.0, 56.0, 64.0], [72.0, 72.0, 72.0, 72.0, 72.0, 0.0]] {
-        let mut r = row().w_full().gap(8.0).center_y().child(bone(Some(96.0), 12.0, p).mr(24.0));
+        let mut r = row().w_full().gap(8.0).center_y().child(bone(inner, Some(96.0), 12.0, p).mr(24.0));
+        let mut at = inner + 96.0 + 24.0 + 8.0;
         for w in widths.into_iter().filter(|w| *w > 0.0) {
-            r = r.child(bone(Some(w), 28.0, p));
+            r = r.child(bone(at, Some(w), 28.0, p));
+            at += w + 8.0;
         }
         well = well.child(r);
     }
-    col()
-        .w_full()
-        .padding(24.0)
-        .gap(24.0)
-        .role("status")
-        .label(f::NOTE_READING)
-        .child(warming)
-        .child(card)
-        .child(well)
-        .child(row().w_full().center_y().child(bone(Some(200.0), 12.0, p)).child(spacer()).child(bone(Some(128.0), 40.0, p)))
+    col().w_full().padding(pad).gap(24.0).role("status").label(f::NOTE_READING).child(card).child(well).child(
+        row().w_full().center_y().child(bone(pad, Some(200.0), 12.0, p)).child(spacer()).child(bone(
+            body_w() - pad - 128.0,
+            Some(128.0),
+            40.0,
+            p,
+        )),
+    )
 }
 
 // ── The lookup failed ───────────────────────────────────────────────────────
@@ -386,7 +399,12 @@ fn media(s: &State, m: &MediaMetadata, p: &Pal) -> (El, El, Option<El>) {
     }
     let top = match short {
         Some(_) => poster(s, m, source, p),
-        None => row().w_full().gap(24.0).items_start().child(cover(s, &m.thumbnail_url, source, 192.0, 108.0, p)).child(info),
+        None => row()
+            .w_full()
+            .gap(24.0)
+            .items_start()
+            .child(cover(s, &m.thumbnail_url, source, 192.0, 108.0, p).key(keys::FOUND_COVER))
+            .child(info),
     };
 
     // The routing: Video or Audio, then the channels each one uses. The ones
@@ -555,7 +573,8 @@ fn match_cell(m: Matched, p: &Pal) -> El {
         r = r.child(label(x, mono(12.0, 400.0), p.muted));
     }
     // Still matching: the cell shimmers like a bone.
-    if m == Matched::Matching { r.clip_rounded(4.0).child(sheen(p)) } else { r }
+    // Its column: the row's inset, the length cell and the gap after it, from the right.
+    if m == Matched::Matching { r.clip_rounded(4.0).child(sheen(body_w() - 24.0 - 48.0 - 16.0 - 176.0, p)) } else { r }
 }
 
 fn tick(on: bool, can: bool, p: &Pal) -> El {
@@ -854,6 +873,9 @@ fn band_body(s: &State, at: usize, source: SourcePlatform, name: &str, band: &Ba
     match band {
         Band::Loading => {
             let mut c = c.role("status");
+            // The three strips share the body: this one starts a third along per place.
+            let x0 = at as f32 * body_w() / 3.0;
+            let x1 = x0 + 16.0 + art_w(source) + 12.0;
             for w in [[168.0, 104.0], [136.0, 88.0]] {
                 c = c.child(
                     row()
@@ -862,8 +884,8 @@ fn band_body(s: &State, at: usize, source: SourcePlatform, name: &str, band: &Ba
                         .px(16.0)
                         .gap(12.0)
                         .center_y()
-                        .child(bone(Some(art_w(source)), 36.0, p))
-                        .child(col().gap(8.0).child(bone(Some(w[0]), 12.0, p)).child(bone(Some(w[1]), 8.0, p))),
+                        .child(bone(x0 + 16.0, Some(art_w(source)), 36.0, p))
+                        .child(col().gap(8.0).child(bone(x1, Some(w[0]), 12.0, p)).child(bone(x1, Some(w[1]), 8.0, p))),
                 );
             }
             c

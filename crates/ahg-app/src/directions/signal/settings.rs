@@ -185,6 +185,14 @@ fn row_button(words: &str, p: &Pal) -> El {
     }
 }
 
+/// Some of a select's choices need Premium: a lock right after its name, its title saying why.
+fn name_lock(r: &Row, p: &Pal) -> El {
+    el().size(16.0, 16.0)
+        .key(keys::setting_lock(r.key.unwrap_or_default()))
+        .help(f::LOCK_SELECT_TITLE)
+        .child(icon(&icons::LOCK_SIGNAL, 16.0).color(p.muted))
+}
+
 /// The lock a Basic row carries, and the sentence that says what Premium adds.
 fn lock_line(sentence: &str, p: &Pal) -> El {
     row()
@@ -208,7 +216,11 @@ fn setting(s: &State, r: &Row, p: &Pal) -> El {
         _ => {}
     }
     let back = r.dimmed || r.lock.is_some();
-    let mut text = col().grow(1.0).min_w(0.0).gap(4.0).child(label(r.label, sans(14.0, 400.0), if back { p.muted } else { p.text }));
+    let mut name = row().gap(8.0).center_y().child(label(r.label, sans(14.0, 400.0), if back { p.muted } else { p.text }));
+    if r.lock.is_none() && r.gated() {
+        name = name.child(name_lock(r, p));
+    }
+    let mut text = col().grow(1.0).min_w(0.0).gap(4.0).child(name);
     if !r.desc.is_empty() {
         text = text.child(label(r.desc.clone(), sans(12.0, 400.0).lh(16.0), if back { p.muted } else { p.text2 }).wrap());
     }
@@ -224,15 +236,14 @@ fn setting(s: &State, r: &Row, p: &Pal) -> El {
 fn fields(cells: &[&Row], p: &Pal) -> El {
     let mut r = row().w_full().px(16.0).pt(16.0).pb(20.0).gap(12.0).items_start();
     for c in cells {
-        let mut name = row().gap(8.0).center_y();
-        if c.lock.is_some() {
-            name = name.child(el().size(16.0, 16.0).child(icon(&icons::LOCK_SIGNAL, 16.0).color(p.text2)));
+        let mut name = row().gap(8.0).center_y().child(label(c.label, sans(12.0, 400.0), p.text2));
+        if c.lock.is_none() && c.gated() {
+            name = name.child(name_lock(c, p));
         }
-        name = name.child(label(c.label, sans(12.0, 400.0), p.text2));
         let ctl = control_plain(c, None, p);
         let mut cell = col().grow(1.0).min_w(0.0).gap(8.0).child(name).child(ctl);
         if let Some(lock) = &c.lock {
-            cell = cell.child(label(lock.clone(), sans(12.0, 400.0).lh(16.0), p.text2).wrap());
+            cell = cell.child(lock_line(lock, p));
         }
         r = r.child(if c.dimmed || c.lock.is_some() { cell.opacity(0.6) } else { cell });
     }
@@ -287,7 +298,7 @@ fn control_plain(r: &Row, w_: Option<f32>, p: &Pal) -> El {
                         .map(|o| PopupItem::new(o.value.clone(), o.label.clone()).checked(o.value == now).enabled(o.lock.is_none())),
                 )
                 .selected(now.clone());
-            let s = popup(select(r.label, &chosen(r), w_, options.iter().any(|o| o.lock.is_some()), p), &key, menu, move |s, id| {
+            let s = popup(select(r.label, &chosen(r), w_, p), &key, menu, move |s, id| {
                 actions::set_setting(s, setting, id.into());
             });
             if r.gated() { s.help(f::LOCK_SELECT_TITLE) } else { s }
@@ -308,7 +319,8 @@ fn switch(name: &str, on: bool, p: &Pal) -> El {
         .role("switch")
         .label(name.to_string())
         .checked(on)
-        .child(el().size(12.0, 12.0).radius(4.0).fill(if on { p.deep } else { p.muted }).absolute(if on { 19.0 } else { 3.0 }, 3.0))
+        // Off, the thumb is in the second ink, so it reads at 3:1 on the dark track (jury C-1).
+        .child(el().size(12.0, 12.0).radius(4.0).fill(if on { p.deep } else { p.text2 }).absolute(if on { 19.0 } else { 3.0 }, 3.0))
 }
 
 fn well(w_: Option<f32>, name: &str, role: &'static str) -> El {
@@ -328,18 +340,15 @@ fn well(w_: Option<f32>, name: &str, role: &'static str) -> El {
     }
 }
 
-/// A closed select showing its value. `locked`: some of its choices need
-/// Premium; a lock sits before the caret.
-fn select(name: &str, value: &str, w_: Option<f32>, locked: bool, p: &Pal) -> El {
-    let mut s = well(w_, name, "combobox")
+/// A closed select showing its value. Its lock, when some choices need Premium, stands after
+/// the setting's name (`name_lock`), not in here.
+fn select(name: &str, value: &str, w_: Option<f32>, p: &Pal) -> El {
+    well(w_, name, "combobox")
         .fill(p.deep)
         .border(1.0, p.line_strong)
         .hover(p.hover)
-        .child(label(value, sans(13.0, 400.0), p.text).single_line().truncate().grow(1.0).min_w(0.0));
-    if locked {
-        s = s.child(icon(&icons::LOCK_SIGNAL, 16.0).color(p.muted));
-    }
-    s.child(icon(&icons::CARET_DOWN, 16.0).color(p.muted))
+        .child(label(value, sans(13.0, 400.0), p.text).single_line().truncate().grow(1.0).min_w(0.0))
+        .child(icon(&icons::CARET_DOWN, 16.0).color(p.muted))
 }
 
 /// A typed field: figures in mono; an empty one shows its placeholder.

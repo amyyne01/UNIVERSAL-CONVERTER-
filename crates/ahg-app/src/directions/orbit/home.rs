@@ -189,11 +189,11 @@ fn status(s: &State, p: &Pal) -> El {
     let hotkey = setting("globalHotkey");
     if !hotkey.is_empty() {
         right = right.child(txt(copy::REST_HOTKEY_LEAD, SMALL, p.text2));
-        for (i, part) in hotkey.split('+').enumerate() {
+        for (i, part) in crate::format::hotkey_keys(hotkey).into_iter().enumerate() {
             if i > 0 {
                 right = right.child(txt("+", SMALL, p.muted).mx(4.0));
             }
-            right = right.child(keycap(p, if part == "CommandOrControl" { copy::KEY_CTRL } else { part }));
+            right = right.child(keycap(p, part));
         }
         right = right.child(txt(copy::REST_HOTKEY_TRAIL, SMALL, p.text2));
     }

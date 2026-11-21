@@ -44,7 +44,7 @@ pub fn panel(s: &State, p: &Pal) -> El {
         .border_sides([1.0, 0.0, 0.0, 0.0], p.line)
         .child(hint(copy::PALETTE_FOOTER_NAVIGATE_CAP, copy::PALETTE_FOOTER_NAVIGATE, p))
         .child(hint(copy::PALETTE_FOOTER_SELECT_CAP, copy::PALETTE_FOOTER_SELECT, p))
-        .child(hint(copy::PALETTE_FOOTER_CLOSE_CAP, copy::PALETTE_FOOTER_CLOSE, p))
+        .child(hint(copy::KEYCAP_ESC, copy::PALETTE_FOOTER_CLOSE, p))
         .child(spacer())
         .child(label(w::SAVES, sans(12.0, 400.0), p.muted));
     let list = col()

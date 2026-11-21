@@ -254,7 +254,7 @@ fn palette(s: &State, k: &Skin) -> El {
     if typed.is_empty() {
         search = search.child(icon(&icons::SEARCH, 14.0).color(k.text2));
     }
-    search = search.child(keycap(k, copy::PALETTE_ESC_CAP));
+    search = search.child(keycap(k, copy::KEYCAP_ESC));
 
     let mut list = col().px(8.0).py(8.0).gap(2.0);
     if found.is_empty() {
@@ -275,7 +275,7 @@ fn palette(s: &State, k: &Skin) -> El {
         [
             (copy::PALETTE_FOOTER_NAVIGATE_CAP, copy::PALETTE_FOOTER_NAVIGATE),
             (copy::PALETTE_FOOTER_SELECT_CAP, copy::PALETTE_FOOTER_SELECT),
-            (copy::PALETTE_FOOTER_CLOSE_CAP, copy::PALETTE_FOOTER_CLOSE),
+            (copy::KEYCAP_ESC, copy::PALETTE_FOOTER_CLOSE),
         ]
         .map(|(cap, label)| row().gap(2.0).center_y().child(keycap(k, cap)).child(text(label).font(style(11.0, 400.0)).color(k.text2))),
     );
@@ -335,7 +335,7 @@ fn shortcuts(s: &State, k: &Skin) -> El {
     // Only when a global hotkey is set; `CommandOrControl` shows as Ctrl.
     let hotkey = s.settings.get("globalHotkey").and_then(|v| v.as_str()).unwrap_or("");
     if !hotkey.is_empty() {
-        rows.push((copy::SHORTCUT_HOTKEY, hotkey.split('+').map(|p| if p == "CommandOrControl" { copy::KEY_CTRL } else { p }).collect()));
+        rows.push((copy::SHORTCUT_HOTKEY, crate::format::hotkey_keys(hotkey)));
     }
     let head = row()
         .h(56.0)

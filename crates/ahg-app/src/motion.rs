@@ -100,15 +100,25 @@ pub const STALL_AFTER: f64 = 8.0;
 
 pub const LOADING_DELAY: f64 = 0.30;
 pub const LOADING_MIN: f64 = 0.40;
-/// Seconds a bone's shimmer takes to cross it (owner, 2026-11-20: "no shimmering when
-/// fetching" reverses DECISIONS Q8, "bones stay still").
-pub const SHIMMER_SWEEP: f64 = 0.8;
-/// The band sweeps from one width before the bone to three past it, linear, so half of each
-/// period crosses the bone and half rests off it (the pause). It first moves `LOADING_DELAY`
-/// after the bone shows. Under reduced motion Rune holds a slide at its midpoint, one width
-/// past the bone: off it, so the bones stand still.
-pub const SHIMMER: LoopSpec =
-    LoopSpec { delay: LOADING_DELAY, ..LoopSpec::slide(SHIMMER_SWEEP * 2.0, [-1.0, 0.0], [3.0, 0.0]).easing(Easing::LINEAR) };
+/// Seconds the shimmer band takes to cross a loading card (owner, 2026-11-20: "no shimmering
+/// when fetching" reverses DECISIONS Q8, "bones stay still").
+pub const SHIMMER_SWEEP: f64 = 1.0;
+/// The shimmer band's width in points, the same on every bone of every look (jury L-4: a band
+/// as wide as each bone read as a hard smear on the narrow ones).
+pub const SHIMMER_BAND: f32 = 240.0;
+/// Points from a card's left edge the band crosses; every bone a loading card draws lies in it.
+pub const SHIMMER_SPAN: f32 = 1200.0;
+/// The crossing, in band widths: from just before the card's left edge to `SHIMMER_SPAN`.
+const SHIMMER_CROSS: f32 = (SHIMMER_SPAN + SHIMMER_BAND) / SHIMMER_BAND;
+/// One band per card: each bone's band starts one width before the CARD (`timeline::sheen`
+/// shifts it by the bone's place), so every bone is lit by the same band at the same moment.
+/// Linear, from there to twice the crossing: half of each period crosses the card, half rests
+/// past it (the pause). It first moves `LOADING_DELAY` after the bones show. Under reduced
+/// motion Rune holds a slide at its midpoint, `SHIMMER_SPAN` along: past every bone.
+pub const SHIMMER: LoopSpec = LoopSpec {
+    delay: LOADING_DELAY,
+    ..LoopSpec::slide(SHIMMER_SWEEP * 2.0, [0.0, 0.0], [2.0 * SHIMMER_CROSS, 0.0]).easing(Easing::LINEAR)
+};
 /// A fetched cover fading in over its placeholder, from the look's `cover_focus` blur.
 pub const COVER_IN: SpringPair = ROW;
 pub fn cover_in(s: &crate::gate::State) -> Transition {
@@ -347,9 +357,12 @@ mod tests {
     fn the_shimmer_crosses_in_its_sweep_then_rests_off_the_bone_and_holds_off_it_when_reduced() {
         let rune::LoopKind::SlideEased { from, to, easing } = SHIMMER.kind else { panic!("{SHIMMER:?}") };
         assert_eq!(easing, Easing::LINEAR);
-        // From -1 to +1 (one width each side of the bone) is the crossing: half the period.
-        assert_eq!(SHIMMER.period * 2.0 / (to[0] - from[0]) as f64, SHIMMER_SWEEP);
-        assert!(from[0] <= -1.0 && (from[0] + to[0]) / 2.0 >= 1.0, "the midpoint, reduced motion's pose, is off the bone");
+        // The crossing (one band before the card to SHIMMER_SPAN) takes half the period.
+        let cross = ((SHIMMER_SPAN + SHIMMER_BAND) / SHIMMER_BAND) as f64;
+        assert_eq!(from[0], 0.0);
+        assert!((SHIMMER.period / 2.0 - SHIMMER_SWEEP).abs() < 1e-9 && ((to[0] - from[0]) as f64 - 2.0 * cross).abs() < 1e-6);
+        // Reduced motion's pose, the midpoint, puts the band's left edge at SHIMMER_SPAN.
+        assert!((((from[0] + to[0]) / 2.0 - 1.0) * SHIMMER_BAND - SHIMMER_SPAN).abs() < 1e-3, "the midpoint is past every bone");
         assert_eq!(SHIMMER.delay, LOADING_DELAY);
         assert!((0.15..=0.30).contains(&LOADING_DELAY) && (0.6..=1.0).contains(&SHIMMER_SWEEP));
     }

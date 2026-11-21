@@ -41,7 +41,11 @@ pub fn command(index: usize) -> String {
 
 // ── The field and the found step
 pub const FIELD: &str = "field";
+/// The soft right edge a long link fades out under (Now playing's dock).
+pub const FIELD_FADE: &str = "field-fade";
 pub const LOOK_UP: &str = "look-up";
+/// The found card's cover box, and the bone that stands in for it while the link is read.
+pub const FOUND_COVER: &str = "found-cover";
 pub const PASTE: &str = "paste";
 pub const SCOPE_CHIP: &str = "scope-chip";
 pub const FOUND: &str = "found";
@@ -212,6 +216,12 @@ pub fn setting(key: &str) -> String {
 }
 
 /// A Settings text field's editor, by its config key.
+/// The lock right after a setting's name when some of its choices need Premium: the one
+/// place such a lock stands in every preset (jury ST-5).
+pub fn setting_lock(key: &str) -> String {
+    format!("set-lock-{key}")
+}
+
 pub fn setting_edit(key: &str) -> String {
     format!("set-edit-{key}")
 }

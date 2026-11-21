@@ -10,6 +10,17 @@ use ahg_engine::ytdlp_updater::YtdlpStatus;
 
 use crate::copy;
 
+/// A global hotkey's keys as written on keycaps: Electron's `hotkey.replace('CommandOrControl',
+/// 'Ctrl').split('+')` (`Dashboard.tsx`, `ShortcutsSheet.tsx`). The one place that mapping lives.
+pub fn hotkey_keys(accelerator: &str) -> Vec<&str> {
+    accelerator.split('+').map(|k| if k == "CommandOrControl" { copy::KEY_CTRL } else { k }).collect()
+}
+
+/// The same hotkey as one line, `Ctrl+Shift+D`, for a field that shows it.
+pub fn hotkey(accelerator: &str) -> String {
+    hotkey_keys(accelerator).join("+")
+}
+
 /// `formatBytes`: 1024-based, no decimals for bytes and one from KB up, `—` for nothing.
 pub fn bytes(n: f64) -> String {
     if n <= 0.0 {

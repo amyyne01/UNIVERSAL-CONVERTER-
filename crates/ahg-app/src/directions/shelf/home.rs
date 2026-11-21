@@ -174,11 +174,11 @@ fn status_line(s: &State, p: &Pal) -> El {
         right = right.child(quiet(copy::REST_PASTES_A_LINK));
     } else {
         right = right.child(quiet(&format!("{}{}", copy::REST_PASTES_A_LINK, copy::REST_HOTKEY_LEAD.trim_end())));
-        for (i, key) in hotkey.split('+').enumerate() {
+        for (i, key) in crate::format::hotkey_keys(&hotkey).into_iter().enumerate() {
             if i > 0 {
                 right = right.child(quiet("+"));
             }
-            right = right.child(keycap(p, if key == "CommandOrControl" { copy::KEY_CTRL } else { key }));
+            right = right.child(keycap(p, key));
         }
         right = right.child(quiet(copy::REST_HOTKEY_TRAIL));
     }

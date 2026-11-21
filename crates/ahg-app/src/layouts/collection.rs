@@ -206,7 +206,7 @@ fn wall(s: &State, p: &Pal) -> El {
 
 fn first_run(s: &State, p: &Pal) -> El {
     let hotkey = s.settings.get("globalHotkey").and_then(|v| v.as_str()).unwrap_or_default();
-    let caps: Vec<&str> = hotkey.split('+').map(|k| if k == "CommandOrControl" { copy::KEY_CTRL } else { k }).collect();
+    let caps = crate::format::hotkey_keys(hotkey);
     let paste = row()
         .gap(4.0)
         .center_y()

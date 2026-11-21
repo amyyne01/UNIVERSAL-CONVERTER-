@@ -10,15 +10,18 @@ use super::Fit;
 use super::parts::{BODY, BODY_M, FIG, HERO, SMALL};
 use crate::copy::settings as w;
 use crate::directions::orbit::look::{Pal, txt};
-use crate::directions::orbit::settings::{DIM, control, words};
+use crate::directions::orbit::settings::{DIM, control, section_lines, words};
 use crate::gate::State;
 use crate::keys;
-use crate::settings_spec::{self, Section};
+use crate::settings_spec::{self, Row, Section};
 
 /// Which sections stand in which column, by their place in `settings_spec::sections`:
 /// where files go, the defaults and the look; the other download options and the schedule;
 /// software, advanced, the plan and help.
 const COLUMNS: [&[usize]; 3] = [&[0, 1, 3], &[2, 4], &[5, 6, 7, 8]];
+/// The same sections in two columns, when three would leave a row too narrow for its words
+/// and its control side by side.
+const TWO_COLUMNS: [&[usize]; 2] = [&[0, 1, 3, 2], &[4, 5, 6, 7, 8]];
 
 pub fn view(s: &State, p: &Pal, fit: Fit) -> El {
     let sections = settings_spec::sections(s);
@@ -35,9 +38,10 @@ pub fn view(s: &State, p: &Pal, fit: Fit) -> El {
             p.muted,
         )));
     let mut columns = row().w_full().gap(if fit.wide { 40.0 } else { 24.0 }).items_start();
-    for list in COLUMNS {
+    let lists: &[&[usize]] = if fit.roomy { &COLUMNS } else { &TWO_COLUMNS };
+    for list in lists {
         let mut c = col().grow(1.0).min_w(0.0).gap(24.0);
-        for i in list {
+        for i in list.iter() {
             if let Some(sec) = sections.get(*i) {
                 c = c.child(section(s, p, sec).key(keys::section(*i)));
             }
@@ -63,17 +67,12 @@ fn section(s: &State, p: &Pal, sec: &Section) -> El {
         }
         c = c.child(el().h(8.0));
     }
-    for r in &sec.rows {
-        let line = row()
-            .w_full()
-            .min_h(40.0)
-            .py(8.0)
-            .gap(16.0)
-            .center_y()
-            .border_sides([1.0, 0.0, 0.0, 0.0], p.line)
-            .child(words(s, p, r, BODY))
-            .child(control(s, p, r));
-        c = c.child(if r.dimmed { line.opacity(DIM) } else { line });
+    let each = |r: &Row| {
+        let line = row().w_full().min_h(40.0).py(8.0).gap(16.0).center_y().child(words(s, p, r, BODY)).child(control(s, p, r));
+        if r.dimmed { line.opacity(DIM) } else { line }
+    };
+    for line in section_lines(s, p, sec, BODY, each) {
+        c = c.child(line.border_sides([1.0, 0.0, 0.0, 0.0], p.line));
     }
     c
 }
